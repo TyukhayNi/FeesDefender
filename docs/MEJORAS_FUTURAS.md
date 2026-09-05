@@ -6830,14 +6830,24 @@ del `RUNBOOK_APERTURA_EXPEDIENTE` con la secuencia que sí converge es lo primer
 
 ## 152. Dos tests exigen `.env`, así que la suite da rojo falso en cualquier worktree
 
-> ⏳ **CEDIDO 2026-09-04 a la sesión hermana** que reescribe `ensure_colaborador_vinculado`
-> (rama `claude/beautiful-gates-438572`, autorrelleno de fichas de colaborador desde la firma del
-> correo). El arreglo son dos líneas —pasar `client=MagicMock()` en los dos tests, como ya hace la
-> variante judicial tres líneas más abajo—, pero cae dentro de la función que esa rama está
-> reescribiendo (`_resolver_o_crear_colaborador`, `_completar_colaborador_existente`), y ponerle
-> una tirita a mitad de refactor es peor que esperar. Coordinado por mensaje entre sesiones.
+> ✅ **RESUELTA el 2026-09-05 en la rama a la que se cedió** (`claude/beautiful-gates-438572`,
+> autorrelleno de fichas de colaborador desde la firma del correo). La cesión funcionó: el arreglo
+> cae dentro de la función que esa rama reescribía, y hacerlo allí evitó la tirita a mitad de
+> refactor. **Los dos tests reciben ahora `client=MagicMock()`** y pasan **sin `.env`**: 21/21
+> verdes desde un worktree limpio.
 >
-> **Mientras no esté: corre la suite desde la raíz del repo, no desde el worktree.**
+> **Y la propiedad sigue protegida, que es lo que importaba:** mutando la guarda para que el
+> respaldo por email corra con el criterio del NIF caído, **los dos tests vuelven a fallar**. No se
+> arregló la configuración a costa de vaciar el test.
+>
+> **De paso, un defecto que la entrada no había visto.** La última línea del segundo test era
+> `respaldo.assert_not_called(), "mensaje"` — una **tupla**, no un `assert`. El método sí se llamaba
+> y sí levantaba, así que el test funcionaba, pero su mensaje no se mostraba **nunca**: al fallar no
+> decía qué propiedad se había roto. Convertida en un `assert` de verdad.
+>
+> **Lo que esto NO arregla, y conviene no leerlo de más:** el `leak-guard` de pre-commit sigue
+> ciego en los worktrees (`#161`). Son dos problemas distintos con la misma raíz —los artefactos
+> gitignored que un worktree no hereda—, y sólo se cierra el de los tests.
 
 **Medido el 2026-09-04.** La suite corrida desde el worktree
 (`.claude/worktrees/nuevo-caso-bad-debt-ffe40e`) devuelve exit 1 con dos fallos, y desde la raíz del
@@ -7135,6 +7145,8 @@ se ejerce.
 
 ## 160. `ensure_colaborador_vinculado` necesita credenciales ANTES de poder fallar cerrado
 
+> ✅ **RESUELTA el 2026-09-05** en `claude/beautiful-gates-438572`, junto con la `#152`, que es el mismo defecto visto desde el lado del test: los dos tests inyectan ahora el `client` en vez de dejar que se construya desde el entorno. La función **no** cambió: el acoplamiento con el `.env` sigue ahí para cualquier otro llamador que no inyecte cliente, y eso es deliberado — arreglarlo de verdad es tocar la construcción del cliente legacy, que no es de esta rama.
+
 > 🔴 **ABIERTA.** Medido el 2026-09-05 al correr la suite **desde un worktree**, que es el
 > flujo estándar del repo (`docs/FLUJO_GIT.md`) y **no hereda `.env`**. Preexistente: entró con
 > el PR #272 (`ecc21ac`) y no la toca ninguna rama en curso mía.
@@ -7219,3 +7231,113 @@ silencio; con (1) pasa pero **lo dice**; con (2) lo caza.
 
 **Disparador de promoción.** Inmediato: es la única guarda de PII que corre antes de que el dato
 salga de la máquina, y está probado que no corre.
+
+---
+
+---
+
+## 162. Documento de identidad y domicilio del colaborador desde los contratos del Drive
+
+**Estado:** esperando decisión de Nikolai. **No empezar.**
+
+Los contratos de los consultores llevan documento de identidad y domicilio de empleados
+de E&V que **no son parte de ningún caso**. La cuenta `@ev` accede a ellos por el rol en
+la empresa; volcarlos al CRM del despacho es un tratamiento con otra finalidad y otro
+responsable, y esa valoración es de Nikolai.
+
+Y puede ser innecesario: si lo que se busca es **identificar** al colaborador, el email
+ya lo hace; el NIF sólo hace falta para facturarle o demandarle.
+
+**Si se promueve:** preguntar primero **para qué colaboradores y con qué finalidad**. No
+construir un extractor masivo de documentos y domicilios.
+
+**Disparador:** petición expresa de Nikolai con esas dos respuestas.
+
+---
+
+## 163. El cargo del colaborador no tiene dónde vivir en el CRM
+
+`core/email_firmas.py` **ya extrae** el cargo y sale en el informe de
+`scripts.crm_colaboradores_firmas report`, pero no se escribe: el contrato de
+`colaboradores` no tiene property de cargo y `tipo` es un `Select` cerrado
+(§10.8 de `INTEGRACION_SUDESPACHO.md`).
+
+**Disparador:** que sudespacho añada un campo, o decisión de Nikolai de usar `notas`.
+Si llega el campo, sólo hay que añadir el par a `_COMPLETABLES_COLABORADOR` y a
+`_AL_YAML`.
+
+---
+
+## 164. `scripts/crm_ficha.py` sigue siendo extrajudicial-only
+
+`[APER-49]`. La pieza C sirve a las dos jurisdicciones (las dos pasan por
+`_resolver_o_crear_colaborador`), pero el CLI que la dispara hardcodea
+`_ELEMENT_EXTRAJUDICIAL`. Para un caso judicial hay que llamar a mano.
+
+**Hueco previo a este trabajo**, anotado para que no se lea como cerrado. `MEJORAS #128`
+ya cubre este mismo `[APER-49]` con más detalle (juzgado, `link_colaborador_judicial`,
+etc.); esta entrada no lo duplica, añade el dato nuevo de esta sesión: la pieza que
+faltaba para colaboradores (el resolvedor compartido `_resolver_o_crear_colaborador`) ya
+existe, así que del lado de colaboradores lo único que falta es cablear el CLI.
+
+---
+
+## 165. `core/email_firmas.py` no detecta el mojibake por charset mal declarado
+
+**Detectado en la Task 9, declarado fuera de alcance.** `extraer_de_eml`
+(`core/email_firmas.py:580-584`) envuelve `parte.get_content()` en un `except Exception`
+que marca `NO_LEIBLE` ante "charset roto, base64 truncado…". Pero `get_content()`
+decodifica con `errors="replace"` y, si el `Content-Type` declara un charset
+válido-pero-equivocado (los bytes son UTF-8 y la cabecera dice `iso-8859-1`, o al revés),
+la decodificación **no lanza**: produce texto con acentos rotos o con el carácter de
+reemplazo `�` y lo devuelve como si fuera válido. El `.eml` se procesa como legible,
+la firma se lee sobre texto corrompido y ningún veredicto avisa. Es la misma familia que
+el defecto ya anotado en el comentario de las líneas 570-578 del mismo fichero
+(`BytesParser` tampoco lanza ante basura sin cabeceras), pero por una vía distinta.
+
+Es una rama defensiva sin caso real que la dispare todavía: los `.eml` de E&V vistos hasta
+ahora declaran `charset="utf-8"` y lo son.
+
+**Disparador:** el primer `.eml` real cuyo informe de firmas salga con acentos rotos o con
+`�`, o una decisión de blindar `extraer_de_eml` de forma preventiva (por ejemplo,
+detectar `�` en `cuerpo` tras decodificar, o contrastar el `charset` declarado con
+una detección independiente antes de confiar en él).
+
+---
+
+## 166. El cargo se lee por posición, y en el corpus real falla en las dos firmas que lo traen
+
+**Medido el 2026-09-05 corriendo `crm_colaboradores_firmas report` contra W-02Q38C**, que es
+justamente lo que ninguna fixture sintética podía enseñar: de las cuatro firmas del
+expediente, **las dos que llevan cargo escrito salen con el cargo vacío**, y por dos causas
+distintas.
+
+El cargo **no tiene etiqueta** en ninguna plantilla corporativa de E&V, así que `_cargo_de`
+lo deduce por posición: es la primera línea no vacía después de la línea del nombre, y la
+línea del nombre se reconoce porque va **enteramente en negrita** (en el `text/plain` los
+asteriscos son la negrita HTML degradada). Las dos causas medidas:
+
+- **Una plantilla escribe el nombre sin negrita.** Sin línea en negrita no hay ancla, y el
+  cargo —que está justo debajo— no se lee.
+- **En la otra, la línea del nombre queda fuera de la ventana del bloque.** El bloque se
+  ancla en la línea de la dirección y mira 12 líneas hacia atrás; en esa firma el nombre y
+  el cargo están más arriba, separados de la dirección por la razón social, la dirección
+  postal partida en varias líneas con enlaces de mapas interleaved, y los teléfonos.
+
+**Qué NO es:** un riesgo para los datos del cliente. El cargo **no se escribe en el CRM**
+—no existe esa property, ver `#161`— y sólo sale en el informe que un humano confirma.
+
+**Qué sí es:** el informe dice `FIRMA_SIN_CAMPO` en el cargo, y ese veredicto significa «hay
+firma y no trae ese campo» cuando la verdad es «no supe leerlo». Mitigado el 2026-09-05
+escribiéndolo en la leyenda del propio informe, que es donde se lee; la mitigación es
+honesta pero no arregla la lectura.
+
+**Disparador:** que a Nikolai le importe el cargo en el informe, o que aparezca un campo de
+cargo en el CRM (ver `#161`) y el dato deje de ser sólo informativo. Dos vías posibles, en
+orden de esfuerzo: ensanchar la ventana hacia atrás sólo para la búsqueda del cargo, o
+reconocer la línea del nombre por algo que no sea la negrita (por ejemplo, casarla contra
+el nombre que ya se conoce del `From:` o de la ficha del CRM, que es un dato que el módulo
+tiene a mano en el CLI aunque no dentro de `core/email_firmas.py`).
+
+---
+

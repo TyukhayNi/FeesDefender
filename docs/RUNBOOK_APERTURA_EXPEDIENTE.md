@@ -489,11 +489,36 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
    hallados más tarde) usa `update_cliente_contrario(contrario_id, cambios)`
    (`core/sudespacho_relations.py`, construido 2026-07-22) — reenvía TODOS los campos ya
    conocidos, no confirmado si el PUT de este elemento es parcial o de reemplazo completo.
-4. **Colaboradores (TL + consultores):** `ensure_colaborador_vinculado(...)` (dedup email).
-   **Ficha completa** (móvil + fijo) buscando la firma en su correo `@engelvoelkers.com`;
-   si ya existe → `GET → merge → PUT` para no pisar. **`colaboradores` = personal PROPIO
-   del cliente (E&V) — nunca el procurador/letrado de la parte contraria** (fácil de
-   confundir por el nombre del campo).
+4. **Colaboradores (TL + consultores):** `ensure_colaborador_vinculado(...)` — dedup por
+   **email Y NIF** (`nif_cif`; la property `nif` NO existe y devolvía 500, corregido
+   2026-09-04). Si el colaborador **ya existe**, la ficha se **completa sola**: rellena
+   los campos vacíos del CRM con los del `_ficha_crm.yaml`, sin pisar lo que ya hay.
+   Vale igual para judicial (`..._judicial`): las dos jurisdicciones pasan por el mismo
+   resolvedor.
+
+   **Móvil y fijo desde la firma del correo** (ya no es un paso a mano):
+
+   ```powershell
+   python -m scripts.crm_colaboradores_firmas report --case-id W-XXXXXX
+   # lee 01_Procesado/_firmas_colaboradores.md y decide
+   python -m scripts.crm_colaboradores_firmas apply --case-id W-XXXXXX --confirmar
+   python -m scripts.crm_ficha --case-id W-XXXXXX
+   ```
+
+   Tres cosas del informe que hay que leer, no saltarse:
+   - **`FIRMA_SIN_CAMPO` no es «no tiene».** Una de las dos plantillas corporativas de
+     E&V no lleva móvil.
+   - **`CONFLICTO`** = dos valores y ninguno decide; no se propone nada. Decides tú.
+   - **La sección «Candidatos» no es un alta.** Aparecer en un correo del caso no te
+     hace colaborador del caso: en W-02Q38C había 7 direcciones de E&V en 6 correos y
+     sólo 3 vinculadas. **La lista la pones tú en el `_ficha_crm.yaml`.**
+
+   **`colaboradores` = personal PROPIO del cliente (E&V) — nunca el procurador/letrado
+   de la parte contraria** (fácil de confundir por el nombre del campo).
+
+   **No hay campo de cargo.** `tipo` es un `Select` cerrado
+   (Sin Asignar / Colaborador / Perito / Tercero): el cargo sale en el informe y no se
+   escribe en el CRM (decisión de Nikolai, 2026-09-04).
 5. **Nota/hechos inicial:** `update_expediente(exp_id, {"Notas": …})` con el narrativo (tipo +
    partes + cláusula + cuantía). `notas_html` en el `_ficha_crm.yaml`.
 6. **(Si procede) Actuación facturable:** `POST element_register/actuaciones` **+ vincular

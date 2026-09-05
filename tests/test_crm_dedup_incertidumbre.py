@@ -85,9 +85,18 @@ class TestUnaConsultaCaidaNoEsAusencia:
              patch("core.sudespacho_relations.create_colaborador", crear), \
              patch("core.sudespacho_relations.link_colaborador", MagicMock()):
             with pytest.raises(IdentidadSinComprobar):
+                # `client=` inyectado a proposito: sin el, `ensure_colaborador_vinculado`
+                # construye `SudespachoLegacyClient()` ANTES de llegar a lo parcheado, y
+                # ese constructor exige credenciales del `.env`. Un worktree no hereda el
+                # `.env` —esta gitignored—, asi que el test moria con
+                # `SudespachoLegacyError`, que `pytest.raises(IdentidadSinComprobar)` no
+                # atrapa: rojo por configuracion ausente, no por la propiedad. El flujo
+                # estandar del repo es el worktree, o sea que este test era un rojo
+                # permanente donde se trabaja, y un rojo permanente ensena a no mirar.
                 ensure_colaborador_vinculado(
                     "634", NuevoColaborador(nombre="ANA", email="ana@ev.com",
-                                            nif="11111111H"))
+                                            nif="11111111H"),
+                    client=MagicMock())
         crear.assert_not_called()
 
     def test_sin_api_key_es_SIN_COMPROBAR_no_ausencia(self, monkeypatch):
@@ -113,11 +122,20 @@ def test_el_respaldo_del_colaborador_no_corre_si_el_NIF_no_se_pudo_mirar():
          patch("core.sudespacho_relations.find_colaborador_by_email", respaldo), \
          patch("core.sudespacho_relations.link_colaborador", MagicMock()):
         with pytest.raises(IdentidadSinComprobar):
+            # `client=` inyectado por el mismo motivo que en el test de arriba: sin el,
+            # el constructor del cliente legacy exige credenciales que un worktree no
+            # tiene, y el test moria por configuracion en vez de por la propiedad.
             ensure_colaborador_vinculado(
                 "634", NuevoColaborador(nombre="ANA", email="ana@x.example",
-                                        nif="11111111H"))
+                                        nif="11111111H"),
+                client=MagicMock())
 
-    respaldo.assert_not_called(), "el respaldo tapo el criterio que no se pudo comprobar"
+    # `respaldo.assert_not_called(), "mensaje"` era una TUPLA, no un assert: el metodo si
+    # se llamaba y si levantaba, pero el mensaje no se mostraba nunca. La forma correcta
+    # es un assert de verdad, para que el fallo diga QUE propiedad se rompio.
+    assert not respaldo.called, (
+        "el respaldo por email corrio con el criterio del NIF caido, y eso vincula OTRA "
+        "ficha: un criterio que no se pudo comprobar no lo tapa el que si")
 
 
 # ===========================================================================

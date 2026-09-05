@@ -28,14 +28,14 @@ def _contrario_de(d: dict) -> NuevoClienteContrario:
     if not d.get("nombre"):
         raise ValueError("contrario sin 'nombre' en _ficha_crm.yaml")
     return NuevoClienteContrario(
-        nombre=d.get("nombre", ""),
-        apellido1=d.get("apellido1", ""),
-        apellido2=d.get("apellido2", ""),
-        email=d.get("email", ""),
-        movil=str(d.get("movil", "")),
-        nif=d.get("nif", ""),
-        direccion=d.get("direccion", ""),
-        poblacion=d.get("poblacion", ""),
+        nombre=_escalar(d.get("nombre"), "contrario.nombre"),
+        apellido1=_escalar(d.get("apellido1"), "contrario.apellido1"),
+        apellido2=_escalar(d.get("apellido2"), "contrario.apellido2"),
+        email=_escalar(d.get("email"), "contrario.email"),
+        movil=_escalar(d.get("movil"), "contrario.movil"),
+        nif=_escalar(d.get("nif"), "contrario.nif"),
+        direccion=_escalar(d.get("direccion"), "contrario.direccion"),
+        poblacion=_escalar(d.get("poblacion"), "contrario.poblacion"),
         # Estos tres no se leian del YAML, y por eso nunca llegaban al CRM aunque
         # estuvieran escritos.
         cp=_escalar(d.get("cp"), "contrario.cp"),
@@ -71,14 +71,22 @@ def _escalar(valor: object, campo: str) -> str:
 
 
 def _colaborador_de(d: dict) -> NuevoColaborador:
+    """El colaborador del YAML, sin que una clave vacia se convierta en un dato.
+
+    Los cinco campos van por `_escalar` por la misma razon que los tres del contrario
+    (H-09 del PR #275): `str(None)` es "None", que es *truthy*, y `normalize_es_phone`
+    no quita letras, asi que esa cadena viajaba al CRM tal cual. Aqui se quedo abierto
+    porque el arreglo se hizo campo a campo en el contrario en vez de cerrar la clase:
+    cerrar una propiedad para un rol no la cierra para los demas.
+    """
     if not d.get("nombre"):
         raise ValueError("colaborador sin 'nombre' en _ficha_crm.yaml")
     return NuevoColaborador(
-        nombre=d.get("nombre", ""),
-        email=d.get("email", ""),
-        movil=str(d.get("movil", "")),
-        telefono=str(d.get("telefono", "")),
-        nif=d.get("nif", ""),
+        nombre=_escalar(d.get("nombre"), "colaborador.nombre"),
+        email=_escalar(d.get("email"), "colaborador.email"),
+        movil=_escalar(d.get("movil"), "colaborador.movil"),
+        telefono=_escalar(d.get("telefono"), "colaborador.telefono"),
+        nif=_escalar(d.get("nif"), "colaborador.nif"),
     )
 
 
@@ -106,6 +114,6 @@ def cargar_ficha_yaml(path: Path) -> FichaCRMInput:
     return FichaCRMInput(
         contrario=contrario,
         colaboradores=colaboradores,
-        notas_html=str(data.get("notas_html", "")),
-        cliente_propio=str(data.get("cliente_propio") or CLIENTE_PROPIO_DEFAULT),
+        notas_html=_escalar(data.get("notas_html"), "notas_html"),
+        cliente_propio=_escalar(data.get("cliente_propio") or CLIENTE_PROPIO_DEFAULT, "cliente_propio"),
     )

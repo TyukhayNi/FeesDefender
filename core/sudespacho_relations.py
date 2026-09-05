@@ -746,6 +746,103 @@ def _rest_post_colaborador(datos: "NuevoColaborador") -> str:
     )
 
 
+#: Las properties de `colaboradores` que este modulo lee y escribe. El contrato lo
+#: enumero el propio CRM el 2026-09-04 con una property inventada (§14.6): ccc, cp,
+#: direccion, email, fax, iva, movil, nacionalidad, nif_cif, nombre, notas, poblacion,
+#: provincia, telefono1, telefono2, telefono3, tipo, web. Aqui van solo las que el
+#: despacho usa: pedirlas todas gastaria ancho sin ganar nada, y `nacionalidad` esta
+#: marcada como cuarentena-PII en el atlas.
+#:
+#: NO hay property de CARGO. `tipo` es un Select con enum cerrado (Sin Asignar /
+#: Colaborador / Perito / Tercero), asi que un puesto ahi corrompe la taxonomia; por
+#: eso el cargo se extrae al informe y no se escribe (decision de Nikolai, 2026-09-04).
+_PROPS_COLABORADOR: tuple[str, ...] = (
+    "nombre", "email", "movil", "telefono1", "telefono2", "telefono3",
+    "nif_cif", "direccion", "poblacion", "cp", "provincia", "id",
+)
+
+
+def get_colaborador(colab_id: str) -> dict[str, str]:
+    """Ficha de un colaborador, aplanada a `{property: value}`.
+
+    El GET plano da HTTP 500: `?properties=` es obligatorio (`[APER-26]`). Se piden las
+    de `_PROPS_COLABORADOR` —12 de las 18 del contrato— y con eso basta, porque este GET
+    existe para saber **que esta vacio**, no para round-trip: quien escribe manda al PUT
+    solo los campos que rellena, nunca el conjunto leido.
+
+    Y eso es seguro porque el PUT es **PARCIAL: preserva los campos omitidos**. Medido en
+    vivo el 2026-07-18 sobre un expediente desechable (§10.7 / `[APER-26]`): un
+    `PUT {"Notas": ...}` cambio solo `Notas`. La ruta `element_register/{element}/{id}` es
+    **generica sobre el elemento**, asi que lo medido es el verbo y la ruta.
+
+    **Que clase de evidencia es, dicho sin adornos:** de ENDPOINT, no especifica de
+    `colaboradores`. Nadie ha hecho la prueba sobre este elemento, y hacerla exigiria
+    crear un colaborador desechable en el tenant del cliente sin endpoint de borrado
+    documentado. Las 6 properties que no se piden tampoco corren riesgo: no se pueden
+    borrar porque nunca se envian.
+
+    **Si algun dia hace falta un GET -> merge -> PUT del conjunto completo**, esta tupla
+    NO sirve tal cual: habria que ampliarla a las 18, porque con 12 un PUT de reemplazo
+    borraria `ccc`, `fax`, `iva`, `nacionalidad`, `notas`, `tipo` y `web`.
+    """
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("SUDESPACHO_API_KEY no configurada")
+
+    url = (f"{_REST_BASE}{_REST_CREATE_COLABORADOR}/{colab_id}"
+           f"?properties={','.join(_PROPS_COLABORADOR)}")
+    r = httpx.get(url, headers={"x-api-key": api_key, "Accept": "application/json"},
+                  timeout=_REST_TIMEOUT)
+    if r.status_code != 200:
+        raise SudespachoRelationsError(
+            f"REST GET colaboradores/{colab_id} -> HTTP {r.status_code}")
+    return _parse_values(r.json())
+
+
+def update_colaborador(colab_id: str, cambios: dict) -> dict:
+    """PUT sobre la ficha de un colaborador. Devuelve el registro tal como responde.
+
+    PUT y no PATCH (PATCH da 405, §10.7). El llamador decide QUE va en `cambios`;
+    esta funcion no filtra ni completa.
+    """
+    if not cambios:
+        raise ValueError("update_colaborador: 'cambios' no puede estar vacío")
+
+    api_key = (os.getenv("SUDESPACHO_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("SUDESPACHO_API_KEY no configurada")
+
+    url = f"{_REST_BASE}{_REST_CREATE_COLABORADOR}/{colab_id}"
+    headers = {"x-api-key": api_key, "Content-Type": "application/json",
+               "Accept": "application/json"}
+    try:
+        r = httpx.put(url, json=cambios, headers=headers, timeout=_REST_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise SudespachoRelationsError(
+            f"REST PUT colaboradores/{colab_id} falló: {exc}") from exc
+
+    if r.status_code == 200:
+        try:
+            return _parse_values(r.json())
+        except Exception as exc:  # noqa: BLE001 — cuerpo 200 no parseable
+            # H-12, R1: fabricar `dict(cambios)` aqui es afirmar que el PUT
+            # tomo efecto sin ninguna acreditacion -- el cuerpo no dice nada, asi
+            # que "se envio y hubo un 200" no puede convertirse en "se completo".
+            # El llamador (`_completar_colaborador_existente`) ya sabe tratar esto
+            # como un fallo de escritura (registra y sigue, sin perder el vinculo).
+            raise SudespachoRelationsError(
+                f"REST PUT colaboradores/{colab_id} -> HTTP 200 pero el cuerpo no "
+                f"se pudo interpretar ({exc!r}): no se puede verificar el resultado"
+            ) from exc
+
+    try:
+        detail = r.json().get("detail") or r.text[:300]
+    except Exception:  # noqa: BLE001
+        detail = r.text[:300]
+    raise SudespachoRelationsError(
+        f"REST PUT colaboradores/{colab_id} → HTTP {r.status_code}: {detail}")
+
+
 # ---------------------------------------------------------------------------
 # Creación de cliente contrario — REST (confirmado 2026-07-17, expediente 624)
 # ---------------------------------------------------------------------------
@@ -920,11 +1017,18 @@ def update_cliente_contrario(contrario_id: str, cambios: dict) -> dict:
     )
 
 
-#: Propiedad que guarda el NIF, por elemento. El CRM no usa el mismo nombre en todos.
+#: Propiedad que guarda el NIF, por elemento. El CRM no usa el mismo nombre en todos,
+#: pero `colaboradores` SI usa el mismo que el contrario: se le preguntó al propio CRM
+#: el 2026-09-04 con una property inventada y su 500 enumeró el contrato entero
+#: (método del §14.6). Antes decía `nif` aquí, y como esa property NO EXISTE el CRM
+#: devolvía 500 → `resolver_parte` marcaba el criterio `sin_comprobar` →
+#: `_resolver_colaborador` abortaba el alta en cuanto la ficha traía un NIF. O sea: la
+#: dedup por NIF del colaborador no ha funcionado nunca. El atlas ya lo decía bien;
+#: era este dict el que lo contradecía.
 _PROP_NIF = {
     "clientes_contrarios": "nif_cif",
     "clientes_propios": "nif_cif",
-    "colaboradores": "nif",
+    "colaboradores": "nif_cif",
 }
 
 
@@ -2081,6 +2185,118 @@ def _resolver_colaborador(
     return None
 
 
+#: Campos de la ficha que se COMPLETAN sobre un colaborador que ya existe, con su
+#: nombre de property en el CRM. Solo se rellena lo que esta VACIO: la ficha local
+#: aporta datos, no manda sobre lo que ya hay — E&V u otra sesion pueden haber
+#: corregido algo ahi y pisarlo seria destruir trabajo ajeno.
+#:
+#: `telefono` -> `telefono1` y `nif` -> `nif_cif`: los nombres del DTO y los del CRM
+#: no coinciden, y el segundo se comprobo preguntandole al CRM (§14.6), no leyendo
+#: codigo. NO hay entrada de `cargo`: esa property no existe en `colaboradores`, y
+#: `tipo` es un Select cerrado (Sin Asignar / Colaborador / Perito / Tercero).
+_COMPLETABLES_COLABORADOR = (
+    ("email", "email"),
+    ("movil", "movil"),
+    ("telefono", "telefono1"),
+    ("nif", "nif_cif"),
+)
+
+
+def _completar_colaborador_existente(colab_id: str, datos: NuevoColaborador) -> None:
+    """Rellena en el CRM los campos que la ficha trae y la ficha del CRM no tiene.
+
+    Espejo de `_completar_contrario_existente`, y por el mismo motivo medido: anadir
+    campos al DTO solo los hace llegar en el camino de CREACION, y con el colaborador
+    ya existente —el caso normal, porque el mismo consultor aparece en todos los casos
+    de su Market Center— `ensure_colaborador_vinculado` solo vinculaba.
+
+    Medido el 2026-09-04 sobre los tres colaboradores vinculados a W-02Q38C: los tres
+    con `telefono1` y `nif_cif` vacios, y uno de los tres sin movil.
+
+    No lanza: completar la ficha es un extra sobre el vinculo, y perder el vinculo por
+    no poder escribir un telefono seria peor que quedarse sin el telefono. Lo que no se
+    pueda hacer se registra.
+
+    **La garantia "no lanza" cubre TODA la funcion, no solo el GET** (H-09, R1):
+    `_parse_values` preserva el tipo del JSON (`dict[str, str]` es una anotacion,
+    no una validacion), asi que si el CRM devuelve un numero donde se esperaba
+    texto (`{"movil": 612345678}`), `actual.get(prop)` es un `int` y `.strip()`
+    lanzaria `AttributeError` -- ANTES de este arreglo, fuera de cualquier `try`,
+    derribando el vinculo entero. Una respuesta que no se puede interpretar se
+    trata igual que una que no se pudo leer: se registra y se ABSTIENE de
+    completar, sin perder el vinculo.
+    """
+    try:
+        actual = get_colaborador(colab_id)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("no se pudo leer el colaborador %s para completarlo (%r): los "
+                     "datos de la ficha que faltasen siguen sin llegar", colab_id, exc)
+        return
+
+    try:
+        cambios: dict[str, str] = {}
+        for campo, prop in _COMPLETABLES_COLABORADOR:
+            valor = (getattr(datos, campo, "") or "").strip()
+            actual_valor = actual.get(prop)
+            if not isinstance(actual_valor, str):
+                # Un valor no-texto en la respuesta (int/float/bool/None...) no se
+                # puede tratar como "vacio" a ciegas -- si el CRM devolvio ALGO
+                # ahi, aunque sea de un tipo raro, no es un hueco a rellenar.
+                actual_valor = "" if actual_valor is None else str(actual_valor)
+            if valor and not actual_valor.strip():
+                cambios[prop] = valor
+    except Exception as exc:  # noqa: BLE001 — la ficha leida no se pudo interpretar
+        _log.warning("la ficha leida del colaborador %s no se pudo interpretar (%r): "
+                     "los datos de la ficha que faltasen siguen sin llegar",
+                     colab_id, exc)
+        return
+
+    if not cambios:
+        return
+    try:
+        resultado = update_colaborador(colab_id, cambios)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("no se pudieron completar los campos %s del colaborador %s (%r)",
+                     sorted(cambios), colab_id, exc)
+        return
+
+    # H-12, R1: "se envio y hubo un 200" no es "se completo" -- verificar por
+    # RESULTADO, nunca por status (regla del proyecto). Solo se registra
+    # "completado" lo que la respuesta del PUT confirma con el mismo valor
+    # pedido; lo que no confirma se dice aparte, sin afirmar exito de lo que no
+    # se acredito.
+    confirmados = sorted(
+        prop for prop, valor in cambios.items()
+        if str((resultado or {}).get(prop) or "").strip() == str(valor).strip()
+    )
+    no_confirmados = sorted(set(cambios) - set(confirmados))
+    if confirmados:
+        _log.info("colaborador %s completado con %s", colab_id, confirmados)
+    if no_confirmados:
+        _log.warning(
+            "colaborador %s: el PUT no confirma %s en la respuesta -- no se "
+            "afirma que se completara, revisar a mano", colab_id, no_confirmados)
+
+
+def _resolver_o_crear_colaborador(
+    datos: NuevoColaborador,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> tuple[str, bool]:
+    """La parte de IDENTIDAD, compartida por las dos jurisdicciones.
+
+    Compartida a proposito, no por ahorrar lineas: R1/H-05 del PR #275 midio que
+    `ensure_colaborador_vinculado_judicial` seguia siendo email-only porque el cambio
+    se hizo en la rama extrajudicial y la otra se quedo atras. Con el gancho de
+    completar en un solo sitio, esa asimetria no puede volver a aparecer por olvido.
+    """
+    colab_id = _resolver_colaborador(datos, client=client)
+    if colab_id is not None:
+        _completar_colaborador_existente(colab_id, datos)
+        return colab_id, False
+    return create_colaborador(datos, client=client), True
+
+
 def ensure_colaborador_vinculado(
     exp_id: str,
     datos: NuevoColaborador,
@@ -2124,19 +2340,8 @@ def ensure_colaborador_vinculado(
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        # 1. Resolver por email O por NIF (antes solo por email, asi que el mismo
-        #    consultor con dos direcciones daba dos fichas).
-        colab_id = _resolver_colaborador(datos, client=client)
-        created = False
-
-        # 2. Crear si no existe
-        if colab_id is None:
-            colab_id = create_colaborador(datos, client=client)
-            created = True
-
-        # 3. Vincular al expediente
+        colab_id, created = _resolver_o_crear_colaborador(datos, client=client)
         link_colaborador(exp_id, colab_id, client=client)
-
         return colab_id, created
 
     finally:
@@ -2297,11 +2502,7 @@ def ensure_colaborador_vinculado_judicial(
     if owns_client:
         client = SudespachoLegacyClient()
     try:
-        colab_id = _resolver_colaborador(datos, client=client)
-        created = False
-        if colab_id is None:
-            colab_id = create_colaborador(datos, client=client)
-            created = True
+        colab_id, created = _resolver_o_crear_colaborador(datos, client=client)
         link_colaborador_judicial(exp_id, colab_id, client=client)
         return colab_id, created
     finally:

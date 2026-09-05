@@ -802,6 +802,43 @@ plano parcial (envía solo `cambios`; NO necesita GET→merge ni reenviar `Numer
 
 ---
 
+### 10.8 `colaboradores` — contrato enumerado por el propio CRM (2026-09-04)
+
+Pedido con una property inventada (`?properties=__inventada__`), cuyo **HTTP 500 enumera
+el contrato entero** — el método del §14.6:
+
+```
+ccc, cp, direccion, email, fax, iva, movil, nacionalidad, nif_cif, nombre, notas,
+poblacion, provincia, telefono1, telefono2, telefono3, tipo, web,
+id, grupo_contable_id, id_creador, id_ultimo_modificador,
+fecha_creacion, fecha_ultima_modificacion
+```
+
+Tres consecuencias que costaron un día de suposiciones:
+
+- **El NIF es `nif_cif`, igual que en el contrario.** La property `nif` **no existe** y
+  devuelve 500. `_PROP_NIF["colaboradores"]` decía `"nif"`, así que
+  `resolver_parte("colaboradores", nif=…)` marcaba el criterio `sin_comprobar` y
+  `_resolver_colaborador` **abortaba el alta** en cuanto la ficha traía un NIF: la dedup
+  por NIF del colaborador no había funcionado nunca. El atlas ya lo decía bien.
+- **No hay property de cargo/puesto.** `tipo` es un `Select` con enum cerrado
+  (`-1=Sin Asignar, colaborador=Colaborador, perito=Perito, tercero=Tercero`): escribir
+  un puesto ahí corrompe la taxonomía. Los únicos huecos de texto libre son `notas`
+  (`EditorHtmlSimple`) y `web`.
+- **El fijo va a `telefono1`** (hay `telefono2` y `telefono3`, sin uso hoy).
+
+Lectura y escritura: `get_colaborador(id)` / `update_colaborador(id, cambios)` en
+`core/sudespacho_relations.py`. El GET plano da 500: `?properties=` es obligatorio
+(`[APER-26]`). Se piden las properties que el despacho usa, no las 18: el GET sirve para
+saber **qué está vacío**, no para round-trip. El PUT manda **sólo los campos que se
+rellenan**, y eso es seguro porque el PUT es **parcial — preserva los omitidos**,
+verificado en vivo el 2026-07-18 (§10.7) sobre la **misma ruta genérica sobre el
+elemento**. Es evidencia de endpoint, no de `colaboradores` en concreto: la prueba
+específica exigiría crear un colaborador desechable en el tenant del cliente sin
+endpoint de borrado documentado.
+
+---
+
 ### 10.9 Enviar email desde el CRM (servicio `nest-mail`) + historial de mail del expediente
 
 > Confirmado en vivo por HAR el 2026-07-17 (exp 625). El envío deja el email en el **historial del
