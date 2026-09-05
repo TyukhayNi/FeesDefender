@@ -36,6 +36,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 18 | `fecha_de_nombre` devuelve un centinela *truthy* y desactiva en silencio el paso de los espejos (`MEJORAS #131`) | pendiente | **disparador real: sala de lectura de W-02X1WJ, 2026-09-01.** `preclasificar.fecha_de_nombre` devuelve la cadena `"0000-00-00"`; el filtro `if not f["fecha"]` dio **0 candidatos** y dejó sin ejecutar el Paso 1-bis.d, que la skill marca como NO opcional porque saltárselo dejó 7 binarios sin fechar en W-02VUDR. Corregido el filtro: **47 candidatos, 27 fechas recuperadas**. Falla hacia el lado que parece que funciona —sin excepción y con un informe que dice «0 sin fecha»—, y degrada el timeline, que es el producto entero de la sala de lectura | bajo |
 | 19 | Adoptar el CANON como copia local está permitido, y desactiva el desvío del guard (`MEJORAS #136`) | ✅ **RESUELTO** (2026-09-02) | **disparador: R21, 2026-09-02.** `repository_cli adoptar <ruta del canon>` era **ACEPTADO**, y desde ahí el intake escribía sobre el expediente **sin desviar** con el caso `prestado`; el resolver daba `LOCAL_CHECKOUT` con `working_root` = canon. La invariante «el registro no contiene rutas del catálogo» la aplicaba **un lector** y ningún escritor. **Dos rondas sobre el diff, las dos `NO-SHIP`, 16 hallazgos y 16 confirmados** — R22 (9) y R23 (7, autorizada por Nikolai). **Los dos hallazgos que más enseñan son míos:** R22/H22-04 fue una **pérdida de datos que introduje al arreglar** (filtrar al leer con un booleano que falla cerrado, y reescribir desde la vista filtrada), y R23/H23-01 fue la **misma frontera mal cerrada por cuarta vez** — contraté «*junction* → raíz» y la frontera era «cualquier alias cuyo destino físico caiga dentro del catálogo». El remedio de fondo no fue parchear sino **retirar** mi ascenso por ancestros y dejar la resolución física a `os.path.realpath`. Documento con las dos adjudicaciones: [`…-mejoras-136-el-canon-no-es-una-copia.md`](docs/superpowers/plans/2026-09-02-mejoras-136-el-canon-no-es-una-copia.md). **14 mutantes, 14 muertos, reproducible** (`python -m tests._mutantes_mejoras_136`). Quedan fuera, **preexistentes y con su medición**, `MEJORAS #137` y `#138`. **Cobertura de revisión de lo remediado tras R23: ausente** | bajo-medio |
 | 20 | [Guardas de PII ciegas en worktree (`MEJORAS #161`)](#siguiente-pii-worktree-las-guardas-de-pii-solo-funcionan-en-la-raíz) | 🔴 **abierta, con daño medido** | **disparador CONSUMADO el 2026-09-05**, no previsto: una dirección de inmueble de la blocklist llegó a GitHub con el hook de pre-commit **en verde**; lo paró `leak-scan` en CI. Sin gate técnico — lo que falta es **una decisión de Nikolai** entre las tres vías del remedio, porque fallar cerrado hoy dejaría sin commitear a todas las sesiones con worktree. **Va al final por la convención de las filas 13-14, no por prioridad: colócala tú.** | bajo |
+| 21 | [Las doce acciones del informe de Codex sobre el alta](#siguiente-alta-codex-las-doce-acciones-del-informe-de-codex-sobre-el-alta-de-expedientes) | **5 de 12 cerradas o en su primer corte** (1, 2, 3, 4, 5); 7 con diseño; 8 encargada a la sesión hermana; 6, 9, 10, 11, 12 sin empezar | **disparador: encargo expreso de Nikolai del 2026-09-05.** Siguiente por daño: implementar `#149` (dos rondas, la del diseño ya hecha) | medio |
 
 > **Fila 20 añadida el 2026-09-05 al final, misma razón que las 13 y 14: no reordeno prioridades ajenas.** Renumerar tampoco era opción — la cola es **una tabla partida por una línea en blanco** y hay **19 referencias cruzadas en prosa** (`fila #1`, `fila #15`…) que una renumeración invalidaría, el mismo error que la errata de numeración de la bitácora documenta. Por daño medido yo la pondría en el **puesto 2**.
 
@@ -56,6 +57,41 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 > **Filas 17 y 18 añadidas el 2026-09-01, al final y sin reordenar la cola,** por el mismo criterio que las anteriores. Las dos salen de la apertura de W-02X1WJ y las dos comparten un rasgo que justifica promoverlas y no dejarlas en backlog: **fallan en silencio**. La 17 no levanta error porque nadie pide el lock; la 18 informa «0 sin fecha», que es exactamente lo que uno querría leer. Las otras ocho de esa tanda (`MEJORAS #127-#130`, `#132-#135`) se quedan en backlog: o tienen su gate en un plan ya en cola (la #127 en el Plan 5 de la fila #15, la #135 en la casilla 3 de la fila #11) o esperan disparador.
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
+
+---
+
+## [SIGUIENTE-ALTA-CODEX] Las doce acciones del informe de Codex sobre el alta de expedientes
+
+*Fila #21. Origen: informe de Codex «Acciones para mejorar el alta de expedientes» (2026-09-05,
+lectura estática sobre `9ec96f7`, fuera del repo). Encargo de Nikolai del 2026-09-05: implementar
+por orden 1 → 2 → 5 → 3 → 4 y después el resto por daño y utilidad, en entregas pequeñas con rama y
+PR, con revisor sustituto (Codex sin cupo) y sin tocar expedientes, CRM ni Drive reales.*
+
+**Estado por acción, contrastado con el código y no con el informe** (el informe se escribió dos
+PRs antes de `main`, y la acción 1 ya estaba cerrada cuando llegó):
+
+| # | Acción | Estado | Dónde |
+|---|---|---|---|
+| 1 | Validar identidad y destino en el núcleo (`#153`/`#154`) | ✅ **ya cerrada antes del encargo** — PR #280 (`88592cb`): `ensure_case` valida componente, ciudad del catálogo y contención léxica + física; la UI pasa por ese sumidero | `core/case_manager.py`, `tests/test_ensure_case_sumidero*.py` |
+| 2 | Preservar notas y metadatos al actualizar `_caso.md` (`#146`) | ✅ **PR #286** (`8f7a38e`) — dos rondas sustitutas sobre diseño y diff (10/10 y 8/8 hallazgos confirmados, todos remediados) | diseño rev. 2 + actas R1/R2: `docs/superpowers/specs/2026-09-05-caso-md-preservar-al-actualizar-*.md` |
+| 5 | Guía operativa contra el código (V1 sí encadena; `ensure_contrario_vinculado_judicial` existe; `#144` cerrada) | ✅ PR #283 (`2b32c32`), una ronda sustituta (6 hallazgos, 6 confirmados, remediados) | `RUNBOOK` §3 `[APER-58]` y §9 `[APER-49]`; `PLAN` F3-judicial pieza 2; `MEJORAS #144` |
+| 3 | El formulario con el mismo servicio que la CLI | ✅ **primer corte, PR #285** (`108a461`) — una ronda sustituta (8/8 confirmados, el ALTO remediado y verificado en pantalla) | política compartida en `core/alta_crm_politica.py`; error legible de `ensure_case`; reutilizar el expediente local. **Lo que queda fuera con nombre:** que el formulario ejecute `secuencia_v1` (Drive → CRM → sala de máquina) y muestre las fases — exige sacar `etapa_*` de `scripts/abrir_caso.py` al core y resolver cómo corre una sala de máquina de una hora dentro de una petición de Streamlit |
+| 4 | Reutilizar expedientes y distinguir frentes | ✅ **PR #285** (`108a461`) | `vincular` con selector de frente, sin «crear de todos modos»; `bloquear` con la lista literal y casilla «crear igualmente» |
+| 6 | Incorporación de correo y adjuntos (checklist por fuente, `--extraer-adjuntos` por defecto, filtro de ruido) | pendiente, **sin empezar** | depende de resolver el efecto de `--extraer-adjuntos` en la dedup (`#98`) y del filtro de `[SIGUIENTE-INTAKE-EMAIL-FILTRO]` |
+| 7 | Ficheros de protocolo por ubicación (`#149`) | diseño **rev. 2 mergeado** (PR #287, `ac36bfa`) con la R1 adjudicada (11/11 confirmados); **sin código**: la implementación y su ronda sobre el diff son la siguiente entrega | diseño rev. 1: `docs/superpowers/specs/2026-09-05-ficheros-de-protocolo-por-ubicacion-design.md` |
+| 8 | Ficha CRM judicial (`get/update_expediente_judicial`, `link_juzgado_judicial`, ramificar `crm_ficha.py`) | pendiente, **encargado a la sesión hermana** «Completar fichas de colaboradores» el 2026-09-05 tras mergear su #282 (es dueña de `crm_ficha.py`); sin escritura real al CRM, tests con `httpx` mockeado | `PLAN` F3-judicial piezas 1, 3, 4; `MEJORAS #164` |
+| 9 | Primera publicación de un caso nacido en local (`#139`) | pendiente, **sin empezar** — escribe en Drive, no se puede probar sin operar sobre el Drive real | `MEJORAS #139`, `[APER-41]` |
+| 10 | `.doc` ilegibles + cobertura visible | pendiente, **sin empezar**; herramienta local disponible (`C:\Program Files\LibreOffice\program\soffice.exe`, y `antiword` en msys) | `core/sala_maquina.clasificar_ruta`, `_EXTS_NATIVO` |
+| 11 | Dedup por contenido conservando procedencias (`#147`) | pendiente, **sin empezar** | `MEJORAS #147` (vía A barata: llave por `text_sha256`) |
+| 12 | Ficha operativa de cierre de apertura + medir el recorrido en tres aperturas | pendiente, **sin empezar** | — |
+
+**Reparto de sesiones (decisión de Nikolai, 2026-09-05):** esta sesión orquesta; la sesión
+hermana «Completar fichas de colaboradores» es dueña de `core/crm_ficha.py`, `scripts/crm_ficha.py`,
+`core/email_firmas.py` y la parte de colaboradores de `core/sudespacho_relations.py`, y tiene
+encargada la acción 8.
+
+**Lo que NO se declara hecho aunque esté escrito:** las acciones 6, 9, 10, 11 y 12 no tienen ni
+diseño; la 7 tiene diseño y no tiene código; la 8 está encargada, no construida.
 
 ---
 
