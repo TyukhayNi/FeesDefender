@@ -6622,7 +6622,21 @@ corpus de E&V es común (fincas rústicas, castillos, naves). Se remedió a mano
 repitiendo el alta con «**sn**» en lugar de «s/n» —la grafía que E&V usa en su propia factura—,
 pero el siguiente que copie la dirección de la tabla vuelve a pisarlo.
 
-## 149. Los ficheros de protocolo que el registro NO declara entran en el inventario probatorio
+## 149. Los ficheros de protocolo que el registro NO declara entran en el inventario probatorio  `[RESUELTO 2026-09-05 — por UBICACIÓN, no por nombre]`
+
+> ✅ **Resuelto el 2026-09-05 (PR #290), implementando el diseño rev. 2
+> (`docs/superpowers/specs/2026-09-05-ficheros-de-protocolo-por-ubicacion-design.md`, PR #287).**
+> El remedio NO fue declarar los cuatro nombres —eso es lo que se revirtió el 2026-09-04— sino
+> cambiar el contrato: `core/intake_control.py` registra pares **(directorio, nombre)** y una sola
+> pregunta, `es_fichero_de_protocolo(rel_path)`, sobre la ruta relativa a `00_Input/`. Los nueve
+> consumidores preguntan por la ruta; los tres alias por basename se retiran;
+> `config.INTAKE_CONTROL_FILES` queda **derivado y sin lectores** (guard por AST). Los cuatro
+> ficheros de abajo salen de la red de calidad; un `_inventory.json` dentro de un lote es un adjunto
+> y ENTRA en inventario, albarán, sala de máquina y ledger. La migración compara por hash **tres
+> veces** (plan, fase 1, `unlink()`) y el homónimo anidado viaja al lote con su entrada M9. Trece
+> mutantes, uno por frontera, muertos. **Las rondas:** R1 sobre el diseño (§8 del diseño) y R2 sobre
+> el diff (§9), por radio de daño. `MEJORAS #54 T1` («lista única» por nombre) queda **sustituida**
+> por este registro. Texto original conservado como medición:
 
 > 🔴 **ABIERTA, y el arreglo del 2026-09-04 se REVIRTIÓ el mismo día** (`4cd71dd`). Se cerró
 > declarando los cuatro nombres en `INTAKE_CONTROL_FILES` y la **R1 adversarial lo tumbó con un
@@ -7410,3 +7424,24 @@ fuera del alcance revisado.
 **Disparador de promoción.** La primera reasignación de ciudad sobre un caso con edición manual
 del frontmatter, o el cierre de `#155`.
 
+## 168. `email_export.export_label` con un destino EXTERNO llamado como lote registra en el M9 del caso una ruta que no existe
+
+> Medido por Codex en la **R2 de `MEJORAS #149`** (2026-09-05), fuera del alcance de ese diseño y
+> **preexistente**: con `case_id` y un `dest` que no está bajo el `00_Input/` del caso pero cuyo
+> nombre casa `PATRON_LOTE`, `export_label` escribe el manifiesto en ese destino externo y
+> registra `<lote>/doc.eml` en el `_intake_hashes.json` **del caso**, aunque esa ruta no existe en
+> su `00_Input/`; `report.errors == []`. El docstring exige que el destino esté bajo el Input del
+> caso pero **no lo valida**, y la traza usa `dest.parent` como raíz (`email_export.py:1247`).
+
+**La frontera:** un `dest` es «lote de este caso» si está **físicamente** bajo el `00_Input/` del
+caso resuelto, no si su nombre lo parece. Es la misma familia que `#149` (el nombre no es la
+ubicación) trasladada al escritor.
+
+**Remedio:** validar por resultado en `export_label` —`dest.resolve()` bajo `caso_path(case_id) /
+"00_Input"`— y, si no, o bien no registrar en el M9 del caso (uso suelto) o bien fallar cerrado
+nombrando las dos rutas. Su mutante: destino externo `…/2026-09-05_email_01` con `case_id` → hoy
+entra en el M9; con el remedio, no.
+
+**Disparador de promoción.** Ningún llamador ordinario pasa un destino externo con `case_id`
+(`scripts/export_label_emails.py` deriva `dest` del caso). Espera a un caso real o al cableado
+de `#68`, que es donde `dest` deja de venir del CLI.

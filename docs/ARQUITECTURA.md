@@ -19,6 +19,7 @@
 │   intake_drive                       │  ← pull Drive E&V (rclone gdrive_ev)
 │   intake_manual · intake_lotes       │  ← upload manual a lote 00_Input/<fecha>_manual_NN/ (MEJORAS #54)
 │   intake_log · intake_manifest       │  ← refactor v2 (M10 + M9)
+│   intake_control                     │  ← protocolo de 00_Input por UBICACIÓN (MEJORAS #149); config deriva de él
 │   anon/ (api · separar · ocr · …)    │  ← absorbido de Expedientes Seguros
 │   extractor · markdown_generator     │
 │   scorer · viability · demanda       │

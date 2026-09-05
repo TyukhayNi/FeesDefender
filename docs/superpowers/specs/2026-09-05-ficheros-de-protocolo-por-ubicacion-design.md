@@ -3,11 +3,24 @@ tipo: spec
 estado: en-revision
 creado: 2026-09-05
 objeto: "MEJORAS #149 — los ficheros de protocolo se identifican por nombre a cualquier profundidad; el contrato es por ubicación"
-rev: "2"
+rev: "3"
 ---
 
 # Ficheros de protocolo: por dónde están, no por cómo se llaman
 
+> **Rev. 3 (2026-09-05), tras la R2 adversarial de Codex sobre el DIFF que implementa la rev. 2
+> (`NO-SHIP`, siete hallazgos, los siete confirmados, remediados en el PR #290).** Lo que cambia
+> en el diseño, no solo en el código: los **directorios se casan sin distinguir mayúsculas**
+> (§3.2; en Windows `01_drive ev/` y `01_Drive EV/` son la misma carpeta y el marcador que el
+> repo acababa de escribir entraba en el inventario — H-03); `crm_ficha_validacion` **delega y
+> nada más**, sin las cinco excepciones por nombre que la rev. 2 conservaba (§3.3; escondían
+> adjuntos — H-04); la migración **aborta si un documento aterrizaría en una ubicación de
+> protocolo del lote** y corre **bajo el mutex del caso** (§3.4; la relectura antes del
+> `unlink()` no cierra la ventana por sí sola — H-01, H-02); `sync_sudespacho` limpia su
+> temporal de descarga ante cualquier interrupción (§3.5 — H-05); y el §5 declara los cambios
+> de expectativa que la rev. 2 omitía (H-06). Adjudicación en el **§9**; voz del revisor,
+> literal, en el acta hermana `…-r2-adversarial-review.md`.
+>
 > **Rev. 2 (2026-09-05), tras la R1 adversarial sobre la rev. 1: `REQUIERE-REVISION`, once
 > hallazgos, los once confirmados.** Tres ALTOS: la comparación por hash estaba en el plan y el
 > borrado se decide en la fase 1 y se ejecuta en la fase 2 sin releer (H-01, con sonda que
@@ -132,6 +145,12 @@ def es_fichero_de_protocolo(rel_path: str) -> bool:
     - Lo demás: documento."""
 ```
 
+**Nombres Y directorios se comparan sin distinguir mayúsculas** (rev. 3, R2/H-03). La rev. 2
+decía «los directorios, tal como los escribe el repo», y el revisor lo refutó con el escritor
+real: en Windows, si existe `01_drive ev/`, `intake_drive` escribe `01_Drive EV/.pulled` DENTRO
+de aquélla, `rglob` devuelve la caja almacenada, y la comparación exacta declaraba documento al
+marcador recién escrito. La identidad que cuenta es la física del disco del despacho.
+
 Lo que **no** es protocolo, a propósito: un fichero de la raíz con `_` inicial que no esté en
 `RAIZ` (`00_Input/_nota_suelta.pdf` es documental de fuente `manual`: `intake_lotes.fuente_de`);
 `.pulled`, `.synced`, `_inventory.json` o `_exported_ids.json` **dentro de un lote o de un cajón
@@ -151,7 +170,7 @@ documenta que esos nombres existen).
 | `sala_maquina._es_control(rel)` | la firma pasa de nombre a ruta relativa; en `inventariar_cacheado` se calcula `rel` **antes** de filtrar (hoy va después). `_IGNORAR` desaparece |
 | `scripts/abrir_caso.hash_tree_local` y el recuento de `etapa_drive` | `es_fichero_de_protocolo(f"{prefijo}/{rel}")` — tienen el prefijo `01_Drive EV` a mano |
 | `scripts/migrar_layout_intake` | §3.4 |
-| `core/crm_ficha_validacion.es_fichero_de_control(rel)` | **delega** en `es_fichero_de_protocolo` para las filas de `_cobertura` (su `rel_path` es relativo a `00_Input/`) y conserva por nombre solo lo que no vive en `00_Input/` (`_cobertura.*`, `_sala_maquina_state.json`, `_registro.json`, `_tiempos.jsonl`). La rev. 1 lo dejaba «como está» por «redundante e inofensivo», y la R1 (H-08) demostró que con el §3.3 se convertía en el sitio donde el adjunto homónimo **desaparece**: una fila documental saltada no cuenta como ilegible, y un `SIN_COMPROBAR` pasa a `NO_ENCONTRADO` |
+| `core/crm_ficha_validacion.es_fichero_de_control(rel)` | **delega** en `es_fichero_de_protocolo` y **nada más** (rev. 3, R2/H-04). La rev. 2 conservaba por nombre cinco ficheros «que no viven en `00_Input/`» (`_cobertura.*`, `_sala_maquina_state.json`, `_registro.json`, `_tiempos.jsonl`); era falso por construcción —el único llamador le pasa filas de `_cobertura`, siempre relativas a `00_Input/`— y el revisor reprodujo con la sala real que un adjunto `<lote>/adjuntos/_registro.json` ilegible desaparecía del recuento y un `SIN_COMPROBAR` pasaba a `NO_ENCONTRADO`. La rev. 1 lo dejaba «como está» por «redundante e inofensivo», y la R1 (H-08) demostró que con el §3.3 se convertía en el sitio donde el adjunto homónimo **desaparece**: una fila documental saltada no cuenta como ilegible, y un `SIN_COMPROBAR` pasa a `NO_ENCONTRADO` |
 
 ### 3.4. La migración no borra lo que no acaba de comparar
 
@@ -176,7 +195,24 @@ la fase 2 borra sin releer):
    se reporta: dejar el fichero en su cajón es seguro y no exige rollback. Solo se borra lo que
    acaba de demostrarse idéntico.
 
-El rollback de la fase 1 sigue siendo completo: ninguna de las cuatro reglas añade una mutación en
+5. **Un documento no puede aterrizar en una ubicación de protocolo del lote** (rev. 3, R2/H-02).
+   `04_Manual/_manifiesto.yaml` es documento por ubicación; movido a `<lote>/_manifiesto.yaml`
+   pasa a ser protocolo y `escribir_manifiesto` lo **sobrescribía con el albarán** — reproducido
+   en base y en head, sin concurrencia ni fallo de disco. El plan detecta toda ruta del `mapping`
+   cuyo destino sea protocolo y **aborta** (también en `--dry-run`) nombrándola; renombrar el
+   documento es decisión del operador. El homónimo anidado (`04_Manual/sub/_manifiesto.yaml`)
+   no colisiona y migra.
+6. **La migración corre bajo el mutex del caso** (rev. 3, R2/H-01). Leer, comparar y borrar son
+   tres operaciones: la relectura de la regla 4 reduce la ventana pero un escritor que cambie la
+   raíz entre la relectura y el `unlink()` deja borrado un legacy que ya no es idéntico. Eso no
+   se cierra con más lecturas sino con exclusión: las fases 1 y 2 van bajo `mutex_sesion`
+   (abort limpio con código 2 y cero bytes si otro proceso tiene el caso; aviso y sigue si el
+   caso no declara W-code, trinquete E2). **Lo que queda abierto, dicho:** `email_export` y
+   `sync_sudespacho` aún no piden el mutex (`MEJORAS #126`, fila #17), así que hasta entonces la
+   exclusión es unilateral. La rev. 2 decía «TRES comprobaciones por hash»: son dos por hash
+   (plan y `unlink()`) y una por existencia (fase 1) — H-07.
+
+El rollback de la fase 1 sigue siendo completo: ninguna de las seis reglas añade una mutación en
 fase 1. El temporal del script (`_intake_hashes.json.tmp`, sin punto inicial) pasa a la forma
 `._intake_hashes.<pid>.tmp` para casar con `RAIZ_PREFIJOS`.
 
@@ -184,6 +220,12 @@ fase 1. El temporal del script (`_intake_hashes.json.tmp`, sin punto inicial) pa
 
 - `MERGE_EXCLUSIONS` y `plugins/expedientes_xl/tiers.PROTOCOL_*`: contratos por basename del
   checkin y del MCP, con sus guards. No cambian.
+- `core/sync_sudespacho.py` (rev. 3, R2/H-05): el pull REST escribe `sudespacho_<id>.tmp` en el
+  destino y lo renombra al terminar; solo lo limpiaba ante `SudespachoError`, y un `OSError`, un
+  Ctrl-C o un kill a mitad dejaban el parcial —escrito por el repo— como documento del
+  inventario. Se limpia ante **cualquier** interrupción. No se registra el temporal por
+  ubicación: vive a profundidad variable dentro de `sudespacho_<n>/<carpeta>/`, y la propiedad
+  correcta es que el escritor no lo deje, no que el clasificador lo esconda.
 - Clasificadores por regla propia sobre `00_Input/` que **no** cambian: `core/anon/api.py`
   (excluye cualquier segmento con `_` inicial a cualquier profundidad: allí un adjunto
   `_ficha_crm.yaml` sigue fuera de la anonimización), `core/local_organizer.py` (`_`/`.` inicial,
@@ -239,7 +281,13 @@ y `<lote>/.pulled` pasan a **entrar** en el albarán: ningún escritor los pone 
 (`01_Drive EV/_inventory.json` pasa a **entrar** en el ledger: es un fichero de E&V homónimo, no
 protocolo); `tests/test_apertura_v1_control_files.py` (llama a `_es_control` con un basename: sigue
 pasando porque un basename es una ruta de profundidad 1, y se reescribe para preguntar a
-`es_fichero_de_protocolo` con la ruta real). Un rojo distinto de estos en el diff es una regresión.
+`es_fichero_de_protocolo` con la ruta real). **Añadidos en la rev. 3 (R2/H-06), que la rev. 2
+omitía:** `tests/test_crm_ficha_validacion_r1.py::test_el_control_se_reconoce_con_ruta_y_caja`
+(`sub/_caso.md` y `sub\_ficha_crm.yaml` pasan de control a **documento**; es T13);
+`intake_manual.list_crm_branch_files` (a profundidad 3 el filtro por basename **sí** excluía seis
+nombres — la rev. 2 lo llamaba no-op y era falso — y ahora los lista: son documentos del cliente);
+`intake_manual.list_files` lista también `04_Manual/_manifiesto.yaml` (documento por ubicación).
+Un rojo distinto de estos en el diff es una regresión.
 
 ## 6. Alcance explícito
 
@@ -296,3 +344,44 @@ declarados y dónde se escriben, el censo de raíz y de entrega, la ausencia de 
 `split_documental` bajo `00_Input/`, que `_cobertura.json` vive fuera, las rutas calculables en
 cada consumidor, el `mapping` de `plan_migracion`, el rollback de la fase 1, el guard del plugin y
 el presupuesto de rondas— está en el §2 del acta. **Lo que no pudo verificar** está en el §7.
+
+## 9. Adjudicación de la revisión adversarial (Codex, 2026-09-05) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff `3fedf54..0b0298b` que implementa la rev. 2 (PR #290)
+- **Ronda:** 2 (diff) — la segunda y última por radio de daño
+- **Revisor:** Codex
+- **Informe recibido:** `2026-09-05-ficheros-de-protocolo-por-ubicacion-r2-adversarial-review.md`
+- **Hallazgos:** 7 — 3 ALTOS, 3 MEDIOS, 1 BAJO; **7 confirmados, 0 refutados** (3 preexistentes en `main`, conservados por el diff)
+- **Remediado en:** commit `9b3684d` (PR #290); esta rev. 3 del diseño
+
+**Independencia: plena** — revisor Codex (`gpt-6-astra`, ~184.000 tokens), adjudicador Claude
+Code. Cada hallazgo se contrastó contra la fuente; lo que reproduje yo está en el §2 del acta.
+
+| # | Sev. | Hallazgo (frontera, no ejemplo) | Veredicto | Remedio |
+|---|---|---|---|---|
+| H-01 | ALTO | Leer, comparar y borrar son tres operaciones: la relectura antes del `unlink()` reduce la ventana, no la cierra (reproducido con un espía que cambia la raíz tras la segunda lectura) | ✅ confirmado — garantía incompleta, no regresión | §3.4 regla 6: mutex del caso en las fases 1 y 2, abort limpio si está tomado, aviso si no hay W-code; docstring honesto; **residuo declarado**: `email_export`/`sync` sin mutex hasta `#126` |
+| H-02 | ALTO | `04_Manual/_manifiesto.yaml` (documento) migra a `<lote>/_manifiesto.yaml` (protocolo) y el albarán lo sobrescribe — **preexistente**, en base y en head | ✅ confirmado | §3.4 regla 5: el plan aborta ante cualquier destino que sea ubicación de protocolo; el anidado no colisiona |
+| H-03 | MEDIO | En Windows `01_drive ev/` = `01_Drive EV/`: el marcador que el escritor REAL acaba de escribir entraba en el inventario. **Regresión** del filtro por basename, y refutación de la premisa de la rev. 2 | ✅ confirmado | §3.2: directorios sin distinguir mayúsculas (`IGNORECASE` en `ENTREGA`, `casefold` en `DIRECTORIOS`); test con el marcador real en carpeta preexistente |
+| H-04 | ALTO | Las cinco excepciones por nombre «de fuera de `00_Input`» escondían adjuntos homónimos (reproducido con la sala real: `SIN_COMPROBAR` → `NO_ENCONTRADO`) — **preexistente, conservado por el diff** | ✅ confirmado | §3.3: retiradas; `es_fichero_de_control` delega y nada más; T13 ampliado a los cinco nombres |
+| H-05 | MEDIO | `sync_sudespacho` deja `sudespacho_<id>.tmp` si la descarga muere con algo distinto de `SudespachoError`; P4/T7 prometían más de lo que cubrían — **preexistente** | ✅ confirmado | §3.5: el escritor limpia ante cualquier interrupción; test con `OSError` inyectado; T7 sigue declarando lo que ejecuta |
+| H-06 | MEDIO | El §5 omitía tres cambios de expectativa; «el filtro a profundidad 3 es un no-op» era falso | ✅ confirmado | §5 completado; comentario de `list_crm_branch_files` corregido |
+| H-07 | BAJO | Docstrings que prometían exclusiones retiradas y «TRES comprobaciones por hash» | ✅ confirmado | `intake_manual` y `migrar_layout_intake` dicen lo que hacen |
+
+**Lo que el revisor midió y NO se remedia, con razón escrita:** `email_export.export_label` con
+`case_id` y un destino EXTERNO llamado como lote registra en el M9 del caso una ruta que no
+existe en su `00_Input/` (`report.errors == []`) — preexistente, fuera del alcance de este diseño;
+anotado como `MEJORAS #168`. Los 27 fallos de `test_abrir_caso_cli` y los 92 de la selección
+ampliada que el revisor vio son **del sandbox** (`WORKSPACE_UNDER_CATALOG_ROOT` con el temporal
+dentro del repo) y aparecen igual en base: no son del diff. La suite completa del repo con dos
+semillas la corre el autor, no el acta.
+
+**Mutantes tras la remediación, uno por remedio, los seis muertos:** sin mutex (3 tests), colisión
+que no aborta (1), directorio sensible a caja en `ENTREGA` (3) y en `DIRECTORIOS` (2), vuelta de
+la excepción por nombre (5), temporal sin limpiar (1). Más los trece de la rev. 2, que siguen
+muriendo.
+
+**Cobertura de la remediación: sin revisión adversarial.** Dos rondas por radio de daño (diseño y
+diff) y **no una tercera** sin autorización expresa de Nikolai (`CLAUDE.md` §«Cuántas rondas»); se
+reprodujeron contra el código remediado los contraejemplos concretos del revisor (carpeta con otra
+caja, manifiesto documental en `04_Manual`, adjunto `_registro.json` ilegible, descarga
+interrumpida con `OSError`).
