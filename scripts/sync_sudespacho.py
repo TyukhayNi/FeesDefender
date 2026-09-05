@@ -33,6 +33,7 @@ import json
 
 import typer
 
+from core.utils import read_md
 from core import case_manager
 from core.judicial_intake import intake_demanda_contestacion
 from core.sudespacho_relations import verify_expediente_referencia
@@ -331,11 +332,11 @@ def sync_all() -> None:
         if not index.exists():
             continue                   # el caso existe, `_caso.md` no
 
-        text = index.read_text(encoding="utf-8")
-        if not text.startswith("---"):
+        # `read_md` y no `split("---", 2)`: un `_caso.md` truncado reventaba aqui con
+        # ValueError y tumbaba el bucle entero de `sync_all` (R2/H-08 de MEJORAS #146).
+        fm, _ = read_md(index)
+        if not isinstance(fm, dict) or not fm:
             continue
-        _, fm_raw, _ = text.split("---", 2)
-        fm = _yaml.safe_load(fm_raw) or {}
         expedientes = fm.get("sudespacho_expedientes") or []
 
         if not expedientes:

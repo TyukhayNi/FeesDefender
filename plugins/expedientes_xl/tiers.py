@@ -35,6 +35,8 @@ PROTOCOL_EDIT: tuple[str, ...] = (
     # del caso. El guard `test_carveout_espeja_merge_exclusions` exige el espejo con
     # `core.config.MERGE_EXCLUSIONS`, y fue quien cazo el olvido.
     "_apertura_v1.json", ".apertura_v1.*.tmp",
+    # Temporal de la escritura atomica de `_caso.md` (MEJORAS #146): espejo obligado.
+    "._caso.*.tmp",
 )
 PROTOCOL_APPEND: tuple[str, ...] = ("_intake_log.jsonl", "AUDITLOG_MERGE_*.jsonl")
 

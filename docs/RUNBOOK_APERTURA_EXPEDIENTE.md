@@ -27,13 +27,16 @@ fecha: 2026-07-22
 
 ## 0. Entorno e higiene (leer antes de tocar nada)
 
-- **`[APER-54]` Ninguna nota a mano en `_caso.md` — se pierde.** Cualquier registrador
-  (`register_drive_ev` y otros cuatro) **reconstruye** el fichero con `_write_case_index`
-  en vez de mutarlo, así que el cuerpo escrito a mano desaparece en el siguiente pull de
-  Drive, **sin aviso**. No hace falta que dos procesos compitan: basta con un pull. Las
-  notas van a **`90_Notas personales/`**, que ningún motor lee ni escribe. Reproducido por
-  resultado el 2026-09-04; vigente hasta que cierre `MEJORAS #146`. **Díselo a quién toque
-  el expediente a mano**, no solo a quien corra el pipeline.
+- **`[APER-54]` Una nota a mano en `_caso.md` ya no se pierde (desde el 2026-09-05), pero
+  el sitio preferente sigue siendo `90_Notas personales/`.** Hasta esa fecha cualquier
+  registrador (`register_drive_ev` y otros) **reconstruía** el fichero con `_write_case_index`
+  y el cuerpo escrito a mano desaparecía en el siguiente pull de Drive, sin aviso (reproducido
+  el 2026-09-04). `MEJORAS #146` lo cerró: el sumidero conserva el cuerpo, las claves ajenas
+  del frontmatter (`bucket_override`, `proyeccion_local`) y los wikilinks, y **solo reescribe**
+  la línea de estado, la de IDs de Drive E&V y la sección `## Expedientes sudespacho`, que
+  lleva un comentario «sección generada: no editar a mano» y llega **hasta el siguiente
+  encabezado** (de cualquier nivel). Lo que escribas **dentro** de esa sección sí se pierde en
+  la siguiente actualización; bajo tu propio encabezado, o en cualquier otra parte, no.
 
 - **`[APER-01]` Ejecuta el PIPELINE desde el repo principal, sandbox OFF.** Un worktree no
   hereda `.venv`, `.env`, `CASOS_ROOT` ni PHPSESSID (gitignored) → el pipeline no corre ahí.
