@@ -46,7 +46,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .case_manager import register_drive_ev
-from .config import INTAKE_CONTROL_FILES, caso_path, settings
+from .config import caso_path, settings
+from .intake_control import es_fichero_de_protocolo
 from .utils import now_iso
 
 
@@ -57,12 +58,6 @@ from .utils import now_iso
 _DRIVE_EV_INPUT_SUBDIR = "01_Drive EV"
 _PULL_MARKER = ".pulled"
 
-# Ficheros de control del intake que NUNCA son documento (marcadores de
-# idempotencia / inventario interno). Pública: la consumen otros módulos
-# (p.ej. scripts.abrir_caso.hash_tree_local) para excluirlos del ledger
-# forense (_intake_log.jsonl) sin duplicar el literal. Lista ÚNICA en
-# config.INTAKE_CONTROL_FILES (MEJORAS #54 T1).
-CONTROL_FILES: frozenset[str] = INTAKE_CONTROL_FILES
 
 # Encoding del backend local de rclone para el destino (montaje de Google
 # Drive for Desktop en G:\). Es el conjunto estándar de Windows MÁS LeftSpace
@@ -859,9 +854,14 @@ class DriveIntakeError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 def _count_files(directory: Path) -> int:
-    """Cuenta archivos en `directory` (no recursivo), excluyendo archivos de control."""
+    """Cuenta archivos en `directory` (no recursivo), sin el protocolo de ESE directorio.
+
+    `directory` es `00_Input/01_Drive EV`; su único fichero de protocolo es `.pulled`
+    (`intake_control.ENTREGA`, MEJORAS #149). Un `.synced` o un `_inventory.json` ahí son
+    ficheros de E&V y cuentan.
+    """
     return sum(
         1
         for p in directory.iterdir()
-        if p.is_file() and p.name not in CONTROL_FILES
+        if p.is_file() and not es_fichero_de_protocolo(f"{directory.name}/{p.name}")
     )

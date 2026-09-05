@@ -25,12 +25,17 @@ def test_fuentes_lote_sin_espejos():
     assert config.ESPEJO_SUBDIRS == ("01_Drive EV", "05_CRM")
 
 
-def test_lista_unica_de_ficheros_de_control():
-    from core import config, intake_drive, intake_manual, inventory
-    assert intake_drive.CONTROL_FILES == config.INTAKE_CONTROL_FILES
-    assert inventory._CONTROL_FILES == config.INTAKE_CONTROL_FILES
-    assert intake_manual._CONTROL_FILES == config.INTAKE_CONTROL_FILES
-    # Los índices del canal email también son control (spec §5).
+def test_el_registro_por_nombre_es_derivado_y_sin_alias():
+    """MEJORAS #149: los tres alias por basename (`intake_drive.CONTROL_FILES`,
+    `inventory._CONTROL_FILES`, `intake_manual._CONTROL_FILES`) se retiraron — un registro
+    por nombre «para los guards» es el proxy que causó la reversión del 2026-09-04. Lo que
+    queda en `config` es un DERIVADO del registro por ubicación y no clasifica."""
+    from core import config, intake_control, intake_drive, intake_manual, inventory
+    assert config.INTAKE_CONTROL_FILES == intake_control.nombres_registrados()
+    for mod, attr in ((intake_drive, "CONTROL_FILES"), (inventory, "_CONTROL_FILES"),
+                      (intake_manual, "_CONTROL_FILES")):
+        assert not hasattr(mod, attr)
+    # Los índices del canal email también aparecen en el registro (spec #54 §5).
     assert {"_exported_ids.json", "_resolved_links.json", ".pulled", ".synced",
             "_inventory.json"} <= set(config.INTAKE_CONTROL_FILES)
 
@@ -107,16 +112,22 @@ def test_manifiesto_round_trip_y_exclusiones(tmp_path):
     lote.mkdir()
     (lote / "doc.pdf").write_bytes(b"pdf")
     (lote / "_export_original.zip").write_bytes(b"zip")   # SÍ entra (spec §5)
-    (lote / "_exported_ids.json").write_text("{}", encoding="utf-8")  # control: NO entra
-    (lote / ".pulled").write_text("", encoding="utf-8")               # control: NO entra
+    # MEJORAS #149: dentro de un lote NINGÚN escritor pone `_exported_ids.json` ni `.pulled`
+    # (su hogar es la raíz de 00_Input / `01_Drive EV`), así que ahí son adjuntos y ENTRAN.
+    # Hasta el 2026-09-05 se excluían por basename y desaparecían del albarán.
+    (lote / "_exported_ids.json").write_text("{}", encoding="utf-8")
+    (lote / ".pulled").write_text("", encoding="utf-8")
+    (lote / "_manifiesto.yaml").write_text("fuente: manual\n", encoding="utf-8")  # protocolo: fuera
     items = il.items_desde_disco(lote)
-    assert {i.relpath for i in items} == {"doc.pdf", "_export_original.zip"}
+    assert {i.relpath for i in items} == {"doc.pdf", "_export_original.zip",
+                                          "_exported_ids.json", ".pulled"}
 
     il.escribir_manifiesto(lote, fuente="manual", fecha_intake="2026-07-17",
                            origen="test", items=items)
     data = il.leer_manifiesto(lote)
     assert data["fuente"] == "manual" and data["origen"] == "test"
-    assert {i["relpath"] for i in data["items"]} == {"doc.pdf", "_export_original.zip"}
+    assert {i["relpath"] for i in data["items"]} == {"doc.pdf", "_export_original.zip",
+                                                    "_exported_ids.json", ".pulled"}
     # None se omite: sin message_id/duplicado_de no aparecen las claves.
     assert all("duplicado_de" not in i and "message_id" not in i for i in data["items"])
     # El propio manifiesto no se auto-inventaría.

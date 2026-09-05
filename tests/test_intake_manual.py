@@ -139,19 +139,21 @@ class TestListFiles:
         nombres = [p.name for p in list_files(caso_man)]
         assert nombres == sorted(nombres)
 
-    def test_excluye_archivos_de_control(self, caso_man, tmp_casos_root):
-        save_file(caso_man, "real.pdf", b"pdf")
-        # 04_Manual (legacy) es lazy tras MEJORAS #54 T10: lo crea el propio
-        # test para ejercer el filtrado de archivos de control en el cajón
-        # legacy (casos no migrados a lotes), que list_files sigue soportando.
+    def test_en_el_cajon_legacy_los_homonimos_de_control_son_documentos(self, caso_man,
+                                                                       tmp_casos_root):
+        """MEJORAS #149: ningún escritor pone `.pulled`, `_inventory.json` ni `.synced` en
+        `04_Manual/`; un fichero así llamado ahí es un documento del cliente y se lista.
+        Hasta el 2026-09-05 se excluían por basename. Lo que SÍ queda fuera es el
+        `_manifiesto.yaml` de la raíz de un lote, que `save_file` escribe."""
+        dest = save_file(caso_man, "real.pdf", b"pdf")
         manual_dir = tmp_casos_root / caso_man / "00_Input" / "04_Manual"
         manual_dir.mkdir(parents=True, exist_ok=True)
         (manual_dir / ".pulled").write_text("{}", encoding="utf-8")
         (manual_dir / "_inventory.json").write_text("{}", encoding="utf-8")
         (manual_dir / ".synced").write_text("", encoding="utf-8")
-        archivos = list_files(caso_man)
-        nombres = [p.name for p in archivos]
-        assert nombres == ["real.pdf"]
+        nombres = sorted(p.name for p in list_files(caso_man))
+        assert nombres == [".pulled", ".synced", "_inventory.json", "real.pdf"]
+        assert (dest.parent / "_manifiesto.yaml").is_file()   # existe y no se listó
 
 
 # ---------------------------------------------------------------------------

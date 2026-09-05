@@ -320,3 +320,149 @@ def test_migracion_no_borra_duplicado_de_control_si_falla_despues(tmp_casos_root
     assert lotes == []
     assert (base / "03_Email" / "2026-02-01_asunto.eml").is_file()
     assert (base / "04_Manual" / "2026-01-10_demanda.pdf").is_file()
+
+
+# ── MEJORAS #149 (rev. 2 §3.4): la migración no borra lo que no acaba de comparar ────────────
+#
+# T4, T5, T5b, T5c y T6 del diseño. El estado de canal legacy (`03_Email/_exported_ids.json`,
+# directamente bajo el cajón) se identifica por (directorio, nombre); el homónimo ANIDADO es un
+# adjunto y viaja al lote con su entrada en el `mapping` M9.
+
+def _caso_legacy_email(tmp_casos_root, case_id, *, ficheros, raiz=None):
+    import json
+
+    from core import case_manager, config
+
+    case_manager.ensure_case(case_id, titulo="mig-149")
+    base = config.caso_path(case_id) / "00_Input"
+    for rel, b in ficheros.items():
+        p = base / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b)
+    if raiz is not None:
+        (base / "_exported_ids.json").write_bytes(raiz)
+    (base / "_intake_hashes.json").write_text(json.dumps({
+        "sha-adj": {"primary_path": "03_Email/hilo/_exported_ids.json", "aliases": []}}),
+        encoding="utf-8")
+    return base
+
+
+def _arbol(base):
+    import hashlib
+    return {p.relative_to(base).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in base.rglob("*") if p.is_file()}
+
+
+def test_t4_duplicado_identico_se_borra_en_fase_2_y_la_raiz_sigue(tmp_casos_root):
+    from scripts.migrar_layout_intake import migrar
+
+    base = _caso_legacy_email(tmp_casos_root, "EV-149-T4", ficheros={
+        "03_Email/2026-02-01_asunto.eml": b"e",
+        "03_Email/_exported_ids.json": b'{"a": [1]}',
+    }, raiz=b'{"a": [1]}')
+    informe = {}
+    migrar("EV-149-T4", dry_run=False, informe=informe)
+    assert not (base / "03_Email" / "_exported_ids.json").exists()
+    assert (base / "_exported_ids.json").read_bytes() == b'{"a": [1]}'
+    assert informe["duplicados_borrados"] == ["03_Email/_exported_ids.json"]
+    assert informe["no_borrados"] == []
+
+
+def test_t5_duplicado_distinto_aborta_el_plan_sin_mover_nada_tambien_en_dry_run(tmp_casos_root):
+    import pytest
+
+    from scripts.migrar_layout_intake import EstadoDeCanalDivergenteError, migrar
+
+    base = _caso_legacy_email(tmp_casos_root, "EV-149-T5", ficheros={
+        "03_Email/2026-02-01_asunto.eml": b"e",
+        "03_Email/_exported_ids.json": b'{"a": [1]}',
+        "04_Manual/doc.pdf": b"m",
+    }, raiz=b'{"a": [1, 2]}')
+    antes = _arbol(base)
+    for dry in (True, False):
+        with pytest.raises(EstadoDeCanalDivergenteError) as exc:
+            migrar("EV-149-T5", dry_run=dry)
+        msg = str(exc.value)
+        assert "03_Email/_exported_ids.json" in msg and "00_Input/_exported_ids.json" in msg
+        assert _arbol(base) == antes            # byte a byte como estaba, en los dos modos
+    assert not [d for d in base.iterdir() if d.is_dir() and d.name[:4].isdigit()]  # sin lotes
+
+
+def test_t5b_la_raiz_aparece_entre_el_plan_y_la_fase_1_aborta_y_revierte(tmp_casos_root,
+                                                                        monkeypatch):
+    import shutil
+
+    import pytest
+
+    from scripts import migrar_layout_intake as mli
+
+    base = _caso_legacy_email(tmp_casos_root, "EV-149-T5B", ficheros={
+        "03_Email/2026-02-01_asunto.eml": b"e",
+        "03_Email/_exported_ids.json": b'{"a": [1]}',
+    })                                          # raíz AUSENTE en el plan → «mover»
+    antes = _arbol(base)
+    original = shutil.move
+
+    def move_que_hace_aparecer_la_raiz(src, dst):
+        # un email_export concurrente escribe el estado de canal en la raíz durante la fase 1
+        (base / "_exported_ids.json").write_bytes(b'{"a": [9]}')
+        return original(src, dst)
+
+    monkeypatch.setattr(shutil, "move", move_que_hace_aparecer_la_raiz)
+    with pytest.raises(RuntimeError, match="apareci"):
+        mli.migrar("EV-149-T5B", dry_run=False)
+    despues = _arbol(base)
+    despues.pop("_exported_ids.json")          # lo escribió el «concurrente», no la migración
+    assert despues == antes                     # todo lo movido volvió; nada borrado
+    assert (base / "03_Email" / "_exported_ids.json").read_bytes() == b'{"a": [1]}'
+
+
+def test_t5c_la_raiz_cambia_antes_del_unlink_no_se_borra_y_se_reporta(tmp_casos_root,
+                                                                      monkeypatch):
+    import shutil
+
+    from scripts import migrar_layout_intake as mli
+
+    base = _caso_legacy_email(tmp_casos_root, "EV-149-T5C", ficheros={
+        "03_Email/2026-02-01_asunto.eml": b"e",
+        "03_Email/_exported_ids.json": b'{"a": [1]}',
+    }, raiz=b'{"a": [1]}')                      # idénticos en el plan → «duplicado»
+    original = shutil.move
+
+    def move_que_cambia_la_raiz(src, dst):
+        (base / "_exported_ids.json").write_bytes(b'{"a": [1, 2]}')   # añadió ids
+        return original(src, dst)
+
+    monkeypatch.setattr(shutil, "move", move_que_cambia_la_raiz)
+    informe = {}
+    plan = mli.migrar("EV-149-T5C", dry_run=False, informe=informe)
+    assert plan                                                # la migración terminó
+    assert (base / "03_Email" / "_exported_ids.json").read_bytes() == b'{"a": [1]}'  # no borrado
+    assert (base / "_exported_ids.json").read_bytes() == b'{"a": [1, 2]}'
+    assert informe["duplicados_borrados"] == []
+    assert [n["fichero"] for n in informe["no_borrados"]] == ["03_Email/_exported_ids.json"]
+    lote = base / plan[0].lote
+    assert (lote / "2026-02-01_asunto.eml").is_file() and (lote / "_manifiesto.yaml").is_file()
+
+
+def test_t6_el_homonimo_anidado_va_al_lote_y_entra_en_el_mapping_m9(tmp_casos_root):
+    import json
+
+    from scripts.migrar_layout_intake import migrar
+
+    base = _caso_legacy_email(tmp_casos_root, "EV-149-T6", ficheros={
+        "03_Email/2026-02-01_asunto.eml": b"e",
+        "03_Email/hilo/_exported_ids.json": b"adjunto del cliente",
+        "03_Email/_exported_ids.json": b"{}",
+    })
+    plan = migrar("EV-149-T6", dry_run=False)
+    lote = base / plan[0].lote
+    assert (lote / "hilo" / "_exported_ids.json").read_bytes() == b"adjunto del cliente"
+    assert (base / "_exported_ids.json").read_bytes() == b"{}"        # el de canal, a la raíz
+    assert "03_Email/hilo/_exported_ids.json" in plan[0].mapping
+    m9 = json.loads((base / "_intake_hashes.json").read_text(encoding="utf-8"))
+    assert m9["sha-adj"]["primary_path"] == f"{plan[0].lote}/hilo/_exported_ids.json"
+    assert (base / m9["sha-adj"]["primary_path"]).is_file()
+    # y el albarán del lote lo lista como documento
+    from core.intake_lotes import leer_manifiesto
+    assert any(i["relpath"] == "hilo/_exported_ids.json" for i in leer_manifiesto(lote)["items"])

@@ -19,7 +19,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config import INTAKE_CONTROL_FILES, caso_path
+from .config import caso_path
+from .intake_control import es_fichero_de_protocolo
 from .utils import file_sha256
 
 
@@ -44,10 +45,6 @@ _RELEVANT_EXTS = {
     ".jpg", ".jpeg", ".png", ".tiff", ".tif",
     ".html", ".htm",
 }
-
-# Archivos de control que el inventario debe ignorar a cualquier nivel.
-# Lista ÚNICA en config.INTAKE_CONTROL_FILES (MEJORAS #54 T1).
-_CONTROL_FILES = INTAKE_CONTROL_FILES
 
 
 def _source_of(rel_parts: tuple[str, ...]) -> str:
@@ -90,9 +87,10 @@ def scan(case_id: str) -> Path:
     for path in sorted(input_dir.rglob("*")):
         if not path.is_file():
             continue
-        if path.name in _CONTROL_FILES:
-            continue
-        if path.name.startswith("_caso"):
+        # Protocolo por UBICACIÓN (MEJORAS #149): `_caso.md` y sus temporales `._caso.*`
+        # están en el registro de la raíz; un homónimo dentro de un lote es documento. El
+        # `_caso.md.bak_<ts>` de `migrate_05crm_buckets` cae a `skipped` por extensión.
+        if es_fichero_de_protocolo(path.relative_to(input_dir).as_posix()):
             continue
         if path.suffix.lower() not in _RELEVANT_EXTS:
             skipped.append(path.relative_to(input_dir).as_posix())

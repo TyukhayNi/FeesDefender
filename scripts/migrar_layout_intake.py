@@ -15,10 +15,25 @@ reversible (rollback = solo movimientos, nunca borrados) y M9/cobertura/
 catálogo (también fase 2) solo se tocan si la fase 1 completó entera — una
 migración a medias nunca deja los registros aguas abajo apuntando a rutas que
 ya no existen, ni borra nada.
+
+**Qué es estado de canal y qué es documento (MEJORAS #149, diseño rev. 2 §3.4).** Lo decide
+la UBICACIÓN, no el nombre: ``03_Email/_exported_ids.json`` y ``03_Email/_resolved_links.json``
+—directamente bajo el cajón— son estado de canal cuyo hogar desde #54 es la raíz de
+``00_Input/``; ``03_Email/hilo/_exported_ids.json`` es un adjunto, se mueve al lote con todo lo
+demás y entra en el ``mapping`` M9. El 2026-09-04 una versión que decidía por *basename* borró
+un adjunto legítimo homónimo y se revirtió entera.
+
+**La migración no borra lo que no acaba de comparar.** El duplicado de estado de canal solo
+se borra si es idéntico por ``sha256`` al de la raíz, y eso se comprueba TRES veces: en el
+plan (también con ``--dry-run``; distintos → se aborta antes de mover nada, nombrando los
+dos), al empezar a mover (si la raíz apareció entre el plan y la ejecución → se aborta y la
+fase 1 revierte), y **en el momento del** ``unlink()`` (si la raíz ya no existe o difiere →
+NO se borra y se reporta; dejar el fichero en su cajón es seguro y no exige rollback).
 """
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -28,6 +43,8 @@ import yaml
 from core import config, intake_log, intake_lotes, migrar_layout
 from core.case_manager import leer_estado_repositorio
 from core.config import caso_path
+from core.intake_control import es_fichero_de_protocolo
+from core.intake_manifest import compute_sha256
 
 app = typer.Typer(add_completion=False)
 
@@ -36,10 +53,18 @@ class CasoPrestadoError(RuntimeError):
     """El caso está prestado/conflicto: migrar tras el checkin (§7.6)."""
 
 
+class EstadoDeCanalDivergenteError(RuntimeError):
+    """El cajón legacy y la raíz tienen el mismo fichero de estado de canal con contenido
+    DISTINTO: son dos estados de momentos distintos y decidir cuál vale es del operador.
+    Se lanza ANTES de mover nada, también en ``--dry-run``."""
+
+
 def _write_atomico(path: Path, text: str) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    # Temporal con la forma `._<nombre>.<pid>.tmp`: casa con `intake_control.RAIZ_PREFIJOS`
+    # para `_intake_hashes.json`, así un huérfano tampoco es documento (rev. 2 §3.4).
+    tmp = path.parent / f".{path.name}.{os.getpid()}.tmp"
     tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    os.replace(tmp, path)
 
 
 def _json_atomico(path: Path, data) -> None:
@@ -55,15 +80,49 @@ def _yaml_atomico(path: Path, data) -> None:
 
 
 def _mapping_documental(mov: migrar_layout.MovimientoCajon) -> dict[str, str]:
-    """Sub-mapping de ``mov`` excluyendo los ficheros de control del canal
-    email, que se desvían a la raíz de 00_Input/ y nunca llegan al lote."""
-    if mov.cajon != "03_Email":
-        return mov.mapping
-    return {k: v for k, v in mov.mapping.items()
-            if Path(k).name not in config.INTAKE_CONTROL_FILES}
+    """Sub-mapping de ``mov`` sin el estado de canal que se desvía a la raíz de
+    ``00_Input/`` y nunca llega al lote. Por (directorio, nombre): el homónimo ANIDADO sí
+    va al lote y sí está aquí (rev. 2 §3.4 regla 1)."""
+    return {k: v for k, v in mov.mapping.items() if not es_fichero_de_protocolo(k)}
 
 
-def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon]:
+def _estado_de_canal_legacy(base: Path,
+                            plan: list[migrar_layout.MovimientoCajon]) -> dict[str, dict]:
+    """Decisión por cada fichero de estado de canal directamente bajo un cajón del plan.
+
+    Devuelve ``{"<cajon>/<nombre>": {"accion": "mover" | "duplicado", "sha256": ...}}``.
+    Lanza :class:`EstadoDeCanalDivergenteError` si la raíz ya tiene el fichero y difiere.
+    """
+    decisiones: dict[str, dict] = {}
+    for mov in plan:
+        cajon_dir = base / mov.cajon
+        if not cajon_dir.is_dir():
+            continue
+        for hijo in sorted(cajon_dir.iterdir()):
+            if not hijo.is_file():
+                continue
+            rel = f"{mov.cajon}/{hijo.name}"
+            if not es_fichero_de_protocolo(rel):
+                continue
+            destino = base / hijo.name
+            sha = compute_sha256(hijo)
+            if destino.is_file():
+                sha_raiz = compute_sha256(destino)
+                if sha_raiz != sha:
+                    raise EstadoDeCanalDivergenteError(
+                        f"Estado de canal divergente: `00_Input/{rel}` (sha256 {sha[:12]}…) y "
+                        f"`00_Input/{hijo.name}` (sha256 {sha_raiz[:12]}…) son distintos. No se "
+                        "mueve nada: decide cuál vale y retira el otro antes de migrar.")
+                decisiones[rel] = {"accion": "duplicado", "sha256": sha}
+            else:
+                decisiones[rel] = {"accion": "mover", "sha256": sha}
+    return decisiones
+
+
+def migrar(case_id: str, *, dry_run: bool,
+           informe: dict | None = None) -> list[migrar_layout.MovimientoCajon]:
+    """Migra el caso. ``informe`` (opcional, se rellena) recibe ``estado_de_canal``
+    (decisiones del plan), ``duplicados_borrados`` y ``no_borrados`` (con motivo)."""
     estado = leer_estado_repositorio(case_id)
     if estado in (config.ESTADO_REPO_PRESTADO, config.ESTADO_REPO_CONFLICTO):
         raise CasoPrestadoError(
@@ -71,6 +130,11 @@ def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon
             "(desviar medio árbol a la bandeja no tiene sentido, spec §7.6).")
     base = caso_path(case_id) / "00_Input"
     plan = migrar_layout.plan_migracion(base)
+    # Regla 2 (rev. 2 §3.4): la comparación por hash va EN EL PLAN, también en dry-run, y
+    # aborta antes de mover nada si los dos estados de canal difieren.
+    decisiones = _estado_de_canal_legacy(base, plan)
+    if informe is not None:
+        informe["estado_de_canal"] = decisiones
     if dry_run or not plan:
         return plan
 
@@ -78,26 +142,31 @@ def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon
     hechos: list[tuple[Path, Path]] = []
     lotes_creados: list[Path] = []
     mapping_total: dict[str, str] = {}
-    duplicados_a_borrar: list[Path] = []
+    duplicados_a_borrar: list[tuple[Path, Path, str]] = []   # (anidado, raíz, sha en el plan)
     try:
         for mov in plan:
             cajon_dir, lote_dir = base / mov.cajon, base / mov.lote
             lote_dir.mkdir(parents=True, exist_ok=False)
             lotes_creados.append(lote_dir)
             for hijo in sorted(cajon_dir.iterdir()):
-                if (mov.cajon == "03_Email"
-                        and hijo.name in config.INTAKE_CONTROL_FILES):
+                rel = f"{mov.cajon}/{hijo.name}"
+                if hijo.is_file() and rel in decisiones:
                     # estado de canal → raíz de 00_Input (hogar desde #54), no al lote
                     destino = base / hijo.name
-                    if not destino.exists():
+                    if decisiones[rel]["accion"] == "mover":
+                        if destino.exists():
+                            # Regla 3: apareció entre el plan y la ejecución. Abortar aquí es
+                            # barato: la fase 1 es reversible y no se ha borrado nada.
+                            raise EstadoDeCanalDivergenteError(
+                                f"`00_Input/{hijo.name}` apareció después de planificar la "
+                                f"migración; `00_Input/{rel}` no se mueve. Vuelve a lanzar.")
                         shutil.move(str(hijo), str(destino))
                         hechos.append((hijo, destino))
                     else:
-                        # ya consolidado en la raíz: el duplicado NO se borra
-                        # aquí (Finding 1) — un borrado en fase 1 no sería
-                        # reversible por el rollback. Se deja en su sitio y
-                        # se borra en fase 2, solo si la fase 1 completa entera.
-                        duplicados_a_borrar.append(hijo)
+                        # ya consolidado en la raíz: el duplicado NO se borra aquí — un
+                        # borrado en fase 1 no sería reversible por el rollback. Se borra
+                        # en fase 2, solo si la fase 1 completa entera Y sigue idéntico.
+                        duplicados_a_borrar.append((hijo, destino, decisiones[rel]["sha256"]))
                     continue
                 destino = lote_dir / hijo.name
                 shutil.move(str(hijo), str(destino))
@@ -119,8 +188,25 @@ def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon
 
     # --- Fase 2: borrado de duplicados + manifiestos + remaps + evento ----
     # (solo se ejecuta si la fase 1 completó entera)
-    for hijo in duplicados_a_borrar:
+    borrados: list[str] = []
+    no_borrados: list[dict] = []
+    for hijo, destino, sha_plan in duplicados_a_borrar:
+        # Regla 4: releer AMBOS en el momento de borrar. Solo se borra lo que acaba de
+        # demostrarse idéntico; lo demás se deja en su cajón (seguro, sin rollback) y se dice.
+        rel = hijo.relative_to(base).as_posix()
+        if not destino.is_file():
+            no_borrados.append({"fichero": rel, "motivo": "la raíz ya no tiene el fichero"})
+            continue
+        sha_hijo, sha_raiz = compute_sha256(hijo), compute_sha256(destino)
+        if not (sha_hijo == sha_raiz == sha_plan):
+            no_borrados.append({"fichero": rel,
+                                "motivo": "el contenido cambió desde el plan (raíz o cajón)"})
+            continue
         hijo.unlink()
+        borrados.append(rel)
+    if informe is not None:
+        informe["duplicados_borrados"] = borrados
+        informe["no_borrados"] = no_borrados
     for mov in plan:
         lote_dir = base / mov.lote
         intake_lotes.escribir_manifiesto(
@@ -149,14 +235,16 @@ def migrar(case_id: str, *, dry_run: bool) -> list[migrar_layout.MovimientoCajon
         _yaml_atomico(cat_path, entries)
 
     intake_log.append_event(case_id, "migracion_layout_intake", details={
-        "lotes": [m.lote for m in plan], "remapeados": remapeados})
+        "lotes": [m.lote for m in plan], "remapeados": remapeados,
+        "duplicados_borrados": borrados, "no_borrados": no_borrados})
     return plan
 
 
 @app.command()
 def main(case_id: str, dry_run: bool = typer.Option(False, "--dry-run")) -> None:
+    informe: dict = {}
     try:
-        plan = migrar(case_id, dry_run=dry_run)
+        plan = migrar(case_id, dry_run=dry_run, informe=informe)
     except CasoPrestadoError as exc:
         typer.echo(f"[ERROR] {exc}", err=True)
         raise typer.Exit(code=1)
@@ -170,6 +258,12 @@ def main(case_id: str, dry_run: bool = typer.Option(False, "--dry-run")) -> None
         n_docs = len(_mapping_documental(mov))
         typer.echo(f"{'[dry-run] ' if dry_run else ''}{mov.cajon} → {mov.lote} "
                    f"({n_docs} ficheros)")
+    for rel, d in informe.get("estado_de_canal", {}).items():
+        typer.echo(f"{'[dry-run] ' if dry_run else ''}estado de canal {rel}: {d['accion']}")
+    for rel in informe.get("duplicados_borrados", []):
+        typer.echo(f"borrado el duplicado {rel} (idéntico a la raíz, verificado al borrar)")
+    for item in informe.get("no_borrados", []):
+        typer.echo(f"[AVISO] NO borrado {item['fichero']}: {item['motivo']}", err=True)
 
 
 if __name__ == "__main__":

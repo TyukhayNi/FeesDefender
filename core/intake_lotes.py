@@ -20,11 +20,9 @@ from . import config
 from .config import caso_path
 from .intake_manifest import compute_sha256
 
-MANIFIESTO_LOTE = "_manifiesto.yaml"
+from .intake_control import PATRON_LOTE, es_fichero_de_protocolo  # noqa: F401 (re-export)
 
-PATRON_LOTE = re.compile(
-    r"^(\d{4}-\d{2}-\d{2})_(whatsapp|email|manual|entrevista)_(\d{2,})$"
-)
+MANIFIESTO_LOTE = "_manifiesto.yaml"
 
 ESPEJOS = {"01_Drive EV": "drive_ev", "05_CRM": "crm"}
 CAJONES_LEGACY = {
@@ -186,7 +184,14 @@ def anexar_items(lote_dir: Path, items: list[ItemManifiesto], *, origen: str) ->
 def items_desde_disco(lote_dir: Path, *,
                       message_id_de: dict[str, str] | None = None,
                       duplicados: dict[str, str] | None = None) -> list[ItemManifiesto]:
-    """Inventaría el lote para el albarán, excluyendo control y el propio manifiesto."""
+    """Inventaría el lote para el albarán.
+
+    Queda fuera SOLO lo que es protocolo **en su ubicación** (`MEJORAS #149`): el
+    `_manifiesto.yaml` de la raíz del lote. Un `_manifiesto.yaml` anidado, o un
+    `.pulled`/`_exported_ids.json` dentro del lote —donde ningún escritor los pone— son
+    adjuntos del cliente y ENTRAN en el albarán. El lote desviado a la bandeja conserva su
+    nombre, así que la regla no cambia allí.
+    """
     lote_dir = Path(lote_dir)
     message_id_de = message_id_de or {}
     duplicados = duplicados or {}
@@ -194,9 +199,9 @@ def items_desde_disco(lote_dir: Path, *,
     for p in sorted(lote_dir.rglob("*")):
         if not p.is_file():
             continue
-        if p.name in config.INTAKE_CONTROL_FILES or p.name == MANIFIESTO_LOTE:
-            continue
         rel = p.relative_to(lote_dir).as_posix()
+        if es_fichero_de_protocolo(f"{lote_dir.name}/{rel}"):
+            continue
         items.append(ItemManifiesto(
             relpath=rel, sha256=compute_sha256(p), size=p.stat().st_size,
             tipo_contenido=clasificar_tipo_contenido(p.name),
