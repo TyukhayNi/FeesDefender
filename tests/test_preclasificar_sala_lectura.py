@@ -108,6 +108,94 @@ def test_fecha_de_nombre():
     assert preclasificar.fecha_de_nombre("oferta_suelta.eml") == "0000-00-00"
 
 
+# ── MEJORAS #131 (PLAN fila #18): el centinela «sin fecha» es truthy y hay que preguntar bien ──
+
+def test_131_el_centinela_es_publico_truthy_y_tiene_fecha_lo_reconoce():
+    """El valor «sin fecha» va en nombres canónicos y en el manifiesto, así que es una
+    cadena no vacía: `not` NO lo detecta. La pregunta correcta es `tiene_fecha`."""
+    assert preclasificar.SIN_FECHA == "0000-00-00"
+    assert preclasificar.fecha_de_nombre("oferta_suelta.eml") == preclasificar.SIN_FECHA
+    assert bool(preclasificar.SIN_FECHA) is True            # la trampa, documentada
+    assert preclasificar.tiene_fecha(preclasificar.SIN_FECHA) is False
+    assert preclasificar.tiene_fecha(preclasificar.fecha_de_nombre("oferta_suelta.eml")) is False
+    assert preclasificar.tiene_fecha("2025-03-20") is True
+    assert preclasificar.tiene_fecha(None) is False
+    assert preclasificar.tiene_fecha("") is False
+    assert preclasificar.tiene_fecha("0000-00-00 (*)") is False
+    assert preclasificar.tiene_fecha("2025-03 (*)") is False   # aproximada: sigue sin fecha cierta
+
+
+def test_131_candidatos_sin_fecha_es_el_filtro_del_paso_1bis_d():
+    """Reproduce el defecto de W-02X1WJ: con el filtro a mano `not f["fecha"]` salían 0;
+    el helper devuelve exactamente los binarios opacos sin fecha real."""
+    filas = [
+        {"nombre_canonico": "0000-00-00_burofax.pdf", "fecha": "0000-00-00", "sha256": "a"},
+        {"nombre_canonico": "0000-00-00_foto.jpg", "fecha": preclasificar.SIN_FECHA, "sha256": "b"},
+        {"nombre_canonico": "2025-04-08_burofax.pdf", "fecha": "2025-04-08", "sha256": "c"},
+        {"nombre_canonico": "0000-00-00_hilo.eml", "fecha": "0000-00-00", "sha256": "d"},  # no opaco
+        {"nombre_canonico": "sin_fecha_clave.pdf", "fecha": None, "sha256": "e"},
+        {"nombre_canonico": "2025-03 (*)_escritura.pdf", "fecha": "2025-03 (*)", "sha256": "f"},
+    ]
+    a_mano = [f for f in filas if not f["fecha"]]
+    assert [f["sha256"] for f in a_mano] == ["e"]              # el filtro que falló: 1 de 4
+    candidatos = preclasificar.candidatos_sin_fecha(filas)
+    assert [f["sha256"] for f in candidatos] == ["a", "b", "e", "f"]
+    assert candidatos[0] is filas[0]                           # las filas mismas, para rellenar en sitio
+
+
+def test_131_la_skill_cita_el_helper_en_el_paso_1bis():
+    """Condición de cierre de MEJORAS #131: existe el helper Y la skill lo cita en el paso que
+    lo necesita (entre el encabezado `1-bis.` y el subpaso `e.`). **Lo que este guard NO
+    garantiza, y lo dice:** que el ejecutor lo llame, ni que no haya una instrucción
+    contraria escrita al lado — es un guard de cita, no de semántica (R1/H-03 de Codex lo
+    midió). Se ancla al helper, no a la redacción del paso, para no dar rojo por una
+    paráfrasis inocua."""
+    skill = (Path(__file__).parent.parent / ".claude/skills/organizar-sala-lectura/SKILL.md"
+             ).read_text(encoding="utf-8")
+    ini = skill.index("1-bis. **Pre-clasifica")
+    fin = skill.index("`subcategoria_crm(ruta)`", ini)
+    tramo = skill[ini:fin]
+    pos = tramo.find("candidatos_sin_fecha(filas)")
+    assert pos != -1, "el Paso 1-bis ya no cita candidatos_sin_fecha(filas)"
+    assert "SIN_FECHA" in tramo and "truthy" in tramo
+    assert "ValueError" in tramo                 # el esquema de filas y su fallo ruidoso, citados
+
+
+def test_131_el_helper_acepta_las_filas_del_paso_1_y_falla_ruidoso_sin_ruta():
+    """R1/H-01: las filas del Paso 1 llevan `ruta`/`nombre`, no `ruta_original`; con el
+    helper anterior daban 0 candidatos EN SILENCIO — el mismo defecto que venía a arreglar."""
+    import pytest
+    fila_paso1 = {"ruta": "2026-09-01_email_01/adjuntos/doc.PDF", "nombre": "doc.PDF",
+                  "sha256": "a", "fecha": preclasificar.SIN_FECHA}
+    assert preclasificar.candidatos_sin_fecha([fila_paso1]) == [fila_paso1]
+    solo_ruta_original = {"ruta_original": "01_Drive EV/escaneo.pdf", "fecha": "0000-00-00"}
+    assert preclasificar.candidatos_sin_fecha([solo_ruta_original]) == [solo_ruta_original]
+    bundle = {"nombre_origen": "0000-00-00_foto.heic", "fecha": "0000-00-00"}
+    assert preclasificar.candidatos_sin_fecha([bundle]) == [bundle]
+    with pytest.raises(ValueError, match="sin ruta ni nombre"):
+        preclasificar.candidatos_sin_fecha([{"sha256": "x", "fecha": "0000-00-00"}])
+    with pytest.raises(TypeError, match="clasificar_por_patron"):
+        preclasificar.candidatos_sin_fecha([("01. ACTIVACION", "patron")])
+
+
+def test_131_las_imagenes_opacas_son_las_que_la_sala_de_maquina_convierte():
+    """R1/H-02: faltaba `heif`, que `core/anon/imagen_a_pdf` sí convierte. La frontera es la
+    lista de imágenes del core, no un nombre más."""
+    from core import sala_maquina
+    imagenes_core = {e.lstrip(".") for e in sala_maquina._EXTS_IMAGEN}
+    assert imagenes_core <= preclasificar._EXT_OPACAS, sorted(imagenes_core - preclasificar._EXT_OPACAS)
+    assert "pdf" in preclasificar._EXT_OPACAS
+    for nombre in ("doc.heif", "doc.HEIC", "doc.PDF", "Doc.Tiff"):
+        assert preclasificar.candidatos_sin_fecha([{"nombre_canonico": nombre, "fecha": "0000-00-00"}])
+
+
+def test_131_tiene_fecha_no_valida_calendario_pero_si_ausencia():
+    """R1/H-04: el contrato dice lo que hace. Y los supervivientes m13/m14 de la ronda."""
+    assert preclasificar.tiene_fecha("2025-02-31") is True      # no valida calendario, y lo dice
+    assert preclasificar.tiene_fecha("   ") is False            # m13: sin strip, «   » sería fecha
+    assert preclasificar.tiene_fecha("0000-00-00T00:00") is False  # m14: prefijo, no igualdad
+
+
 def test_subcategoria_crm_extrae_la_subcarpeta():
     assert preclasificar.subcategoria_crm("sudespacho_602/civil/auto_inadmite_diligencias_preliminares.pdf") == "civil"
     assert preclasificar.subcategoria_crm("01_Drive EV/OFERTA.PDF") is None
