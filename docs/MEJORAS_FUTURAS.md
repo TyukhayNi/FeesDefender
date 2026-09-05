@@ -6352,6 +6352,13 @@ apoyarse en el recuento de referencias del entrypoint.
 
 ## 144. V1 no cuenta los documentos que el OCR no pudo procesar
 
+> ✅ **CERRADO 2026-09-03 — PR #265 (`c17a9e3`).** `scripts/sala_maquina.apply` devuelve un
+> `ResultadoApply` (objeto, no `str | None`) con `status_atomizacion` y `documentos_agotados`, y
+> `etapa_sala_maquina` (`scripts/abrir_caso.py`) levanta el pendiente **`ocr_documentos_agotados`**
+> con la cuenta y el reintento (`sala_maquina apply --force`, o `--solo <ruta>`), así que el evento
+> `apertura_v1_terminada` y `_apertura_v1.json` ya lo dicen. 35/35 mutantes muertos por su
+> frontera (F37/F38). Texto original conservado como histórico.
+
 **Medido el 2026-09-03 en la corrida real de la Task 11 sobre W-02Q38C**, que es exactamente lo que
 una apertura de verdad enseña y una fixture no.
 

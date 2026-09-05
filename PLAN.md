@@ -1525,8 +1525,10 @@ puro + orquestadores finos. Spec: `docs/superpowers/specs/2026-07-09-abrir-caso-
   2026-08-01, ver `docs/DEAD_ENDS.md`):
   1. `get_expediente_judicial()`/`update_expediente_judicial()` en `sudespacho_create.py`
      (mirror de `get_expediente`/`update_expediente`).
-  2. `ensure_contrario_vinculado_judicial()` en `sudespacho_relations.py` (mirror de
-     `ensure_contrario_vinculado`, usando `link_contrario_judicial`).
+  2. ✅ `ensure_contrario_vinculado_judicial()` en `sudespacho_relations.py` (mirror de
+     `ensure_contrario_vinculado`, usando `link_contrario_judicial`) — **hecha en PR #272**
+     (`ecc21ac`, 2026-09-04), con dedup por NIF. Las piezas 1, 3 y 4 siguen pendientes
+     (verificado con grep el 2026-09-05).
   3. `link_juzgado_judicial(exp_id, juzgado_id, num_autos, fase_procedimiento)` — nuevo,
      implementa la secuencia de §12.5 resolviendo `fase_procedimiento` vía
      `GET /api/view/enums/autos/fase_procedimiento` (nunca hardcodeado).

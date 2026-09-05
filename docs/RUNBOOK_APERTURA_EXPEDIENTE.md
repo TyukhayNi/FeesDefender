@@ -144,30 +144,83 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   --fuente drive_ev --crm api --cuantia <n> --yes --force
 ```
 
-> **Modo V1 (`--modo v1`) — hoy es una PUERTA, todavía no la secuencia.** Lo escribo así porque
-> la primera versión de este bloque decía «la primera vertical **se ejecuta con**…», y eso era
-> falso: el Plan 1 acota el modo, no lo cablea. Lo declaró R6/H6-09.
+> **`[APER-58]` Modo V1 (`--modo v1`) — desde el 2026-09-03 es la SECUENCIA, no solo la puerta.**
+> Este bloque dijo durante diez días «hoy es una PUERTA, todavía no la secuencia» y que el
+> encadenado «llega con el Plan 5». El Plan 5 se cableó en los PRs #263–#266 (`67063f2`…`4d75e6e`);
+> lo que sigue describe lo que el modo hace **hoy**, leído de `scripts/abrir_caso.py` y
+> `core/apertura_v1.py`.
 >
-> **Lo que el modo ya hace.** `--modo v1` es el **discriminante**: rechaza, antes de resolver
-> identidad, de `ensure_case`, de todo intake y de toda lectura remota, las cinco invocaciones que
-> V1 prohíbe — `--crm` distinto de `skip` (el default es `api` y alcanza un POST de alta),
-> `--fuente email|manual|whatsapp` (`email` ejecuta `email_export.export_label`, o sea Gmail),
-> `--force` sin `--case-id` (crearía una carpeta sombra: criterio 33), `--dry-run` (en `drive_ev`
-> el pull es real igual y la corrida sale sin terminar en ninguno de los tres estados) y la falta
-> de `--folder-id`. Los errores se acumulan: se ven todos en una pasada.
+> **Lo que encadena, y en qué orden** (`secuencia_v1`, spec §24 D3): **`drive` → `crm` →
+> `sala_maquina`**, las tres bajo **un único mutex del caso** — el mismo que protege el modo
+> `libre`. (1) `drive` materializa la carpeta de Drive E&V con custodia y **siempre con
+> `force=True`**: en cada ronda se consulta el remoto y `rclone` transfiere solo lo que difiere; el
+> `.pulled` no ahorra la consulta. (2) `crm` hace el pull del expediente **ya registrado en
+> `_caso.md`** (`sudespacho_expedientes`); si no hay ninguno la etapa sale `saltada` con el
+> pendiente `crm_sin_expediente` (el alta CRM es de V2), y si el registrado es **judicial** la etapa
+> **falla**: V1 no tiene adaptador judicial. (3) `sala_maquina` = `scripts.sala_maquina.apply`,
+> que lleva **dentro** la atomización del correo ya depositado y después el OCR + espejos MD; por
+> eso el gotcha «atomizar y pull ANTES del OCR» se cumple por construcción.
 >
-> **Ojo con el comando de arriba:** lleva `--crm api` y `--force`. Copiarlo y añadirle `--modo v1`
-> aborta, y debe abortar. La forma V1 es `--modo v1 --crm skip --fuente drive_ev --folder-id <id>`.
+> **Los tres estados finales** (`core/apertura_v1.py`, `EstadoV1`): `completo`,
+> `preparado_con_pendientes` y `bloqueado`. Un `fallo` en cualquier etapa corta la secuencia y da
+> **`bloqueado`** (código de salida **1**; los otros dos salen **0**). **`completo` no se alcanza
+> nunca en V1**: la lista de pendientes arranca con el permanente `fuentes_v3_sin_consultar` (Gmail
+> y LeadHub son de V3), así que una corrida sin fallos termina siempre `preparado_con_pendientes`.
+> Otros pendientes que puede levantar: `crm_gestor_vacio`, `ocr_documentos_agotados` (documentos
+> con los intentos de OCR agotados: **su texto NO está en el corpus**, mirarlos a mano),
+> `atomizacion_parcial` y `etapa_no_ejecutada:<etapa>` (por parada pedida o fallo anterior).
 >
-> **Lo que el modo NO hace todavía.** No encadena el pull de Sudespacho, ni la atomización local
-> del correo ya depositado, ni la sala de máquina, que son parte de V1 (§21). Eso llega con el
-> Plan 5. Hasta entonces, una corrida en `--modo v1` es una apertura acotada y reconocible, **no**
-> la secuencia V1 completa, y no puede declararse `completo`.
+> **Rastro durable.** El evento `apertura_v1_terminada` en `_intake_log.jsonl` (estado, parada,
+> pendientes, etapas) y el marcador `00_Input/_apertura_v1.json` con la ronda (`ronda_id`,
+> `iniciada`, `terminada`, `estado`, `etapas`). Si una ronda murió a medias, la siguiente corrida
+> avisa «la ronda … no llegó a cerrarse» y no da por buena su salida. Si se perdió el mutex durante
+> la corrida **no se escribe nada**, ni siquiera un `bloqueado`: revisar el caso antes de reintentar.
 >
-> **Sin `--modo`**, el comportamiento es el de siempre (`libre`) — el que usan V2, V3 y el uso ad
-> hoc. La única diferencia observable es que `--help` ahora lista una opción más.
+> **Comando de apertura en V1** (`--codigo-caso`, `--sufijo` y `--team-id` se auto-derivan de
+> `--folder-id`, como en `libre` — B5, `[APER-34]`; `--yes` porque la colisión del código `BaRS<N>`
+> es la norma y `--force` está prohibido sin `--case-id`):
 >
-> Contrato: spec de apertura integral §24 D3 y §21; adjudicación de R6 en el §6 del plan
+> ```powershell
+> python -m scripts.abrir_caso --modo v1 --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VUELTA `
+>   --direccion "..." --folder-id <id> --fuente drive_ev --crm skip --yes
+> ```
+>
+> **Comando de continuación** (reanudar tras un corte, o segunda ronda tras depositar más
+> material): se relanza con **`--case-id`**, que es excluyente con los seis flags de identidad
+> (con ellos daría `ColisionCaso`); `--folder-id` sigue siendo obligatorio en V1 y de él se deriva
+> `--team-id`. Para **parar** tras una etapa, `--hasta drive|crm|sala_maquina`:
+>
+> ```powershell
+> python -m scripts.abrir_caso --modo v1 --case-id W-XXXXXX --folder-id <id> --crm skip
+> python -m scripts.abrir_caso --modo v1 --case-id W-XXXXXX --folder-id <id> --crm skip --hasta crm
+> ```
+>
+> Relanzar **repite la secuencia entera desde `drive`**: el código no lee `_apertura_v1.json` para
+> saltar etapas. Lo ya hecho no se rehace porque cada etapa es idempotente (el pull transfiere solo
+> lo que difiere; la sala de máquina salta lo ya procesado — punto fijo medido en W-02Q38C:
+> `0 depositables, 38 duplicados omitidos`), no porque se salte. `--hasta` solo existe en `v1`: en
+> `libre` aborta.
+>
+> **La puerta sigue igual.** `--modo v1` rechaza, antes de resolver identidad, de `ensure_case`, de
+> todo intake y de toda lectura remota, las cinco invocaciones que V1 prohíbe (`validar_modo`) —
+> `--crm` distinto de `skip` (el default es `api` y alcanza un POST de alta), `--fuente
+> email|manual|whatsapp` (`email` ejecuta `email_export.export_label`, o sea Gmail), `--force` sin
+> `--case-id` (crearía una carpeta sombra: criterio 33), `--dry-run` (en `drive_ev` el pull es real
+> igual y la corrida saldría sin terminar en ninguno de los tres estados) y la falta de
+> `--folder-id`. También un `--hasta` fuera del vocabulario. Los errores se acumulan: se ven todos
+> en una pasada.
+>
+> **Ojo con el comando de arriba (el de `libre`):** lleva `--crm api` y `--force`. Copiarlo y
+> añadirle `--modo v1` aborta, y debe abortar.
+>
+> **Lo que V1 sigue sin cubrir.** No descubre correo en Gmail ni consulta LeadHub (V3: por eso el
+> pendiente permanente); no da de alta en el CRM (V2); no tiene rama **judicial**; y no admite las
+> fuentes `email|manual|whatsapp`. Todo eso sigue por el modo **`libre`** (`--fuente email …`,
+> `--crm api`, etc.), que es el de siempre y el del comando de arriba.
+>
+> Contrato: spec de apertura integral §24 D3/D4, §13 y §21; plan de cableado
+> `docs/superpowers/plans/2026-09-03-apertura-v1-plan5-cableado.md` (rondas R-A/R-B/R-C
+> adjudicadas en sus actas hermanas); la puerta, en el §6 del plan
 > `docs/superpowers/plans/2026-08-24-apertura-v1-plan1-modo-v1.md`.
 
 - **`[APER-56]` NUNCA pases un `/` en `--direccion`: parte la carpeta en dos y la corrida
@@ -466,14 +519,18 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
 > `python -m scripts.crm_ficha --case-id <W-code o case_id>` desde `00_Input/_ficha_crm.yaml`
 > (B1, PR-3; el YAML lleva PII → solo en `data/CASOS/`). Hace GET de verificación tras escribir.
 >
-> **`[APER-49]` / W-02ZIIF — `crm_ficha.py` es EXTRAJUDICIAL-ONLY** (verificado en el
-> código 2026-07-22: hardcodea `_ELEMENT_EXTRAJUDICIAL`, usa `link_ev_mmc` /
-> `ensure_contrario_vinculado` / `get_expediente` / `update_expediente` — ninguno tiene
-> equivalente `_judicial` cableado en este CLI). **Para un caso judicial hoy no hay
-> orquestador**: hay que llamar `create_expediente_judicial` + `link_ev_mmc_judicial` +
-> `link_contrario_judicial` + `ensure_colaborador_vinculado_judicial` a mano — no existen
-> todavía `ensure_contrario_vinculado_judicial`, `get_expediente_judicial` ni
-> `update_expediente_judicial`. Documentado como hueco pendiente, no como resuelto.
+> **`[APER-49]` / W-02ZIIF — `crm_ficha.py` es EXTRAJUDICIAL-ONLY** (re-verificado en el
+> código el 2026-09-05: hardcodea `_ELEMENT_EXTRAJUDICIAL` y usa `link_ev_mmc` /
+> `ensure_contrario_vinculado` / `ensure_colaborador_vinculado` / `get_expediente` /
+> `update_expediente`; no ramifica a judicial). **Para un caso judicial hoy no hay orquestador**:
+> se llama a mano, en `core/sudespacho_create.py` y `core/sudespacho_relations.py`, lo que **sí
+> existe** — `create_expediente_judicial`, `link_ev_mmc_judicial`,
+> **`ensure_contrario_vinculado_judicial`** (dedup por NIF, mismo elemento `clientes_contrarios`
+> que el extrajudicial; llegó en el PR #272, `ecc21ac`, 2026-09-04), `link_contrario_judicial` y
+> `ensure_colaborador_vinculado_judicial`. Lo que **no existe** todavía: `get_expediente_judicial`,
+> `update_expediente_judicial` y `link_juzgado_judicial` (piezas 1, 3 y 4 de «F3-judicial (parte
+> B)» en `PLAN.md`, que es donde vive su estado). Para leer o editar un expediente judicial hoy no
+> hay helper cableado; para el juzgado, ver el punto 7 de la checklist.
 
 **Checklist de la ficha (extrajudicial — ver aviso de arriba para judicial):**
 1. **Tags equipo (rojo) + ciudad (azul):** los pone **el alta** (`crm_payload` los deriva del
