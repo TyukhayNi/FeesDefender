@@ -294,6 +294,86 @@ class TestElColaboradorExistenteSeCOMPLETA:
         leer.assert_not_called()
 
 
+class TestLaFichaLeidaConTipoInesperadoNoPierdeElVinculo:
+    """H-09 MEDIO (revision R1): `_parse_values` preserva el tipo del JSON (la
+    anotacion `dict[str, str]` no lo valida), y `_completar_colaborador_existente`
+    hacia `.strip()` directamente sobre `actual.get(prop)` -- si el CRM devuelve un
+    NUMERO donde se esperaba texto, eso lanza `AttributeError` FUERA de cualquier
+    `try`, y la excepcion se lleva por delante el vinculo del expediente entero
+    (`link_colaborador` nunca llega a llamarse)."""
+
+    def test_un_movil_numerico_en_la_respuesta_no_lanza_y_permite_el_vinculo(self):
+        """Entrada literal del informe (H-09, repros.json clave
+        'crm_valor_numerico'): GET simulado HTTP 200 con
+        `{"values":[{"property":{"name":"movil"},"value":612345678}]}` -- un
+        entero JSON, no una cadena."""
+        from core.sudespacho_relations import NuevoColaborador, ensure_colaborador_vinculado
+
+        datos = NuevoColaborador(nombre="ANA", movil="611111111")
+        vincular = MagicMock()
+        with patch("core.sudespacho_relations._resolver_colaborador", return_value="466"), \
+             patch("core.sudespacho_relations.get_colaborador",
+                   return_value={"movil": 612345678}), \
+             patch("core.sudespacho_relations.link_colaborador", vincular), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            cid, creado = ensure_colaborador_vinculado("600", datos)
+
+        assert (cid, creado) == ("466", False), (
+            "con el defecto vivo, el AttributeError escapaba de aqui")
+        vincular.assert_called_once(), "perder el vinculo es peor que perder un telefono"
+
+
+class TestElPUTNoSeDaPorCompletadoSinAcreditarlo:
+    """H-12 MEDIO (revision R1): se registraba 'completado' con solo comprobar que
+    hubo un HTTP 200, sin mirar si el CUERPO de la respuesta acredita el campo
+    escrito. El proyecto tiene una regla explicita -- verificar por resultado,
+    nunca por status -- y aqui un 200 con cuerpo vacio se daba por bueno."""
+
+    def test_un_200_con_cuerpo_vacio_no_se_confirma_pero_SI_vincula(self, caplog):
+        """Entrada literal del informe (H-12, repros.json clave
+        'crm_200_sin_verificacion'): GET simulado `{'movil': ''}`, DTO con movil
+        '611111111', PUT simulado HTTP 200 con JSON `{}` -- que no acredita NINGUN
+        campo actualizado."""
+        import logging
+
+        from core.sudespacho_relations import NuevoColaborador, ensure_colaborador_vinculado
+
+        datos = NuevoColaborador(nombre="ANA", movil="611111111")
+        vincular = MagicMock()
+        with patch("core.sudespacho_relations._resolver_colaborador", return_value="466"), \
+             patch("core.sudespacho_relations.get_colaborador",
+                   return_value={"movil": ""}), \
+             patch("core.sudespacho_relations.update_colaborador", return_value={}), \
+             patch("core.sudespacho_relations.link_colaborador", vincular), \
+             patch("core.sudespacho_relations.SudespachoLegacyClient", MagicMock()):
+            with caplog.at_level(logging.INFO, logger="core.sudespacho_relations"):
+                cid, creado = ensure_colaborador_vinculado("600", datos)
+
+        assert (cid, creado) == ("466", False)
+        vincular.assert_called_once(), "el vinculo se conserva aunque no se verifique el PUT"
+        mensajes = " ".join(r.message for r in caplog.records)
+        assert "completado con ['movil']" not in mensajes, (
+            "un cuerpo {} no acredita que 'movil' se escribiera")
+
+    def test_un_200_con_cuerpo_no_parseable_no_fabrica_una_respuesta(self, monkeypatch):
+        """El sub-hallazgo del `except` de `update_colaborador`: si el cuerpo del
+        200 no parsea, NO se fabrica `dict(cambios)` como si fuera la respuesta
+        real -- eso seria literalmente inventar una confirmacion."""
+        from core import sudespacho_relations as sr
+
+        class _R:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                raise ValueError("cuerpo no es JSON")
+
+        monkeypatch.setenv("SUDESPACHO_API_KEY", "k")
+        monkeypatch.setattr(sr.httpx, "put", lambda *a, **k: _R())
+        with pytest.raises(sr.SudespachoRelationsError):
+            sr.update_colaborador("466", {"movil": "612345678"})
+
+
 class TestLasDosJurisdiccionesSeCompletanIGUAL:
     """R1/H-05 midio que anadir algo al camino extrajudicial y olvidar el judicial es
     el modo de fallo recurrente de este modulo. El gancho va en el resolvedor

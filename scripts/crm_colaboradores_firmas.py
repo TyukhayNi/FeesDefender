@@ -84,27 +84,35 @@ def _caso_dir(case_id: str) -> tuple[str, Path]:
     return resolved, case_dir
 
 
-def _falta_en_el_crm(email: str) -> tuple[str, dict[str, str]]:
-    """`(id o "", ficha)` del colaborador. Nunca lanza: sin CRM, se informa igual.
+def _falta_en_el_crm(email: str) -> tuple[str, dict[str, str], str]:
+    """`(id o "", ficha, error)` del colaborador. Nunca lanza: sin CRM, se informa
+    igual.
 
-    Un fallo aqui deja la ficha en blanco y el informe lo dice; no se afirma que el
-    campo del CRM este vacio cuando no se pudo mirar.
+    Tres estados, no dos (H-08, R1): leido (`error == ""`), no existe como
+    colaborador (`error == ""`, `id == ""`), y **no se pudo mirar** (`error` no
+    vacio). El tercero no puede confundirse con los otros dos -- un fallo de red
+    NO es que el colaborador no exista, ni que el CRM tenga el campo vacio. Antes
+    de esta frontera los dos `except` colapsaban cualquier fallo en el MISMO
+    resultado que "consulte y no hay nada", contradiciendo literalmente este
+    mismo docstring, que ya prometia que un fallo se diria.
     """
     try:
         r = resolver_parte("colaboradores", nif="", email=email)
-    except Exception:  # noqa: BLE001
-        return "", {}
+    except Exception as exc:  # noqa: BLE001
+        return "", {}, f"no se pudo consultar el CRM ({exc!r})"
     colab_id = getattr(r, "id", None) or ""
     if not colab_id:
-        return "", {}
+        return "", {}, ""
     try:
-        return colab_id, get_colaborador(colab_id)
-    except Exception:  # noqa: BLE001
-        return colab_id, {}
+        return colab_id, get_colaborador(colab_id), ""
+    except Exception as exc:  # noqa: BLE001
+        return colab_id, {}, f"no se pudo leer la ficha ({exc!r})"
 
 
-def _fila(c: Consolidado, colab_id: str, ficha: dict[str, str]) -> str:
+def _fila(c: Consolidado, colab_id: str, ficha: dict[str, str], error: str = "") -> str:
     def celda(valor: str, veredicto: str, prop: str) -> str:
+        if error:
+            return "`NO_SE_PUDO_MIRAR`"
         actual = (ficha.get(prop) or "").strip() if ficha else ""
         if veredicto == VEREDICTO_CONFLICTO:
             return "**CONFLICTO** (no se propone)"
@@ -114,7 +122,10 @@ def _fila(c: Consolidado, colab_id: str, ficha: dict[str, str]) -> str:
             return f"{valor} — el CRM ya tiene `{actual}`, **no se toca**"
         return f"**{valor}** — el CRM lo tiene vacio"
 
-    donde = f"id {colab_id}" if colab_id else "**no existe como colaborador**"
+    if error:
+        donde = f"**no se pudo consultar el CRM** ({error})"
+    else:
+        donde = f"id {colab_id}" if colab_id else "**no existe como colaborador**"
     return (f"| {c.email} | {donde} | {celda(c.movil, c.veredicto_movil, 'movil')} "
             f"| {celda(c.telefono, c.veredicto_telefono, 'telefono1')} "
             f"| {c.cargo or '`' + c.veredicto_cargo + '`'} "
@@ -133,8 +144,8 @@ def report(case_id: str = typer.Option(..., "--case-id",
     partes.append("| Firma de | En el CRM | Movil | Fijo (`telefono1`) | Cargo | Origen |")
     partes.append("|---|---|---|---|---|---|")
     for email in sorted(consolidados):
-        colab_id, ficha = _falta_en_el_crm(email)
-        partes.append(_fila(consolidados[email], colab_id, ficha))
+        colab_id, ficha, error = _falta_en_el_crm(email)
+        partes.append(_fila(consolidados[email], colab_id, ficha, error))
 
     candidatos = sorted(vistos - set(consolidados))
     partes.append("\n## Candidatos — SUGERENCIA, no un alta\n")
@@ -148,9 +159,12 @@ def report(case_id: str = typer.Option(..., "--case-id",
         partes.append("| Direccion | Veredicto | En el CRM |")
         partes.append("|---|---|---|")
         for email in candidatos:
-            colab_id, _ = _falta_en_el_crm(email)
-            partes.append(f"| {email} | `{VEREDICTO_SIN_FIRMA}` | "
-                          f"{'id ' + colab_id if colab_id else 'no existe'} |")
+            colab_id, _, error = _falta_en_el_crm(email)
+            if error:
+                estado = f"no se pudo consultar ({error})"
+            else:
+                estado = ("id " + colab_id) if colab_id else "no existe"
+            partes.append(f"| {email} | `{VEREDICTO_SIN_FIRMA}` | {estado} |")
     else:
         partes.append("_Ninguna._\n")
 

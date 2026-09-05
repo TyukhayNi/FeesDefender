@@ -1482,6 +1482,32 @@ class TestLeerUnEmlDeVerdad:
         assert "otro@engelvoelkers.com" in r.emails_vistos
         assert "ana@engelvoelkers.com" in r.emails_vistos
 
+    def test_un_fallo_al_ABRIR_el_eml_es_NO_LEIBLE_no_una_ausencia(self, tmp_path, monkeypatch):
+        """H-11 MEDIO (revision R1): hueco de cobertura medido por mutacion --
+        silenciar el `except` que declara `ilegible` cuando `path.open()`/el parseo
+        lanzan (sustituirlo por `return ResultadoEml()`) no rompia NINGUNO de los
+        250 tests del cambio. La rama YA funciona en el objeto revisado; lo que
+        faltaba era el test que la fija. Entrada literal del informe (H-11):
+        `Path.open` simulado para lanzar `PermissionError('sin acceso')`."""
+        p = tmp_path / "denegado.eml"
+        p.write_text("contenido irrelevante, nunca se llega a leer", encoding="utf-8")
+        original_open = Path.open
+
+        def _open_que_falla(self, *a, **k):
+            if self == p:
+                raise PermissionError("sin acceso")
+            return original_open(self, *a, **k)
+
+        monkeypatch.setattr(Path, "open", _open_que_falla)
+
+        r = extraer_de_eml(p)
+
+        assert r.ilegible != "", "tiene que DECLARAR que no se pudo leer"
+        assert "PermissionError" in r.ilegible or "sin acceso" in r.ilegible
+        assert r.firmas == ()
+        assert r.emails_vistos == frozenset()
+        assert r.sin_atribuir == 0
+
     def test_un_eml_que_no_parsea_es_NO_LEIBLE_no_una_ausencia(self, tmp_path):
         p = tmp_path / "roto.eml"
         p.write_bytes(b"\xff\xfe esto no es un correo")

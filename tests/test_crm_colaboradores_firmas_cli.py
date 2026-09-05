@@ -109,6 +109,56 @@ class TestElInformeDeclaraLoQueNoPudoMirar:
             assert prohibido not in texto, f"afirma una ausencia: {prohibido!r}"
 
 
+class TestElInformeDistingueNoExisteDeNoSePudoMirar:
+    """H-08 MEDIO (revision R1): un fallo de la consulta al CRM se presentaba como
+    'no existe como colaborador' / 'el CRM lo tiene vacio' -- exactamente los
+    mismos textos que 'lei la ficha y esta vacia'. El docstring de
+    `_falta_en_el_crm` ya prometia un tercer estado ('no se pudo mirar'); esta
+    frontera lo hace real."""
+
+    def test_un_fallo_en_resolver_parte_NO_se_dice_como_no_existe(self, caso, monkeypatch):
+        """Entrada literal del informe (H-08, repros.json clave
+        'crm_consulta_fallida'): `resolver_parte` lanza `RuntimeError`."""
+        monkeypatch.setattr(
+            cli, "resolver_parte",
+            MagicMock(side_effect=RuntimeError("consulta fallida")))
+        r = _corre()
+        assert r.exit_code == 0, r.output
+
+        texto = (case_locator.path_for(caso) / "01_Procesado"
+                 / "_firmas_colaboradores.md").read_text(encoding="utf-8").lower()
+        assert "no existe como colaborador" not in texto, (
+            "un fallo de red no es lo mismo que 'no existe'")
+        assert "el crm lo tiene vacio" not in texto, (
+            "un fallo de red no es lo mismo que 'esta vacio'")
+
+    def test_un_fallo_en_get_colaborador_NO_se_dice_como_vacio(self, caso, monkeypatch):
+        """Entrada literal del informe (H-08, repros.json clave 'crm_get_fallido'):
+        `resolver_parte` devuelve id='466', pero `get_colaborador` lanza."""
+        resuelto = MagicMock(id="466")
+        monkeypatch.setattr(cli, "resolver_parte", MagicMock(return_value=resuelto))
+        monkeypatch.setattr(cli, "get_colaborador",
+                            MagicMock(side_effect=RuntimeError("500")))
+        r = _corre()
+        assert r.exit_code == 0, r.output
+
+        texto = (case_locator.path_for(caso) / "01_Procesado"
+                 / "_firmas_colaboradores.md").read_text(encoding="utf-8").lower()
+        assert "el crm lo tiene vacio" not in texto, (
+            "un fallo de lectura no es lo mismo que 'esta vacio'")
+
+    def test_una_consulta_que_SI_funciona_sigue_diciendo_no_existe(self, caso, monkeypatch):
+        """Regresion: el camino normal (CRM respondio, no hay id) no puede
+        empezar a hablar de fallos que no ocurrieron."""
+        monkeypatch.setattr(cli, "resolver_parte", MagicMock(return_value=None))
+        r = _corre()
+        assert r.exit_code == 0, r.output
+
+        texto = (case_locator.path_for(caso) / "01_Procesado"
+                 / "_firmas_colaboradores.md").read_text(encoding="utf-8").lower()
+        assert "no existe como colaborador" in texto
+
+
 class TestLosCandidatosSonSUGERENCIA:
     """Medido: 7 direcciones @ev en los 6 .eml de W-02Q38C, 6 ya son colaboradores y
     solo 3 estan vinculadas al expediente. El corpus NO dice quien es colaborador."""

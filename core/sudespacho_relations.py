@@ -824,8 +824,16 @@ def update_colaborador(colab_id: str, cambios: dict) -> dict:
     if r.status_code == 200:
         try:
             return _parse_values(r.json())
-        except Exception:  # noqa: BLE001 — cuerpo 200 no parseable
-            return dict(cambios)
+        except Exception as exc:  # noqa: BLE001 — cuerpo 200 no parseable
+            # H-12, R1: fabricar `dict(cambios)` aqui es afirmar que el PUT
+            # tomo efecto sin ninguna acreditacion -- el cuerpo no dice nada, asi
+            # que "se envio y hubo un 200" no puede convertirse en "se completo".
+            # El llamador (`_completar_colaborador_existente`) ya sabe tratar esto
+            # como un fallo de escritura (registra y sigue, sin perder el vinculo).
+            raise SudespachoRelationsError(
+                f"REST PUT colaboradores/{colab_id} -> HTTP 200 pero el cuerpo no "
+                f"se pudo interpretar ({exc!r}): no se puede verificar el resultado"
+            ) from exc
 
     try:
         detail = r.json().get("detail") or r.text[:300]
@@ -2208,6 +2216,15 @@ def _completar_colaborador_existente(colab_id: str, datos: NuevoColaborador) -> 
     No lanza: completar la ficha es un extra sobre el vinculo, y perder el vinculo por
     no poder escribir un telefono seria peor que quedarse sin el telefono. Lo que no se
     pueda hacer se registra.
+
+    **La garantia "no lanza" cubre TODA la funcion, no solo el GET** (H-09, R1):
+    `_parse_values` preserva el tipo del JSON (`dict[str, str]` es una anotacion,
+    no una validacion), asi que si el CRM devuelve un numero donde se esperaba
+    texto (`{"movil": 612345678}`), `actual.get(prop)` es un `int` y `.strip()`
+    lanzaria `AttributeError` -- ANTES de este arreglo, fuera de cualquier `try`,
+    derribando el vinculo entero. Una respuesta que no se puede interpretar se
+    trata igual que una que no se pudo leer: se registra y se ABSTIENE de
+    completar, sin perder el vinculo.
     """
     try:
         actual = get_colaborador(colab_id)
@@ -2216,20 +2233,49 @@ def _completar_colaborador_existente(colab_id: str, datos: NuevoColaborador) -> 
                      "datos de la ficha que faltasen siguen sin llegar", colab_id, exc)
         return
 
-    cambios: dict[str, str] = {}
-    for campo, prop in _COMPLETABLES_COLABORADOR:
-        valor = (getattr(datos, campo, "") or "").strip()
-        if valor and not (actual.get(prop) or "").strip():
-            cambios[prop] = valor
+    try:
+        cambios: dict[str, str] = {}
+        for campo, prop in _COMPLETABLES_COLABORADOR:
+            valor = (getattr(datos, campo, "") or "").strip()
+            actual_valor = actual.get(prop)
+            if not isinstance(actual_valor, str):
+                # Un valor no-texto en la respuesta (int/float/bool/None...) no se
+                # puede tratar como "vacio" a ciegas -- si el CRM devolvio ALGO
+                # ahi, aunque sea de un tipo raro, no es un hueco a rellenar.
+                actual_valor = "" if actual_valor is None else str(actual_valor)
+            if valor and not actual_valor.strip():
+                cambios[prop] = valor
+    except Exception as exc:  # noqa: BLE001 — la ficha leida no se pudo interpretar
+        _log.warning("la ficha leida del colaborador %s no se pudo interpretar (%r): "
+                     "los datos de la ficha que faltasen siguen sin llegar",
+                     colab_id, exc)
+        return
 
     if not cambios:
         return
     try:
-        update_colaborador(colab_id, cambios)
-        _log.info("colaborador %s completado con %s", colab_id, sorted(cambios))
+        resultado = update_colaborador(colab_id, cambios)
     except Exception as exc:  # noqa: BLE001
         _log.warning("no se pudieron completar los campos %s del colaborador %s (%r)",
                      sorted(cambios), colab_id, exc)
+        return
+
+    # H-12, R1: "se envio y hubo un 200" no es "se completo" -- verificar por
+    # RESULTADO, nunca por status (regla del proyecto). Solo se registra
+    # "completado" lo que la respuesta del PUT confirma con el mismo valor
+    # pedido; lo que no confirma se dice aparte, sin afirmar exito de lo que no
+    # se acredito.
+    confirmados = sorted(
+        prop for prop, valor in cambios.items()
+        if str((resultado or {}).get(prop) or "").strip() == str(valor).strip()
+    )
+    no_confirmados = sorted(set(cambios) - set(confirmados))
+    if confirmados:
+        _log.info("colaborador %s completado con %s", colab_id, confirmados)
+    if no_confirmados:
+        _log.warning(
+            "colaborador %s: el PUT no confirma %s en la respuesta -- no se "
+            "afirma que se completara, revisar a mano", colab_id, no_confirmados)
 
 
 def _resolver_o_crear_colaborador(
