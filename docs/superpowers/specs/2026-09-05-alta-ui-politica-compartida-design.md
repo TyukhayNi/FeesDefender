@@ -3,14 +3,46 @@ tipo: spec
 estado: en-revision
 creado: 2026-09-05
 objeto: "Acciones 3 y 4 del informe de Codex 2026-09-05: el formulario de alta comparte con la CLI la política de duplicados del CRM y reutiliza expedientes existentes"
-rev: "1"
+rev: "2"
 ---
 
 # El formulario de alta comparte la política de la CLI
 
+> **Rev. 2 (2026-09-05, al implementar).** Cuatro cosas que la rev. 1 decía a medias o no
+> decía, descubiertas construyéndola; lo demás no cambia:
+>
+> 1. **§3.2.2, reutilizar.** La rev. 1 decía «una entrada del elemento elegido». Así el
+>    camino `vincular` entra en bucle cuando el frente elegido es de la **otra jurisdicción**
+>    (el radio dice extrajudicial y el CRM tiene el judicial): se registra el judicial, la
+>    corrida relanza, no encuentra «del elemento elegido», vuelve a la política y vuelve a
+>    pedir vincular. La regla que sí es cierta: **se reutiliza cualquier expediente
+>    registrado, prefiriendo el del elemento elegido**, y la pantalla dice de qué jurisdicción
+>    es. Es coherente con la frontera del §2: el formulario nunca crea un segundo expediente
+>    para un W-code que ya tiene uno. Helper: `expediente_local_para_alta` (con
+>    `elemento_canonico`, que traduce el alias `judiciales` del frontmatter).
+> 2. **§3.2.3, «la corrida sigue con el pull».** En Streamlit un botón solo es `True` en el
+>    run del clic, así que ni el botón «Vincular» ni la casilla «crear igualmente» pueden
+>    «seguir» sin más. Mecánica concreta: sus *callbacks* hacen el acto (registrar en
+>    `_caso.md` / armar `forzar`) y dejan un **token de relanzamiento ligado al `case_id`**
+>    (`_nc_relanzar`); el siguiente run lo consume como si el botón principal se hubiera
+>    pulsado, `ensure_case` es idempotente, y la corrida continúa por el paso 2a (reutilizar)
+>    o por la política con `forzar=True`. `forzar` se consume en esa misma corrida, salga lo
+>    que salga: crear a ciegas exige un acto por intento.
+> 3. **§3.1, la forma de `DecisionAltaCRM`.** `sin_comprobar` se rellena en las TRES
+>    acciones (es un hecho, no una consecuencia); el prefijo de los avisos forzados es la
+>    constante `alta_crm_politica.SIN_COMPROBAR`, que los dos llamadores usan para
+>    distinguirlos; `motivo` no nombra flags ni widgets, porque es la misma frase en las dos
+>    superficies (la CLI conserva sus mensajes de hoy, que sí nombran `--force`).
+> 4. **Un cambio observable en la CLI, querido.** Con `por_wcode` **y** `sin_comprobar` a la
+>    vez, `_alta_crm` antes abortaba con «no se pudo comprobar»; ahora aborta con «el CRM ya
+>    tiene un expediente con el id GO» (§3.1.1: el W-code manda). Mismo código de salida,
+>    otro mensaje. Ningún test lo cubría; ahora `P5` lo fija en el core.
+>
+> Lo verificado de verdad, y cómo, en el **§5** (bloque «Verificado el 2026-09-05»).
+
 > **Rev. 1 (2026-09-05).** Primer corte de las acciones 3 («dar al formulario el mismo servicio
 > de apertura que a la CLI») y 4 («reutilizar expedientes existentes y distinguir varios frentes»)
-> del informe `2026-09-05-acciones-alta-expediente.md`. **No es la orquestación compartida
+> del informe de Codex «Acciones para mejorar el alta de expedientes» (2026-09-05, fuera del repo). **No es la orquestación compartida
 > entera:** es la parte que hoy hace daño y cabe en una entrega verificable. Lo que queda fuera
 > está en el §6, con nombre.
 
@@ -128,12 +160,48 @@ con revisor sustituto y su independencia declarada más débil.
 | P6 | solo `por_direccion` | `crear`, `avisos` con «mismo direccion» |
 | P7 | vacío | `crear`, sin avisos |
 | P8 | `_alta_crm` con `bloquea` / `incierto` / `incierto+force` | los tests de `test_crm_dedup_expediente.py` existentes, sin modificar |
+| P9 (rev. 2) | `_alta_crm` con `dup` LIMPIO y un `decidir` inyectado que dice `bloquear` | aborta: la regla vive en `decidir`, no en `_alta_crm`; y `--force` llega como `forzar` |
+| P10 (rev. 2) | `expediente_local_para_alta` con alias `judiciales`, con la otra jurisdicción, con entradas rotas | prefiere el elemento pedido; si no lo hay, devuelve el que haya; ignora lo sin `id` o sin elemento reconocible |
 
 El formulario no tiene tests (`streamlit_app.py` no se importa desde `pytest`): se verifica
 **arrancándolo** con `CASOS_ROOT` apuntando a un directorio vacío y sin `SUDESPACHO_API_KEY`, que
 es exactamente el camino `bloquear`, y comprobando en pantalla (1) el error legible ante un
 `case_id` con `/`, (2) el bloqueo con la lista de lo no comprobado y la casilla, (3) que un caso
 local con expediente registrado no ofrece crear otro. Ninguna llamada real al CRM ni al Drive.
+
+### Verificado el 2026-09-05 (rev. 2), y cómo
+
+**Tests.** `tests/test_alta_crm_politica.py` (19 tests: P1-P7, P9, P10 y la inmutabilidad
+de la decisión) escritos primero y corridos en rojo (`ImportError`: el módulo no existía);
+verdes tras implementar. La suite objetivo —ese fichero más `test_crm_dedup_expediente.py`
+(sin modificar), `test_abrir_caso_cli.py`, `test_alta_v1.py` y los nueve
+`test_apertura_v1_*.py`— pasó de **158** (línea base en `581286e`) a **177** verdes, 0 fallos,
+contados por `--junit-xml`. Comando:
+`.venv\Scripts\python.exe -m pytest -q -p no:randomly tests/test_alta_crm_politica.py
+tests/test_crm_dedup_expediente.py tests/test_abrir_caso_cli.py tests/test_alta_v1.py
+tests/test_apertura_v1_*.py`.
+
+**En pantalla, arrancando la app de verdad.** `streamlit run` desde el worktree, con
+`CASOS_ROOT` en un directorio vacío del scratchpad, **sin `.env`** y con toda variable
+`SUDESPACHO_*` retirada del entorno del proceso (la API key estaba en el entorno de la
+sesión de Windows: sin retirarla la prueba habría hablado con el tenant). Ninguna llamada
+llegó al CRM ni al Drive: sin API key ni host legacy, las escrituras fallan antes del HTTP y
+las lecturas devuelven `sin_comprobar`. Visto, con captura en el panel del navegador (no se
+guardaron como fichero):
+
+| # | Camino | Qué se hizo | Qué salió |
+|---|---|---|---|
+| 1 | `ensure_case` legible | override `BaRR1 - Calle/Prueba 1 - (W-TEST01) - Bad debt` + botón CRM | `st.error` «No se puede crear el caso: El case_id contiene caracteres que no pueden estar en una carpeta de Windows…»; **cero** ficheros en `CASOS_ROOT`; sin traceback |
+| 2 | `bloquear` | mismo caso sin override, sin API key | carpeta creada; `st.error` con la lista **literal** de 4 criterios («W-code en extrajudiciales (SUDESPACHO_API_KEY no configurada)», …) y la casilla «Sé que este expediente no existe en el CRM: crear igualmente»; el texto de la página **no** contiene «Confirmar de todos modos» |
+| 2b | `bloquear` → forzar | marcar la casilla | relanzamiento automático; cuatro `st.warning` «Se crea SIN COMPROBAR: …»; el alta falla en `create_expediente` por falta de clave (antes de cualquier HTTP) |
+| 3 | reutilizar | `register_expediente(…, "999", "extrajudiciales")` a mano en el `_caso.md` del sandbox; botón CRM | «Se reutiliza el expediente ID 999 (extrajudiciales) ya vinculado en `_caso.md`: no se crea otro»; no hay intento de creación; 3a «Validación referencia CRM omitida — endpoint no accesible» |
+| 4 | `vincular` con dos frentes | app arrancada por un envoltorio **fuera del repo** que sustituye `buscar_expedientes_duplicados` por un doble que devuelve `extrajudiciales #648` y `expedientes_judiciales #700`; caso nuevo `W-TEST02` | `st.error` con el motivo, `st.radio` con los dos frentes, botón «Vincular este expediente al caso local»; sin «crear de todos modos». **Defecto medido y corregido en la misma sesión:** al cambiar el radio, el bloque desaparecía (un rerun sin botón); ahora el camino `vincular` rearma el token de relanzamiento y el radio persiste. Elegido `#700` (la otra jurisdicción) → `_caso.md` queda con `expedientes_judiciales`/`700`, la corrida relanza y entra por **reutilizar** con la nota «Es de la otra jurisdicción…»; no se crea nada |
+
+**No verificado en pantalla:** el camino `crear` con CRM real (crearía un expediente en el
+tenant del cliente: no procede en una prueba); el pull de Drive tras vincular; el 3c de
+colaboradores cuando 3b lanza algo que no es `SudespachoRelationsError` (hoy un
+`ValueError` en 3b corta 3c, comportamiento que ya tenía el formulario y que esta entrega
+no toca).
 
 ## 6. Lo que queda fuera, con nombre
 

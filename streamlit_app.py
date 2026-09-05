@@ -30,13 +30,13 @@ from core.judicial_intake import intake_demanda_contestacion as _intake_judicial
 from core.sync_sudespacho import SudespachoError as _SudespachoError
 from core import share_drive as _sd
 import zipfile as _zipfile
+from core import alta_crm_politica as _politica
 from core.sudespacho_relations import (
     NuevoColaborador,
     SudespachoRelationsError as _SRelError,
+    buscar_expedientes_duplicados as _buscar_dup,
     ensure_colaborador_vinculado,
     ensure_colaborador_vinculado_judicial,
-    find_expediente_judicial_by_referencia as _find_exp_judicial,
-    find_expediente_by_referencia as _find_exp_extrajudicial,
     link_ev_mmc,
     link_ev_mmc_judicial,
     search_colaboradores_for_ui as _search_colabs,
@@ -2026,16 +2026,16 @@ with tab_nuevo:
         )
         st.warning(
             f"⚠️ Este caso ya tiene expediente/s registrado/s **localmente**: {_exp_resumen}. "
-            "Al enviar a sudespacho se verificará primero en el CRM si ya existe un "
-            "expediente con esta referencia.",
+            "Al enviar a sudespacho **no se crea otro**: se reutiliza el ya vinculado y se "
+            "completan cliente, colaboradores y pull.",
             icon="🗂️",
         )
         _confirmar_crm = st.checkbox(
-            "Entendido — continuar (actualizar relaciones y pull)",
+            "Entendido — continuar (reutilizar el expediente, actualizar relaciones y pull)",
             key="nc_confirm_crm",
             help=(
-                "El expediente CRM ya existe. Marca para confirmar que quieres "
-                "proceder: se actualizarán las relaciones y se realizará el pull del Drive."
+                "El expediente CRM ya está vinculado al caso. Marca para confirmar que quieres "
+                "proceder: se completarán sus relaciones y se realizará el pull del Drive."
             ),
         )
         _block_crm = not _confirmar_crm
@@ -2064,6 +2064,38 @@ with tab_nuevo:
             disabled=_btn_disabled,
             help="Crea el caso local Y el expediente en el CRM sudespacho.net, vinculando EV MMC SPAIN como cliente y los consultores como colaboradores.",
         )
+
+    # Relanzamiento tras un acto del operador DENTRO del alta (vincular un expediente
+    # existente, o forzar la creación cuando el CRM no se pudo consultar). Un botón solo
+    # es True en el run del clic, así que los callbacks de esos widgets dejan este token
+    # —ligado al case_id— para que la corrida continúe en el rerun sin volver a pulsar.
+    if st.session_state.pop("_nc_relanzar", None) == final_case_id:
+        btn_sudespacho = True
+    _nc_aviso_previo = st.session_state.pop("_nc_aviso", None)
+    if _nc_aviso_previo:
+        st.info(_nc_aviso_previo)
+
+    def _nc_cb_forzar(*, forzar_key: str, chk_key: str, case_id: str) -> None:
+        """Callback de la casilla «crear igualmente» (camino `bloquear`)."""
+        if st.session_state.get(chk_key):
+            st.session_state[forzar_key] = True
+            st.session_state["_nc_relanzar"] = case_id
+
+    def _nc_cb_vincular(*, case_id: str, opciones: dict, radio_key: str, unico) -> None:
+        """Callback del botón «Vincular» (camino `vincular`): registra en `_caso.md` el
+        expediente EXISTENTE elegido y relanza la corrida, que lo reutilizará."""
+        etiqueta = unico if unico is not None else st.session_state.get(radio_key)
+        par = opciones.get(etiqueta)
+        if par is None:
+            st.session_state["_nc_aviso"] = "⚠️ No se eligió ningún frente: no se vinculó nada."
+            return
+        elemento, exp_id = par
+        case_manager.register_expediente(case_id, exp_id, elemento)
+        st.session_state["_nc_aviso"] = (
+            f"🔗 Expediente `{elemento}` **ID {exp_id}** vinculado en `_caso.md`. "
+            "Se continúa completándolo: cliente, colaboradores y pull."
+        )
+        st.session_state["_nc_relanzar"] = case_id
 
     if btn_local or btn_sudespacho:
         # ── Validación ─────────────────────────────────────────────────
@@ -2148,18 +2180,25 @@ with tab_nuevo:
                     "equipo": _equipo_code_resolved,
                     "usuario": "streamlit_ui",
                 })
-            with st.spinner("Creando caso local…"):
-                _path = case_manager.ensure_case(
-                    final_case_id,
-                    titulo=final_case_id,
-                    referencia_crm=final_case_id,
-                    cliente="EV MMC SPAIN, S.L.U.",
-                    cuantia=cuantia_nc or None,
-                    tipo_caso=tipo_caso,
-                    direccion=direccion.strip() or None,
-                    id_go=ref_mls.strip() or None,
-                    ciudad=ciudad_label,
-                )
+            try:
+                with st.spinner("Creando caso local…"):
+                    _path = case_manager.ensure_case(
+                        final_case_id,
+                        titulo=final_case_id,
+                        referencia_crm=final_case_id,
+                        cliente="EV MMC SPAIN, S.L.U.",
+                        cuantia=cuantia_nc or None,
+                        tipo_caso=tipo_caso,
+                        direccion=direccion.strip() or None,
+                        id_go=ref_mls.strip() or None,
+                        ciudad=ciudad_label,
+                    )
+            except ValueError as _exc_alta:
+                # El sumidero (`ensure_case`, PR #280) valida el `case_id` y la ciudad y
+                # garantiza que no se creó nada. Aquí solo hay que decirlo legible: antes
+                # llegaba a la pantalla como traceback rojo de Streamlit.
+                st.error(f"❌ No se puede crear el caso: {_exc_alta}")
+                st.stop()
             st.success(f"Caso local disponible en `{_path}`")
 
             # 1b. Persistir IDs del Drive E&V en _caso.md antes del pull
@@ -2177,116 +2216,206 @@ with tab_nuevo:
                 except Exception:
                     pass  # No bloqueante — el pull lo reintentará si es necesario
 
-            # 2. Crear expediente en sudespacho (solo si se pulsó ese botón)
+            # 2. Expediente en sudespacho (solo si se pulsó ese botón)
             # — Va antes del pull para que un cierre inesperado no impida registrar el expediente en el CRM.
+            #
+            # La regla crear / vincular / bloquear es la de `core/alta_crm_politica`, la MISMA
+            # que aplica la CLI (`scripts/abrir_caso.py::_alta_crm`). Aquí solo se orquesta:
+            # reutilizar lo ya vinculado, preguntar al CRM, pintar la decisión. Diseño:
+            # docs/superpowers/specs/2026-09-05-alta-ui-politica-compartida-design.md §3.2.
             if btn_sudespacho:
-                # ── Guardia anti-duplicados ─────────────────────────────────
-                # Busca en el CRM si ya existe un expediente con esta referencia.
-                # Si existe, bloquea y muestra el ID salvo que el usuario haya
-                # confirmado explícitamente en el render anterior.
-                _dup_confirm_key = f"_dup_confirmed_{final_case_id}"
-                _dup_id: str | None = None
-                try:
-                    with st.spinner("Verificando duplicados en el CRM…"):
-                        _finder = (
-                            _find_exp_judicial
-                            if es_judicial
-                            else _find_exp_extrajudicial
-                        )
-                        _dup_id = _finder(final_case_id)
-                except _SRelError as _dup_err:
-                    st.warning(
-                        f"⚠️ No se pudo verificar duplicados en el CRM: {_dup_err}  \n"
-                        "Puedes continuar bajo tu responsabilidad."
-                    )
+                _elemento_ui = "expedientes_judiciales" if es_judicial else "extrajudiciales"
+                _exp_id: str | None = None
+                _exp_es_judicial = es_judicial
+                _exp_tipo_registro = "judiciales" if es_judicial else "extrajudiciales"
 
-                if _dup_id and not st.session_state.get(_dup_confirm_key):
-                    st.error(
-                        f"⚠️ Ya existe un expediente con esta referencia en sudespacho "
-                        f"(**ID: {_dup_id}**).  \n"
-                        "Si quieres crearlo igualmente, pulsa **Confirmar de todos modos**."
-                    )
-                    if st.button(
-                        "Confirmar de todos modos",
-                        key=f"_dup_confirm_btn_{final_case_id}",
-                        type="secondary",
-                        help="Crea el expediente aunque ya exista uno con la misma referencia.",
-                    ):
-                        st.session_state[_dup_confirm_key] = True
-                        st.rerun()
-                    st.stop()
-
-                # Limpiar flag de confirmación tras pasar la guardia
-                st.session_state.pop(_dup_confirm_key, None)
-
-                # Posición procesal (común a ambos tipos).
-                # Para "OTROS" se asume ACTOR por defecto: E&V suele consultar
-                # al despacho desde la posición de cliente que reclama; el
-                # abogado puede cambiarla manualmente en el CRM si procede.
-                _pos_de_tipo = posicion_de_tipo(tipo_caso)
-                _pos = (
-                    _sc.POSICION_DEMANDADO
-                    if _pos_de_tipo == "defensiva"
-                    else _sc.POSICION_ACTOR
+                # 2a. Reutilizar antes de buscar. Si el caso local ya tiene expediente, NO se
+                # crea otro: se continúa completándolo (3a-3c son idempotentes; los
+                # `ensure_*` deduplican). Es «continuar una apertura parcial sin repetir
+                # altas» en la forma más pequeña que la hace cierta.
+                _ya = _politica.expediente_local_para_alta(
+                    case_manager.get_case_status(final_case_id)["expedientes"], _elemento_ui,
                 )
-                # Nota estándar del tipo de caso (común)
-                _nota = _NOTAS.get(tipo_caso, "")
-
-                if es_judicial:
-                    # Tags grupo 2 (J_TAG_*)
-                    _tags = (
-                        [_EQUIPOS_ACTIVOS[equipo_label]]
-                        + _sc.tag_defaults_for_tipo_caso_judicial(tipo_caso)
+                if _ya is not None:
+                    _exp_id = str(_ya["id"])
+                    _exp_canon = _politica.elemento_canonico(_ya.get("element"))
+                    _exp_es_judicial = _exp_canon == "expedientes_judiciales"
+                    _exp_tipo_registro = str(_ya.get("element"))
+                    _nota_jur = ""
+                    if _exp_canon != _elemento_ui:
+                        _nota_jur = (
+                            f"  \n⚠️ Es de la **otra jurisdicción** (`{_exp_canon}`), no de la "
+                            "elegida en el formulario. El formulario no crea un segundo "
+                            "expediente para el mismo id GO: si de verdad hacen falta dos, se "
+                            "decide en el CRM."
+                        )
+                    st.info(
+                        f"ℹ️ Se reutiliza el expediente **ID {_exp_id}** (`{_exp_canon}`) ya "
+                        "vinculado en `_caso.md`: no se crea otro; se completan cliente, "
+                        f"colaboradores y pull.{_nota_jur}"
                     )
-                    _ciudad_tag = _CIUDADES_ACTIVAS.get(ciudad_label)
-                    if _ciudad_tag:
-                        _tags.append(_ciudad_tag)
-                    _datos = _sc.NuevoExpedienteJudicial(
-                        referencia_cliente=final_case_id,
-                        cuantia=cuantia_nc,
-                        tags=_tags,
-                        posicion=_pos,
-                        tipo_procedimiento=tipo_proc_sel,
-                        NIG="",
-                        notas_html=_nota,
-                    )
-                    _tipo_registro = "judiciales"
-                    _label_tipo    = "judicial"
-                    _spinner_msg   = "Creando expediente judicial en sudespacho…"
                 else:
-                    # Tags grupo 1 (TAG_*)
-                    _tags = (
-                        [_EQUIPOS_ACTIVOS[equipo_label]]
-                        + _sc.tag_defaults_for_tipo_caso(tipo_caso)
+                    # 2b. Si no hay local, la política: se busca por id GO en las DOS
+                    # jurisdicciones (un W-code con expediente judicial no debe recibir otro
+                    # extrajudicial sin que alguien lo vea), más dirección como aviso.
+                    _forzar_key = f"_alta_forzar_{final_case_id}"
+                    with st.spinner("Comprobando en el CRM si el expediente ya existe…"):
+                        _dup = _buscar_dup(
+                            w_code=ref_mls.strip(), direccion=direccion.strip(),
+                        )
+                    _decision = _politica.decidir(
+                        _dup, forzar=bool(st.session_state.get(_forzar_key)),
                     )
-                    _ciudad_tag = _CIUDADES_ACTIVAS.get(ciudad_label)
-                    if _ciudad_tag:
-                        _tags.append(_ciudad_tag)
-                    _datos = _sc.NuevoExpedienteExtrajudicial(
-                        referencia_cliente=final_case_id,
-                        cuantia=cuantia_nc,
-                        tags=_tags,
-                        posicion=_pos,
-                        descripcion_html=_nota,
-                    )
-                    _tipo_registro = "extrajudiciales"
-                    _label_tipo    = "extrajudicial"
-                    _spinner_msg   = "Creando expediente en sudespacho…"
+                    # Forzar es un acto por corrida: se consume aquí, salga lo que salga.
+                    st.session_state.pop(_forzar_key, None)
 
-                with st.spinner(_spinner_msg):
-                    try:
-                        if es_judicial:
-                            _exp_id = _sc.create_expediente_judicial(_datos)
+                    if _decision.accion == _politica.BLOQUEAR:
+                        st.error(
+                            f"⛔ {_decision.motivo}  \n**No se pudo comprobar:**  \n"
+                            + "  \n".join(f"- {s}" for s in _decision.sin_comprobar)
+                        )
+                        _chk_key = f"_alta_forzar_chk_{final_case_id}"
+                        st.checkbox(
+                            "Sé que este expediente no existe en el CRM: crear igualmente",
+                            key=_chk_key,
+                            on_change=_nc_cb_forzar,
+                            kwargs=dict(
+                                forzar_key=_forzar_key, chk_key=_chk_key,
+                                case_id=final_case_id,
+                            ),
+                            help=(
+                                "Rearma la decisión con «forzar»: se crea el expediente y "
+                                "queda escrito qué no se pudo comprobar. Es un acto separado, "
+                                "a propósito."
+                            ),
+                        )
+                        st.stop()
+
+                    if _decision.accion == _politica.VINCULAR:
+                        st.error(f"⛔ {_decision.motivo}")
+                        _opciones = {
+                            f"{_el} #{_i}": (_el, _i) for _el, _i in _decision.candidatos
+                        }
+                        _radio_key = f"_alta_frente_{final_case_id}"
+                        _unico = None
+                        if len(_opciones) == 1:
+                            _unico = next(iter(_opciones))
+                            st.write(f"Expediente hallado: **{_unico}**")
                         else:
-                            _exp_id = _sc.create_expediente(_datos)
-                        case_manager.register_expediente(
-                            final_case_id, _exp_id, _tipo_registro
+                            st.radio(
+                                "Hay varios frentes con este id GO. Elige cuál vincular al "
+                                "caso local:",
+                                list(_opciones),
+                                key=_radio_key,
+                                help="Se vincula UNO. Nunca los dos a la vez.",
+                            )
+                        # No hay botón de «crear de todos modos», a propósito.
+                        st.button(
+                            "🔗 Vincular este expediente al caso local",
+                            key=f"_alta_vincular_btn_{final_case_id}",
+                            on_click=_nc_cb_vincular,
+                            kwargs=dict(
+                                case_id=final_case_id, opciones=_opciones,
+                                radio_key=_radio_key, unico=_unico,
+                            ),
+                            help=(
+                                "Registra el expediente EXISTENTE en `_caso.md` y continúa la "
+                                "corrida (relaciones + pull). No crea ninguno nuevo."
+                            ),
                         )
-                        st.success(
-                            f"✅ Expediente {_label_tipo} creado en sudespacho — **ID: {_exp_id}**  \n"
-                            f"Vinculado en `_caso.md`."
-                        )
+                        # Mantener viva la corrida mientras el operador elige: cambiar el
+                        # radio es un rerun, y sin esto el bloque —radio y botón— desaparecía
+                        # con él (medido en pantalla el 2026-09-05). Se vuelve a pasar por
+                        # aquí en cada rerun (solo lecturas) hasta que vincule o cambie de caso.
+                        st.session_state["_nc_relanzar"] = final_case_id
+                        st.stop()
 
+                    # `crear`: como hoy. Los avisos no bloquean: una vuelta y una bad debt
+                    # del mismo inmueble son dos expedientes correctos.
+                    for _aviso in _decision.avisos:
+                        if _aviso.startswith(_politica.SIN_COMPROBAR):
+                            st.warning(f"⚠️ Se crea {_aviso}")
+                        else:
+                            st.warning(
+                                f"⚠️ Posible expediente relacionado ({_aviso}). No bloquea: el "
+                                "mismo inmueble o la misma parte pueden tener varios."
+                            )
+
+                    # Posición procesal (común a ambos tipos).
+                    # Para "OTROS" se asume ACTOR por defecto: E&V suele consultar
+                    # al despacho desde la posición de cliente que reclama; el
+                    # abogado puede cambiarla manualmente en el CRM si procede.
+                    _pos_de_tipo = posicion_de_tipo(tipo_caso)
+                    _pos = (
+                        _sc.POSICION_DEMANDADO
+                        if _pos_de_tipo == "defensiva"
+                        else _sc.POSICION_ACTOR
+                    )
+                    # Nota estándar del tipo de caso (común)
+                    _nota = _NOTAS.get(tipo_caso, "")
+
+                    if es_judicial:
+                        # Tags grupo 2 (J_TAG_*)
+                        _tags = (
+                            [_EQUIPOS_ACTIVOS[equipo_label]]
+                            + _sc.tag_defaults_for_tipo_caso_judicial(tipo_caso)
+                        )
+                        _ciudad_tag = _CIUDADES_ACTIVAS.get(ciudad_label)
+                        if _ciudad_tag:
+                            _tags.append(_ciudad_tag)
+                        _datos = _sc.NuevoExpedienteJudicial(
+                            referencia_cliente=final_case_id,
+                            cuantia=cuantia_nc,
+                            tags=_tags,
+                            posicion=_pos,
+                            tipo_procedimiento=tipo_proc_sel,
+                            NIG="",
+                            notas_html=_nota,
+                        )
+                        _spinner_msg = "Creando expediente judicial en sudespacho…"
+                    else:
+                        # Tags grupo 1 (TAG_*)
+                        _tags = (
+                            [_EQUIPOS_ACTIVOS[equipo_label]]
+                            + _sc.tag_defaults_for_tipo_caso(tipo_caso)
+                        )
+                        _ciudad_tag = _CIUDADES_ACTIVAS.get(ciudad_label)
+                        if _ciudad_tag:
+                            _tags.append(_ciudad_tag)
+                        _datos = _sc.NuevoExpedienteExtrajudicial(
+                            referencia_cliente=final_case_id,
+                            cuantia=cuantia_nc,
+                            tags=_tags,
+                            posicion=_pos,
+                            descripcion_html=_nota,
+                        )
+                        _spinner_msg = "Creando expediente en sudespacho…"
+
+                    with st.spinner(_spinner_msg):
+                        try:
+                            if es_judicial:
+                                _exp_id = _sc.create_expediente_judicial(_datos)
+                            else:
+                                _exp_id = _sc.create_expediente(_datos)
+                            case_manager.register_expediente(
+                                final_case_id, _exp_id, _exp_tipo_registro
+                            )
+                            st.success(
+                                f"✅ Expediente {'judicial' if es_judicial else 'extrajudicial'} "
+                                f"creado en sudespacho — **ID: {_exp_id}**  \n"
+                                f"Vinculado en `_caso.md`."
+                            )
+                        except _sc.SudespachoCreateError as exc:
+                            st.error(f"Error al crear el expediente: {exc}")
+                            _exp_id = None
+                        except Exception as exc:
+                            st.error(f"Error inesperado: {exc}")
+                            _exp_id = None
+
+                # 3. Completar el expediente (recién creado o reutilizado). Idempotente por
+                # construcción: `verify` solo lee y los `ensure_*`/`link_*` deduplican.
+                if _exp_id is not None:
+                    try:
                         # 3a. Validación preventiva — referencia local ↔ CRM.
                         # Tras el incidente BaRR3 (ID 648 mal vinculado a Roser
                         # — sesión 2026-05-11): tras vincular un expediente al
@@ -2296,7 +2425,7 @@ with tab_nuevo:
                         try:
                             _ref_check = _verify_exp_ref(
                                 _exp_id,
-                                _tipo_registro,
+                                _exp_tipo_registro,
                                 expected_referencia=final_case_id,
                             )
                         except Exception as _ve:  # noqa: BLE001 — nunca debería ocurrir, defensivo
@@ -2315,7 +2444,7 @@ with tab_nuevo:
                                     f"⚠️ **Referencia desalineada CRM ↔ caso local**.  \n"
                                     f"Expediente CRM **ID {_exp_id}** tiene `referencia_cliente` = "
                                     f"`{_crm_ref_str}`, pero el caso local es `{final_case_id}`.  \n"
-                                    "Revisa que el expediente recién creado es el correcto antes "
+                                    "Revisa que el expediente vinculado es el correcto antes "
                                     "de descargar documentos. Si el ID está mal vinculado, edita "
                                     "`_caso.md` o desvincula desde sudespacho."
                                 )
@@ -2329,7 +2458,7 @@ with tab_nuevo:
                         _cli_id = cliente_propio_id(cliente_propio_clave)
                         _cli_label = CLIENTES_PROPIOS_EV[cliente_propio_clave][1]
                         try:
-                            if es_judicial:
+                            if _exp_es_judicial:
                                 link_ev_mmc_judicial(_exp_id, cliente_propio_id=_cli_id)
                             else:
                                 link_ev_mmc(_exp_id, cliente_propio_id=_cli_id)
@@ -2353,7 +2482,7 @@ with tab_nuevo:
                             ):
                                 for _nc, _mc in _col_a_vincular:
                                     try:
-                                        if es_judicial:
+                                        if _exp_es_judicial:
                                             _cid, _created = ensure_colaborador_vinculado_judicial(
                                                 _exp_id,
                                                 NuevoColaborador(nombre=_nc, email=_mc),
@@ -2371,11 +2500,8 @@ with tab_nuevo:
                                         st.warning(
                                             f"⚠️ {_nc} ({_mc}): {exc}"
                                         )
-
-                    except _sc.SudespachoCreateError as exc:
-                        st.error(f"Error al crear el expediente: {exc}")
                     except Exception as exc:
-                        st.error(f"Error inesperado: {exc}")
+                        st.error(f"Error inesperado al completar el expediente: {exc}")
 
             # 3. Pull Drive E&V (si el usuario rellenó la URL)
             # — Va al final: si se interrumpe, el caso local y el expediente CRM ya están creados.

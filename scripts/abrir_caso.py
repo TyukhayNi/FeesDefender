@@ -31,8 +31,8 @@ import typer
 
 from core import abrir_caso as brain
 from core import (
-    case_manager, config, email_export, intake_drive, intake_log, intake_manual,
-    sudespacho_create, sudespacho_relations, whatsapp_intake,
+    alta_crm_politica, case_manager, config, email_export, intake_drive, intake_log,
+    intake_manual, sudespacho_create, sudespacho_relations, whatsapp_intake,
 )
 from core import apertura_v1 as av1
 from core import apertura_v1_estado as estado_v1
@@ -677,17 +677,27 @@ def _alta_crm(
     dup = sudespacho_relations.buscar_expedientes_duplicados(
         w_code=ident.w_code, direccion=ident.direccion,
     )
-    for aviso in dup.avisos:
-        typer.echo(f"[AVISO] posible expediente relacionado ({aviso}). "
-                   "No bloquea: el mismo inmueble o la misma parte pueden tener varios.")
 
-    # Politica ante lo que NO se pudo consultar, decidida por Nikolai el 2026-09-04:
-    # **fallar cerrado**. R1/H-02 midio que la version anterior seguia adelante y daba
-    # de alta igual, o sea que la proteccion desaparecia justo cuando algo fallaba. Un
-    # expediente duplicado en el CRM del cliente cuesta mas de deshacer que repetir la
-    # apertura cuando el CRM vuelva; `--force` sigue siendo la salida explicita.
-    if dup.incierto and not force:
-        for nota in dup.sin_comprobar:
+    # La regla (crear / vincular / bloquear) NO vive aqui: vive en
+    # `core/alta_crm_politica.decidir`, que comparte con el formulario «Nuevo caso». Esta
+    # funcion solo la traduce a la pantalla de la CLI. Las dos politicas que aplica, por
+    # si alguien busca donde se decidieron:
+    #   - **fallar cerrado** ante lo que no se pudo consultar (Nikolai, 2026-09-04; R1/H-02
+    #     midio que antes se seguia adelante y la proteccion desaparecia justo cuando algo
+    #     fallaba). `--force` es la salida explicita y deja escrito lo que no se miro.
+    #   - **el W-code manda** sobre la incertidumbre: si ya esta en el CRM, se vincula y
+    #     no se crea, se haya podido consultar el resto o no.
+    decision = alta_crm_politica.decidir(dup, forzar=force)
+
+    for aviso in decision.avisos:
+        if aviso.startswith(alta_crm_politica.SIN_COMPROBAR):
+            typer.echo(f"[AVISO] --force: se da de alta {aviso}")
+        else:
+            typer.echo(f"[AVISO] posible expediente relacionado ({aviso}). "
+                       "No bloquea: el mismo inmueble o la misma parte pueden tener varios.")
+
+    if decision.accion == alta_crm_politica.BLOQUEAR:
+        for nota in decision.sin_comprobar:
             typer.echo(f"  - sin comprobar: {nota}", err=True)
         typer.echo(
             "[ERROR] No se pudo comprobar si este expediente ya existe en el CRM, asi "
@@ -696,12 +706,9 @@ def _alta_crm(
             err=True,
         )
         raise AbortarApertura(1)
-    if dup.incierto:
-        for nota in dup.sin_comprobar:
-            typer.echo(f"[AVISO] --force: se da de alta SIN comprobar {nota}")
 
-    if dup.bloquea:
-        donde = ", ".join(f"{el} #{i}" for el, i in dup.por_wcode)
+    if decision.accion == alta_crm_politica.VINCULAR:
+        donde = ", ".join(f"{el} #{i}" for el, i in decision.candidatos)
         typer.echo(
             f"[ERROR] El CRM ya tiene un expediente con el id GO {ident.w_code}: {donde}. "
             "No se da de alta otro. Si de verdad hacen falta dos, vincula el existente "
@@ -885,7 +892,9 @@ def main(
         None, "--hasta",
         help="v1: para DESPUES de esta etapa (drive|crm|sala_maquina). Para reanudar, "
              "relanza con --case-id (los 6 flags de identidad darian ColisionCaso): las "
-             "etapas ya hechas se saltan solas."),
+             "etapas ya hechas se REPITEN, y son idempotentes (Drive vuelve a consultar y "
+             "rclone transfiere solo lo que difiere; el pull del CRM se repite; la sala de "
+             "maquina no reprocesa lo ya hecho)."),
     src: str | None = typer.Option(None, "--src", help="manual/whatsapp: carpeta o .zip"),
     rol: str | None = typer.Option(None, "--rol", help="whatsapp: rol_subdir"),
     cuenta: str | None = typer.Option(None, "--cuenta", help="email: cuenta gmail"),
