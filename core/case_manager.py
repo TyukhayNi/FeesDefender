@@ -304,7 +304,7 @@ def _escribir_indice_atomico(index: Path, fm: dict, cuerpo: str) -> Path:
     `MERGE_EXCLUSIONS` y en el carve-out del plugin para que un huerfano no se trate como
     contenido del expediente (R1/H-07).
     """
-    index.parent.mkdir(parents=True, exist_ok=True)
+    # `write_md` crea el directorio padre si falta: no hace falta un `mkdir` aqui.
     tmp = index.parent / f"._caso.{os.getpid()}.tmp"
     try:
         write_md(tmp, fm, cuerpo)
@@ -1530,20 +1530,11 @@ def _atomic_write_caso_md(
     if isinstance(fm.get("meta"), dict):
         fm["meta"]["actualizado_en"] = now_iso()
 
-    # Temp en el mismo directorio para que os.replace sea atómico (Windows + POSIX).
-    # PID en el nombre evita colisiones si hubiera procesos concurrentes.
-    tmp_path = index.parent / f"._caso.{os.getpid()}.tmp"
-    try:
-        write_md(tmp_path, fm, body)
-        os.replace(tmp_path, index)
-    except Exception:
-        if tmp_path.exists():
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
-        raise
-    return index
+    # Un solo escritor atomico para `_caso.md`, compartido con `_write_case_index`
+    # (MEJORAS #146): temporal `._caso.<pid>.tmp` en el mismo directorio + `os.replace`.
+    # Antes cada uno tenia su copia del patron; el trinquete del censo de escrituras
+    # (`tests/test_escritura_censo.py`) es lo que empujo a compartirlo en vez de duplicarlo.
+    return _escribir_indice_atomico(index, fm, body)
 
 
 def _find_expediente_entry(
