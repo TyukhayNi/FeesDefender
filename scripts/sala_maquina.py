@@ -953,7 +953,10 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
         # en cada corrida, para siempre.
         intentos = {} if force else dict(_intentos_previos(case_dir))
         for d in p:
-            if d.skip:
+            if d.skip or d.duplicado_de:
+                # La copia byte-idéntica (MEJORAS #147, vía A) comparte sha con su titular y
+                # no se procesa: contarla aquí sumaría DOS intentos por corrida al mismo sha
+                # y agotaría `MAX_INTENTOS` en dos corridas en vez de tres.
                 continue
             if d.sha256 in exitosos:
                 intentos.pop(d.sha256, None)

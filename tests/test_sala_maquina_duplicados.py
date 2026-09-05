@@ -189,6 +189,31 @@ def test_d6_el_preview_cuenta_los_duplicados_aparte(tmp_path, monkeypatch, capsy
     assert "duplicados: 1" in out, out
 
 
+def test_d8_la_copia_no_consume_intentos_del_titular(tmp_path, monkeypatch):
+    """Un titular que falla gasta UN intento por corrida, no dos: la copia comparte el sha y no
+    se procesa, así que no puede contar. Sin esto `MAX_INTENTOS` (3) se agotaba en dos corridas."""
+    import scripts.sala_maquina as cli
+    case = _caso_con_copias(tmp_path)
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    monkeypatch.setattr(cli, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
+    monkeypatch.setattr(sm, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
+    monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
+    monkeypatch.setattr(cli.case_locator, "resolve_ref", lambda ref: ref)
+    monkeypatch.setattr(sm, "_try_pypdf", lambda p: "")
+    monkeypatch.setattr(sm, "_pdf_num_paginas", lambda p: 1)
+
+    def _ocr_falla(entrada, salida, **_k):
+        raise RuntimeError("ocrmypdf ausente")
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _ocr_falla)
+
+    cli.apply("W-TEST99")
+    sha = sm.inventariar(case)[0]["sha256"]
+    intentos = cli._intentos_previos(case)
+    assert intentos == {sha: 1}, intentos
+    cli.apply("W-TEST99")
+    assert cli._intentos_previos(case) == {sha: 2}
+
+
 def test_d7_fusionar_conserva_las_dos_filas():
     tit = sm.DocCobertura("cert__aaaa1111", "01_Drive EV/ARRAS/cert.pdf", "pypdf", "ok", 500, False,
                           "también en 01_Drive EV/OFERTAS/cert.pdf (mismo sha256)", "a" * 64)
