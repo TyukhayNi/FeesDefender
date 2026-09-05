@@ -44,13 +44,17 @@ ni la cobertura: la ruta nueva produce las mismas filas que las demás.
    documento ya cubre el lote, pero el aviso evita el footgun de `MAX_INTENTOS` (tres
    corridas sin conversor agotarían los intentos y el documento se saltaría «en verde»).
 
-**Y una cuarta, que la impuso el trinquete.** La primera versión creaba `01_OCR/` desde
-`sala_maquina` (`mkdir` + `shutil.move` del intermedio) y `tests/test_escritura_censo.py` subió
-a 89/88. La forma correcta era la de `ocr_pdf`: el conversor escribe **directamente** en
-`01_OCR/<slug>.pdf` y crea la carpeta él (`core/ofimatica_a_pdf.py` está fuera de la lista de
-productores por la misma razón que `core/anon/ocr.py` e `imagen_a_pdf.py`: escribe donde le
-dicen). Si el PDF no trae texto, se aparta a un temporal y la escalera vuelve a ocupar el
-destino. El censo de `sala_maquina` queda en 13, como estaba.
+**Y una cuarta, que la impuso el trinquete — y que la R1 me obligó a rehacer.** La primera
+versión publicaba el convertido desde `sala_maquina` (`mkdir` + `shutil.move`) y
+`tests/test_escritura_censo.py` subió a 89/88. Lo esquivé haciendo que el conversor escribiera
+directamente en `01_OCR/` («como `ocr_pdf`») y apartando el PDF a un temporal si no traía
+texto: el censo volvió a 88, y la R1 lo llamó por su nombre (H-04: la igualdad no garantizaba
+nada, solo había desplazado la escritura fuera del conjunto medido) y además encontró la
+ventana que abría (H-03: si apartar fallaba, quedaba un PDF mudo publicado). La forma correcta
+es la contraria: **staging en temporal, decidir, y publicar solo el buscable**; la publicación
+es una escritura nueva y se **declara** en el censo (88 → 91: el `mkdir` de `sala_maquina` y
+`core/ofimatica_a_pdf.py` entra en la lista de productores con sus dos `mkdir`), que es lo que
+la regla del trinquete permite y lo que no permite es absorberla.
 
 Localización del binario, en orden: `FEESDEFENDER_SOFFICE` (si apunta a un fichero), `soffice`
 en el PATH, las dos rutas de instalación habituales de Windows. `None` es respuesta válida.

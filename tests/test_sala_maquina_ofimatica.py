@@ -9,7 +9,10 @@ Contrato bajo prueba:
 - O6  `ejecutar` sin LibreOffice → fila `sin_soporte` CON la causa («soffice») en la nota.
 - O7  `ejecutar` con conversión fallida → `sin_soporte` con «conversión a PDF falló».
 - O8  `ejecutar`: PDF convertido SIN capa de texto → baja a la escalera de OCR.
-- O9  El CLI `plan` cuenta `ofimatica` y avisa en alto si falta el conversor.
+- O9  Los COMANDOS `plan` y `apply` cuentan `ofimatica` y avisan en alto si falta el conversor.
+- O11 `preflight_manifiestos` mira también los bundles ofimáticos (R1/H-01).
+- O12 `reforzar` selecciona un convertido dudoso (R1/H-02).
+- O13 Si publicar el buscable falla, no queda un PDF mudo en `01_OCR/` (R1/H-03).
 - O10 (slow) LibreOffice REAL convierte el `.doc` de fixtures y el MD contiene su texto.
 """
 from __future__ import annotations
@@ -162,7 +165,6 @@ def test_o5_doc_convertido_con_texto_persiste_pdf_y_md(tmp_path, monkeypatch):
     case, _src, d = _caso(tmp_path)
 
     def _convertir(src, dst, **_k):
-        Path(dst).parent.mkdir(parents=True, exist_ok=True)   # contrato del conversor real
         _pdf_con_texto(Path(dst))
         return Path(dst)
 
@@ -198,33 +200,41 @@ def test_o6_sin_libreoffice_la_fila_dice_por_que(tmp_path, monkeypatch):
 
 
 def test_o7_conversion_fallida_no_tumba_el_lote(tmp_path, monkeypatch):
-    case, _src, d = _caso(tmp_path)
-    case2, _s2, d2 = _caso(tmp_path / "otro", "segundo.odt")
-
+    """UN lote, DOS documentos del mismo caso: el primero falla al convertir, el segundo debe
+    procesarse igual (R1/H-05: la versión anterior usaba dos `ejecutar` independientes y un
+    `return` tras el fallo sobrevivía)."""
+    case, _src, d_mal = _caso(tmp_path)
+    src2 = case / "00_Input" / "01_Drive EV" / "segundo.odt"
+    src2.write_bytes(b"PK\x03\x04" + b"\x00" * 32)
+    sha2 = file_sha256(src2)
+    d_bien = sm.DocPlan(rel_path="01_Drive EV/segundo.odt", sha256=sha2, ext=".odt",
+                        ruta=sm.clasificar_ruta(".odt"), slug=f"segundo__{sha2[:8]}")
     llamadas = []
 
     def _convertir(src, dst, **_k):
         llamadas.append(Path(src).name)
         if Path(src).suffix == ".doc":
             raise ofi.ConversionFallida("soffice terminó (rc=0) sin producir PDF")
-        Path(dst).parent.mkdir(parents=True, exist_ok=True)
         _pdf_con_texto(Path(dst))
         return Path(dst)
 
     monkeypatch.setattr(sm, "convertir_ofimatica", _convertir)
     monkeypatch.setattr(sm, "ocr_pdf_escalera", _no_ocr)
-    cob = sm.ejecutar(case, [d], case_id="EV-2026-001")
-    assert cob[0].estado == "sin_soporte" and "conversión a PDF falló" in cob[0].nota
-    cob2 = sm.ejecutar(case2, [d2], case_id="EV-2026-002")
-    assert cob2[0].estado == "ok" and cob2[0].metodo == "ofimatica"
-    assert llamadas == ["encargo.doc", "segundo.odt"]
+    cob = sm.ejecutar(case, [d_mal, d_bien], case_id="EV-2026-001")
+    assert llamadas == ["encargo.doc", "segundo.odt"], "el segundo tiene que intentarse"
+    por_slug = {c.slug: c for c in cob}
+    assert por_slug[d_mal.slug].estado == "sin_soporte"
+    assert "conversión a PDF falló" in por_slug[d_mal.slug].nota
+    assert por_slug[d_bien.slug].estado == "ok" and por_slug[d_bien.slug].metodo == "ofimatica"
+    sm_dir = case / "01_Procesado" / "02_Sala de máquina"
+    assert (sm_dir / "01_OCR" / f"{d_bien.slug}.pdf").exists()
+    assert not (sm_dir / "01_OCR" / f"{d_mal.slug}.pdf").exists()
 
 
 def test_o8_doc_que_envuelve_un_escaneo_baja_a_la_escalera(tmp_path, monkeypatch):
     case, _src, d = _caso(tmp_path)
 
     def _convertir(src, dst, **_k):
-        Path(dst).parent.mkdir(parents=True, exist_ok=True)
         Path(dst).write_bytes(b"%PDF-1.4\n% sin capa de texto\n")
         return Path(dst)
 
@@ -253,7 +263,6 @@ def test_o8b_si_la_escalera_falla_no_queda_un_pdf_mudo_en_01_ocr(tmp_path, monke
     case, _src, d = _caso(tmp_path)
 
     def _convertir(src, dst, **_k):
-        Path(dst).parent.mkdir(parents=True, exist_ok=True)
         Path(dst).write_bytes(b"%PDF-1.4\n% sin capa de texto\n")
         return Path(dst)
 
@@ -289,12 +298,108 @@ def test_o9_el_cli_cuenta_ofimatica_y_avisa_sin_conversor(tmp_path, monkeypatch,
     assert capsys.readouterr().err == "", "sin documentos ofimáticos no hay nada que avisar"
 
 
+def _cablear_cli(monkeypatch, case):
+    """Idiom del repo (tests/test_sala_maquina_generacion.py::_caso): se doblan las
+    dependencias externas del CLI; las DOS ligaduras de `append_event`."""
+    import scripts.sala_maquina as cli
+    monkeypatch.setattr(cli, "caso_path", lambda cid: case)
+    monkeypatch.setattr(cli, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
+    monkeypatch.setattr(sm, "append_event", lambda destino, ev, *, details=None, case_id=None: None)
+    monkeypatch.setattr(cli, "_atomizar_correo", lambda cid, cd: None)
+    monkeypatch.setattr(cli.case_locator, "resolve_ref", lambda ref: ref)
+    return cli
+
+
+def test_o9_los_comandos_plan_y_apply_avisan_sin_conversor(tmp_path, monkeypatch, capsys):
+    """Son los COMANDOS los que deben avisar, no solo el helper: un `pass` en la llamada
+    (M2 del revisor) tiene que ponerse rojo aquí."""
+    case, _src, d = _caso(tmp_path)
+    cli = _cablear_cli(monkeypatch, case)
+    monkeypatch.setattr(ofi, "localizar_soffice", lambda: None)
+
+    cli.plan("W-TEST99")
+    out, err = capsys.readouterr()
+    assert "ofimatica: 1" in out, out
+    assert "soffice" in err and ofi.ENV_SOFFICE in err, err
+
+    def _sin_conversor(src, dst, **_k):
+        raise ofi.ConversorNoDisponible("LibreOffice (soffice) no encontrado")
+    monkeypatch.setattr(sm, "convertir_ofimatica", _sin_conversor)
+    cli.apply("W-TEST99")
+    out, err = capsys.readouterr()
+    assert "soffice" in err, "apply debe avisar ANTES de procesar"
+    cob = cli._cobertura_previa(case)
+    assert [c.estado for c in cob if c.slug == d.slug] == ["sin_soporte"]
+    assert "soffice" in [c.nota for c in cob if c.slug == d.slug][0]
+
+
 def test_o9_el_preview_lista_la_ruta_ofimatica():
     """Guard textual barato: el preview enumera las rutas a mano; una ruta nueva que no
     aparezca ahí saldría del recuento y `plan` diría menos documentos de los que `apply`
     procesará."""
     src = (Path(__file__).parent.parent / "scripts" / "sala_maquina.py").read_text(encoding="utf-8")
     assert '"ofimatica", "sin_soporte"' in src
+
+
+# ── O11 / O12 / O13 (R1 de Codex: H-01, H-02, H-03) ─────────────────────────────────────
+
+def test_o11_el_preflight_tambien_mira_los_bundles_ofimaticos(tmp_path):
+    """R1/H-01: `preflight_manifiestos` solo miraba `pdf` e `imagen`; un manifiesto inválido
+    (o una permutación de `pp`) en el bundle de un `.doc` se publicaba sin aviso."""
+    from dataclasses import replace
+    from core import split_documental as split
+    case, _src, d = _caso(tmp_path)
+    carpeta = sm.carpeta_bundle_de(case, d.slug)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    split.escribir_manifiesto(carpeta, {
+        "fuente": d.rel_path, "bundle_sha256": "a" * 64, "delimitadores": [],
+        "segmentos": [{"seg": 1, "pp": "1-1", "tipo": "X", "role": "documento"}]})
+    with pytest.raises(split.ManifestValidationError):
+        sm.preflight_manifiestos(case, [d], [])
+    # el mismo manifiesto con el documento saltado no bloquea nada (regla de skip intacta)
+    sm.preflight_manifiestos(case, [replace(d, skip=True)], [])
+    assert "ofimatica" in sm._RUTAS_CON_BUNDLE
+
+
+def test_o12_reforzar_selecciona_un_convertido_dudoso(tmp_path, monkeypatch, capsys):
+    """R1/H-02: `_REFORZABLES` no incluía `ofimatica`; un convertido `low` tenía PDF
+    renderizable en 01_OCR y `reforzar` decía «0 documentos a reforzar»."""
+    case, _src, d = _caso(tmp_path)
+    cli = _cablear_cli(monkeypatch, case)
+    assert "ofimatica" in cli._REFORZABLES
+    cli._guardar_cobertura(case, [sm.DocCobertura(d.slug, d.rel_path, "ofimatica", "low", 40,
+                                                   False, "gibberish", d.sha256)])
+    monkeypatch.setattr(cli, "_exigir_vision_cableada", lambda: None)
+    llegados = []
+
+    def _ejecutar(case_dir, docs, **kw):
+        llegados.extend(x.rel_path for x in docs)
+        return []
+    monkeypatch.setattr(sm, "ejecutar", _ejecutar)
+    cli.reforzar("W-TEST99")
+    assert llegados == [d.rel_path], capsys.readouterr().out
+
+
+def test_o13_si_publicar_falla_no_queda_un_pdf_mudo_en_01_ocr(tmp_path, monkeypatch):
+    """R1/H-03: se decide sobre el temporal y se publica DESPUÉS. Si publicar falla (un lector
+    con el fichero abierto, WinError 32), en 01_OCR no queda nada y la fila dice `error`."""
+    case, _src, d = _caso(tmp_path)
+
+    def _convertir(src, dst, **_k):
+        _pdf_con_texto(Path(dst))
+        return Path(dst)
+
+    def _move_bloqueado(*_a, **_k):
+        raise PermissionError("[WinError 32] fichero bloqueado por otro proceso")
+
+    monkeypatch.setattr(sm, "convertir_ofimatica", _convertir)
+    monkeypatch.setattr(sm, "ocr_pdf_escalera", _no_ocr)
+    monkeypatch.setattr(sm.shutil, "move", _move_bloqueado)
+    cob = sm.ejecutar(case, [d], case_id="EV-2026-001")
+    assert cob[0].metodo == "error" and cob[0].estado == "empty"
+    ocr = case / "01_Procesado" / "02_Sala de máquina" / "01_OCR"
+    assert not list(ocr.glob("*.pdf")) if ocr.exists() else True
+    assert not (case / "01_Procesado" / "02_Sala de máquina" / "03_MD").exists()
 
 
 # ── O10 (LibreOffice real) ─────────────────────────────────────────────────────────────

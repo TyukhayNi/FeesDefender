@@ -991,7 +991,9 @@ def apply(case_id: str = typer.Argument(None), vision: bool = False,
 
 # metodos con páginas renderizables: solo estos se benefician del refuerzo por
 # visión (nativo/sin_soporte/error no tienen un PDF que renderizar página a página).
-_REFORZABLES = ("pypdf", "ocr")
+#: Métodos con un PDF renderizable persistido (00_Input o 01_OCR) sobre el que `--vision`
+#: puede volver. `ofimatica` entra desde la acción 10 (R1/H-02): su buscable vive en 01_OCR.
+_REFORZABLES = ("pypdf", "ocr", "ofimatica")
 
 
 @app.command()
