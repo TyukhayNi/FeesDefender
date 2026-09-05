@@ -4,6 +4,21 @@ Formato: una entrada por versión, la más reciente arriba. Cada entrada cita la
 **evidencia** que motivó el cambio (uso real, delta borrador↔firmado, decisión
 del letrado) — cultura source-locked del despacho.
 
+## 1.5 — 2026-09-05
+
+- **Los `.doc` dejan de ser ilegibles: ruta `ofimatica`.** `.doc`, `.dot`, `.odt`, `.ott`,
+  `.ppt`, `.pps`, `.pptx` y `.odp` se convierten a PDF con LibreOffice headless
+  (`core/ofimatica_a_pdf.py`) y siguen el camino PDF: buscable persistido en `01_OCR/`, MD en
+  `03_MD/`, método `ofimatica` en `_cobertura`. Sin LibreOffice, la fila es `sin_soporte` **con
+  la causa en la nota** y `plan`/`apply` avisan antes de la corrida. **Evidencia:** en W-02MA0R
+  la demanda del ordinario existía solo como `.doc` y ningún LLM podía leerla (`MEJORAS #61`,
+  acción 10 del informe de Codex sobre el alta). Plan y adjudicación:
+  `docs/superpowers/plans/2026-09-05-accion-10-ofimatica-en-la-sala-de-maquina.md`.
+- **Lo que cambia para quien dirige la skill:** el preview puede mostrar una línea `ofimatica: N`
+  y un aviso «LibreOffice (soffice) no encontrado» — en ese caso, o se instala antes de `apply`,
+  o se acepta que esos documentos queden ilegibles y se le dice al abogado.
+- El `version` del frontmatter decía `1.3` desde la 1.4: se alinea aquí con el changelog.
+
 ## 1.4 — 2026-08-02
 
 - **El MD de un segmento ya no lleva sha8 en el nombre (PR #193).** El bloque de layout

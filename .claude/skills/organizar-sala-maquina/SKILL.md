@@ -18,7 +18,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.3"
+  version: "1.5"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -111,8 +111,12 @@ buscable (entre el OCR y el MD), para que cada documento lógico tenga su propio
 
 1. **Preview.** Dispara `python -m scripts.sala_maquina plan "<case_id>"`.
    Muestra, sin escribir nada: cuántos documentos nuevos por ruta (`pdf` /
-   `imagen` / `nativo` / `sin_soporte`) y cuántos se saltan por `sha256` ya
-   procesado.
+   `imagen` / `nativo` / `ofimatica` / `sin_soporte`) y cuántos se saltan por
+   `sha256` ya procesado. `ofimatica` son `.doc`, `.odt`, `.ppt`, `.pptx`…: se
+   convierten a PDF con LibreOffice y siguen el camino PDF. Si el preview avisa
+   «LibreOffice (soffice) no encontrado», esos documentos saldrán `sin_soporte`
+   con la causa en la nota: instálalo (o fija `FEESDEFENDER_SOFFICE`) antes de
+   `apply`, o acepta que queden ilegibles y dilo al abogado.
 2. **(GATE Preview→Apply.)** Presenta el recuento al abogado y **espera OK**
    antes de ejecutar. Si el caso es grande o hay muchos `sin_soporte`,
    avísalo explícitamente antes de pedir confirmación.
@@ -120,7 +124,8 @@ buscable (entre el OCR y el MD), para que cada documento lógico tenga su propio
    `python -m scripts.sala_maquina apply "<case_id>"`. Enruta cada documento
    nuevo (PDF con capa de texto → `pypdf` sin OCR; PDF escaneado/imagen/`.heic`
    → OCRmyPDF → PDF buscable en `01_OCR/`; nativo `.eml`/`.docx`/`.txt`/… →
-   extracción determinista) y escribe `03_MD/`, `raw_text/` y
+   extracción determinista; ofimática `.doc`/`.odt`/`.ppt`… → LibreOffice →
+   PDF buscable en `01_OCR/` → camino PDF) y escribe `03_MD/`, `raw_text/` y
    `_revisar/_cobertura.md`.
    - **Atomiza el correo primero.** Antes del OCR, `apply` corre el motor de
      atomización (`core/email_atomize`) sobre los lotes `email` de `00_Input/` y el
