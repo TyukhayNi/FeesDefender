@@ -22,6 +22,8 @@ venv/
 # `.gitignore` con `*` que hypothesis escribe dentro de su propio directorio.
 .hypothesis/
 .coverage
+# Lo genera la verja para medir la cobertura del diff; es efímero.
+coverage.xml
 htmlcov/
 .mypy_cache/
 .ruff_cache/

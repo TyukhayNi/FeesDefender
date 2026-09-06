@@ -460,6 +460,124 @@ DEPS_DE_COLECCION: tuple[str, ...] = (
 SEMILLAS_DE_ACEPTACION: tuple[int, ...] = (777, 31337)
 
 
+#: Umbral de cobertura sobre las lineas NUEVAS del diff. **Aviso, no verja.**
+#:
+#: Elegido midiendo, no por redondo: sobre el propio diff que lo introdujo daba 93% —y el
+#: 68% inicial señalo codigo nuevo de verdad sin probar, la rama de ROJO de la verja, que
+#: se probo en vez de bajar el liston—. Se deja en 90 y no en 93 para no clavarlo al numero
+#: de hoy: un umbral pegado a la medicion actual se pone rojo con la primera linea
+#: razonablemente no cubrible, y un aviso que grita siempre se ignora siempre.
+#:
+#: Lo que NO se cubre y esta bien que no se cubra: `sys.exit`, y los `print` de ramas que
+#: exigen un entorno roto a proposito.
+UMBRAL_COBERTURA_DEL_DIFF = 90
+
+
+def orden_de_pytest(semilla: int, *, con_durations: bool, con_cobertura: bool = False,
+                    extra: list[str] | None = None) -> list[str]:
+    """La linea de ordenes de UNA corrida de la verja.
+
+    `--dist loadgroup` NO es opcional: sin el, las marcas `xdist_group` no hacen nada y
+    `tests/test_guard_localizador.py` —que escribe sondas dentro de `core/` y lo escanea
+    entero— vuelve a repartirse entre workers. Medido el 2026-09-06 (R1 de Codex, H-01):
+    3 rojos, y peor, un VERDE con un test pasando sin analizar su propio caso.
+
+    `--durations` solo en la primera corrida: la segunda no aporta perfil nuevo y duplicar
+    quince lineas en cada cierre es ruido.
+    """
+    return [PYTHON, "-m", "pytest", "-q", "--tb=short",
+            "-n", "auto", "--dist", "loadgroup",
+            f"--randomly-seed={semilla}",
+            *(["--durations=15"] if con_durations else []),
+            # Cobertura solo en la PRIMERA corrida: es la misma con cualquier orden, y
+            # medirla dos veces solo cuesta. Sobrecoste medido el 2026-09-06: +8 s sobre
+            # 74 s (+11%), que es lo que la hizo caber aqui en vez de en un comando aparte
+            # que nadie correria.
+            *(["--cov=core", "--cov=scripts", "--cov-report=xml"] if con_cobertura else []),
+            *(extra or [])]
+
+
+def cobertura_del_diff(salida: str) -> int | None:
+    """El porcentaje que reporta `diff-cover`, o `None` si no lo dice.
+
+    **`None` NO es 0%, y confundirlos seria repetir el H-05 con otro nombre:** un diff que
+    no toca codigo medido, un `coverage.xml` ausente o una rama base que git no conoce dan
+    los tres «no se pudo medir», y presentarlos como «cero cobertura» convertiria un hueco
+    del instrumento en una acusacion al autor. Funcion aparte para poder probarlo.
+    """
+    m = re.search(r"^Coverage:\s+(\d+)%", salida, re.MULTILINE)
+    return int(m.group(1)) if m else None
+
+
+def _avisar_cobertura_del_diff(rama_base: str = "origin/main", *,
+                               corredor=None, xml: Path | None = None) -> None:
+    """AVISO no bloqueante: cuanto de lo que ESTA RAMA anade esta cubierto.
+
+    Un porcentaje global de cobertura no lo cumple nadie y no dice nada; el util mira las
+    lineas que el diff **anade**, que es donde se acaba de escribir. No bloquea, por la
+    misma politica que el resto de avisos de este script: la unica verja es la suite.
+
+    `corredor` y `xml` se inyectan para poder probarla. **No es ceremonia:** esta funcion
+    es la que produce el NUMERO, asi que si estuviera rota el aviso mentiria y nadie lo
+    sabria. Se hizo testable porque el propio `diff-cover` la senalo como codigo nuevo sin
+    cubrir — el instrumento apuntandose a si mismo, que es la mejor prueba de que mide.
+    """
+    corre = corredor or subprocess.run
+    xml = xml if xml is not None else ROOT / "coverage.xml"
+    print("\n" + "-" * 40)
+    print(f"Cobertura de las lineas NUEVAS (vs {rama_base})")
+    if not xml.exists():
+        print("[aviso] no hay coverage.xml: la primera corrida de la verja no lo genero.")
+        return
+    r = corre(
+        [PYTHON, "-m", "diff_cover.diff_cover_tool", str(xml),
+         f"--compare-branch={rama_base}", "--fail-under=0"],
+        cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace")
+    salida = (r.stdout or "") + (r.stderr or "")
+    pct = cobertura_del_diff(salida)
+    if pct is None:
+        primera = next((ln for ln in salida.splitlines() if ln.strip()), "sin salida")
+        print(f"[aviso] no se pudo medir: {primera.strip()}")
+        return
+    marca = "OK" if pct >= UMBRAL_COBERTURA_DEL_DIFF else "!"
+    print(f"[{marca}] {pct}% (umbral de aviso: {UMBRAL_COBERTURA_DEL_DIFF}%)")
+    if pct < UMBRAL_COBERTURA_DEL_DIFF:
+        for linea in salida.splitlines():
+            if "Missing lines" in linea:
+                print("    " + linea.strip())
+        print("    Son lineas que acabas de escribir y que ningun test ejecuta.")
+
+
+def correr_la_verja(pytest_args: list[str], *, corredor=None) -> str | None:
+    """Corre la suite con CADA semilla de aceptacion. Devuelve el motivo del fallo, o `None`.
+
+    **Funcion y no cuerpo de `main()` para que se pueda PROBAR**, que es el mismo motivo por
+    el que `tests/conftest.py` extrajo `restaurar_config_si_secuestrada`. La rama que de
+    verdad importa aqui es la del ROJO —la que dice como reproducirlo—, y esa solo se
+    ejecuta el dia que algo falla, o sea el peor momento para descubrir que esta mal
+    escrita. `diff-cover` la señalo como linea nueva sin cubrir el 2026-09-06 y por eso
+    existe esta extraccion: el instrumento apunto a codigo nuevo sin probar y se probo, en
+    vez de bajar el umbral hasta que dejara de quejarse.
+
+    `corredor` se inyecta para poder probarla sin lanzar la suite de verdad.
+    """
+    corre = corredor or subprocess.run
+    for i, semilla in enumerate(SEMILLAS_DE_ACEPTACION):
+        print(f"\n--- semilla {semilla} ({i + 1} de {len(SEMILLAS_DE_ACEPTACION)}) ---")
+        resultado = corre(orden_de_pytest(semilla, con_durations=(i == 0),
+                                          con_cobertura=(i == 0),
+                                          extra=pytest_args), cwd=ROOT)
+        if resultado.returncode != 0:
+            print(f"\n[X] Tests fallando con la semilla {semilla} - commit abortado.")
+            print("    Reproducelo con:")
+            print(f"      python -m pytest -q --tb=short -n auto --dist loadgroup "
+                  f"--randomly-seed={semilla}")
+            return f"semilla {semilla}"
+    print(f"\n[OK] Tests verdes con las {len(SEMILLAS_DE_ACEPTACION)} semillas "
+          f"{SEMILLAS_DE_ACEPTACION} - puedes continuar con git add / commit.")
+    return None
+
+
 def deps_que_faltan(deps: tuple[str, ...] = DEPS_DE_COLECCION) -> list[str]:
     """Las de `deps` que ESTE interprete no puede importar.
 
@@ -571,30 +689,8 @@ def main() -> None:
     #
     # `--durations` para que el coste sea visible y no una sensacion: 19 tests
     # (el 0,4%) se comen el 29% del tiempo.
-    # `--dist loadgroup` NO es opcional: sin el, las marcas `xdist_group` no hacen nada
-    # y `tests/test_guard_localizador.py` —que escribe sondas dentro de `core/` y lo
-    # escanea entero— vuelve a repartirse entre workers. Medido el 2026-09-06 (R1/H-01):
-    # 3 rojos, y peor, un VERDE con el test pasando sin analizar su propio caso.
-    for i, semilla in enumerate(SEMILLAS_DE_ACEPTACION):
-        print(f"\n--- semilla {semilla} ({i + 1} de {len(SEMILLAS_DE_ACEPTACION)}) ---")
-        result = subprocess.run(
-            [PYTHON, "-m", "pytest", "-q", "--tb=short",
-             "-n", "auto", "--dist", "loadgroup",
-             f"--randomly-seed={semilla}",
-             # `--durations` solo en la primera: la segunda no aporta perfil nuevo y
-             # duplicar quince lineas en cada cierre es ruido.
-             *(["--durations=15"] if i == 0 else []),
-             *pytest_args],
-            cwd=ROOT,
-        )
-        if result.returncode != 0:
-            print(f"\n[X] Tests fallando con la semilla {semilla} - commit abortado.")
-            print("    Reproducelo con:")
-            print(f"      python -m pytest -q --tb=short -n auto --dist loadgroup "
-                  f"--randomly-seed={semilla}")
-            sys.exit(1)
-    print(f"\n[OK] Tests verdes con las {len(SEMILLAS_DE_ACEPTACION)} semillas "
-          f"{SEMILLAS_DE_ACEPTACION} - puedes continuar con git add / commit.")
+    if correr_la_verja(pytest_args) is not None:
+        sys.exit(1)
 
     # Chequeo de skills (modo AVISO, no bloquea el cierre): CHANGELOG sin
     # actualizar, .skill caducado, drift de helpers, identidad incompleta.
@@ -609,6 +705,12 @@ def main() -> None:
         cs.report(repackage=False)
     except Exception as e:  # el chequeo nunca debe romper el cierre
         print(f"[aviso] no se pudo correr check_skills: {e}")
+
+    # Aviso de cobertura de las lineas NUEVAS del diff (modo AVISO, no bloquea).
+    try:
+        _avisar_cobertura_del_diff()
+    except Exception as e:  # el aviso nunca debe romper el cierre
+        print(f"[aviso] no se pudo medir la cobertura del diff: {e}")
 
     # Aviso de trabajo sin publicar (modo AVISO, no bloquea el cierre).
     try:

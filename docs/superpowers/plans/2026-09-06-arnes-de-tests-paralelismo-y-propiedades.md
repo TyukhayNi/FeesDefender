@@ -191,12 +191,54 @@ qué el flag hace falta — el guard pasaba gracias a su propia documentación. 
 arriba yo había escrito, ese mismo minuto, que no se busca con `in` sobre la fuente «para no contar
 una mención dentro de un comentario». Lo cacé porque muté mi propio guard antes de creérmelo.
 
-## 5. Lo que queda
+## 5. Fase 4 — `syrupy` ✅
 
-- **Fase 4 — `syrupy`** sobre `core/email_atomize/render.py` (piloto elegido con medición: 3
-  funciones `render_* -> str` puras con 159 líneas y 39 asserts a mano dedicados). Snapshot para la
-  **forma**, asertos a mano para el **contrato**, y la regla del `--snapshot-update` escrita antes
-  del primer snapshot.
-- **Fase 5 — `diff-cover`** sobre las líneas nuevas de cada diff. Antes de fijarlo hay que medir dos
-  cosas: el sobrecoste de `--cov` con `-n auto`, y el umbral sobre este mismo diff. Un gate que nace
-  rojo se desactiva en una semana.
+Piloto `core/email_atomize/render.py`, elegido midiendo: 4 funciones `render_*` con **159 líneas y
+39 asserts** a mano dedicados solo a ellas, la mayor concentración del repo. Snapshot para la
+**forma**; los asertos de **contrato** («la firma no aparece», «la cita vetada no entra») se quedan
+sin tocar, porque un snapshot congela la salida *defecto incluido* y los aprobaría.
+
+La regla del `--snapshot-update` se escribió **antes** del primer snapshot, y se aplicó también a la
+primera generación: leí las 198 líneas archivadas antes de darlas por buenas.
+
+**Que no sean decorado, medido:** tres mutaciones sobre `render.py` ponen rojos **1, 2 y 5**
+snapshots, en proporción a su radio — discriminan, no solo se disparan.
+
+## 6. Fase 5 — `diff-cover` ✅
+
+Las dos mediciones que el plan exigía antes de fijar nada:
+
+- **Sobrecoste de `--cov` con `-n auto`: +8 s sobre 74 s (+11%).** Mucho menos de lo temido, y eso
+  es lo que lo hizo caber **dentro** de `session_close` en vez de en un comando aparte que nadie
+  correría. Va como **aviso**, no como verja: el patrón que este script ya usa para todo lo que no
+  es la suite.
+- **Umbral: 90%.** Elegido midiendo y no por redondo — sobre este diff daba 93% y se deja una línea
+  de holgura. Un umbral pegado a la medición del día se pone rojo con la primera línea
+  razonablemente no cubrible, y un aviso que grita siempre se ignora siempre.
+
+**Y el instrumento se justificó dos veces el mismo día, apuntándome a mí:**
+
+1. Primera medición: **68%**. Lo que faltaba era la **rama de fallo de la propia verja** — la que
+   dice cómo reproducir un rojo, o sea código que solo corre el peor día. Se probó (extrayendo
+   `correr_la_verja` de `main()`, el mismo movimiento que `conftest.py` hizo con
+   `restaurar_config_si_secuestrada`) y subió a **93%**.
+2. Tras añadir el propio medidor: **62%**. Lo que faltaba era
+   `_avisar_cobertura_del_diff` entera: veinte líneas que **producen el número** y que no probaba
+   nadie. Si estuviera roto, el aviso mentiría y nadie lo sabría. Probada → **92%**.
+
+En los dos casos la respuesta fue escribir el test, no bajar el umbral. Eso queda escrito en
+`CLAUDE.md` como la respuesta por defecto.
+
+## 7. Un defecto que me repetí a mí mismo, y su guard
+
+Al añadir `coverage.xml` al `.gitignore` puse un **comentario al final de la regla** — exactamente
+el H-06 que acababa de arreglar, tres líneas más arriba, en el mismo fichero.
+
+El guard existente (`test_ninguna_regla_de_gitignore_es_inerte`) **no podía verlo**: una regla con
+comentario no casa con nada, así que ningún fichero trackeado se ve afectado y aquel se queda verde.
+Son dos formas distintas de que una regla no muerda. Cerrado con
+`test_ninguna_regla_lleva_comentario_al_final_de_la_linea` en ese mismo fichero, con su detector
+probado en las dos direcciones y un mutante que lo mata.
+
+Que la clase se repitiera **dentro de la misma sesión en que la documenté** es el argumento de que
+un guard hace falta y una nota no basta: el resultado *parece correcto al leerlo*.

@@ -346,6 +346,12 @@ midió, la otra qué se midió—. Un reemplazo global de la fecha rompe la segu
      «debilitar un test para poner verde» que prohíbe la regla de arriba, solo que con una
      herramienta que lo hace cómodo. Y un snapshot recién generado **siempre pasa**: no
      prueba nada hasta que se le ha visto ponerse rojo.
+- **Cobertura: la del DIFF, no la global.** Un porcentaje global no lo cumple nadie y no
+  dice nada; el que sirve mira **las líneas que este diff añade**, que es donde se acaba de
+  escribir. `session_close` lo mide y lo dice como **aviso** (umbral 90%), nunca como verja:
+  la única verja es la suite. Cuando señale algo, la respuesta por defecto es **escribir el
+  test**, no bajar el umbral — sobre el diff que lo introdujo pasó de 68% a 93% porque
+  apuntó a la rama de fallo de la propia verja, que no probaba nadie.
 - **El conteo de la suite NO se transcribe aquí.** La cifra de referencia es la del
   **último cierre** en `docs/bitacora/AAAA.md`, que se mide en cada sesión; el estado
   vigente, con su fecha, en `STATUS.md`. Esta línea dijo «546/546 verdes en s20

@@ -377,3 +377,75 @@ def test_el_guard_grita_si_git_no_puede_responder(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="check-ignore fallo"):
         _ignorados([".env"], repo=tmp_path, trackeados=[], env=entorno)
+
+
+# --- Comentarios al final de una regla: la OTRA forma de que una regla no muerda -------
+
+
+def _gitignores_trackeados() -> list[Path]:
+    """Los `.gitignore` que el repositorio REPARTE. Uno local sin commitear no cuenta:
+    la clase que este fichero vigila son las reglas que viajan con el repo."""
+    salida = _git(["ls-files", "-z", "--", "*.gitignore", ".gitignore"], REPO)
+    return [REPO / r for r in salida.stdout.split(NUL) if r.strip()]
+
+
+def reglas_con_comentario_en_linea(texto: str) -> list[tuple[int, str]]:
+    """Lineas de un `.gitignore` que llevan un `#` DESPUES del patron.
+
+    Git solo trata como comentario un `#` **al principio** de la linea. En cualquier otra
+    posicion es un caracter literal del patron, asi que `foo/   # explicacion` no es la
+    regla `foo/` con una nota al lado: es un patron que no casa con nada y **muere en
+    silencio**, sin aviso ni error.
+
+    Funcion aparte de su test para poder ejercitar las dos direcciones.
+    """
+    hallazgos = []
+    for n, linea in enumerate(texto.splitlines(), start=1):
+        pelada = linea.strip()
+        if not pelada or pelada.startswith("#"):
+            continue
+        # `\#` es un `#` escapado a proposito y SI forma parte del patron legitimamente.
+        sin_escapes = linea.replace("\\#", "")
+        if "#" in sin_escapes:
+            hallazgos.append((n, linea.rstrip()))
+    return hallazgos
+
+
+def test_ninguna_regla_lleva_comentario_al_final_de_la_linea():
+    """Medido el 2026-09-06 (R1 de Codex, H-06): `.hypothesis/   # …` era un patron
+    literal que no casaba con nada, y la caché quedaba sin ignorar. Lo tapaba por accidente
+    el `.gitignore` con `*` que hypothesis escribe dentro de su propio directorio.
+
+    **Y volvio a pasar el mismo dia, tres lineas mas abajo del arreglo**, al anadir
+    `coverage.xml`. Por eso esto es un guard y no una nota: la clase de error es de las que
+    se repiten porque el resultado *parece* correcto al leerlo.
+
+    El guard de arriba (`test_ninguna_regla_de_gitignore_es_inerte`) **no puede ver esto**:
+    una regla con comentario no casa con nada, asi que ningun fichero trackeado se ve
+    afectado y aquel se queda verde. Son dos formas distintas de que una regla no muerda.
+    """
+    malos: dict[str, list[tuple[int, str]]] = {}
+    for ruta in _gitignores_trackeados():
+        hallazgos = reglas_con_comentario_en_linea(
+            ruta.read_text(encoding="utf-8", errors="replace"))
+        if hallazgos:
+            malos[str(ruta.relative_to(REPO))] = hallazgos
+    assert not malos, (
+        "git NO admite comentarios al final de una regla: el `#` pasa a formar parte del "
+        "patron y la regla queda muerta sin avisar. Pon el comentario en su propia "
+        "linea:\n" + "\n".join(f"  {f}:{n}: {ln}"
+                               for f, hs in sorted(malos.items()) for n, ln in hs))
+
+
+def test_el_detector_de_comentarios_ve_y_no_alucina():
+    """Las dos direcciones. Sin la segunda, el guard se desactiva la primera semana."""
+    assert reglas_con_comentario_en_linea("build/   # artefactos\n") == [
+        (1, "build/   # artefactos")]
+    assert reglas_con_comentario_en_linea(".hypothesis/ # cache\n")
+
+    # Lo correcto NO se denuncia: comentario en su propia linea, negacion, y un `#`
+    # escapado, que si es parte legitima del patron.
+    assert reglas_con_comentario_en_linea("# artefactos\nbuild/\n") == []
+    assert reglas_con_comentario_en_linea("!.env.example\n") == []
+    assert reglas_con_comentario_en_linea(r"fichero\#raro" + "\n") == []
+    assert reglas_con_comentario_en_linea("\n   \n") == []

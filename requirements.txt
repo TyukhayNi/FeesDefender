@@ -58,6 +58,10 @@ pytest-cov>=5.0
 pytest-randomly>=3.12    # orden de tests aleatorio por defecto: caza fugas de aislamiento
                          # entre tests (estado global, reloads, sys.modules). El seed
                          # cambia cada corrida; fijar con --randomly-seed=N para reproducir.
+diff-cover>=10.5         # cobertura de las lineas NUEVAS de un diff. Un porcentaje GLOBAL
+                         # no lo cumple nadie y no dice nada; el util mira donde se acaba
+                         # de escribir. AVISO en `session_close`, no verja. Sobrecoste
+                         # medido: +8 s sobre 74 s (+11%), que es lo que lo hizo caber ahi.
 syrupy>=6.0              # snapshots de FORMA para los generadores de texto. Su fichero
                          # `.ambr` es la REFERENCIA y va versionado: no se gitignora.
                          # Regla del `--snapshot-update` en `CLAUDE.md` §Tests — se escribio
