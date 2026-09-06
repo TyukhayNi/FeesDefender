@@ -63,7 +63,16 @@ MUTANTES = [
     ("M05 la regex del CRM pierde el separador « · »", EE,
      r'    r"S/R:(?P<sr>[^·]*)·\s*M/R:(?P<mr>[^·]*)·.*?Contrario:(?P<contrario>.*)$",',
      r'    r"S/R:(?P<sr>[^|]*)\|\s*M/R:(?P<mr>[^|]*)\|.*?Contrario:(?P<contrario>.*)$",',
-     {"test_repositorio_con_refs_vacias_se_excluye"}),
+     # Los cuatro de integracion entran en la expectativa tras verlo correr: NO es un
+     # mutante mal apuntado, es que la expectativa era estrecha. Los cuatro usan
+     # `_raws_mixtos()`, que lleva un `g-repo`; sin el separador esa regla deja de
+     # disparar y los cuatro cuentan 2 exclusiones donde esperaban 3. Todos dependen
+     # de la MISMA propiedad que el mutante ataca, que es el criterio del arnes de #136.
+     {"test_repositorio_con_refs_vacias_se_excluye",
+      "test_el_ruido_no_se_escribe_y_lo_del_caso_si",
+      "test_lo_excluido_queda_en_el_report_con_su_regla",
+      "test_la_exclusion_es_REVERSIBLE_el_gid_no_entra_en_el_indice",
+      "test_el_evento_durable_dice_que_se_excluyo_y_por_que"}),
 
     ("M06 `gobernanza_interna` se conforma con la palabra «acta»", EE,
      r'_RE_GOBERNANZA = re.compile(r"\bacta\b.*\bcfo\b")',
