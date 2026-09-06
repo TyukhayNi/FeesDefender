@@ -151,5 +151,9 @@ datos de cliente — el original vive en Gmail, la exclusión no borra nada y es
 
 ## 6. Adjudicación de la R1
 
-*(pendiente — se rellena cuando la ronda corra; el acta literal va a
-`docs/superpowers/specs/2026-09-06-accion-6a-filtro-ruido-r1-adversarial-review.md`)*
+*(pendiente — se rellena cuando la ronda corra. El acta literal irá a su hermana
+`…-accion-6a-filtro-ruido-r1-adversarial-review.md` bajo `docs/superpowers/specs/`; la
+ruta se cita aquí cuando exista, porque el guard **G-citas** de
+`tests/test_docs_gobernanza.py` comprueba que toda cita a un spec o plan esté en disco —
+y tiene razón: una ruta escrita antes de tiempo es una promesa que el índice da por
+cumplida.)*
