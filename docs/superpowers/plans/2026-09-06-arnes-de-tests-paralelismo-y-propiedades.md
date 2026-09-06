@@ -2,14 +2,16 @@
 titulo: "El arnés de tests: paralelismo, doctrina y las dos técnicas que faltaban"
 fecha: 2026-09-06
 estado: implementado
-rev: "2"
+rev: "3"
 relacionado: "PLAN fila #22"
 ---
 
 # El arnés de tests: paralelismo, doctrina y las dos técnicas que faltaban
 
-> **Rev. 2 (2026-09-06), tras la R1 adversarial de Codex sobre el diff (`NO-SHIP`, 6 hallazgos
-> numerados + 2 de secciones; **8 confirmados, 0 refutados**). Adjudicación en el **§4**.**
+> **Rev. 3 (2026-09-06). DOS rondas adversariales de Codex, las dos `NO-SHIP`:**
+> **R1** sobre `b707df5..34ee6c0` (8 hallazgos, 8 confirmados) — adjudicación en el **§4**.
+> **R2** sobre el diff completo `b707df5..91a0600` (10 hallazgos, 10 confirmados, más el veredicto
+> sobre las ocho remediaciones de R1) — adjudicación en el **§8**.
 >
 > Este plan **no existía cuando el trabajo empezó**, y decirlo es parte de él: decidí no escribirlo
 > «para no meter ceremonia» cuando no había nada que adjudicar. La R1 devolvió ocho hallazgos, y una
@@ -17,8 +19,15 @@ relacionado: "PLAN fila #22"
 > gobernanza la busca. El plan se escribe *después*, para sostener la adjudicación — que es
 > exactamente la función que el §5 del contrato le asigna.
 >
-> Radio de daño: no decide quién escribe sobre qué copia ni puede destruir datos de cliente →
-> **una ronda**, sobre el diff (§4).
+> **Sobre el presupuesto de rondas.** Por radio de daño le tocaba **una**, y así se ejecutó. La
+> segunda es una **escalada autorizada expresamente por Nikolai** al conocer que la rama había
+> crecido de 3 commits a 7 y que casi el 80% no lo había mirado ningún revisor. Le di el dato sin
+> argumentar a favor: argumentar una ronda de más es exactamente el sesgo que la regla del
+> 2026-08-26 vigila, y el techo duro dice que esa decisión es suya.
+>
+> **Lo que R2 devolvió sobre R1 es la razón de que la escalada valiera la pena:** de mis ocho
+> remediaciones, **tres eran incompletas**, y las tres por el mismo mecanismo — arreglé el caso que
+> el informe señalaba y no la clase de la que era ejemplo.
 
 ## 1. Por qué, y el número que lo decidió
 
@@ -40,15 +49,17 @@ medido: sobre un fichero suelto arrancar los workers cuesta más de lo que ahorr
 11,9 s). Codex lo extendió a subconjuntos de 7 y 14 ficheros y la serie gana en los tres: no hay
 punto de cruce a esa escala, así que la decisión se refuerza en vez de refutarse.
 
-**`--dist loadgroup` acompaña siempre a `-n auto`.** Sin él las marcas `xdist_group` son decorado.
-Ver §4, H-01.
+**Ningún test escribe en el árbol de producción**, y esa regla no tiene escotilla: lo vigila
+`tests/test_guard_aislamiento_paralelo.py`. Hubo una etapa intermedia con `xdist_group` +
+`--dist loadgroup` que R2 declaró insuficiente —agrupar protege de los escritores y no de los
+lectores— y las tres piezas se retiraron. Ver §8, H-01.
 
 **Doctrina en `CLAUDE.md` §Tests**: las dos semillas para aceptar, la prohibición de debilitar un
 test para poner verde, y el bucle interno en serie.
 
 **`hypothesis`**: 10 property tests sobre tres funciones puras de `core/utils.py` cuyo docstring ya
 **afirmaba** una propiedad universal, más el arnés de mutación que las prueba
-(`tests/_mutantes_propiedades_utils.py`, 12 mutantes).
+(`tests/_mutantes_propiedades_utils.py`, **13 mutantes**).
 
 **Un defecto de producción, encontrado por el camino.** `normalize_es_phone("0034 +34 600 111 222")`
 devolvía `"+34600111222"` — con el `+34` que el CRM rechaza y que la función existe para quitar. Un
@@ -57,18 +68,23 @@ ninguno lo vio.
 
 ## 3. Lo medido
 
+Cifras **finales**, tras remediar las dos rondas:
+
 | | Antes | Después |
 |---|---|---|
-| Suite completa | 371 s | **94 s** |
-| Aceptación con dos semillas | 743 s | **198 s** (la verja las corre sola) |
+| Suite completa | 371 s | **~80 s** |
+| Aceptación con dos semillas | 743 s | **203 s** (la verja las corre sola) |
 | `--runslow` en paralelo | — | 136 s, verde |
-| Suite final | 4.656 | **4.670 / 0 fallos / 0 errores / 88 skip** |
+| Cobertura de las líneas nuevas | no se medía | **96%** (aviso, umbral 90) |
+| Suite final | 4.656 | **4.698 / 0 fallos / 0 errores / 88 skip** |
 
-El delta de conteo (+14 sobre el punto de partida) está explicado entero: 10 property tests, 4 del
-guard de aislamiento.
+El delta de conteo (+42 sobre el punto de partida) está explicado entero: 10 property tests, 7 de
+snapshots, 18 de la verja y del guard de aislamiento, 7 restantes entre el guard del `.gitignore` y
+los de aislamiento. Cada tramo va en el commit que lo introdujo.
 
-**Arnés de mutación: 12 mutantes, 12 muertos, 0 mal apuntados.** De ellos, 7 no los mata
-`tests/test_utils.py` — **y esa es toda la afirmación**: ver §4, «sección E».
+**Arnés de mutación: 13 mutantes, 13 muertos, 0 mal apuntados.** De ellos, 8 no los mata
+`tests/test_utils.py` — **y esa es toda la afirmación**, no «los deja pasar la suite»: ver §4,
+«sección E».
 
 ## 4. Adjudicación de la revisión adversarial (Codex, 2026-09-06) — NO-SHIP, remediado
 
@@ -104,6 +120,12 @@ entero, el compartido es el **directorio**, no el nombre.
 Frontera hecha permanente en `tests/test_guard_aislamiento_paralelo.py`, con las dos mitades
 —quien escribe se declara, y todo lanzador pasa el flag—, 4 mutantes, 4 muertos. La búsqueda de
 otros ficheros con el mismo patrón (por AST) devolvió **ninguno**: la frontera estaba acotada.
+
+> **⚠ Esta adjudicación se conserva como se escribió, y R2 la desmintió en dos puntos.** El remedio
+> era **insuficiente** (agrupar no protege de los lectores) y mi «la frontera estaba acotada» se
+> apoyaba en un detector que veía **1 de 6** formas de escribir — había un segundo escritor y no lo
+> vi. La corrección, en el **§8**. Se deja el texto original a propósito: reescribirlo borraría
+> justo lo que el acta existe para poder contrastar.
 
 ### H-02 — MEDIO — CONFIRMADO (la mitad, encontrada por mí antes del informe)
 
@@ -228,6 +250,77 @@ Las dos mediciones que el plan exigía antes de fijar nada:
 
 En los dos casos la respuesta fue escribir el test, no bajar el umbral. Eso queda escrito en
 `CLAUDE.md` como la respuesta por defecto.
+
+## 8. Adjudicación de la revisión adversarial R2 (Codex, 2026-09-06) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff completo `b707df5..91a0600` (7 commits, +2.639/−24)
+- **Ronda:** 2 (diff completo) — **escalada autorizada expresamente por Nikolai**
+- **Revisor:** Codex
+- **Informe recibido:** `docs/superpowers/specs/2026-09-06-arnes-de-tests-r2-adversarial-review.md`
+- **Hallazgos:** 10 — **10 confirmados, 0 refutados**
+- **Remediado en:** commit `4875c53`; esta rev. 3 del plan
+
+**Por qué hubo una segunda ronda.** El presupuesto de esta pieza era **una**, y así se
+ejecutó. Después la rama creció de 3 commits (+557) a 7 (+2.639): **casi el 80% no lo había
+mirado ningún revisor**, incluido un refactor de la verja que gobierna todos los cierres.
+Le di el dato a Nikolai sin argumentar a favor —argumentar es el sesgo que la regla del
+2026-08-26 vigila— y él autorizó la escalada. El techo duro dice justamente que esa decisión
+es suya.
+
+**Veredicto sobre las ocho remediaciones de R1:** 4 REAL, 1 REAL-con-límites, **3
+INCOMPLETAS** (H-01 colisiones, H-03 restauración, H-05 dependencias). Las tres fallaron por
+el mismo mecanismo: **arreglé el caso que el informe señalaba y no la clase**.
+
+### H-01 — el remedio de R1 estaba condenado, y la solución era retirar código
+
+Agrupar con `xdist_group` protege de los otros **escritores** y no de los **lectores**:
+cualquier test que escanee `core/` puede enumerar una sonda y abrirla después de que el
+escritor la borre. Reproducido.
+
+La frontera nunca fue el reparto: era que un test escribiera en el árbol compartido. Y no
+hacía falta — las dos pruebas que escribían son de mutación **del contador**, no del árbol.
+Con la raíz del escáner parametrizada montan su sonda en `tmp_path`.
+
+**Consecuencia, y es la parte que me interesa:** se retiran la marca, el flag
+`--dist loadgroup` y el guard que lo vigilaba. La regla pasa de «quien escriba, que declare
+su grupo» a **«nadie escribe»** — más fuerte, sin escotilla, y con tres piezas menos que
+mantener. Verde con `-n 2/4/8` y orden aleatorio sin nada de eso.
+
+**Lo que hice bien esta vez:** reforcé el detector **antes** de decidir. Sin censo fiable no
+sabía si la vía limpia era viable; con él, **0 escritores de 265 ficheros**. Medir antes de
+remediar es lo que no hice en R1.
+
+### H-04 — el test que escribí para probar que los snapshots muerden, no mordía
+
+Recibía la fixture `snapshot` y **nunca la usaba**. El revisor lo demostró con un oráculo
+cuyo `__eq__` lanza: el test pasó. No fue mala suerte — **poner la fixture en la firma se
+parece lo bastante a usarla** como para que la lectura no lo cace. Solo lo caza ejercitarlo,
+que es exactamente lo que este fichero predica.
+
+### H-02, H-03 — guards que certificaban lo que no comprobaban
+
+El detector veía **1 de 6** formas ordinarias de escribir; ahora ve 9 y **declara por
+escrito lo que no ve** en vez de prometer universalidad. `_declara_grupo_xdist` aceptaba una
+referencia suelta que no marca ningún test, y el guard de lanzadores pasaba si la cadena
+aparecía en cualquier parte del fichero: los dos se van con la escotilla.
+
+### H-05 a H-10 — confirmados y remediados
+
+`H-05` la restauración del arnés ya no usa git (bytes en memoria) y su alcance se declara —
+no cubre `TerminateProcess`, y decir «por donde sea» era exagerar. `H-06` faltaban `syrupy`
+y `pytest_cov` en el preflight, **el mismo defecto que R1 me hizo arreglar**, repetido al
+ampliar la superficie sin ampliar la lista. `H-07` mi detector del `.gitignore` denunciaba
+patrones legítimos: reescrito contra la gramática real. `H-08` el parser de cobertura no
+leía decimales, elegía el primero de dos resúmenes y no miraba el código de salida. `H-09`
+la orden impresa para reproducir un rojo perdía `--runslow`. `H-10` el generador de
+componentes nunca producía nombres de un carácter.
+
+### Lo que R2 no refutó
+
+Los cinco snapshots **sí muerden** (lo verificó mutando el render); las propiedades
+positivas de R1 matan sus tres mutantes; el `.ambr` no contiene PII; los dos JUnit de sus
+suites tienen idéntico estado por test; y el umbral 90 le parece coherente con la política
+del script. No convirtió en defecto una preferencia suya sobre semillas fijas.
 
 ## 7. Un defecto que me repetí a mí mismo, y su guard
 
