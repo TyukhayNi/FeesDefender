@@ -346,7 +346,7 @@ def test_intake_events_es_frozenset_con_34_eventos(il):
     # 33 -> 34 el 2026-09-03: `apertura_v1_terminada`, el cierre de la secuencia de V1
     # (Plan 5, Task 7). Y funcionó: este guard fue el que me obligó a declararlo.
     assert isinstance(il.INTAKE_EVENTS, frozenset)
-    assert len(il.INTAKE_EVENTS) == 34
+    assert len(il.INTAKE_EVENTS) == 35
     assert "atomizado_email" in il.INTAKE_EVENTS
     assert "contenido_adjuntos" in il.INTAKE_EVENTS
     assert "apertura_v1_terminada" in il.INTAKE_EVENTS
@@ -397,6 +397,9 @@ def test_intake_events_contiene_los_canonicos(il):
         "archivado",
         "atomizado_email",
         "contenido_adjuntos",
+        # Acción 6a: el correo de administración que el filtro de `export_label` NO
+        # deposita. Único rastro durable de la exclusión.
+        "email_excluido_ruido",
         # Fase 1 dual (Task 8): ciclo de vida del workspace. Se declaran aunque su
         # emision llegue en fases posteriores — el vocabulario del log es contrato
         # de LECTURA, y un evento que no se puede nombrar no se puede escribir

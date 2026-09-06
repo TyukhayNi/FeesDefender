@@ -72,10 +72,15 @@ def _parse_message(raw: bytes) -> Message:
 
 
 def parse_headers(raw: bytes) -> dict[str, str]:
-    """Cabeceras del mensaje RFC822 como dict en minúscula (desplegadas)."""
+    """Cabeceras del mensaje RFC822 como dict en minúscula (desplegadas).
+
+    ``cc`` entra desde la acción 6a: el buzón de facturación viaja en copia tan a
+    menudo como en ``to``, y sin él la regla ``facturacion_despacho`` sería ciega a la
+    mitad de los casos.
+    """
     msg = _parse_message(raw)
     out: dict[str, str] = {}
-    for name in ("date", "subject", "from", "to", "message-id"):
+    for name in ("date", "subject", "from", "to", "cc", "message-id"):
         val = msg.get(name)
         if val is not None:
             out[name] = str(val).strip()
@@ -85,6 +90,99 @@ def parse_headers(raw: bytes) -> dict[str, str]:
 def message_id_of(raw: bytes) -> str:
     """Message-ID normalizado (sin ``<>`` ni espacios), o ``""`` si no hay."""
     return (parse_headers(raw).get("message-id") or "").strip().strip("<>").strip()
+
+
+# ---------------------------------------------------------------------------
+# Filtro de ruido administrativo del despacho (acción 6a)
+# ---------------------------------------------------------------------------
+#
+# NO confundir con `core.email_atomize.contaminacion`, que detecta W-codes de OTROS
+# expedientes y **avisa sin excluir** — allí el material podría ser prueba y decide el
+# letrado. Aquí la categoría es distinta: administración y finanzas del despacho, que
+# no es prueba de NINGÚN caso y además arrastra confidencialidad de terceros (los
+# anexos de la circularización de auditoría llevan la cartera completa de litigios).
+# Nikolai fijó el criterio el 2026-07-21 sobre W-02VUDR: borrar, ni siquiera
+# cuarentena. No escribirlo es más conservador, y el original sigue en Gmail.
+#
+# La regla de las reglas: una exclusión se define por señal ESTRUCTURAL —destinatario,
+# cabecera— siempre que la haya; solo se cae al asunto cuando no existe otra, y
+# entonces el patrón tiene que ser específico hasta el punto de que un correo del caso
+# no pueda casarlo por accidente. Ninguna mira el CUERPO, por la misma razón que
+# `detectar_cruce` no lo mira: el letrado habla de facturas y de auditorías en su
+# correspondencia del expediente con normalidad.
+
+#: Buzón de facturación de E&V. Señal estructural pura: nada del expediente de un
+#: cliente se dirige ahí.
+_BUZON_FACTURACION = "proveedores.es@engelvoelkers.com"
+
+#: Buzón de archivo del despacho. Por sí solo NO excluye — un correo del caso
+#: reenviado ahí conserva sus referencias del CRM y sigue siendo del expediente.
+_BUZON_REPOSITORIO = "mails.repositorio@gmail.com"
+
+#: Asunto de la plantilla GENERICO del CRM (id 404), verificado en
+#: `docs/INTEGRACION_SUDESPACHO.md`:
+#: ``S/R: {ref} · M/R: {num}/{serie} · Cliente: … · Contrario: …``
+#: El separador es « · » (U+00B7) y **no es opcional**: sin él la regex no casa el
+#: asunto real, que es exactamente el error que traía el dimensionado previo.
+_RE_ASUNTO_CRM = re.compile(
+    r"S/R:(?P<sr>[^·]*)·\s*M/R:(?P<mr>[^·]*)·.*?Contrario:(?P<contrario>.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+#: Circularización de auditoría y cartas de auditores. Sus anexos son el problema.
+_RE_AUDITORIA = re.compile(
+    r"circulariz\w*\s+(?:de\s+)?auditor"
+    r"|\bcartas?\s+(?:de|a|para)\s+(?:los\s+|las\s+)?auditor",
+)
+
+#: Actas de gobernanza interna. `cfo` es la señal fuerte: «acta» a secas es
+#: cotidiano en un expediente (acta notarial, acta de la reunión con el propietario).
+_RE_GOBERNANZA = re.compile(r"\bacta\b.*\bcfo\b")
+
+
+def _sin_acentos_min(texto: str) -> str:
+    """Minúsculas sin acentos, para que «auditoría» y «auditoria» casen igual."""
+    plano = unicodedata.normalize("NFKD", texto or "")
+    return plano.encode("ascii", "ignore").decode("ascii").lower()
+
+
+def _va_dirigido_a(headers: dict[str, str], buzon: str) -> bool:
+    """¿``buzon`` aparece en ``to`` o en ``cc``?
+
+    Por subcadena sobre el header crudo y no por `getaddresses`: la dirección buscada
+    es literal y muy específica, así que un falso positivo no es realista, mientras
+    que el parseo de listas sí falla con nombres del tipo ``Apellido, Nombre <addr>``.
+    """
+    destinos = f"{headers.get('to', '')} {headers.get('cc', '')}".lower()
+    return buzon in destinos
+
+
+def clasificar_ruido(headers: dict[str, str]) -> str | None:
+    """El nombre de la regla que excluye este mensaje, o ``None`` si es del caso.
+
+    Capa PURA: no toca disco, no muta nada, solo lee cabeceras ya parseadas.
+
+    Devuelve el **nombre** de la regla y no un booleano a propósito: el nombre es el
+    motivo, y el motivo es lo que hace la exclusión revisable — sin él, `_intake_log`
+    diría que se excluyeron N correos sin decir por qué.
+    """
+    if _va_dirigido_a(headers, _BUZON_FACTURACION):
+        return "facturacion_despacho"
+
+    asunto = headers.get("subject", "") or ""
+    if _va_dirigido_a(headers, _BUZON_REPOSITORIO):
+        m = _RE_ASUNTO_CRM.search(asunto)
+        # La conjunción es deliberada: el buzón dice «esto es un volcado al archivo»
+        # y las referencias vacías dicen «y no pertenece a ningún expediente».
+        if m and not any(m.group(g).strip() for g in ("sr", "mr", "contrario")):
+            return "repositorio_refs_vacias"
+
+    plano = _sin_acentos_min(asunto)
+    if _RE_AUDITORIA.search(plano):
+        return "auditoria"
+    if _RE_GOBERNANZA.search(plano):
+        return "gobernanza_interna"
+    return None
 
 
 def _slug_descripcion(asunto: str) -> str:
@@ -885,6 +983,10 @@ class ExportReport:
     drive_link_paths: set[str] = field(default_factory=set)           # rel paths source="drive_link"
     duplicados_map: dict[str, str] = field(default_factory=dict)  # rel → primary_path (T8 manifiesto)
     intake_logged: bool = False
+    #: Ruido administrativo NO escrito (acción 6a): gmail_id, asunto y regla que lo
+    #: excluyó. El motivo va aquí y no en un contador porque «se excluyeron 3» sin
+    #: decir cuáles ni por qué no es revisable.
+    excluidos_ruido: list[dict[str, str]] = field(default_factory=list)
 
     def resumen(self) -> str:
         enlaces = (
@@ -893,10 +995,13 @@ class ExportReport:
             f"{self.links_filtered_sig} firmas, {self.links_manual} manuales, "
             f"{self.links_error} con error)"
         )
+        ruido = (f"{len(self.excluidos_ruido)} excluidos por ruido administrativo, "
+                 if self.excluidos_ruido else "")
         return (
             f"etiqueta {self.label!r} ({self.account}): {self.total_in_label} mensajes; "
             f"{self.written} escritos, {self.skipped} ya presentes, "
             f"{self.duplicados} duplicados por Message-ID, "
+            f"{ruido}"
             f"{self.attachments} adjuntos extraídos, "
             f"{self.nested_flattened} emails anidados aplanados ({self.nested_dedup} dup), "
             f"{enlaces}, {len(self.errors)} errores"
@@ -915,6 +1020,7 @@ def export_label(
     force: bool = False,
     flatten_nested_emails: bool = True,
     resolve_drive_links: bool = True,
+    filtrar_ruido: bool = True,
 ) -> ExportReport:
     """Exporta TODOS los mensajes de una etiqueta a ``dest_dir`` como ``.eml`` fieles.
 
@@ -1038,7 +1144,24 @@ def export_label(
         for gid, raw_bytes in _iter_raws(
             candidates, service=service, creds=creds, max_workers=max_workers, report=report
         ):
-            mid = message_id_of(raw_bytes)
+            cabeceras = parse_headers(raw_bytes)
+            if filtrar_ruido:
+                regla = clasificar_ruido(cabeceras)
+                if regla is not None:
+                    # Se filtra AQUÍ, y el sitio es parte del contrato:
+                    #  - antes de `vistos`/`report.duplicados`, para que un excluido no
+                    #    contamine la dedup ni infle un contador que el letrado lee;
+                    #  - antes de `nuevos_gids.append`, para que el gid NO entre en
+                    #    `_exported_ids.json` y la exclusión sea REVERSIBLE: una corrida
+                    #    con `filtrar_ruido=False` lo trae, sin necesidad de `force`.
+                    report.excluidos_ruido.append({
+                        "gmail_id": gid,
+                        "asunto": cabeceras.get("subject", ""),
+                        "regla": regla,
+                    })
+                    continue
+
+            mid = (cabeceras.get("message-id") or "").strip().strip("<>").strip()
             duplicado_de = None
             if mid and mid in vistos:
                 # §9.3: Message-ID ya conocido → SE ESCRIBE igual (canal nuevo lo trae),
@@ -1100,11 +1223,65 @@ def export_label(
     else:
         write_indices(dest)
 
-    if case_id and dest.exists():
+    input_root = _input_root_de(case_id) if case_id else None
+    bajo_input = bool(input_root) and _cae_bajo(dest, input_root)
+    if case_id and not bajo_input:
+        # `MEJORAS #168` — misma frontera que `#149`, aquí en el ESCRITOR: «lote de
+        # este caso» es una ubicación FÍSICA bajo su `00_Input/`, no un nombre que lo
+        # parezca. Sin esto, un destino externo llamado como un lote registraba en el
+        # manifiesto del caso rutas que no existen en él, y `errors` quedaba vacío.
+        report.errors.append(
+            f"destino fuera del expediente: {dest} no está bajo "
+            f"{input_root if input_root else f'el 00_Input/ de {case_id} (no resuelto)'}"
+            f" → los ficheros NO se registran en el manifiesto de {case_id}"
+        )
+
+    if case_id and report.excluidos_ruido:
+        # Va ANTES de las trazas de disco y sin depender de que `dest` exista: si la
+        # corrida entera fue ruido no se escribe un solo fichero, y es justamente el
+        # caso en que hace más falta saber qué se dejó fuera.
+        intake_log.append_event(
+            input_root.parent if input_root else case_id,
+            "email_excluido_ruido", case_id=case_id,
+            details={
+                "cuenta": account, "etiqueta": label,
+                "total": len(report.excluidos_ruido),
+                "excluidos": report.excluidos_ruido,
+            },
+        )
+
+    if case_id and dest.exists() and bajo_input:
         _emit_traza(case_id, dest, account, label, report, procedencia)
         _emit_traza_enlaces(case_id, account, label, report)
 
     return report
+
+
+def _input_root_de(case_id: str) -> Path | None:
+    """El ``00_Input/`` del caso, resuelto, o ``None`` si el caso no se puede resolver."""
+    try:
+        return (config.caso_path(case_id) / "00_Input").resolve()
+    except Exception:  # noqa: BLE001 — un caso irresoluble no aborta el export
+        return None
+
+
+def _cae_bajo(hijo: Path, raiz: Path | None) -> bool:
+    """¿``hijo`` está ESTRICTAMENTE dentro de ``raiz``, por ruta física?
+
+    `resolve()` y no comparación de nombres, que es la lección de `MEJORAS #149` y de
+    la cuarta pasada de `#136`: la frontera es «cualquier alias cuyo destino físico
+    caiga dentro», no «se llama como si lo estuviera».
+
+    Estrictamente dentro: el propio ``00_Input`` no vale como destino, porque quien
+    traza usa ``dest.parent`` como raíz de las rutas relativas del manifiesto.
+    """
+    if raiz is None:
+        return False
+    try:
+        rel = hijo.resolve().relative_to(raiz)
+    except ValueError:
+        return False
+    return rel != Path(".")
 
 
 def _rmtree_vacio(dest: Path) -> None:
