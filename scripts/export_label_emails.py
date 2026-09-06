@@ -51,8 +51,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="case_id del caso o W-code (p. ej. W-02VND1); se resuelve al case_id canónico.")
     parser.add_argument("--account", required=True, help="Cuenta Gmail (p. ej. ...@engelvoelkers.com).")
     parser.add_argument("--label", required=True, help="Nombre EXACTO de la etiqueta (ruta completa).")
-    parser.add_argument("--extraer-adjuntos", dest="extraer_adjuntos", action="store_true",
-                        help="Extrae los adjuntos a subcarpetas fechadas (por defecto: plano, solo .eml).")
+    parser.add_argument("--no-extraer-adjuntos", dest="extraer_adjuntos",
+                        action="store_false", default=True,
+                        help="NO extraer los adjuntos: deja solo el .eml plano, con todo "
+                             "embebido. Por defecto SI se extraen a subcarpetas fechadas "
+                             "(los logotipos de firma se filtran; el .eml sigue siendo fiel).")
     parser.add_argument("--workers", type=int, default=8,
                         help="Descargas en paralelo (default 8; 1 = secuencial).")
     parser.add_argument("--force", action="store_true",

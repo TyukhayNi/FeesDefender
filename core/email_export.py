@@ -276,6 +276,73 @@ def _iter_partes_hoja(msg: Message) -> Iterator[Message]:
     yield msg
 
 
+@dataclass(frozen=True)
+class AdjuntoEml:
+    """Un adjunto embebido, con lo que hace falta para decidir si es firma."""
+
+    nombre: str
+    mime: str
+    datos: bytes
+    #: Logotipo de la firma del remitente, no documentación del caso. Ver
+    #: `es_firma_incrustada` para el criterio y por qué es conjuntivo.
+    es_firma: bool = False
+
+
+def es_firma_incrustada(parte: Message, datos: bytes) -> bool:
+    """¿Este adjunto es el logotipo de la firma del remitente?
+
+    **El mismo filtro conjuntivo del §4 que ya rige para los enlaces `<img src>`**,
+    traducido a la señal estructural que existe en un adjunto embebido:
+
+        NO adjuntada a propósito ∧ imagen ∧ referenciada desde el cuerpo ∧ pequeña
+
+    Y con su regla de oro intacta: **`Content-Disposition: attachment` NUNCA es firma**,
+    por pequeña que sea la imagen. Alguien la adjuntó queriendo, y ante la duda es
+    prueba — igual que una imagen enlazada por `<a href>` nunca se filtra allí.
+
+    **Medido sobre el corpus real el 2026-09-06** (24 casos, 462 `.eml`, 444 adjuntos):
+    140 imágenes cumplen los cuatro términos —mediana 9,1 KB— y son el 32% de todo lo
+    que `--extraer-adjuntos` depositaría. Las que NO cumplen alguno se conservan: 25
+    inline grandes (capturas pegadas en el cuerpo), 31 `attachment` (25 de ellas por
+    debajo de 50 KB, que un filtro por tamaño habría tirado) y 6 sin `Content-ID`.
+    """
+    if parte.get_content_disposition() == "attachment":
+        return False
+    if not (parte.get_content_type() or "").startswith("image/"):
+        return False
+    if not parte.get("Content-ID"):
+        return False
+    return len(datos) < _FIRMA_MAX_BYTES
+
+
+def particionar_eml(raw: bytes) -> tuple[bytes, list[AdjuntoEml]]:
+    """El ``.eml`` fiel y sus adjuntos, **cada uno marcado si es firma**.
+
+    Primitiva de :func:`split_eml`, que se conserva con su contrato de tres elementos
+    por adjunto para no tocar a sus llamadores (`email_atomize.attachments`,
+    `email_atomize.pipeline`). Quien necesite decidir qué depositar usa esta.
+    """
+    msg = _parse_message(raw)
+    adjuntos: list[AdjuntoEml] = []
+    for parte in _iter_partes_hoja(msg):
+        if parte.get_content_type() == "message/rfc822":
+            continue  # los emails anidados los gestiona el aplanado, no esta función
+        filename = parte.get_filename()
+        disposicion = parte.get_content_disposition()
+        if disposicion != "attachment" and not filename:
+            continue
+        payload = parte.get_payload(decode=True)
+        if payload is None:
+            continue
+        adjuntos.append(AdjuntoEml(
+            nombre=_sanea_nombre_fichero(filename or "", fallback="adjunto"),
+            mime=parte.get_content_type(),
+            datos=payload,
+            es_firma=es_firma_incrustada(parte, payload),
+        ))
+    return raw, adjuntos
+
+
 def split_eml(raw: bytes) -> tuple[bytes, list[tuple[str, str, bytes]]]:
     """Parte el mensaje crudo en ``(eml_fiel, [(filename, mime, bytes)])``.
 
@@ -289,21 +356,11 @@ def split_eml(raw: bytes) -> tuple[bytes, list[tuple[str, str, bytes]]]:
        ya no se extraen sueltos por aquí (se obtienen aplanando el ``.eml`` hijo, que
        los lleva embebidos). Ver ``docs/MEJORAS_FUTURAS.md`` §44.5.
     """
-    msg = _parse_message(raw)
-    adjuntos: list[tuple[str, str, bytes]] = []
-    for parte in _iter_partes_hoja(msg):
-        if parte.get_content_type() == "message/rfc822":
-            continue  # los emails anidados los gestiona el aplanado, no split_eml
-        filename = parte.get_filename()
-        disposicion = parte.get_content_disposition()
-        if disposicion != "attachment" and not filename:
-            continue
-        payload = parte.get_payload(decode=True)
-        if payload is None:
-            continue
-        nombre = _sanea_nombre_fichero(filename or "", fallback="adjunto")
-        adjuntos.append((nombre, parte.get_content_type(), payload))
-    return raw, adjuntos
+    _, adjuntos = particionar_eml(raw)
+    # Sin filtrar y con la forma de siempre: sus llamadores (`email_atomize`) no
+    # cambian de comportamiento por este diff. Quien quiera decidir qué depositar
+    # llama a `particionar_eml` y mira `es_firma`.
+    return raw, [(a.nombre, a.mime, a.datos) for a in adjuntos]
 
 
 # ---------------------------------------------------------------------------
@@ -1041,6 +1098,10 @@ class ExportReport:
     #: decir «excluí la circularización» con sus bytes en el expediente sería engañoso.
     #: Cada entrada: `asunto`, `regla`, `dentro_de` (asunto del padre que lo transporta).
     ruido_transportado: list[dict[str, str]] = field(default_factory=list)
+    #: Logotipos de firma NO extraídos como fichero (acción 6b). El equivalente de
+    #: `links_filtered_sig` para los adjuntos embebidos: lo filtrado se declara, no
+    #: desaparece. El `.eml` los sigue conteniendo — el filtro decide qué se extrae.
+    firmas_filtradas: int = 0
 
     def resumen(self) -> str:
         enlaces = (
@@ -1054,6 +1115,8 @@ class ExportReport:
         if self.ruido_transportado:
             ruido += (f"{len(self.ruido_transportado)} correos que transporta un "
                       f"mensaje del caso (no extraídos), ")
+        if self.firmas_filtradas:
+            ruido += f"{self.firmas_filtradas} firmas de correo no extraídas, "
         return (
             f"etiqueta {self.label!r} ({self.account}): {self.total_in_label} mensajes; "
             f"{self.written} escritos, {self.skipped} ya presentes, "
@@ -1072,7 +1135,7 @@ def export_label(
     *,
     service: Any = None,
     case_id: str | None = None,
-    extract_attachments: bool = False,
+    extract_attachments: bool = True,
     max_workers: int = 8,
     force: bool = False,
     flatten_nested_emails: bool = True,
@@ -1083,7 +1146,8 @@ def export_label(
 
     Idempotente (salta ``Message-ID`` ya presentes). **Estructura plana por defecto:**
     un ``.eml`` por mensaje en la raíz de ``dest_dir`` (el ``.eml`` ya contiene sus
-    adjuntos embebidos). Con ``extract_attachments=True``, los mensajes con adjuntos
+    adjuntos embebidos). Con ``extract_attachments=True`` —**el default desde la
+    acción 6b**—, los mensajes con adjuntos
     van a una subcarpeta fechada con el ``.eml`` + los adjuntos extraídos como
     ficheros. Regenera ``INDICE.md``/``CRONOLOGIA.md`` al final. ``service`` se
     inyecta en tests; en producción se construye desde el token OAuth de la cuenta.
@@ -1388,16 +1452,22 @@ def _escribe_mensaje(
 ) -> Path:
     """Escribe un mensaje en ``dest`` y devuelve la ruta del ``.eml``."""
     headers = parse_headers(raw_bytes)
-    eml_bytes, adjuntos = split_eml(raw_bytes)
+    eml_bytes, adjuntos = particionar_eml(raw_bytes)
+    # El filtro decide qué se EXTRAE, nunca qué contiene el `.eml`: los bytes escritos
+    # siguen siendo los originales, con su firma dentro. Un `.eml` mutilado no es
+    # prueba — el mismo principio que conserva íntegro el correo padre (R1/H-01).
+    firmas = [a for a in adjuntos if a.es_firma]
+    depositables = [a for a in adjuntos if not a.es_firma]
+    report.firmas_filtradas += len(firmas)
     nombre_eml = eml_filename(headers)
-    if adjuntos and extract_attachments:
+    if depositables and extract_attachments:
         carpeta = _dir_unico(dest, Path(nombre_eml).stem)
         carpeta.mkdir(parents=True, exist_ok=True)
         eml_path = carpeta / nombre_eml
         eml_path.write_bytes(eml_bytes)
-        for idx, (fn, _mime, datos) in enumerate(adjuntos, start=1):
-            seguro = _sanea_nombre_fichero(fn, fallback=f"adjunto_{idx}")
-            _ruta_unica(carpeta, seguro).write_bytes(datos)
+        for idx, adj in enumerate(depositables, start=1):
+            seguro = _sanea_nombre_fichero(adj.nombre, fallback=f"adjunto_{idx}")
+            _ruta_unica(carpeta, seguro).write_bytes(adj.datos)
             report.attachments += 1
         return eml_path
     # Estructura plana: solo el .eml (con sus adjuntos embebidos).
