@@ -36,7 +36,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from email import policy
 from email.message import Message
-from email.utils import parsedate_to_datetime
+from email.utils import getaddresses, parsedate_to_datetime
 from enum import Enum
 from html import unescape
 from pathlib import Path
@@ -129,15 +129,28 @@ _RE_ASUNTO_CRM = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-#: Circularización de auditoría y cartas de auditores. Sus anexos son el problema.
+#: Circularización de auditoría y cartas **a los auditores** (personas). Sus anexos
+#: son el problema: llevan la cartera de litigios entera.
+#:
+#: `auditor(es)?\b` con la frontera puesta **a propósito** (R1/H-03): sin ella,
+#: `auditor` es prefijo de `auditoría` y «Carta de auditoría técnica del inmueble»
+#: —documentación de un caso— se clasificaba como carta de auditores. En
+#: `circulariz…` sí se admite la familia entera, porque una circularización de
+#: auditoría es inequívocamente administrativa venga como venga escrita.
 _RE_AUDITORIA = re.compile(
     r"circulariz\w*\s+(?:de\s+)?auditor"
-    r"|\bcartas?\s+(?:de|a|para)\s+(?:los\s+|las\s+)?auditor",
+    r"|\bcartas?\s+(?:de|a|para)\s+(?:los\s+|las\s+)?auditor(?:es)?\b",
 )
 
-#: Actas de gobernanza interna. `cfo` es la señal fuerte: «acta» a secas es
-#: cotidiano en un expediente (acta notarial, acta de la reunión con el propietario).
-_RE_GOBERNANZA = re.compile(r"\bacta\b.*\bcfo\b")
+#: Actas de gobernanza interna: «Acta reunión CFO + Legal» y sus variantes.
+#:
+#: Exige **las dos** partes del órgano y a poca distancia (R1/H-03). La versión
+#: anterior era `\bacta\b.*\bcfo\b`, que casaba a CUALQUIER distancia y sin `legal`:
+#: «Acta notarial aportada por el CFO del propietario» quedaba excluida, o sea que la
+#: regla omitía prueba. «Acta» a secas es cotidiano en un expediente —notarial, de
+#: junta, de la reunión con el propietario— y «CFO» también aparece: la señal es la
+#: CONJUNCIÓN de ambas con «legal» pegado detrás.
+_RE_GOBERNANZA = re.compile(r"\bacta\b.{0,40}?\bcfo\b\s*[+y&/-]?\s*\blegal\b")
 
 
 def _sin_acentos_min(texto: str) -> str:
@@ -147,14 +160,21 @@ def _sin_acentos_min(texto: str) -> str:
 
 
 def _va_dirigido_a(headers: dict[str, str], buzon: str) -> bool:
-    """¿``buzon`` aparece en ``to`` o en ``cc``?
+    """¿``buzon`` es una DIRECCIÓN efectiva de ``to`` o ``cc``?
 
-    Por subcadena sobre el header crudo y no por `getaddresses`: la dirección buscada
-    es literal y muy específica, así que un falso positivo no es realista, mientras
-    que el parseo de listas sí falla con nombres del tipo ``Apellido, Nombre <addr>``.
+    Por `getaddresses`, no por subcadena del header crudo (R1/H-05). La versión
+    anterior miraba el header entero, así que
+    ``To: "proveedores.es@engelvoelkers.com" <abogado@ejemplo.test>`` —una cabecera
+    perfectamente válida, con el buzón solo en el *display name*— disparaba la
+    exclusión por defecto. El comentario decía que ese falso positivo «no era
+    realista»; era una afirmación sin medir, y el revisor lo construyó en una línea.
+
+    `getaddresses` recibe la LISTA de headers, que es su contrato: así una coma dentro
+    de un nombre entrecomillado (``"Apellido, Nombre" <addr>``) no parte la dirección.
     """
-    destinos = f"{headers.get('to', '')} {headers.get('cc', '')}".lower()
-    return buzon in destinos
+    crudos = [headers.get("to", "") or "", headers.get("cc", "") or ""]
+    return any(addr.strip().lower() == buzon
+               for _, addr in getaddresses(crudos) if addr)
 
 
 def clasificar_ruido(headers: dict[str, str]) -> str | None:
@@ -442,7 +462,25 @@ def _aplana_anidados(
     ``sha256:…``) se guarda en ``vistos``, que solo se reconstruye intra-corrida desde
     los ``Message-ID`` del disco; la idempotencia cross-corrida para hijos sin
     Message-ID no está garantizada (ver ``docs/MEJORAS_FUTURAS.md`` §44.3)."""
+    cab_padre = parse_headers(raw_bytes)
     for inner_bytes, parent_mid in _nested_con_fallback(raw_bytes, report):
+        cab_hijo = parse_headers(inner_bytes)
+        regla = clasificar_ruido(cab_hijo)
+        if regla is not None:
+            # R1/H-01: el aplanado era una segunda puerta al mismo depósito y no
+            # pasaba por el filtro. Extraer el hijo lo hace MÁS accesible que dejarlo
+            # dentro del padre —fichero propio, indexado, en la cronología—, así que
+            # aquí el filtro sí decide.
+            #
+            # El PADRE entra íntegro (decisión de Nikolai, 2026-09-06): es
+            # correspondencia real del caso y su fidelidad es lo que lo hace prueba;
+            # mutilar un `.eml` para purgarlo lo invalida. Se declara la carga.
+            report.ruido_transportado.append({
+                "asunto": cab_hijo.get("subject", ""),
+                "regla": regla,
+                "dentro_de": cab_padre.get("subject", ""),
+            })
+            continue
         mid = message_id_of(inner_bytes)
         clave = mid or "sha256:" + compute_sha256_bytes(inner_bytes)
         if clave in vistos:
@@ -643,12 +681,23 @@ def _deposita_mensaje_rescatado(
     y aplanado recursivo de los anidados que traiga. Devuelve la ruta, o ``None`` si ya
     estaba presente (deduplicado).
     """
+    cabeceras = parse_headers(msg_bytes)
+    regla = clasificar_ruido(cabeceras)
+    if regla is not None:
+        # R1/H-01: era la otra puerta trasera. Un permalink de Gmail a un mensaje ya
+        # excluido lo volvía a bajar y a depositar, con `links_resolved=1` y sin
+        # errores — el MISMO mensaje entrando por otro sitio. Y ni siquiera hacía
+        # falta inferir nada del cuerpo: las cabeceras del rescatado son las mismas.
+        report.excluidos_ruido.append({
+            "gmail_id": "", "asunto": cabeceras.get("subject", ""), "regla": regla,
+        })
+        return None
     mid = message_id_of(msg_bytes)
     clave = mid or "sha256:" + compute_sha256_bytes(msg_bytes)
     if clave in vistos:
         return None
     vistos.add(clave)
-    ruta = _ruta_unica(dest, eml_filename(parse_headers(msg_bytes)))
+    ruta = _ruta_unica(dest, eml_filename(cabeceras))
     ruta.write_bytes(msg_bytes)
     report.files.append(str(ruta.relative_to(dest)))
     _aplana_anidados(dest, msg_bytes, vistos, procedencia, report)
@@ -987,6 +1036,11 @@ class ExportReport:
     #: excluyó. El motivo va aquí y no en un contador porque «se excluyeron 3» sin
     #: decir cuáles ni por qué no es revisable.
     excluidos_ruido: list[dict[str, str]] = field(default_factory=list)
+    #: Ruido que NO se depositó como fichero propio pero **viaja dentro** de un correo
+    #: legítimo que sí entró (R1/H-01). Lista aparte de `excluidos_ruido` a propósito:
+    #: decir «excluí la circularización» con sus bytes en el expediente sería engañoso.
+    #: Cada entrada: `asunto`, `regla`, `dentro_de` (asunto del padre que lo transporta).
+    ruido_transportado: list[dict[str, str]] = field(default_factory=list)
 
     def resumen(self) -> str:
         enlaces = (
@@ -997,6 +1051,9 @@ class ExportReport:
         )
         ruido = (f"{len(self.excluidos_ruido)} excluidos por ruido administrativo, "
                  if self.excluidos_ruido else "")
+        if self.ruido_transportado:
+            ruido += (f"{len(self.ruido_transportado)} correos que transporta un "
+                      f"mensaje del caso (no extraídos), ")
         return (
             f"etiqueta {self.label!r} ({self.account}): {self.total_in_label} mensajes; "
             f"{self.written} escritos, {self.skipped} ya presentes, "
@@ -1224,7 +1281,7 @@ def export_label(
         write_indices(dest)
 
     input_root = _input_root_de(case_id) if case_id else None
-    bajo_input = bool(input_root) and _cae_bajo(dest, input_root)
+    bajo_input = _es_lote_del_caso(dest, input_root)
     if case_id and not bajo_input:
         # `MEJORAS #168` — misma frontera que `#149`, aquí en el ESCRITOR: «lote de
         # este caso» es una ubicación FÍSICA bajo su `00_Input/`, no un nombre que lo
@@ -1240,8 +1297,13 @@ def export_label(
         # Va ANTES de las trazas de disco y sin depender de que `dest` exista: si la
         # corrida entera fue ruido no se escribe un solo fichero, y es justamente el
         # caso en que hace más falta saber qué se dejó fuera.
+        # La raíz LÓGICA del caso, no `input_root.parent` (R1/H-04): `_input_root_de`
+        # resuelve físicamente, así que con un `00_Input` que sea alias su `.parent`
+        # apunta a otro sitio, `append_event` no encuentra el caso y se pierde el
+        # único rastro durable — justo cuando todo se excluyó y no queda nada más que
+        # mirar. Son dos raíces con dos usos y no pueden salir de una variable.
         intake_log.append_event(
-            input_root.parent if input_root else case_id,
+            _raiz_logica_de(case_id) or case_id,
             "email_excluido_ruido", case_id=case_id,
             details={
                 "cuenta": account, "etiqueta": label,
@@ -1257,31 +1319,60 @@ def export_label(
     return report
 
 
-def _input_root_de(case_id: str) -> Path | None:
-    """El ``00_Input/`` del caso, resuelto, o ``None`` si el caso no se puede resolver."""
+def _raiz_logica_de(case_id: str) -> Path | None:
+    """El árbol del caso **sin resolver**, que es lo que espera quien escribe el log.
+
+    Separada de `_input_root_de` a propósito (R1/H-04): esa resuelve físicamente para
+    poder comparar pertenencia, y una raíz física no permite reconstruir el caso por
+    `.parent` cuando `00_Input` es un alias.
+    """
     try:
-        return (config.caso_path(case_id) / "00_Input").resolve()
+        return config.caso_path(case_id)
     except Exception:  # noqa: BLE001 — un caso irresoluble no aborta el export
         return None
 
 
-def _cae_bajo(hijo: Path, raiz: Path | None) -> bool:
-    """¿``hijo`` está ESTRICTAMENTE dentro de ``raiz``, por ruta física?
+def _input_root_de(case_id: str) -> Path | None:
+    """El ``00_Input/`` del caso **resuelto físicamente**, para comparar pertenencia.
 
-    `resolve()` y no comparación de nombres, que es la lección de `MEJORAS #149` y de
-    la cuarta pasada de `#136`: la frontera es «cualquier alias cuyo destino físico
-    caiga dentro», no «se llama como si lo estuviera».
+    Solo para eso: para escribir en el caso, `_raiz_logica_de`.
+    """
+    raiz = _raiz_logica_de(case_id)
+    if raiz is None:
+        return None
+    try:
+        return (raiz / "00_Input").resolve()
+    except (OSError, ValueError):
+        return None
 
-    Estrictamente dentro: el propio ``00_Input`` no vale como destino, porque quien
-    traza usa ``dest.parent`` como raíz de las rutas relativas del manifiesto.
+
+def _es_lote_del_caso(dest: Path, raiz: Path | None) -> bool:
+    """¿``dest`` es un lote que ``_emit_traza`` sabe trazar contra el ``00_Input`` del caso?
+
+    **La frontera no es «descendiente de `00_Input`» sino «hijo directo cuyo nombre
+    lógico es su ubicación física»**, y las dos mitades salen de R1/H-02.
+
+    La primera versión solo comprobaba pertenencia, y `_emit_traza` calcula las rutas
+    del manifiesto contra ``dest.parent`` asumiendo que es el ``00_Input``. Con un
+    ``dest`` a dos niveles —``00_Input/subcarpeta/2026-09-06_email_01``— el guard
+    pasaba y el manifiesto registraba ``2026-09-06_email_01/x.eml``, sin
+    ``subcarpeta/``: una ruta que no existe en el caso, con ``errors == []``.
+
+    La segunda mitad cierra el alias ENTRANTE: una junction externa llamada
+    ``…_email_02`` que apunta al lote físico ``…_email_01`` tiene el padre correcto,
+    pero el manifiesto guardaría el nombre lógico ``…_02``, igual de inexistente. Por
+    eso no basta con resolver para validar y volver al nombre lógico para registrar.
+
+    Esto es *remediar la frontera y no el ejemplo*: el defecto reportado en
+    `MEJORAS #168` era el destino totalmente externo, y esa era una instancia.
     """
     if raiz is None:
         return False
     try:
-        rel = hijo.resolve().relative_to(raiz)
-    except ValueError:
-        return False
-    return rel != Path(".")
+        fisico = dest.resolve()
+    except (OSError, ValueError):
+        return False          # si no se puede determinar dónde cae, no se traza
+    return fisico.parent == raiz and fisico == raiz / dest.name
 
 
 def _rmtree_vacio(dest: Path) -> None:

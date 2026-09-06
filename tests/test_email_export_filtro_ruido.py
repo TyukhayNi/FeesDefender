@@ -188,12 +188,30 @@ def test_el_ruido_no_se_escribe_y_lo_del_caso_si(tmp_path):
     assert not list(tmp_path.glob("*factura*"))
 
 
-def test_el_ruido_no_cuenta_como_duplicado(tmp_path):
-    """Un excluido no debe tocar `vistos` ni el contador de duplicados: se filtra
-    ANTES de esa lógica, o un segundo correo de ruido con el mismo Message-ID
-    inflaría un contador que el letrado lee como señal."""
-    rep = ee.export_label(_CUENTA, _ETIQUETA, tmp_path, service=_svc(_raws_mixtos()))
-    assert rep.duplicados == 0
+def test_el_ruido_no_contamina_la_dedup_del_correo_legitimo(tmp_path):
+    """Un excluido no debe entrar en `vistos`: se filtra ANTES de esa lógica.
+
+    **Este test nació vacío y se reescribió.** La primera versión corría el fixture
+    mixto y afirmaba `duplicados == 0` — pero ninguno de esos cinco mensajes comparte
+    Message-ID, así que el contador valía cero con filtro y sin él. Medido con un
+    mutante que metía el excluido en `vistos`: SOBREVIVIA. Para ejercer la propiedad
+    hace falta una COLISION deliberada de Message-ID entre el ruido y lo legítimo.
+    """
+    mid = "<colision@x>"
+    raws = {
+        # El ruido va PRIMERO: si el filtro lo dejara en `vistos`, el legítimo que
+        # viene detrás se leería como duplicado de un correo que nunca se escribió.
+        "g-ruido": _build_raw(
+            message_id=mid, subject="Factura agosto",
+            to_addr="Proveedores.ES@engelvoelkers.com"),
+        "g-legitimo": _build_raw(message_id=mid, subject="Oferta del inmueble"),
+    }
+    rep = ee.export_label(_CUENTA, _ETIQUETA, tmp_path, service=_svc(raws))
+
+    assert rep.written == 1
+    assert rep.duplicados == 0, "el excluido no puede haber entrado en `vistos`"
+    assert rep.duplicados_map == {}
+    assert [e["regla"] for e in rep.excluidos_ruido] == ["facturacion_despacho"]
 
 
 def test_lo_excluido_queda_en_el_report_con_su_regla(tmp_path):

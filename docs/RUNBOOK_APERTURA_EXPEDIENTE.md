@@ -431,6 +431,23 @@ sobre el listado real de etiquetas, W-02ZIIF):
   `scripts.atomize_emails --ref <case_id>` (poda solo, y solo, los `.md` de mensaje
   huérfanos — los adjuntos hay que borrarlos a mano).
 
+  > **Desde el 2026-09-06 (acción 6a) el bloque (a) ya no depende de que lo hagas tú.**
+  > `export_label` **no deposita** el correo de administración del despacho:
+  > `core.email_export.clasificar_ruido` lo caza por destinatario cuando puede
+  > (`facturacion_despacho`, `repositorio_refs_vacias`) y por asunto cuando no hay otra
+  > señal (`auditoria`, `gobernanza_interna`). Lo excluido **no se borra, no se llega a
+  > escribir**, y por tanto no hay nada que limpiar después.
+  >
+  > La exclusión es **reversible sin `--force`**: el `gmail_id` no entra en
+  > `_exported_ids.json`, así que `python -m scripts.export_label_emails … --sin-filtro-ruido`
+  > lo trae. Lo excluido se enumera en pantalla y queda en el evento
+  > `email_excluido_ruido` de `_intake_log.jsonl`, con la regla que lo excluyó por mensaje.
+  >
+  > **El bloque (b) sigue siendo tuyo, y a propósito:** los W-codes de otros expedientes
+  > los detecta `core/email_atomize/contaminacion.py`, que **avisa y no excluye** —
+  > podría ser prueba del caso, y en un expediente probatorio descartar en silencio es
+  > peor que arrastrar ruido. Ese grep no lo sustituye nada.
+
 Memoria `reference-gmail-etiquetas-organizacion`.
 
 ---

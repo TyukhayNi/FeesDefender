@@ -29,7 +29,8 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]
 PY = sys.executable
-FICHEROS = ("tests/test_email_export_filtro_ruido.py",)
+FICHEROS = ("tests/test_email_export_filtro_ruido.py",
+            "tests/test_email_export_r1_remediaciones.py")
 
 EE = "core/email_export.py"
 
@@ -54,6 +55,65 @@ MUTANTES = [
      '                        "regla": regla,\n                    })\n'
      "                    nuevos_gids.append(gid)\n                    continue",
      {"test_la_exclusion_es_REVERSIBLE_el_gid_no_entra_en_el_indice"}),
+
+    # --- Fronteras que la R1 destapo (una por hallazgo remediado) ------------
+    ("M10 los excluidos contaminan `vistos` (R1/H-06)", EE,
+     '                    continue
+
+            mid = (cabeceras',
+     '                    vistos.add((cabeceras.get("message-id") or "").strip().strip("<>"))
+'
+     '                    continue
+
+            mid = (cabeceras',
+     {"test_el_ruido_no_contamina_la_dedup_del_correo_legitimo"}),
+
+    ("M11 el destinatario vuelve a ser una SUBCADENA (R1/H-05)", EE,
+     "    return any(addr.strip().lower() == buzon
+"
+     "               for _, addr in getaddresses(crudos) if addr)",
+     "    return buzon in ' '.join(crudos).lower()",
+     {"test_H05_el_buzon_en_el_NOMBRE_MOSTRADO_no_excluye"}),
+
+    ("M12 `gobernanza_interna` deja de exigir `legal` (R1/H-03)", EE,
+     r'_RE_GOBERNANZA = re.compile(r"acta.{0,40}?cfo\s*[+y&/-]?\s*legal")',
+     r'_RE_GOBERNANZA = re.compile(r"acta.*cfo")',
+     {"test_H03_asuntos_PROBATORIOS_que_se_excluian_ya_no"}),
+
+    ("M13 `auditoria` pierde la frontera de palabra (R1/H-03)", EE,
+     r'    r"|cartas?\s+(?:de|a|para)\s+(?:los\s+|las\s+)?auditor(?:es)?",',
+     r'    r"|cartas?\s+(?:de|a|para)\s+(?:los\s+|las\s+)?auditor",',
+     {"test_H03_asuntos_PROBATORIOS_que_se_excluian_ya_no"}),
+
+    ("M14 el lote vuelve a ser cualquier DESCENDIENTE de 00_Input (R1/H-02)", EE,
+     "    return fisico.parent == raiz and fisico == raiz / dest.name",
+     "    return raiz in fisico.parents",
+     {"test_H02_un_lote_ANIDADO_bajo_00_Input_no_se_traza"}),
+
+    ("M15 el evento vuelve a salir de la raiz FISICA (R1/H-04)", EE,
+     "            _raiz_logica_de(case_id) or case_id,",
+     "            (_input_root_de(case_id) or Path(case_id)).parent,",
+     {"test_H04_el_evento_llega_al_caso_aunque_la_raiz_se_resuelva_a_otro_sitio"}),
+
+    ("M16 el aplanado vuelve a ser una puerta sin filtro (R1/H-01)", EE,
+     "        regla = clasificar_ruido(cab_hijo)
+        if regla is not None:",
+     "        regla = clasificar_ruido(cab_hijo)
+        if False:",
+     {"test_H01_el_hijo_anidado_de_ruido_NO_se_extrae_como_fichero",
+      "test_H01_el_padre_entra_INTEGRO_y_se_avisa",
+      "test_H01_transportado_y_excluido_son_LISTAS_DISTINTAS"}),
+
+    ("M17 el rescate por enlace vuelve a depositar sin filtrar (R1/H-01)", EE,
+     "    regla = clasificar_ruido(cabeceras)
+    if regla is not None:
+"
+     "        # R1/H-01: era la otra puerta trasera.",
+     "    regla = clasificar_ruido(cabeceras)
+    if False:
+"
+     "        # R1/H-01: era la otra puerta trasera.",
+     {"test_H01_un_mensaje_rescatado_por_ENLACE_pasa_por_el_filtro"}),
 
     ("M04 la conjuncion del repositorio se rompe: el buzon solo ya excluye", EE,
      '        if m and not any(m.group(g).strip() for g in ("sr", "mr", "contrario")):',
