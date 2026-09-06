@@ -7468,7 +7468,7 @@ fuera del alcance revisado.
 **Disparador de promoción.** La primera reasignación de ciudad sobre un caso con edición manual
 del frontmatter, o el cierre de `#155`.
 
-## 168. `email_export.export_label` con un destino EXTERNO llamado como lote registra en el M9 del caso una ruta que no existe
+## 168. `email_export.export_label` con un destino EXTERNO llamado como lote registra en el M9 del caso una ruta que no existe  `[RESUELTO 2026-09-06 — y la frontera era más ancha de lo reportado]`
 
 > Medido por Codex en la **R2 de `MEJORAS #149`** (2026-09-05), fuera del alcance de ese diseño y
 > **preexistente**: con `case_id` y un `dest` que no está bajo el `00_Input/` del caso pero cuyo
@@ -7486,9 +7486,23 @@ ubicación) trasladada al escritor.
 nombrando las dos rutas. Su mutante: destino externo `…/2026-09-05_email_01` con `case_id` → hoy
 entra en el M9; con el remedio, no.
 
-**Disparador de promoción.** Ningún llamador ordinario pasa un destino externo con `case_id`
-(`scripts/export_label_emails.py` deriva `dest` del caso). Espera a un caso real o al cableado
-de `#68`, que es donde `dest` deja de venir del CLI.
+> **✅ RESUELTO el 2026-09-06** (acción 6a, arrastrado por vecindad de código), **y la frontera
+> resultó ser más ancha que el defecto reportado.** Aquí estaba descrito el destino *totalmente
+> externo*; la **R1 de Codex (H-02)** demostró que cerrarlo no cerraba la clase: `_emit_traza`
+> calcula las rutas del manifiesto contra `dest.parent`, así que un lote **anidado** bajo
+> `00_Input/subcarpeta/` pasaba el guard nuevo y registraba rutas igual de inexistentes; y una
+> junction externa con nombre de lote apuntando dentro registraba el nombre lógico.
+>
+> La propiedad real, en `core/email_export._es_lote_del_caso`: **un lote es un hijo DIRECTO del
+> `00_Input` del caso cuyo nombre lógico es su ubicación física**. Resolver para validar y volver al
+> nombre lógico para registrar no basta. Séptima aparición documentada de *remediar el ejemplo en
+> vez de la frontera*.
+>
+> Adjudicación: §6 del plan
+> [`2026-09-06-accion-6a-filtro-de-ruido-email-export.md`](superpowers/plans/2026-09-06-accion-6a-filtro-de-ruido-email-export.md).
+> Mutantes `M08`, `M09`, `M14` y `M15` en `tests/_mutantes_accion_6a.py` — el `M15` (alias
+> entrante) **declarado SIN COBERTURA**, porque montar una junction en un test exige privilegios
+> que el CI no tiene.
 
 ## 169. El centinela `0000-00-00` se ordena y filtra como «un día muy antiguo» en las vistas de correo y en el motor deprecado de la sala
 
@@ -7518,3 +7532,48 @@ en `core/` y una política de rango en `vistas._seleccion_tematica` con un terce
 **Disparador de promoción.** Un caso real en que la vista temática de correo omita o incluya un
 mensaje sin `Date` en un rango, o que el orden del hilo ponga primero el mensaje sin fecha y eso
 confunda una lectura. Hoy no consta.
+
+## 170. Un export a destino EXTERNO marca igualmente el `gmail_id` en el índice del caso
+
+> Medido por Codex en la **R1 de la acción 6a** (2026-09-06), **preexistente** y declarado por él
+> como no-regresión de ese diff. Va aquí para que no se pierda.
+
+**Qué pasa.** `export_label` con `case_id` y un `dest` fuera del `00_Input` del caso ya no registra
+en el manifiesto (`MEJORAS #168`), pero **sí** escribe el `gmail_id` en el `_exported_ids.json`
+**del canal del caso**. Consecuencia: una corrida posterior al lote interno legítimo **salta** ese
+mensaje por idempotencia de canal, escribe 0 ficheros y elimina el lote vacío. El correo acaba fuera
+del expediente y el sistema cree haberlo exportado.
+
+**La frontera:** el índice de canal responde «¿ya bajé esto *para este caso*?», y hoy responde que
+sí cuando los bytes se fueron a otro sitio. El aviso de `#168` no lo remedia — solo dice que no se
+trazó.
+
+**Remedio candidato:** no tocar el índice del caso cuando el destino no es un lote suyo, o llevar el
+índice al lote y no al caso. Su mutante: exportar a externo y después al lote interno; hoy la
+segunda corrida escribe 0.
+
+**Disparador de promoción.** Un caso real en que alguien exporte a un directorio suelto con
+`--ref` y luego repita al expediente. Hoy ningún llamador ordinario lo hace: `export_label_emails`
+deriva `dest` del caso.
+
+## 171. `test_case_mutex::test_RENUEVA_mientras_el_cuerpo_corre` es intermitente bajo `-n auto`
+
+> Medido el 2026-09-06 durante el cierre de la acción 6a: rojo con la semilla 777 en una corrida y
+> **verde al repetir la MISMA semilla**, verde con 31337 y verde 5/5 aislado. No lo causa el diff de
+> esa sesión, que no toca `core/case_mutex.py` ni nada de lo que dependa.
+
+**Qué pasa.** El test verifica que el gestor **renueva** el lease mientras el cuerpo corre, y eso lo
+mide contra el reloj. Con 12 workers de `pytest-xdist` compitiendo por CPU y por E/S, la ventana de
+renovación puede pasarse sin que haya defecto en el código.
+
+**Por qué importa aunque sea «solo un flaky».** La regla de aceptación de esta casa son **dos
+semillas verdes**, y un test que falla por carga y no por orden hace que esa regla dé un rojo que no
+significa nada. Un rojo que no significa nada es, a la larga, un rojo que se ignora — y entonces la
+verja deja de serlo.
+
+**Remedio candidato:** que el test mida la renovación por **evento observado** (contar renovaciones
+efectivas) en vez de por tiempo transcurrido, o marcarlo `serial` con su porqué escrito. Lo segundo
+es más barato y más honesto que subir el umbral hasta que deje de fallar.
+
+**Disparador de promoción.** Que vuelva a salir en un cierre. Si aparece una segunda vez, deja de
+ser anécdota.

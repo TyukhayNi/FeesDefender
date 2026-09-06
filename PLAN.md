@@ -79,7 +79,7 @@ PRs antes de `main`, y la acción 1 ya estaba cerrada cuando llegó):
 | 5 | Guía operativa contra el código (V1 sí encadena; `ensure_contrario_vinculado_judicial` existe; `#144` cerrada) | ✅ PR #283 (`2b32c32`), una ronda sustituta (6 hallazgos, 6 confirmados, remediados) | `RUNBOOK` §3 `[APER-58]` y §9 `[APER-49]`; `PLAN` F3-judicial pieza 2; `MEJORAS #144` |
 | 3 | El formulario con el mismo servicio que la CLI | ✅ **primer corte, PR #285** (`108a461`) — una ronda sustituta (8/8 confirmados, el ALTO remediado y verificado en pantalla) | política compartida en `core/alta_crm_politica.py`; error legible de `ensure_case`; reutilizar el expediente local. **Lo que queda fuera con nombre:** que el formulario ejecute `secuencia_v1` (Drive → CRM → sala de máquina) y muestre las fases — exige sacar `etapa_*` de `scripts/abrir_caso.py` al core y resolver cómo corre una sala de máquina de una hora dentro de una petición de Streamlit |
 | 4 | Reutilizar expedientes y distinguir frentes | ✅ **PR #285** (`108a461`) | `vincular` con selector de frente, sin «crear de todos modos»; `bloquear` con la lista literal y casilla «crear igualmente» |
-| 6 | Incorporación de correo y adjuntos (checklist por fuente, `--extraer-adjuntos` por defecto, filtro de ruido) | pendiente, **sin empezar** | depende de resolver el efecto de `--extraer-adjuntos` en la dedup (`#98`) y del filtro de `[SIGUIENTE-INTAKE-EMAIL-FILTRO]` |
+| 6 | Incorporación de correo y adjuntos (checklist por fuente, `--extraer-adjuntos` por defecto, filtro de ruido) | **sub-pieza (a) ✅ CERRADA el 2026-09-06** — el filtro de ruido; cierra además la casilla 1 de la fila #8, que era la misma pieza vista desde otro sitio. **R1 de Codex `NO-SHIP`, 6 hallazgos, 6 confirmados, 0 refutados, remediados.** Quedan las otras dos sub-piezas | el filtro no tenía gate. Lo que queda: **`--extraer-adjuntos` por defecto es decisión de Nikolai** (mueve la superficie de dedup, `#98`); el «checklist por fuente» no tiene diseño y se solapa con la acción 12 |
 | 7 | Ficheros de protocolo por ubicación (`#149`) | ✅ **implementado, PR #290** — `core/intake_control.py` + nueve consumidores + migración con hash tres veces; 52 tests nuevos, 13 mutantes muertos. R1 sobre el diseño (PR #287, 11/11) y **R2 de Codex sobre el diff**: adjudicación en el §9 del diseño | diseño rev. 2: `docs/superpowers/specs/2026-09-05-ficheros-de-protocolo-por-ubicacion-design.md`; acta R2 `…-r2-adversarial-review.md` |
 | 8 | Ficha CRM judicial (`get/update_expediente_judicial`, `link_juzgado_judicial`, ramificar `crm_ficha.py`) | pendiente, **encargado a la sesión hermana** «Completar fichas de colaboradores» el 2026-09-05 tras mergear su #282 (es dueña de `crm_ficha.py`); sin escritura real al CRM, tests con `httpx` mockeado | `PLAN` F3-judicial piezas 1, 3, 4; `MEJORAS #164` |
 | 9 | Primera publicación de un caso nacido en local (`#139`) | pendiente, **sin empezar** — escribe en Drive, no se puede probar sin operar sobre el Drive real | `MEJORAS #139`, `[APER-41]` |
@@ -1281,11 +1281,20 @@ quien tenga acceso Drive al caso; el original vive en Gmail, así que no se pier
 el evento queda en `_intake_log.jsonl`). Root cause sin resolver: la regla de exclusión
 solo existe como memoria/prosa, nunca como filtro de código.*
 
-- [ ] **Filtro de código en `core/email_export.py::export_label`** (o paso de triaje previo
-  al depósito): excluir por remitente/destinatario `Proveedores.ES@engelvoelkers.com`;
-  por patrón de asunto `S/R:.*M/R:.*Cliente: EV MMC.*Contrario:` con referencias vacías;
-  por asuntos "circularización auditoría"/"carta de auditores"/"acta reunión CFO"; por
-  reenvíos a `mails.repositorio@gmail.com` que casen esos mismos patrones.
+- [x] **Filtro de código en `core/email_export.py::export_label`** — ✅ **2026-09-06**, con las
+  cuatro reglas que esta casilla enumeraba: `facturacion_despacho`, `repositorio_refs_vacias`,
+  `auditoria`, `gobernanza_interna`. **Excluye antes de escribir** (no borra después: los anexos de
+  auditoría llevan la cartera de litigios y depositarlos ya es el daño), **reversible sin `--force`**
+  porque el `gmail_id` no entra en `_exported_ids.json`, con `--sin-filtro-ruido` como vía de vuelta
+  y evento `email_excluido_ruido` en el `_intake_log.jsonl`. **No toca `contaminacion.py`:** el
+  W-code ajeno sigue avisando sin excluir, que son dos categorías distintas.
+  **R1 de Codex `NO-SHIP`: 6 hallazgos, 6 confirmados, 0 refutados, todos remediados** — los tres
+  ALTOS eran que la exclusión se **rodeaba** por el aplanado de anidados y por el rescate de
+  enlaces, que la frontera de `#168` era más ancha de lo reportado, y que **dos de mis regex
+  omitían prueba**. Plan y adjudicación:
+  [`2026-09-06-accion-6a-filtro-de-ruido-email-export.md`](docs/superpowers/plans/2026-09-06-accion-6a-filtro-de-ruido-email-export.md).
+  Llegó por la fila #21 (acción 6 del informe de Codex), que era esta misma casilla vista desde
+  otro sitio.
 - [ ] **Norma de curado de etiqueta**: la etiqueta Gmail de un caso se puebla SIEMPRE
   buscando por la referencia específica del caso (W-code/dirección), nunca por nombre de
   cliente en genérico ("EV MMC SPAIN") — así se evita arrastrar ruido de otros casos.

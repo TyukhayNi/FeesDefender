@@ -30,6 +30,8 @@ def _build_raw(
     subject: str = "Asunto de prueba",
     date: str = "Thu, 12 Jun 2026 10:00:00 +0200",
     from_addr: str = "Eva <eva@engelvoelkers.com>",
+    to_addr: str = "despacho@tyukhay.legal",
+    cc: str | None = None,
     body: str = "Cuerpo del correo.",
     attachments: list[tuple[str, str, bytes]] | None = None,
 ) -> bytes:
@@ -38,7 +40,9 @@ def _build_raw(
     msg["Subject"] = subject
     msg["Date"] = date
     msg["From"] = from_addr
-    msg["To"] = "despacho@tyukhay.legal"
+    msg["To"] = to_addr
+    if cc is not None:
+        msg["Cc"] = cc
     msg.set_content(body)
     for fn, mime, datos in attachments or []:
         maintype, _, subtype = mime.partition("/")
