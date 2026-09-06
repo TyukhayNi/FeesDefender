@@ -15,11 +15,14 @@ cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m pytest -q --tb=short $ARGUMENTS
 ```
 
-Si no hay argumento, ejecuta la suite completa **en paralelo** (371 s → 94 s):
+Si no hay argumento, ejecuta la suite completa **en paralelo** (371 s → 94 s). El
+`--dist loadgroup` **no es opcional**: sin él las marcas `xdist_group` no hacen nada y
+`tests/test_guard_localizador.py` —que escribe sondas dentro de `core/` y lo escanea
+entero— se reparte entre workers y da rojos, o peor, verdes por sonda ajena.
 
 ```powershell
 cd "C:\Users\tnm33\Dev\FeesDefender"
-python -m pytest -q --tb=no -n auto
+python -m pytest -q --tb=no -n auto --dist loadgroup
 ```
 
 Tras ejecutar:

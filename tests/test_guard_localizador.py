@@ -34,6 +34,33 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
+#: **Este fichero entero corre en UN SOLO worker. Declarado, con su porque.**
+#:
+#: Sus tests escriben sondas (`core/_zz_guard_probe_*.py`) dentro del arbol de
+#: produccion **real**, y otros de aqui mismo **escanean `core/` entero**. Bajo `-n auto`
+#: eso son dos superficies de colision, no una:
+#:
+#:   1. Las seis parametrizaciones de `test_el_contador_distingue_los_casos` escriben
+#:      todas al MISMO fichero fijo: un worker pisa la sonda que otro va a leer.
+#:   2. Y la de fondo: como el escaner recorre `core/` COMPLETO, la sonda que deje viva
+#:      cualquier worker contamina a cualquier test que escanee — por eso tambien cae
+#:      `test_la_escotilla_legacy_no_crece`, cuyo techo es 0.
+#:
+#: Por (2), **renombrar las sondas por worker NO bastaria**: el problema no es el nombre,
+#: es que el arbol escaneado es compartido y global.
+#:
+#: Medido el 2026-09-06 (R1 de Codex, H-01, reproducido en el repo vivo):
+#: `pytest tests/test_guard_localizador.py -n 4` da 3 rojos. Peor que el rojo es el verde
+#: que el revisor tambien reprodujo: un test **pasando sin analizar su propio caso**,
+#: porque leyo la sonda de otro y el numero coincidio. La suite completa habia dado verde
+#: tres veces por **suerte de reparto**, no por aislamiento.
+#:
+#: Exige `--dist loadgroup` en la linea de ordenes; sin el, la marca no hace nada. Lo
+#: llevan `scripts/session_close.py` y los comandos `/tests` y `/status`, y
+#: `tests/test_guard_aislamiento_paralelo.py` vigila que ningun fichero nuevo escriba en
+#: el arbol de produccion sin esta marca.
+pytestmark = pytest.mark.xdist_group(name="escribe_en_el_arbol_de_produccion")
+
 #: Techo del censo de `strict=False` en produccion. **Solo puede bajar.**
 #: Si un cambio legitimo necesita subirlo, se sube A PROPOSITO y con motivo en el
 #: commit — que es justo la conversacion que el guard existe para forzar.

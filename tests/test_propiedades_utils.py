@@ -138,6 +138,81 @@ def test_normalize_es_phone_nunca_devuelve_prefijo_de_pais(bruto: str) -> None:
         f"{bruto!r} -> {salida!r}: sale con prefijo de país, que es lo que el CRM "
         f"rechaza y lo único que esta función existe para quitar"
     )
+    # La TERCERA forma del prefijo, que faltaba: `34` desnudo delante de nueve dígitos.
+    # La añadió la R1 de Codex (H-04) al medir que retirar esa rama de la función no
+    # ponía roja ninguna propiedad — el aserto solo miraba las dos formas con signo.
+    assert not (len(salida) == 11 and salida.startswith("34")), (
+        f"{bruto!r} -> {salida!r}: once dígitos empezando por 34 es el prefijo de país "
+        f"sin signo, y el CRM lo rechaza igual"
+    )
+
+
+@AJUSTES
+@given(telefono_es())
+def test_normalize_es_phone_SOLO_RECORTA_POR_DELANTE(bruto: str) -> None:
+    """Sobre el dominio ancho: la salida es un **sufijo** de la entrada sin separadores.
+
+    Ni inventa, ni reordena, ni recorta por detrás. Es débil a propósito —la cadena vacía
+    también es un sufijo—; la fuerza la pone la propiedad de abajo, sobre el dominio donde
+    sí se puede exigir el número entero.
+    """
+    limpio = re.sub(r"[\s.\-/()]+", "", bruto)
+    assert limpio.endswith(normalize_es_phone(bruto)), (
+        f"{bruto!r} -> {normalize_es_phone(bruto)!r} no es sufijo de {limpio!r}: esta "
+        f"función solo puede RECORTAR por delante"
+    )
+
+
+@st.composite
+def telefono_es_bien_formado(draw) -> tuple[str, str]:
+    """Un teléfono español **real** —nueve dígitos que empiezan por 6/7/8/9— vestido como
+    llega: con prefijo de país, a veces repetido, y separadores por en medio.
+
+    El `34` desnudo va como **último** prefijo y como mucho una vez, y eso no es un
+    capricho: la función solo lo reconoce cuando deja la cadena en once caracteres, así que
+    `"34 34 600111222"` no es un teléfono que este contrato cubra. Restringir el dominio
+    donde el contrato no aplica es honesto; aseverar sobre él sería inventarse una promesa.
+    """
+    numero = draw(st.text(alphabet="0123456789", min_size=9, max_size=9)
+                  .filter(lambda n: n[0] in "6789"))
+    bruto = ""
+    for _ in range(draw(st.integers(min_value=0, max_value=2))):
+        bruto += draw(st.sampled_from(["+34", "0034"])) + draw(_SEPARADORES)
+    if draw(st.booleans()):
+        bruto += "34" + draw(_SEPARADORES)
+    for digito in numero:
+        bruto += digito + draw(_SEPARADORES)
+    return bruto, numero
+
+
+@AJUSTES
+@given(telefono_es_bien_formado())
+def test_normalize_es_phone_DEVUELVE_EL_NUMERO(datos: tuple[str, str]) -> None:
+    """La dirección POSITIVA, que es la que faltaba y la que de verdad enseña.
+
+    Las otras propiedades son de **ausencia** —«es idempotente», «no lleva prefijo»— y una
+    función que devolviera **siempre la cadena vacía** las cumple todas. La R1 de Codex lo
+    midió mutando `normalize_es_phone` a `return ""`: `2 passed`. La guarda inerte, escrita
+    por mí en el sitio donde más aviso tenía.
+
+    **Y mi primer intento de arreglarlo también estaba mal**, lo que enseña más que el
+    defecto: aseveré «el último dígito sobrevive» sobre el dominio ancho, y hypothesis
+    encontró `'+34+34+340034'` → `''`. Una cadena hecha **solo de prefijos** normaliza a
+    vacío y eso es correcto: no hay número de abonado que conservar. El aserto no era
+    demasiado débil, era **falso**.
+
+    La forma correcta no es parchear el caso: es decir el contrato sobre el dominio donde
+    existe. Dado un teléfono español bien formado, salga como salga vestido, esto devuelve
+    **exactamente sus nueve dígitos**.
+
+    **Mutante que la mata:** `return ""` al principio de la función.
+    """
+    bruto, numero = datos
+    assert normalize_es_phone(bruto) == numero, (
+        f"{bruto!r} -> {normalize_es_phone(bruto)!r}, y el número era {numero!r}. Es un "
+        f"teléfono español bien formado: lo único que esta función tiene que hacer es "
+        f"devolver sus nueve dígitos"
+    )
 
 
 # --- neutralizar_case_id ----------------------------------------------------
@@ -248,6 +323,39 @@ def test_el_guard_rechaza_lo_que_no_puede_ser_un_componente(
     envenenado = base[:pos] + veneno + base[pos:]
     with pytest.raises(ValueError):
         exigir_componente_de_ruta(envenenado, campo="campo")
+
+
+@st.composite
+def componente_valido(draw) -> str:
+    """Un nombre de carpeta que el guard **tiene** que aceptar.
+
+    Se construye en vez de filtrarse: los bordes salen de un alfabeto sin espacios, así
+    que nunca hay que descartar por espacio al borde y la estrategia no degenera.
+    """
+    borde = st.sampled_from("abcXYZ019áéñÑ")
+    return draw(borde) + draw(st.text(alphabet="abcXYZ019 áéñÑ-_.", max_size=18)) + draw(borde)
+
+
+@AJUSTES
+@given(componente_valido())
+def test_el_guard_ACEPTA_un_componente_valido(valor: str) -> None:
+    """La dirección POSITIVA del guard, que faltaba.
+
+    `test_lo_que_pasa_el_guard_es_un_solo_componente` solo dice cosas sobre lo que el
+    guard **deja pasar**, así que un guard que **lance siempre** lo cumple en vacío: no
+    pasa nada, luego todo lo que pasa cumple. La R1 de Codex lo midió mutando la función a
+    un `raise` incondicional: `3 passed`. Tres propiedades verdes sobre una función que
+    rechaza el universo entero.
+
+    Es la misma clase de defecto que el `return ""` del teléfono, y aparecieron el mismo
+    día en las dos piezas: **escribí solo la mitad negativa del contrato en las dos.**
+
+    **Mutante que lo mata:** `raise ValueError(...)` incondicional al entrar.
+    """
+    assert exigir_componente_de_ruta(valor, campo="campo") == valor, (
+        f"el guard rechazó {valor!r}, que es un nombre de carpeta perfectamente válido: "
+        f"sin caracteres prohibidos, sin controles, sin espacios al borde y no es . ni .."
+    )
 
 
 @AJUSTES

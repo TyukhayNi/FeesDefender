@@ -238,7 +238,7 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
 ```powershell
 cd "C:\Users\tnm33\Dev\FeesDefender"
 git log --oneline -5                              # qué cambió desde la última sesión
-python -m pytest -q --tb=no -n auto               # suite verde (94 s, no 371)
+python -m pytest -q --tb=no -n auto --dist loadgroup   # suite verde (94 s, no 371)
 python -m scripts.sync_sudespacho check-legacy    # PHPSESSID válida
 ```
 
@@ -300,9 +300,17 @@ midió, la otra qué se midió—. Un reemplazo global de la fecha rompe la segu
 ## Tests
 
 - Framework: `pytest`.
-- **Suite entera, en paralelo:** `python -m pytest -q --tb=no -n auto` — **94 s en vez de 371 s**
-  (12 CPUs, medido el 2026-09-06: mismo conteo, mismos 88 `skip`, mismos 6 `xfail`, cero tests
-  serializados).
+- **Suite entera, en paralelo:** `python -m pytest -q --tb=no -n auto --dist loadgroup` —
+  **94 s en vez de 371 s** (12 CPUs, medido el 2026-09-06: mismo conteo, mismos 88 `skip`,
+  mismos 6 `xfail`).
+- **`--dist loadgroup` NO es opcional, y su ausencia falla hacia el lado que parece que
+  funciona.** Sin él, las marcas `@pytest.mark.xdist_group` no hacen nada y
+  `tests/test_guard_localizador.py` —que escribe sondas dentro de `core/` y lo escanea
+  entero— se reparte entre workers. Da rojos; y lo que costó descubrirlo es que también da
+  **verdes**: un test pasando sin analizar su propio caso, porque leyó la sonda de otro
+  worker y el número coincidió. La suite completa había dado verde tres veces por **suerte
+  de reparto**, no por aislamiento (R1 de Codex, H-01, 2026-09-06). Lo vigila
+  `tests/test_guard_aislamiento_paralelo.py`.
 - Un subconjunto o un fichero: `python -m pytest -q --tb=short <ruta>`, **en serie**.
 - **`-n auto` NO va en `addopts`, y eso está medido:** sobre un fichero suelto arrancar 12
   workers cuesta más de lo que ahorra (17,0 s contra 11,9 s). Va solo donde corre la suite
@@ -313,11 +321,13 @@ midió, la otra qué se midió—. Un reemplazo global de la fecha rompe la segu
   el orden — medido: con la 777 salieron ocho rojos que tres merges no habían visto.
 
   ```
-  python -m pytest -q --tb=no -n auto --randomly-seed=777 && python -m pytest -q --tb=no -n auto --randomly-seed=31337
+  python -m scripts.session_close
   ```
 
-  Con `-n auto` cuesta **4 min en vez de 12,4**. Ese era el motivo real por el que la regla se
-  saltaba bajo presión: no era indisciplina, era el precio.
+  **La verja las corre por ti desde el 2026-09-06**, con las semillas fijas 777 y 31337.
+  Antes corría **una** vez, sin semilla, y aun así imprimía «puedes continuar»: seguir el
+  cierre documentado **no acreditaba** esta regla. Lo levantó la R1 de Codex (sección G).
+  Cuesta ~190 s las dos, contra los 743 s que costaban en serie.
 - **Nunca se borra ni se debilita un test para poner verde.** Ni `skip` nuevo, ni aserto
   relajado, ni `xfail` ampliado, ni snapshot actualizado en ciego. Si un test estorba, se
   **para y se dice**: puede estar mal, pero eso se decide mirando la fuente y por escrito, no

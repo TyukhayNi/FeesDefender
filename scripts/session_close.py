@@ -437,7 +437,27 @@ def _avisar_specs_sin_traza() -> None:
 #: `xdist` va aqui aunque no lo importe la suite: la verja lanza `-n auto`, y sin el
 #: plugin pytest muere con «unrecognized arguments: -n» — un rojo que no dice nada
 #: sobre el estado del codigo. Mejor el mensaje de venv que el traceback de argparse.
-DEPS_DE_COLECCION: tuple[str, ...] = ("pytest", "dotenv", "yaml", "slugify", "xdist")
+#:
+#: **`hypothesis` y `randomly` estan aqui por la R1 de Codex (H-05).** Puse `xdist` y me
+#: deje los otros dos, que es peor de lo que parece: `tests/test_propiedades_utils.py`
+#: importa `hypothesis` **en la cabecera**, asi que sin el paquete la COLECCION aborta y
+#: `main()` presenta ese fallo como «Tests fallando - commit abortado». O sea que la
+#: distincion que `xdist` venia a comprar —«no pude medir» frente a «esta rojo»— se
+#: perdia justo en el caso que mas la necesita: un venv incompleto se leeria como codigo
+#: roto. `randomly` entra por lo mismo: la verja fija semillas y sin el plugin el flag no
+#: existe.
+DEPS_DE_COLECCION: tuple[str, ...] = (
+    "pytest", "dotenv", "yaml", "slugify", "xdist", "hypothesis", "pytest_randomly",
+)
+
+#: Las DOS semillas de aceptacion. `CLAUDE.md` §Tests las exige para dar por bueno un
+#: cambio —«un verde de una corrida no dice nada sobre el orden»— y hasta el 2026-09-06
+#: esta verja corria UNA vez, sin semilla fija, y aun asi imprimia «puedes continuar»:
+#: seguir el cierre documentado NO acreditaba la regla que el propio repo escribe. Lo
+#: levanto la R1 de Codex (seccion G) como desconexion de doctrina, y tenia razon.
+#: Son fijas a proposito: una semilla aleatoria distinta en cada cierre no es
+#: reproducible, y el valor de la regla esta en poder repetir el rojo.
+SEMILLAS_DE_ACEPTACION: tuple[int, ...] = (777, 31337)
 
 
 def deps_que_faltan(deps: tuple[str, ...] = DEPS_DE_COLECCION) -> list[str]:
@@ -551,15 +571,30 @@ def main() -> None:
     #
     # `--durations` para que el coste sea visible y no una sensacion: 19 tests
     # (el 0,4%) se comen el 29% del tiempo.
-    result = subprocess.run(
-        [PYTHON, "-m", "pytest", "-q", "--tb=short",
-         "-n", "auto", "--durations=15", *pytest_args],
-        cwd=ROOT,
-    )
-    if result.returncode != 0:
-        print("\n[X] Tests fallando - commit abortado.")
-        sys.exit(1)
-    print("\n[OK] Tests verdes - puedes continuar con git add / commit.")
+    # `--dist loadgroup` NO es opcional: sin el, las marcas `xdist_group` no hacen nada
+    # y `tests/test_guard_localizador.py` —que escribe sondas dentro de `core/` y lo
+    # escanea entero— vuelve a repartirse entre workers. Medido el 2026-09-06 (R1/H-01):
+    # 3 rojos, y peor, un VERDE con el test pasando sin analizar su propio caso.
+    for i, semilla in enumerate(SEMILLAS_DE_ACEPTACION):
+        print(f"\n--- semilla {semilla} ({i + 1} de {len(SEMILLAS_DE_ACEPTACION)}) ---")
+        result = subprocess.run(
+            [PYTHON, "-m", "pytest", "-q", "--tb=short",
+             "-n", "auto", "--dist", "loadgroup",
+             f"--randomly-seed={semilla}",
+             # `--durations` solo en la primera: la segunda no aporta perfil nuevo y
+             # duplicar quince lineas en cada cierre es ruido.
+             *(["--durations=15"] if i == 0 else []),
+             *pytest_args],
+            cwd=ROOT,
+        )
+        if result.returncode != 0:
+            print(f"\n[X] Tests fallando con la semilla {semilla} - commit abortado.")
+            print("    Reproducelo con:")
+            print(f"      python -m pytest -q --tb=short -n auto --dist loadgroup "
+                  f"--randomly-seed={semilla}")
+            sys.exit(1)
+    print(f"\n[OK] Tests verdes con las {len(SEMILLAS_DE_ACEPTACION)} semillas "
+          f"{SEMILLAS_DE_ACEPTACION} - puedes continuar con git add / commit.")
 
     # Chequeo de skills (modo AVISO, no bloquea el cierre): CHANGELOG sin
     # actualizar, .skill caducado, drift de helpers, identidad incompleta.

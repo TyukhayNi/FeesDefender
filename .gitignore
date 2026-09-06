@@ -15,7 +15,12 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
-.hypothesis/          # base de contraejemplos de hypothesis: cache local, no artefacto
+# Base de contraejemplos de hypothesis: caché local, no artefacto.
+# El comentario va en SU PROPIA LÍNEA: git no admite comentarios al final de una regla —
+# `.hypothesis/   # texto` es un patrón literal que no casa con nada, y la regla queda
+# muerta sin avisar. Medido el 2026-09-06 (R1 de Codex, H-06); lo tapaba por accidente el
+# `.gitignore` con `*` que hypothesis escribe dentro de su propio directorio.
+.hypothesis/
 .coverage
 htmlcov/
 .mypy_cache/
