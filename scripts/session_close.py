@@ -434,7 +434,10 @@ def _avisar_specs_sin_traza() -> None:
 #: Dependencias de terceros que la suite necesita ya en la fase de COLECCION:
 #: `core.config` importa `dotenv`; `core.utils`, `yaml` y `slugify`. Sin ellas
 #: pytest no "falla": no llega a ejecutar ninguna asercion.
-DEPS_DE_COLECCION: tuple[str, ...] = ("pytest", "dotenv", "yaml", "slugify")
+#: `xdist` va aqui aunque no lo importe la suite: la verja lanza `-n auto`, y sin el
+#: plugin pytest muere con «unrecognized arguments: -n» — un rojo que no dice nada
+#: sobre el estado del codigo. Mejor el mensaje de venv que el traceback de argparse.
+DEPS_DE_COLECCION: tuple[str, ...] = ("pytest", "dotenv", "yaml", "slugify", "xdist")
 
 
 def deps_que_faltan(deps: tuple[str, ...] = DEPS_DE_COLECCION) -> list[str]:
@@ -537,8 +540,20 @@ def main() -> None:
         print("Modo: RAPIDO (omite tests lentos; core/anon/ sin cambios)")
         pytest_args = []
 
+    # La suite ENTERA en paralelo. Medido el 2026-09-06 sobre 12 CPUs: 371 s -> 94 s,
+    # con el conteo IDENTICO (4.656 tests, 88 `skip`, 6 `xfail`) y CERO tests
+    # serializados: la suite ya era segura en paralelo, cosa que `pytest-randomly`
+    # llevaba meses forzando sin que nadie hubiera cobrado el dividendo.
+    #
+    # `-n auto` NO va en `addopts` de `pyproject.toml`, y eso tambien esta medido:
+    # sobre un fichero suelto arrancar 12 workers cuesta MAS de lo que ahorra
+    # (17,0 s contra 11,9 s). Aqui siempre corre la suite completa, asi que aqui si.
+    #
+    # `--durations` para que el coste sea visible y no una sensacion: 19 tests
+    # (el 0,4%) se comen el 29% del tiempo.
     result = subprocess.run(
-        [PYTHON, "-m", "pytest", "-q", "--tb=short", *pytest_args],
+        [PYTHON, "-m", "pytest", "-q", "--tb=short",
+         "-n", "auto", "--durations=15", *pytest_args],
         cwd=ROOT,
     )
     if result.returncode != 0:

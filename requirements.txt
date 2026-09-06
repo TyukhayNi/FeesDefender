@@ -58,3 +58,7 @@ pytest-cov>=5.0
 pytest-randomly>=3.12    # orden de tests aleatorio por defecto: caza fugas de aislamiento
                          # entre tests (estado global, reloads, sys.modules). El seed
                          # cambia cada corrida; fijar con --randomly-seed=N para reproducir.
+pytest-xdist>=3.8        # suite entera en paralelo. NO va en `addopts`: medido el 2026-09-06,
+                         # en un fichero suelto `-n auto` es MAS LENTO (17,0 s vs 11,9 s) porque
+                         # arrancar 12 workers cuesta mas de lo que ahorra. Solo donde corre la
+                         # suite completa: `session_close` y `/tests` sin argumento.

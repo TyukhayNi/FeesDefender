@@ -238,7 +238,7 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
 ```powershell
 cd "C:\Users\tnm33\Dev\FeesDefender"
 git log --oneline -5                              # qué cambió desde la última sesión
-python -m pytest -q --tb=no                       # suite verde
+python -m pytest -q --tb=no -n auto               # suite verde (94 s, no 371)
 python -m scripts.sync_sudespacho check-legacy    # PHPSESSID válida
 ```
 
@@ -300,8 +300,29 @@ midió, la otra qué se midió—. Un reemplazo global de la fecha rompe la segu
 ## Tests
 
 - Framework: `pytest`.
-- Comando rápido: `python -m pytest -q --tb=no`.
-- Comando con cobertura por fichero: `python -m pytest -q --tb=no <ruta>`.
+- **Suite entera, en paralelo:** `python -m pytest -q --tb=no -n auto` — **94 s en vez de 371 s**
+  (12 CPUs, medido el 2026-09-06: mismo conteo, mismos 88 `skip`, mismos 6 `xfail`, cero tests
+  serializados).
+- Un subconjunto o un fichero: `python -m pytest -q --tb=short <ruta>`, **en serie**.
+- **`-n auto` NO va en `addopts`, y eso está medido:** sobre un fichero suelto arrancar 12
+  workers cuesta más de lo que ahorra (17,0 s contra 11,9 s). Va solo donde corre la suite
+  completa — `session_close` y `/tests` sin argumento. El bucle interno se queda en serie,
+  que además es donde los tracebacks se leen.
+- **Bucle interno sobre un rojo:** `python -m pytest --lf -x -q --tb=short`.
+- **Aceptar un cambio son DOS semillas, no una.** Un verde de una corrida no dice nada sobre
+  el orden — medido: con la 777 salieron ocho rojos que tres merges no habían visto.
+
+  ```
+  python -m pytest -q --tb=no -n auto --randomly-seed=777 && python -m pytest -q --tb=no -n auto --randomly-seed=31337
+  ```
+
+  Con `-n auto` cuesta **4 min en vez de 12,4**. Ese era el motivo real por el que la regla se
+  saltaba bajo presión: no era indisciplina, era el precio.
+- **Nunca se borra ni se debilita un test para poner verde.** Ni `skip` nuevo, ni aserto
+  relajado, ni `xfail` ampliado, ni snapshot actualizado en ciego. Si un test estorba, se
+  **para y se dice**: puede estar mal, pero eso se decide mirando la fuente y por escrito, no
+  borrando la evidencia. Las tres señales de que la cosa se torció, en orden de gravedad:
+  tests que desaparecen, funcionalidad que nadie pidió, y bucles.
 - **El conteo de la suite NO se transcribe aquí.** La cifra de referencia es la del
   **último cierre** en `docs/bitacora/AAAA.md`, que se mide en cada sesión; el estado
   vigente, con su fecha, en `STATUS.md`. Esta línea dijo «546/546 verdes en s20
@@ -312,7 +333,7 @@ midió, la otra qué se midió—. Un reemplazo global de la fecha rompe la segu
   que no esté explicada es una bandera roja — se explica en el bloque de cierre
   (tests nuevos, `skip` nuevo, módulo retirado), no se normaliza en silencio.
 
-Atajo: `/tests` ejecuta la suite completa.
+Atajo: `/tests` ejecuta la suite completa en paralelo; `/tests <ruta>` un subconjunto en serie.
 
 ## Referencias rápidas
 

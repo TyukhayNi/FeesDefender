@@ -6,18 +6,20 @@ allowed-tools: Bash
 
 Ejecuta los tests del proyecto.
 
-Si recibes argumento, ejecuta solo esa ruta:
+Si recibes argumento, ejecuta solo esa ruta **en serie** (sin `-n`): sobre un fichero
+suelto arrancar 12 workers cuesta más de lo que ahorra —17,0 s contra 11,9 s, medido el
+2026-09-06— y además en serie los tracebacks se leen sin interleave.
 
 ```powershell
 cd "C:\Users\tnm33\Dev\FeesDefender"
 python -m pytest -q --tb=short $ARGUMENTS
 ```
 
-Si no hay argumento, ejecuta la suite completa:
+Si no hay argumento, ejecuta la suite completa **en paralelo** (371 s → 94 s):
 
 ```powershell
 cd "C:\Users\tnm33\Dev\FeesDefender"
-python -m pytest -q --tb=no
+python -m pytest -q --tb=no -n auto
 ```
 
 Tras ejecutar:
