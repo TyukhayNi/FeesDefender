@@ -49,6 +49,15 @@ FICHEROS = (PROPIEDADES, EJEMPLOS)
 U = "core/utils.py"
 
 #: `(nombre, fichero, ancla, sustituto, tests que DEBEN morir)`.
+#:
+#: **Sobre los `esperado` de M05, M07, M08 y M09, que llevan DOS tests cada uno.** No es
+#: laxitud: los guards se contratan desde las **dos direcciones** —`test_lo_que_pasa_el_
+#: guard_es_un_solo_componente` dice que lo aceptado cumple todas las promesas, y
+#: `test_el_guard_rechaza_lo_que_no_puede_ser_un_componente` dice que lo inyectado se
+#: rechaza siempre—. Retirar una guarda rompe LAS DOS, porque las dos hablan de esa misma
+#: propiedad. La primera version de este arnes solo listaba la direccion del rechazo y el
+#: informe los marco «MAL APUNTADO»: lo estrecho era mi expectativa, no el mutante. Es el
+#: mismo matiz que documenta `_mutantes_mejoras_136`. **No lo «arregles» de vuelta.**
 MUTANTES = [
     # --- normalize_es_phone -------------------------------------------------
     ("M01 `normalize_es_phone` vuelve a un solo paso (el codigo previo al 2026-09-06)", U,
@@ -92,18 +101,23 @@ MUTANTES = [
     ("M05 la guarda de caracteres prohibidos no muerde", U,
      '    if _WIN_FORBIDDEN.search(valor or ""):',
      "    if False:",
-     {"test_el_guard_rechaza_lo_que_no_puede_ser_un_componente"}),
+     {"test_el_guard_rechaza_lo_que_no_puede_ser_un_componente",
+      "test_lo_que_pasa_el_guard_es_un_solo_componente"}),
 
     ("M06 la guarda de VACIO desaparece (el H-02 que convirtio CASOS_ROOT en expediente)", U,
+     # La tilde de `vacío` NO es opcional: el ancla se compara literal contra el fichero,
+     # y escribirla sin tilde daba «el ancla aparece 0 veces» — un mutante que no llega a
+     # aplicarse parece un mutante que muere, y no es lo mismo.
      '    if not (valor or "").strip():\n'
-     '        raise ValueError(f"{campo} no puede estar vacio.")\n',
+     '        raise ValueError(f"{campo} no puede estar vacío.")\n',
      "",
      {"test_el_guard_rechaza_el_vacio_y_las_posiciones_relativas"}),
 
     ("M07 la guarda de `.` / `..` desaparece", U,
      '    if valor.strip() in (".", ".."):',
      "    if False:",
-     {"test_el_guard_rechaza_el_vacio_y_las_posiciones_relativas"}),
+     {"test_el_guard_rechaza_el_vacio_y_las_posiciones_relativas",
+      "test_lo_que_pasa_el_guard_es_un_solo_componente"}),
 
     ("M08 la guarda de espacios al borde desaparece (el H-03 del andamiaje parcial)", U,
      "    if valor != valor.strip():",
