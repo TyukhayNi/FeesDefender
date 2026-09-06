@@ -252,3 +252,59 @@ def test_H01_un_mensaje_rescatado_LEGITIMO_se_sigue_depositando(tmp_path):
 
     assert ruta is not None
     assert rep.excluidos_ruido == []
+
+
+# ==========================================================================
+# Las ramas de FALLO CERRADO de los helpers nuevos
+# ==========================================================================
+# La cobertura del diff las señaló (88% < 90%) y son justo las que importan: un
+# helper que decide si se traza o no, y cuya rama de error nadie ejercita, es un
+# instrumento que no se ha visto dar el otro valor.
+
+def test_raiz_logica_de_un_caso_irresoluble_es_None():
+    assert ee._raiz_logica_de("W-NO-EXISTE-JAMAS") is None
+
+
+def test_input_root_de_un_caso_irresoluble_es_None():
+    assert ee._input_root_de("W-NO-EXISTE-JAMAS") is None
+
+
+def test_input_root_falla_CERRADO_si_resolve_revienta(tmp_casos_root, monkeypatch):
+    """`resolve()` puede lanzar `OSError` (ruta demasiado larga, volumen caído).
+    Sin caso resuelto no se traza, que es el lado seguro."""
+    case_id = _setup_caso("EMAIL-COV-001")
+
+    def _revienta(self, *a, **kw):
+        raise OSError("volumen no disponible")
+
+    monkeypatch.setattr("pathlib.Path.resolve", _revienta)
+    assert ee._input_root_de(case_id) is None
+
+
+def test_es_lote_del_caso_sin_raiz_es_False(tmp_path):
+    assert ee._es_lote_del_caso(tmp_path, None) is False
+
+
+def test_es_lote_del_caso_falla_CERRADO_si_resolve_revienta(tmp_path, monkeypatch):
+    def _revienta(self, *a, **kw):
+        raise OSError("volumen no disponible")
+
+    monkeypatch.setattr("pathlib.Path.resolve", _revienta)
+    assert ee._es_lote_del_caso(tmp_path / "lote", tmp_path) is False
+
+
+def test_la_CLI_enumera_lo_excluido_con_su_regla(capsys, tmp_path):
+    """El operador tiene que poder ver QUÉ se quedó fuera sin abrir el `.jsonl`."""
+    import scripts.export_label_emails as cli
+
+    rep = ee.ExportReport(account=_CUENTA, label=_ETIQUETA)
+    rep.excluidos_ruido = [
+        {"gmail_id": "g1", "asunto": "Factura agosto", "regla": "facturacion_despacho"},
+        {"gmail_id": "g2", "asunto": "Circularización 2026", "regla": "auditoria"},
+    ]
+    cli._print_report(rep, tmp_path)
+
+    salida = capsys.readouterr().out
+    assert "--sin-filtro-ruido" in salida
+    assert "[facturacion_despacho] Factura agosto" in salida
+    assert "[auditoria] Circularización 2026" in salida
