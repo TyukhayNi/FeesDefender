@@ -333,6 +333,19 @@ midió, la otra qué se midió—. Un reemplazo global de la fecha rompe la segu
   **para y se dice**: puede estar mal, pero eso se decide mirando la fuente y por escrito, no
   borrando la evidencia. Las tres señales de que la cosa se torció, en orden de gravedad:
   tests que desaparecen, funcionalidad que nadie pidió, y bucles.
+- **Snapshots (`syrupy`): prueban la FORMA, nunca el CONTRATO — y `--snapshot-update` es el
+  botón de trampa.** Un snapshot congela la salida *tal como está hoy, defecto incluido*, así
+  que sirve para que un cambio de un generador de texto se lea como un **diff** en vez de como
+  veinte asertos parciales, y no sirve para nada más. Dos reglas, y la segunda es la que
+  importa:
+  1. Lo que es contrato —«la firma no aparece», «la cita vetada no entra», «el adjunto se
+     enumera una vez»— sigue siendo un aserto escrito a mano **junto** al snapshot. Si se
+     rompiera, el snapshot lo aprobaría.
+  2. **Un snapshot se actualiza leyendo su diff y justificándolo en el commit, jamás en
+     ciego.** `pytest --snapshot-update` sobre un rojo que no entiendes es exactamente el
+     «debilitar un test para poner verde» que prohíbe la regla de arriba, solo que con una
+     herramienta que lo hace cómodo. Y un snapshot recién generado **siempre pasa**: no
+     prueba nada hasta que se le ha visto ponerse rojo.
 - **El conteo de la suite NO se transcribe aquí.** La cifra de referencia es la del
   **último cierre** en `docs/bitacora/AAAA.md`, que se mide en cada sesión; el estado
   vigente, con su fecha, en `STATUS.md`. Esta línea dijo «546/546 verdes en s20

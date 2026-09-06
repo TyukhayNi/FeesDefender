@@ -58,6 +58,10 @@ pytest-cov>=5.0
 pytest-randomly>=3.12    # orden de tests aleatorio por defecto: caza fugas de aislamiento
                          # entre tests (estado global, reloads, sys.modules). El seed
                          # cambia cada corrida; fijar con --randomly-seed=N para reproducir.
+syrupy>=6.0              # snapshots de FORMA para los generadores de texto. Su fichero
+                         # `.ambr` es la REFERENCIA y va versionado: no se gitignora.
+                         # Regla del `--snapshot-update` en `CLAUDE.md` §Tests — se escribio
+                         # ANTES del primer snapshot a proposito.
 hypothesis>=6.140        # property-based: los ejemplos no los elige quien escribio la
                          # funcion, que es lo que rompe el test tautologico. El primer dia
                          # (2026-09-06) encontro que `normalize_es_phone` NO era idempotente

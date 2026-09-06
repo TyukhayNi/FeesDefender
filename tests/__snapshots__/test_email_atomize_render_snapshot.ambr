@@ -1,0 +1,198 @@
+# serializer version: 1
+# name: test_render_correos_lectura_forma_completa
+  '''
+  <!-- GENERADO por core.email_atomize — NO editar a mano. -->
+  
+  # Correos — lectura (3 mensajes)
+  
+  ## Índice
+  
+  - [2026-06-12 1030 — Oferta [inmueble]](#msg-00001)
+  - [2026-06-12 1145 — Re: Oferta [inmueble]](#msg-00002)
+  - [2026-06-13 0900 — Confirmación](#msg-00003)
+  
+  ---
+  
+  <a id="msg-00001"></a>
+  ### 2026-06-12 · 1030 — Oferta [inmueble]
+  
+  **De:** PersonaUno <per01c@example.invalid>  
+  **Para:** per02@example.invalid  
+  
+  Texto del autor.
+  
+  <sub>Ref. MSG-00001</sub>
+  
+  
+  ---
+  
+  <a id="msg-00002"></a>
+  ### 2026-06-12 · 1145 — Re: Oferta [inmueble]
+  
+  **De:** PersonaUno <per01c@example.invalid>  
+  **Para:** per02@example.invalid  
+  **Adjuntos:** contrato.pdf  
+  
+  Respuesta con adjunto.
+  
+  <sub>Ref. MSG-00002</sub>
+  
+  
+  ---
+  
+  <a id="msg-00003"></a>
+  ### 2026-06-13 · 0900 — Confirmación
+  
+  **De (reconstruido, por verificar):** PersonaUno <per01c@example.invalid>  
+  _Mensaje reconstruido de una cita; remitente por cabecera, sin autenticar (Ref. —)_  
+  **Para:** per02@example.invalid  
+  
+  Cuerpo reconstruido desde una cita.
+  
+  <sub>Ref. MSG-00003</sub>
+  
+  
+  ---
+  
+  
+  '''
+# ---
+# name: test_render_indice_adjuntos_forma_completa
+  '''
+  <!-- GENERADO por core.email_atomize — NO editar a mano. -->
+  
+  # Índice de adjuntos (2 únicos)
+  
+  | ATT | Nombre | Tipo | 1ª aparición | Mensajes |
+  | --- | --- | --- | --- | --- |
+  | ATT-00001 | planos.jpg | image/jpeg | 2026-06-12 | MSG-00001, MSG-00002 |
+  | ATT-00003 | contrato.pdf | application/pdf | 2026-06-12 | MSG-00002 |
+  
+  '''
+# ---
+# name: test_render_md_forma_completa
+  '''
+  # GENERADO por core.email_atomize — NO editar (fuente de verdad regenerable).
+  ---
+  msg_id: MSG-00002
+  rfc_message_id: b@x
+  in_reply_to: 
+  hilo: a@x
+  fecha: 2026-06-12T10:30:00+02:00
+  de: per01c@example.invalid
+  de_nombre: "PersonaUno"
+  para:
+    - "per02@example.invalid"
+  cc: []
+  asunto: "Re: Oferta [inmueble]"
+  eml_origen: "2026-06-12_oferta.eml"
+  profundidad: 0
+  ruta_anidacion: []
+  procedencia: [{"eml_origen": "2026-06-12_oferta.eml", "profundidad": 0, "ruta_anidacion": []}]
+  capa: A
+  confianza: alta
+  auth: {"dkim": "pass"}
+  sha256: deadbeef
+  adjuntos: [{"att_id": "ATT-00003", "msg_id_anidado": null, "nombre": "contrato.pdf", "tipo": "application/pdf", "sha256": "cafe"}]
+  idioma: es
+  formato_original: plain
+  etiquetas: []
+  fuente: email
+  cuerpo_recortado_cita: true
+  respuesta_intercalada: true
+  mojibake: true
+  ---
+  
+  Respuesta con adjunto.
+  
+  '''
+# ---
+# name: test_render_md_forma_minima
+  '''
+  # GENERADO por core.email_atomize — NO editar (fuente de verdad regenerable).
+  ---
+  msg_id: MSG-00001
+  rfc_message_id: a@x
+  in_reply_to: 
+  hilo: a@x
+  fecha: 2026-06-12T10:30:00+02:00
+  de: per01c@example.invalid
+  de_nombre: "PersonaUno"
+  para:
+    - "per02@example.invalid"
+  cc: []
+  asunto: "Oferta [inmueble]"
+  eml_origen: "2026-06-12_oferta.eml"
+  profundidad: 0
+  ruta_anidacion: []
+  procedencia: [{"eml_origen": "2026-06-12_oferta.eml", "profundidad": 0, "ruta_anidacion": []}]
+  capa: A
+  confianza: alta
+  auth: {"dkim": "pass"}
+  sha256: deadbeef
+  adjuntos: []
+  idioma: es
+  formato_original: plain
+  etiquetas: []
+  fuente: email
+  ---
+  
+  Texto del autor.
+  
+  '''
+# ---
+# name: test_render_revision_las_tres_colas
+  dict({
+    'casi_duplicados.md': '''
+      <!-- GENERADO por core.email_atomize — NO editar a mano. -->
+      
+      # Casi-duplicados / upgrades de fidelidad Layer B
+      
+      Citas inline resueltas a una copia LIMPIA de Capa A (no se acuña mensaje nuevo; el .md de Capa A NO se muta). La verdad del puente vive en `_registro.json` (`alias`/`mensajes_fp`).
+      
+      | Mensaje Capa A | Citado en | Profundidad | Fingerprint |
+      | --- | --- | --- | --- |
+  
+    ''',
+    'cola.md': '''
+      <!-- GENERADO por core.email_atomize — NO editar a mano. -->
+      
+      # Cola de revisión Layer B (media/baja)
+      
+      | Portador | Estilo | Prof | Confianza | Motivo | De | Extracto |
+      | --- | --- | --- | --- | --- | --- | --- |
+      | MSG-00002 | quote_gt | 0 | baja | sin_cabecera |  | fragmento citado |
+  
+    ''',
+    'identidades_vigiladas.md': '''
+      <!-- GENERADO por core.email_atomize — NO editar a mano. -->
+      
+      # Autoría vigilada (PersonaUno) — revisión probatoria
+      
+      Toda cita atribuida a una identidad vigilada: promovidas (mensaje B propio) y las que quedaron en revisión (media/baja). Cada una, a verificar contra la fuente.
+      
+      | Ref | De | Fecha | Confianza | Portador | Estado |
+      | --- | --- | --- | --- | --- | --- |
+      | MSG-00001 | per01c@example.invalid | 2026-06-12 | alta |  | promovido |
+      | MSG-00002 | per01c@example.invalid | 2026-06-12 | alta |  | promovido |
+      | MSG-00003 | per01c@example.invalid | 2026-06-13 | media-reconstruida |  | promovido |
+  
+    ''',
+    'reconstruidos.jsonl': '''
+      {"asunto": "Confirmación", "de": "per01c@example.invalid", "fecha_iso": "2026-06-13", "fingerprint": "", "msg_id": "MSG-00003", "reconstruido_de": ""}
+  
+    ''',
+    'reconstruidos.md': '''
+      <!-- GENERADO por core.email_atomize — NO editar a mano. -->
+      
+      # Reconstruidos (media-reconstruida) — checklist de verificación
+      
+      Atoms capa B promovidos desde una cita NO estructural: remitente por cabecera (fiable), límite de cuerpo por adyacencia (por verificar). Cotejar cada uno contra su `.eml` portador.
+      
+      | Ref | De | Fecha | Asunto | Portador | Extracto |
+      | --- | --- | --- | --- | --- | --- |
+      | MSG-00003 | per01c@example.invalid | 2026-06-13 | Confirmación |  | Cuerpo reconstruido desde una cita. |
+  
+    ''',
+  })
+# ---
