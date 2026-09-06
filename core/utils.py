@@ -36,17 +36,30 @@ def normalize_es_phone(raw: str) -> str:
     toca números extranjeros (`+33…` se dejan intactos salvo separadores).
 
     Idempotente: ``normalize_es_phone(normalize_es_phone(x)) == normalize_es_phone(x)``.
+
+    **El bucle no es cosmético, y hasta el 2026-09-06 no estaba.** Con un solo paso, un
+    prefijo DOBLE —``"0034 +34 600 111 222"``, que es lo que sale de copiar de una firma
+    de correo o de una ficha del CRM— salía de aquí como ``"+34600111222"``: con el
+    ``+34`` puesto, o sea exactamente lo que esta función existe para quitar, y camino
+    del ``HTTP 400 movil is incorrect``. El docstring afirmaba la idempotencia desde el
+    principio; la implementación no la daba. Lo destapó una property test con estrategia
+    **con forma de teléfono** — `st.text()` con 2.000 ejemplos aleatorios no acierta
+    jamás el prefijo literal ``"0034"``, y daba verde.
+
+    Termina siempre: cada rama consume al menos dos caracteres.
     """
     if not raw:
         return raw
     s = _TEL_SEPARADORES.sub("", raw)
-    if s.startswith("+34"):
-        s = s[3:]
-    elif s.startswith("0034"):
-        s = s[4:]
-    elif s.startswith("34") and len(s) == 11:
-        s = s[2:]
-    return s
+    while True:
+        if s.startswith("+34"):
+            s = s[3:]
+        elif s.startswith("0034"):
+            s = s[4:]
+        elif s.startswith("34") and len(s) == 11:
+            s = s[2:]
+        else:
+            return s
 
 
 def slugify(value: str, max_length: int = 80) -> str:

@@ -377,3 +377,126 @@ def test_el_guard_grita_si_git_no_puede_responder(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="check-ignore fallo"):
         _ignorados([".env"], repo=tmp_path, trackeados=[], env=entorno)
+
+
+# --- Comentarios al final de una regla: la OTRA forma de que una regla no muerda -------
+
+
+def _gitignores_trackeados() -> list[Path]:
+    """Los `.gitignore` que el repositorio REPARTE. Uno local sin commitear no cuenta:
+    la clase que este fichero vigila son las reglas que viajan con el repo."""
+    salida = _git(["ls-files", "-z", "--", "*.gitignore", ".gitignore"], REPO)
+    return [REPO / r for r in salida.stdout.split(NUL) if r.strip()]
+
+
+def reglas_con_comentario_en_linea(texto: str) -> list[tuple[int, str]]:
+    """Lineas de un `.gitignore` que llevan un `#` DESPUES del patron.
+
+    Git solo trata como comentario un `#` **al principio** de la linea. En cualquier otra
+    posicion es un caracter literal del patron, asi que `foo/   # explicacion` no es la
+    regla `foo/` con una nota al lado: es un patron que no casa con nada y **muere en
+    silencio**, sin aviso ni error.
+
+    Funcion aparte de su test para poder ejercitar las dos direcciones.
+    """
+    hallazgos = []
+    for n, linea in enumerate(texto.splitlines(), start=1):
+        if not linea.strip() or linea.startswith("#"):
+            continue                       # vacia, o comentario DE VERDAD (columna 0)
+        if _posicion_del_comentario(linea) is not None:
+            hallazgos.append((n, linea.rstrip()))
+    return hallazgos
+
+
+def _posicion_del_comentario(linea: str) -> int | None:
+    r"""Indice del primer `#` con forma de comentario al final, o `None`.
+
+    **Esta funcion existe porque mi primera version denunciaba patrones legitimos**, y R2 de
+    Codex (H-07) lo midio contra git de verdad:
+
+    | Linea | git | detector viejo |
+    |---|---|---|
+    | `foo#bar` | patron efectivo, casa `foo#bar` | **denunciaba** (falso positivo) |
+    | `file[#]name` | patron efectivo, casa `file#name` | **denunciaba** (falso positivo) |
+    | `   # texto` | **patron literal**, no comentario | lo omitia como comentario |
+    | `build/ # nota` | no ignora nada: regla muerta | denunciaba (correcto) |
+
+    Un guard que denuncia de mas se desactiva en una semana, y entonces no protege nada —
+    lo tengo escrito en este mismo fichero y aun asi lo construi al reves.
+
+    Recorre respetando las dos construcciones que hacen literal a un `#` en la gramatica de
+    `.gitignore`: el escape `\#` y las clases de caracteres `[...]`. Y exige **espacio
+    delante**, que es lo que distingue un comentario mal puesto de un `#` que forma parte
+    del nombre.
+    """
+    escapado = False
+    en_clase = False
+    for i, c in enumerate(linea):
+        if escapado:
+            escapado = False
+            continue
+        if c == "\\":
+            escapado = True
+        elif c == "[":
+            en_clase = True
+        elif c == "]":
+            en_clase = False
+        elif c == "#" and not en_clase and i > 0 and linea[i - 1].isspace():
+            return i
+    return None
+
+
+def test_ninguna_regla_lleva_comentario_al_final_de_la_linea():
+    """Medido el 2026-09-06 (R1 de Codex, H-06): `.hypothesis/   # …` era un patron
+    literal que no casaba con nada, y la caché quedaba sin ignorar. Lo tapaba por accidente
+    el `.gitignore` con `*` que hypothesis escribe dentro de su propio directorio.
+
+    **Y volvio a pasar el mismo dia, tres lineas mas abajo del arreglo**, al anadir
+    `coverage.xml`. Por eso esto es un guard y no una nota: la clase de error es de las que
+    se repiten porque el resultado *parece* correcto al leerlo.
+
+    El guard de arriba (`test_ninguna_regla_de_gitignore_es_inerte`) **no puede ver esto**:
+    una regla con comentario no casa con nada, asi que ningun fichero trackeado se ve
+    afectado y aquel se queda verde. Son dos formas distintas de que una regla no muerda.
+    """
+    malos: dict[str, list[tuple[int, str]]] = {}
+    for ruta in _gitignores_trackeados():
+        hallazgos = reglas_con_comentario_en_linea(
+            ruta.read_text(encoding="utf-8", errors="replace"))
+        if hallazgos:
+            malos[str(ruta.relative_to(REPO))] = hallazgos
+    assert not malos, (
+        "git NO admite comentarios al final de una regla: el `#` pasa a formar parte del "
+        "patron y la regla queda muerta sin avisar. Pon el comentario en su propia "
+        "linea:\n" + "\n".join(f"  {f}:{n}: {ln}"
+                               for f, hs in sorted(malos.items()) for n, ln in hs))
+
+
+def test_el_detector_de_comentarios_ve_lo_que_mata_una_regla():
+    """Lo que git deja sin efecto porque el `#` pasa a formar parte del patron."""
+    assert reglas_con_comentario_en_linea("build/   # artefactos\n") == [
+        (1, "build/   # artefactos")]
+    assert reglas_con_comentario_en_linea(".hypothesis/ # cache\n")
+    # Sangrado: git NO lo trata como comentario —el primer caracter no es `#`— asi que es
+    # un patron literal `   # texto` que no casa con nada. Mismo error, otra sangria.
+    # R2 midio que la version anterior lo omitia (falso NEGATIVO).
+    assert reglas_con_comentario_en_linea("   # texto\n")
+
+
+def test_el_detector_de_comentarios_NO_ALUCINA():
+    """La otra direccion, y es la que R2 tumbo (H-07).
+
+    Un `#` fuera del comienzo de linea **no invalida** un patron. Denunciar `foo#bar` es un
+    falso positivo sobre una regla que git aplica perfectamente, y un guard que denuncia de
+    mas se desactiva en una semana.
+    """
+    legitimos = [
+        ("# artefactos\nbuild/\n", "comentario en su propia linea"),
+        ("!.env.example\n", "negacion"),
+        (r"fichero\#raro" + "\n", "`#` escapado"),
+        ("foo#bar\n", "`#` como parte del nombre, sin espacio delante"),
+        ("file[#]name\n", "`#` dentro de una clase de caracteres"),
+        ("\n   \n", "lineas vacias"),
+    ]
+    falsos = [etq for src, etq in legitimos if reglas_con_comentario_en_linea(src)]
+    assert not falsos, f"denuncia patrones que git aplica: {falsos}"

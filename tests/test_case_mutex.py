@@ -102,7 +102,7 @@ class TestElLeaseNoAceptaValoresQueLoRompen:
 
 
 class TestElWCodeNoPuedeEscaparDeLaRaiz:
-    """R10/H10-08: `..\escape` resolvia FUERA del registro. El revisor lo ejecuto."""
+    r"""R10/H10-08: `..\escape` resolvia FUERA del registro. El revisor lo ejecuto."""
 
     @pytest.mark.parametrize("malo", ["", "   ", "..", r"..\escape", "C:/tmp/escape",
                                       "W-A/B", "W-A B", "CON", "W-", "sin-prefijo"])

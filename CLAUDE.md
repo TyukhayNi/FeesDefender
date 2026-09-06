@@ -238,7 +238,7 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
 ```powershell
 cd "C:\Users\tnm33\Dev\FeesDefender"
 git log --oneline -5                              # qué cambió desde la última sesión
-python -m pytest -q --tb=no                       # suite verde
+python -m pytest -q --tb=no -n auto               # suite verde (94 s, no 371)
 python -m scripts.sync_sudespacho check-legacy    # PHPSESSID válida
 ```
 
@@ -300,8 +300,59 @@ midió, la otra qué se midió—. Un reemplazo global de la fecha rompe la segu
 ## Tests
 
 - Framework: `pytest`.
-- Comando rápido: `python -m pytest -q --tb=no`.
-- Comando con cobertura por fichero: `python -m pytest -q --tb=no <ruta>`.
+- **Suite entera, en paralelo:** `python -m pytest -q --tb=no -n auto` — **94 s en vez de
+  371 s** (12 CPUs, medido el 2026-09-06: mismo conteo, mismos 88 `skip`, mismos 6 `xfail`).
+- **Ningún test escribe en el árbol de producción, y esa regla no tiene escotilla.** Lo
+  vigila `tests/test_guard_aislamiento_paralelo.py`. Salió de dos rondas adversariales: unos
+  tests escribían sondas dentro de `core/` vivo y otros lo escaneaban, así que en paralelo
+  daban rojos —y, lo que costó descubrirlo, también **verdes**: un test pasando sin analizar
+  su propio caso porque leyó la sonda de otro worker y el número coincidió. La suite había
+  dado verde tres veces por **suerte de reparto**, no por aislamiento.
+  **Si necesitas escribir para probar algo, monta un árbol sintético en `tmp_path` y pásaselo
+  a la función** (patrón en `test_guard_localizador.py::_arbol_sintetico`). Agrupar con
+  `xdist_group` **no vale**: protege de los otros escritores y no de los lectores que
+  escanean el mismo árbol (medido, R2/H-01).
+- Un subconjunto o un fichero: `python -m pytest -q --tb=short <ruta>`, **en serie**.
+- **`-n auto` NO va en `addopts`, y eso está medido:** sobre un fichero suelto arrancar 12
+  workers cuesta más de lo que ahorra (17,0 s contra 11,9 s). Va solo donde corre la suite
+  completa — `session_close` y `/tests` sin argumento. El bucle interno se queda en serie,
+  que además es donde los tracebacks se leen.
+- **Bucle interno sobre un rojo:** `python -m pytest --lf -x -q --tb=short`.
+- **Aceptar un cambio son DOS semillas, no una.** Un verde de una corrida no dice nada sobre
+  el orden — medido: con la 777 salieron ocho rojos que tres merges no habían visto.
+
+  ```
+  python -m scripts.session_close
+  ```
+
+  **La verja las corre por ti desde el 2026-09-06**, con las semillas fijas 777 y 31337.
+  Antes corría **una** vez, sin semilla, y aun así imprimía «puedes continuar»: seguir el
+  cierre documentado **no acreditaba** esta regla. Lo levantó la R1 de Codex (sección G).
+  Cuesta ~190 s las dos, contra los 743 s que costaban en serie.
+- **Nunca se borra ni se debilita un test para poner verde.** Ni `skip` nuevo, ni aserto
+  relajado, ni `xfail` ampliado, ni snapshot actualizado en ciego. Si un test estorba, se
+  **para y se dice**: puede estar mal, pero eso se decide mirando la fuente y por escrito, no
+  borrando la evidencia. Las tres señales de que la cosa se torció, en orden de gravedad:
+  tests que desaparecen, funcionalidad que nadie pidió, y bucles.
+- **Snapshots (`syrupy`): prueban la FORMA, nunca el CONTRATO — y `--snapshot-update` es el
+  botón de trampa.** Un snapshot congela la salida *tal como está hoy, defecto incluido*, así
+  que sirve para que un cambio de un generador de texto se lea como un **diff** en vez de como
+  veinte asertos parciales, y no sirve para nada más. Dos reglas, y la segunda es la que
+  importa:
+  1. Lo que es contrato —«la firma no aparece», «la cita vetada no entra», «el adjunto se
+     enumera una vez»— sigue siendo un aserto escrito a mano **junto** al snapshot. Si se
+     rompiera, el snapshot lo aprobaría.
+  2. **Un snapshot se actualiza leyendo su diff y justificándolo en el commit, jamás en
+     ciego.** `pytest --snapshot-update` sobre un rojo que no entiendes es exactamente el
+     «debilitar un test para poner verde» que prohíbe la regla de arriba, solo que con una
+     herramienta que lo hace cómodo. Y un snapshot recién generado **siempre pasa**: no
+     prueba nada hasta que se le ha visto ponerse rojo.
+- **Cobertura: la del DIFF, no la global.** Un porcentaje global no lo cumple nadie y no
+  dice nada; el que sirve mira **las líneas que este diff añade**, que es donde se acaba de
+  escribir. `session_close` lo mide y lo dice como **aviso** (umbral 90%), nunca como verja:
+  la única verja es la suite. Cuando señale algo, la respuesta por defecto es **escribir el
+  test**, no bajar el umbral — sobre el diff que lo introdujo pasó de 68% a 93% porque
+  apuntó a la rama de fallo de la propia verja, que no probaba nadie.
 - **El conteo de la suite NO se transcribe aquí.** La cifra de referencia es la del
   **último cierre** en `docs/bitacora/AAAA.md`, que se mide en cada sesión; el estado
   vigente, con su fecha, en `STATUS.md`. Esta línea dijo «546/546 verdes en s20
@@ -312,7 +363,7 @@ midió, la otra qué se midió—. Un reemplazo global de la fecha rompe la segu
   que no esté explicada es una bandera roja — se explica en el bloque de cierre
   (tests nuevos, `skip` nuevo, módulo retirado), no se normaliza en silencio.
 
-Atajo: `/tests` ejecuta la suite completa.
+Atajo: `/tests` ejecuta la suite completa en paralelo; `/tests <ruta>` un subconjunto en serie.
 
 ## Referencias rápidas
 

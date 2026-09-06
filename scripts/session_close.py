@@ -434,7 +434,174 @@ def _avisar_specs_sin_traza() -> None:
 #: Dependencias de terceros que la suite necesita ya en la fase de COLECCION:
 #: `core.config` importa `dotenv`; `core.utils`, `yaml` y `slugify`. Sin ellas
 #: pytest no "falla": no llega a ejecutar ninguna asercion.
-DEPS_DE_COLECCION: tuple[str, ...] = ("pytest", "dotenv", "yaml", "slugify")
+#: `xdist` va aqui aunque no lo importe la suite: la verja lanza `-n auto`, y sin el
+#: plugin pytest muere con «unrecognized arguments: -n» — un rojo que no dice nada
+#: sobre el estado del codigo. Mejor el mensaje de venv que el traceback de argparse.
+#:
+#: **`hypothesis` y `randomly` estan aqui por la R1 de Codex (H-05).** Puse `xdist` y me
+#: deje los otros dos, que es peor de lo que parece: `tests/test_propiedades_utils.py`
+#: importa `hypothesis` **en la cabecera**, asi que sin el paquete la COLECCION aborta y
+#: `main()` presenta ese fallo como «Tests fallando - commit abortado». O sea que la
+#: distincion que `xdist` venia a comprar —«no pude medir» frente a «esta rojo»— se
+#: perdia justo en el caso que mas la necesita: un venv incompleto se leeria como codigo
+#: roto. `randomly` entra por lo mismo: la verja fija semillas y sin el plugin el flag no
+#: existe.
+#: **`syrupy` y `pytest_cov` entraron por R2 (H-06), y su ausencia era el MISMO defecto que
+#: R1 me habia hecho arreglar una vez.** Amplie la superficie de la verja —snapshots,
+#: cobertura— y no amplie el preflight. Sin `syrupy`, los seis tests de snapshot no fallan:
+#: **erroran en el setup de su fixture**, y la verja los presenta como «Tests fallando»,
+#: que es exactamente la confusion que este preflight existe para impedir. Reproducido por
+#: el revisor.
+#:
+#: La leccion, escrita aqui porque es donde muerde: **esta tupla no es una lista de
+#: dependencias, es la lista de lo que la VERJA necesita.** Cada vez que la verja aprende a
+#: usar algo nuevo, esto crece con ella o vuelve a mentir.
+DEPS_DE_COLECCION: tuple[str, ...] = (
+    "pytest", "dotenv", "yaml", "slugify", "xdist", "hypothesis", "pytest_randomly",
+    "syrupy", "pytest_cov",
+)
+
+#: Las DOS semillas de aceptacion. `CLAUDE.md` §Tests las exige para dar por bueno un
+#: cambio —«un verde de una corrida no dice nada sobre el orden»— y hasta el 2026-09-06
+#: esta verja corria UNA vez, sin semilla fija, y aun asi imprimia «puedes continuar»:
+#: seguir el cierre documentado NO acreditaba la regla que el propio repo escribe. Lo
+#: levanto la R1 de Codex (seccion G) como desconexion de doctrina, y tenia razon.
+#: Son fijas a proposito: una semilla aleatoria distinta en cada cierre no es
+#: reproducible, y el valor de la regla esta en poder repetir el rojo.
+SEMILLAS_DE_ACEPTACION: tuple[int, ...] = (777, 31337)
+
+
+#: Umbral de cobertura sobre las lineas NUEVAS del diff. **Aviso, no verja.**
+#:
+#: Elegido midiendo, no por redondo: sobre el propio diff que lo introdujo daba 93% —y el
+#: 68% inicial señalo codigo nuevo de verdad sin probar, la rama de ROJO de la verja, que
+#: se probo en vez de bajar el liston—. Se deja en 90 y no en 93 para no clavarlo al numero
+#: de hoy: un umbral pegado a la medicion actual se pone rojo con la primera linea
+#: razonablemente no cubrible, y un aviso que grita siempre se ignora siempre.
+#:
+#: Lo que NO se cubre y esta bien que no se cubra: `sys.exit`, y los `print` de ramas que
+#: exigen un entorno roto a proposito.
+UMBRAL_COBERTURA_DEL_DIFF = 90
+
+
+def orden_de_pytest(semilla: int, *, con_durations: bool, con_cobertura: bool = False,
+                    extra: list[str] | None = None) -> list[str]:
+    """La linea de ordenes de UNA corrida de la verja. **Fuente unica**, para que la orden
+    que se EJECUTA y la que se IMPRIME para reproducir un rojo no puedan divergir.
+
+    Que divergieran no es hipotetico: la receta de reproduccion estaba escrita a mano en un
+    `print` y **perdia `--runslow`**, o sea que ante un rojo de un test lento imprimia una
+    orden que no lo ejecuta (R2 de Codex, H-09). Ahora las dos salen de aqui.
+
+    `--durations` solo en la primera corrida: la segunda no aporta perfil nuevo y duplicar
+    quince lineas en cada cierre es ruido.
+    """
+    return [PYTHON, "-m", "pytest", "-q", "--tb=short",
+            "-n", "auto",
+            f"--randomly-seed={semilla}",
+            *(["--durations=15"] if con_durations else []),
+            # Cobertura solo en la PRIMERA corrida: es la misma con cualquier orden, y
+            # medirla dos veces solo cuesta. Sobrecoste medido el 2026-09-06: +8 s sobre
+            # 74 s (+11%), que es lo que la hizo caber aqui en vez de en un comando aparte
+            # que nadie correria.
+            *(["--cov=core", "--cov=scripts", "--cov-report=xml"] if con_cobertura else []),
+            *(extra or [])]
+
+
+def cobertura_del_diff(salida: str, codigo: int = 0) -> int | None:
+    """El porcentaje que reporta `diff-cover`, o `None` si no se puede afirmar.
+
+    **`None` NO es 0%, y confundirlos seria repetir el H-05 de R1 con otro nombre:** un
+    diff que no toca codigo medido, un `coverage.xml` ausente o una rama base que git no
+    conoce dan los tres «no se pudo medir», y presentarlos como «cero cobertura»
+    convertiria un hueco del instrumento en una acusacion al autor.
+
+    **Tres endurecimientos de R2 (H-08), los tres medidos por el revisor:**
+
+    - **Decimales.** `--total-percent-float` imprime `Coverage: 92.73%` y la version
+      anterior devolvia `None`: una medicion perfectamente valida se presentaba como «no se
+      pudo medir». Basta con que alguien cambie el flag o suba de version.
+    - **Ambiguedad.** Con `Coverage: 100%` y `Coverage: 0%` en la misma salida, `re.search`
+      se quedaba con el PRIMERO. Dos resumenes no son una medicion: si hay mas de uno, no
+      se sabe cual es, y eso es `None`, no el que venga antes.
+    - **Codigo de salida.** Un proceso que devuelve error y aun asi imprime un porcentaje
+      producia `[OK] 100%`. Si el proceso fallo, lo que haya en stdout no es de fiar.
+    """
+    if codigo != 0:
+        return None
+    hallados = re.findall(r"^Coverage:\s+(\d+(?:\.\d+)?)%", salida, re.MULTILINE)
+    if len(hallados) != 1:
+        return None            # cero: no lo dice. Mas de uno: no se sabe cual.
+    return int(float(hallados[0]))
+
+
+def _avisar_cobertura_del_diff(rama_base: str = "origin/main", *,
+                               corredor=None, xml: Path | None = None) -> None:
+    """AVISO no bloqueante: cuanto de lo que ESTA RAMA anade esta cubierto.
+
+    Un porcentaje global de cobertura no lo cumple nadie y no dice nada; el util mira las
+    lineas que el diff **anade**, que es donde se acaba de escribir. No bloquea, por la
+    misma politica que el resto de avisos de este script: la unica verja es la suite.
+
+    `corredor` y `xml` se inyectan para poder probarla. **No es ceremonia:** esta funcion
+    es la que produce el NUMERO, asi que si estuviera rota el aviso mentiria y nadie lo
+    sabria. Se hizo testable porque el propio `diff-cover` la senalo como codigo nuevo sin
+    cubrir — el instrumento apuntandose a si mismo, que es la mejor prueba de que mide.
+    """
+    corre = corredor or subprocess.run
+    xml = xml if xml is not None else ROOT / "coverage.xml"
+    print("\n" + "-" * 40)
+    print(f"Cobertura de las lineas NUEVAS (vs {rama_base})")
+    if not xml.exists():
+        print("[aviso] no hay coverage.xml: la primera corrida de la verja no lo genero.")
+        return
+    r = corre(
+        [PYTHON, "-m", "diff_cover.diff_cover_tool", str(xml),
+         f"--compare-branch={rama_base}", "--fail-under=0"],
+        cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace")
+    salida = (r.stdout or "") + (r.stderr or "")
+    pct = cobertura_del_diff(salida, getattr(r, "returncode", 0))
+    if pct is None:
+        primera = next((ln for ln in salida.splitlines() if ln.strip()), "sin salida")
+        print(f"[aviso] no se pudo medir: {primera.strip()}")
+        return
+    marca = "OK" if pct >= UMBRAL_COBERTURA_DEL_DIFF else "!"
+    print(f"[{marca}] {pct}% (umbral de aviso: {UMBRAL_COBERTURA_DEL_DIFF}%)")
+    if pct < UMBRAL_COBERTURA_DEL_DIFF:
+        for linea in salida.splitlines():
+            if "Missing lines" in linea:
+                print("    " + linea.strip())
+        print("    Son lineas que acabas de escribir y que ningun test ejecuta.")
+
+
+def correr_la_verja(pytest_args: list[str], *, corredor=None) -> str | None:
+    """Corre la suite con CADA semilla de aceptacion. Devuelve el motivo del fallo, o `None`.
+
+    **Funcion y no cuerpo de `main()` para que se pueda PROBAR**, que es el mismo motivo por
+    el que `tests/conftest.py` extrajo `restaurar_config_si_secuestrada`. La rama que de
+    verdad importa aqui es la del ROJO —la que dice como reproducirlo—, y esa solo se
+    ejecuta el dia que algo falla, o sea el peor momento para descubrir que esta mal
+    escrita. `diff-cover` la señalo como linea nueva sin cubrir el 2026-09-06 y por eso
+    existe esta extraccion: el instrumento apunto a codigo nuevo sin probar y se probo, en
+    vez de bajar el umbral hasta que dejara de quejarse.
+
+    `corredor` se inyecta para poder probarla sin lanzar la suite de verdad.
+    """
+    corre = corredor or subprocess.run
+    for i, semilla in enumerate(SEMILLAS_DE_ACEPTACION):
+        print(f"\n--- semilla {semilla} ({i + 1} de {len(SEMILLAS_DE_ACEPTACION)}) ---")
+        resultado = corre(orden_de_pytest(semilla, con_durations=(i == 0),
+                                          con_cobertura=(i == 0),
+                                          extra=pytest_args), cwd=ROOT)
+        if resultado.returncode != 0:
+            print(f"\n[X] Tests fallando con la semilla {semilla} - commit abortado.")
+            print("    Reproducelo con:")
+            print("      " + " ".join(orden_de_pytest(
+                semilla, con_durations=False, extra=pytest_args)[1:]))
+            return f"semilla {semilla}"
+    print(f"\n[OK] Tests verdes con las {len(SEMILLAS_DE_ACEPTACION)} semillas "
+          f"{SEMILLAS_DE_ACEPTACION} - puedes continuar con git add / commit.")
+    return None
 
 
 def deps_que_faltan(deps: tuple[str, ...] = DEPS_DE_COLECCION) -> list[str]:
@@ -537,14 +704,19 @@ def main() -> None:
         print("Modo: RAPIDO (omite tests lentos; core/anon/ sin cambios)")
         pytest_args = []
 
-    result = subprocess.run(
-        [PYTHON, "-m", "pytest", "-q", "--tb=short", *pytest_args],
-        cwd=ROOT,
-    )
-    if result.returncode != 0:
-        print("\n[X] Tests fallando - commit abortado.")
+    # La suite ENTERA en paralelo. Medido el 2026-09-06 sobre 12 CPUs: 371 s -> 94 s,
+    # con el conteo IDENTICO (4.656 tests, 88 `skip`, 6 `xfail`) y CERO tests
+    # serializados: la suite ya era segura en paralelo, cosa que `pytest-randomly`
+    # llevaba meses forzando sin que nadie hubiera cobrado el dividendo.
+    #
+    # `-n auto` NO va en `addopts` de `pyproject.toml`, y eso tambien esta medido:
+    # sobre un fichero suelto arrancar 12 workers cuesta MAS de lo que ahorra
+    # (17,0 s contra 11,9 s). Aqui siempre corre la suite completa, asi que aqui si.
+    #
+    # `--durations` para que el coste sea visible y no una sensacion: 19 tests
+    # (el 0,4%) se comen el 29% del tiempo.
+    if correr_la_verja(pytest_args) is not None:
         sys.exit(1)
-    print("\n[OK] Tests verdes - puedes continuar con git add / commit.")
 
     # Chequeo de skills (modo AVISO, no bloquea el cierre): CHANGELOG sin
     # actualizar, .skill caducado, drift de helpers, identidad incompleta.
@@ -559,6 +731,12 @@ def main() -> None:
         cs.report(repackage=False)
     except Exception as e:  # el chequeo nunca debe romper el cierre
         print(f"[aviso] no se pudo correr check_skills: {e}")
+
+    # Aviso de cobertura de las lineas NUEVAS del diff (modo AVISO, no bloquea).
+    try:
+        _avisar_cobertura_del_diff()
+    except Exception as e:  # el aviso nunca debe romper el cierre
+        print(f"[aviso] no se pudo medir la cobertura del diff: {e}")
 
     # Aviso de trabajo sin publicar (modo AVISO, no bloquea el cierre).
     try:

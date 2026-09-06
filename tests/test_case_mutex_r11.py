@@ -309,8 +309,15 @@ class TestUnEnlaceNoEsUnaPuertaTrasera:
         from core import config
         from core.casos.case_mutex import raiz_de_locks
         from core.casos.workspace_model import WorkspaceUnderCatalogRoot
-        destino = Path(config.settings.project_root) / "no_deberia_escribirse"
-        destino.mkdir(exist_ok=True)
+        # Apunta a `core/`, que YA EXISTE, en vez de crear un directorio dentro del repo.
+        # Este test escribía en el árbol de producción para fabricarse un destino, y era
+        # el único que quedaba haciéndolo aparte del guard del localizador (R2 de Codex,
+        # H-02: mi primer detector no lo veía). Como el contrato que prueba es «una
+        # junction que apunta DENTRO del repo se rechaza», un directorio que ya está
+        # dentro sirve igual — y de hecho es un caso más realista que uno fabricado.
+        destino = Path(config.settings.project_root) / "core"
+        assert destino.is_dir(), (
+            "la premisa del test no se cumple: no hay `core/` bajo `project_root`")
         enlace = tmp_path / "raiz_enlazada"
         try:
             if not _crear_junction(enlace, destino):
@@ -318,12 +325,9 @@ class TestUnEnlaceNoEsUnaPuertaTrasera:
             with pytest.raises(WorkspaceUnderCatalogRoot):
                 raiz_de_locks(enlace)
         finally:
+            # Solo el enlace, que vive en `tmp_path`. El destino no es nuestro.
             try:
                 enlace.rmdir()
-            except OSError:
-                pass
-            try:
-                destino.rmdir()
             except OSError:
                 pass
 

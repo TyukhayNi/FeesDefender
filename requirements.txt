@@ -58,3 +58,21 @@ pytest-cov>=5.0
 pytest-randomly>=3.12    # orden de tests aleatorio por defecto: caza fugas de aislamiento
                          # entre tests (estado global, reloads, sys.modules). El seed
                          # cambia cada corrida; fijar con --randomly-seed=N para reproducir.
+diff-cover>=10.5         # cobertura de las lineas NUEVAS de un diff. Un porcentaje GLOBAL
+                         # no lo cumple nadie y no dice nada; el util mira donde se acaba
+                         # de escribir. AVISO en `session_close`, no verja. Sobrecoste
+                         # medido: +8 s sobre 74 s (+11%), que es lo que lo hizo caber ahi.
+syrupy>=6.0              # snapshots de FORMA para los generadores de texto. Su fichero
+                         # `.ambr` es la REFERENCIA y va versionado: no se gitignora.
+                         # Regla del `--snapshot-update` en `CLAUDE.md` §Tests — se escribio
+                         # ANTES del primer snapshot a proposito.
+hypothesis>=6.140        # property-based: los ejemplos no los elige quien escribio la
+                         # funcion, que es lo que rompe el test tautologico. El primer dia
+                         # (2026-09-06) encontro que `normalize_es_phone` NO era idempotente
+                         # pese a que su docstring lo afirmaba. Leccion de uso en la cabecera
+                         # de `tests/test_propiedades_utils.py`: una estrategia GENERICA sobre
+                         # una funcion que bifurca por literales da verde sin ejercitar nada.
+pytest-xdist>=3.8        # suite entera en paralelo. NO va en `addopts`: medido el 2026-09-06,
+                         # en un fichero suelto `-n auto` es MAS LENTO (17,0 s vs 11,9 s) porque
+                         # arrancar 12 workers cuesta mas de lo que ahorra. Solo donde corre la
+                         # suite completa: `session_close` y `/tests` sin argumento.

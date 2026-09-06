@@ -34,6 +34,27 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
+#: **Este fichero ya NO escribe en el arbol de produccion, y por eso no necesita grupo.**
+#:
+#: Historia corta, porque explica la forma del fichero. Sus dos pruebas de mutacion del
+#: contador escribian sondas (`core/_zz_guard_probe_*.py`) dentro del `core/` VIVO. Bajo
+#: `-n auto` eso daba rojos —seis parametrizaciones al mismo nombre de fichero— y, peor,
+#: **verdes**: un test pasando sin analizar su propio caso porque leyo la sonda de otro
+#: worker y el numero coincidio (R1 de Codex, H-01).
+#:
+#: El primer remedio fue `pytestmark = pytest.mark.xdist_group(...)` + `--dist loadgroup`.
+#: **R2 lo declaro INCOMPLETO y tenia razon:** agrupar protege de los otros ESCRITORES y no
+#: de los LECTORES — cualquier test que escanee `core/` puede enumerar una sonda y abrirla
+#: despues de que el escritor la borre.
+#:
+#: La frontera no era el reparto: era que un test escribiera en el arbol compartido. Y
+#: resulta que **no hacia falta**: estas dos pruebas son de mutacion DEL CONTADOR, no del
+#: arbol real. Con la raiz del escaner parametrizada montan su sonda en `tmp_path`
+#: (`_arbol_sintetico`) y la clase entera desaparece — escritores, lectores y flag
+#: incluidos. Verde con `-n 2/4/8` y orden aleatorio **sin** `--dist loadgroup`.
+#:
+#: Lo vigila `tests/test_guard_aislamiento_paralelo.py`, cuya regla ya no admite escotilla.
+
 #: Techo del censo de `strict=False` en produccion. **Solo puede bajar.**
 #: Si un cambio legitimo necesita subirlo, se sube A PROPOSITO y con motivo en el
 #: commit — que es justo la conversacion que el guard existe para forzar.
@@ -43,20 +64,32 @@ RAICES = ("core", "scripts")
 SUELTOS = ("streamlit_app.py",)
 
 
-def _ficheros_produccion():
+def _ficheros_produccion(raiz: Path = ROOT):
+    """Los .py de produccion bajo `raiz`.
+
+    **La raiz es un PARAMETRO desde el 2026-09-06, y ese es el arreglo de fondo de
+    H-01.** Antes estaba cableada a `ROOT`, asi que los tests que prueban el contador
+    por mutacion no tenian mas remedio que escribir su sonda dentro del `core/` VIVO —
+    y de ahi salia toda la clase de colisiones en paralelo: un worker pisaba la sonda
+    de otro, y cualquier test que escaneara el arbol veia sondas ajenas.
+
+    Agrupar los escritores tapaba la mitad interna; los LECTORES de otros ficheros
+    seguian fuera (R2 de Codex, H-01). La frontera no era el reparto: era que un test
+    escribiera en el arbol compartido. Con la raiz parametrizada deja de hacerlo.
+    """
     for d in RAICES:
-        for p in sorted((ROOT / d).rglob("*.py")):
+        for p in sorted((raiz / d).rglob("*.py")):
             if "__pycache__" not in p.parts:
                 yield p
     for f in SUELTOS:
-        if (ROOT / f).is_file():
-            yield ROOT / f
+        if (raiz / f).is_file():
+            yield raiz / f
 
 
-def _llamadas_con_escotilla() -> list[str]:
+def _llamadas_con_escotilla(raiz: Path = ROOT) -> list[str]:
     """Sitios que pasan `strict=False` a `path_for`/`caso_path`, por AST."""
     hallados: list[str] = []
-    for ruta in _ficheros_produccion():
+    for ruta in _ficheros_produccion(raiz):
         texto = io.open(ruta, encoding="utf-8", errors="replace").read()
         if "strict" not in texto:
             continue
@@ -75,7 +108,9 @@ def _llamadas_con_escotilla() -> list[str]:
             for kw in nodo.keywords:
                 if kw.arg == "strict" and isinstance(kw.value, ast.Constant) \
                         and kw.value.value is False:
-                    hallados.append(f"{ruta.relative_to(ROOT).as_posix()}:{nodo.lineno}")
+                    # `raiz` y no `ROOT`: al parametrizar el recorrido me deje esta linea
+                    # con la raiz cableada, y con un arbol sintetico `relative_to` no casa.
+                    hallados.append(f"{ruta.relative_to(raiz).as_posix()}:{nodo.lineno}")
     return sorted(hallados)
 
 
@@ -106,22 +141,36 @@ def test_el_guard_no_pasa_en_verde_por_no_mirar_nada():
         "algo va mal en el recorrido y estaria pasando en verde por vacio")
 
 
-def test_el_contador_detecta_una_escotilla_sintetica(tmp_path, monkeypatch):
+def _arbol_sintetico(tmp_path: Path, fuente: str, nombre: str = "sonda.py") -> Path:
+    """Un arbol de produccion de mentira, con un solo fichero dentro de `core/`.
+
+    Existe para que las pruebas de mutacion del contador **no escriban en el `core/`
+    vivo**. Hasta el 2026-09-06 lo hacian, y de ahi salio la clase entera de colisiones en
+    paralelo que dos rondas adversariales persiguieron: R1 vio los escritores pisandose
+    entre si, R2 vio que ademas cualquier LECTOR del arbol veia sondas ajenas.
+
+    La leccion, que es la del dia: agrupar los escritores remediaba el ejemplo. Que ningun
+    test escriba en el arbol compartido remedia la frontera.
+    """
+    (tmp_path / "core").mkdir(parents=True, exist_ok=True)
+    destino = tmp_path / "core" / nombre
+    destino.write_text(fuente, encoding="utf-8")
+    return destino
+
+
+def test_el_contador_detecta_una_escotilla_sintetica(tmp_path):
     """Prueba de mutacion del propio guard: si no cuenta, no vale.
 
     Se inyecta un fichero con `strict=False` en el arbol que el guard recorre y se
     exige que aparezca. Sin esto, `test_la_escotilla_legacy_no_crece` podria estar
     pasando porque el AST nunca casa, no porque no haya escotillas.
     """
-    fake = ROOT / "core" / "_zz_guard_probe_tmp.py"
-    fake.write_text("from core.config import caso_path\n"
-                    "d = caso_path('W-X', strict=False)\n",
-                    encoding="utf-8")
-    try:
-        hallados = _llamadas_con_escotilla()
-        assert any("_zz_guard_probe_tmp.py" in h for h in hallados), hallados
-    finally:
-        fake.unlink(missing_ok=True)
+    _arbol_sintetico(tmp_path,
+                     "from core.config import caso_path\n"
+                     "d = caso_path('W-X', strict=False)\n",
+                     nombre="_zz_guard_probe_tmp.py")
+    hallados = _llamadas_con_escotilla(tmp_path)
+    assert any("_zz_guard_probe_tmp.py" in h for h in hallados), hallados
 
 
 @pytest.mark.parametrize("fuente,esperado", [
@@ -134,12 +183,13 @@ def test_el_contador_detecta_una_escotilla_sintetica(tmp_path, monkeypatch):
 ])
 def test_el_contador_distingue_los_casos(tmp_path, fuente, esperado):
     """El contador no puede ser un `grep` disfrazado: `strict=True` no cuenta, y
-    `strict=False` sobre otra funcion tampoco."""
-    fake = ROOT / "core" / "_zz_guard_probe_param.py"
-    fake.write_text(fuente + "\n", encoding="utf-8")
-    try:
-        n = len([h for h in _llamadas_con_escotilla()
-                 if "_zz_guard_probe_param.py" in h])
-        assert n == esperado, fuente
-    finally:
-        fake.unlink(missing_ok=True)
+    `strict=False` sobre otra funcion tampoco.
+
+    Las seis parametrizaciones escribian **al mismo fichero fijo** dentro de `core/`, asi
+    que en paralelo un worker pisaba la sonda que otro iba a leer. Ahora cada una tiene su
+    propio `tmp_path` y el problema no existe en vez de estar administrado.
+    """
+    _arbol_sintetico(tmp_path, fuente + "\n", nombre="_zz_guard_probe_param.py")
+    n = len([h for h in _llamadas_con_escotilla(tmp_path)
+             if "_zz_guard_probe_param.py" in h])
+    assert n == esperado, fuente
