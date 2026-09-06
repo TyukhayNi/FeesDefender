@@ -51,7 +51,12 @@ MUTANTES = [
       "test_la_exclusion_es_REVERSIBLE_el_gid_no_entra_en_el_indice",
       "test_el_evento_durable_dice_que_se_excluyo_y_por_que",
       "test_el_buzon_de_facturacion_EN_COPIA_se_caza_end_to_end",
-      "test_H04_el_evento_llega_al_caso_aunque_la_raiz_se_resuelva_a_otro_sitio"}),
+      "test_H04_el_evento_llega_al_caso_aunque_la_raiz_se_resuelva_a_otro_sitio",
+      # Sin filtro, el ruido con `<colision@x>` se escribe y el legitimo que viene
+      # detras cuenta como duplicado: depende de la MISMA propiedad que el mutante
+      # ataca. Tercera vez en este arnes que mi expectativa era estrecha por
+      # enumerar el test obvio y no todos los que cuelgan de la propiedad.
+      "test_el_ruido_no_contamina_la_dedup_del_correo_legitimo"}),
 
     ("M02 `parse_headers` vuelve a ser ciego al `cc`", EE,
      '    for name in ("date", "subject", "from", "to", "cc", "message-id"):',
@@ -99,7 +104,11 @@ MUTANTES = [
     ("M08 el lote se valida por NOMBRE en vez de por ruta fisica", EE,
      "        fisico = dest.resolve()",
      "        fisico = raiz / dest.name",
-     {"test_destino_externo_con_nombre_de_lote_no_entra_en_el_M9"}),
+     # Mata tambien el lote anidado: con el nombre en vez de la ruta, `email_01`
+     # bajo `subcarpeta/` produce un `fisico` cuyo padre ES la raiz y pasa el guard.
+     # Misma propiedad —validar por ubicacion fisica— en sus dos instancias.
+     {"test_destino_externo_con_nombre_de_lote_no_entra_en_el_M9",
+      "test_H02_un_lote_ANIDADO_bajo_00_Input_no_se_traza"}),
 
     ("M09 el destino externo se traza igual (la omision no se declara)", EE,
      "    if case_id and dest.exists() and bajo_input:",
