@@ -221,3 +221,69 @@ de la propiedad atacada. El arnés lo caza al correr; escribirlo no basta.
 
 **Estado: los seis remediados, arnés 17 mutantes (16 muertos + 1 declarado), suite verde con dos
 semillas. Una sola ronda, conforme al §5.**
+
+---
+
+## 7. Acción 6b — `--extraer-adjuntos` por defecto, y la R1 que cambió el remedio
+
+*Arrancada el 2026-09-06 tras la 6a, por decisión de Nikolai y con la medición delante.*
+
+### 7.1 El Gate 2, re-medido — y la afirmación que hubo que retirar
+
+El `PLAN` (fila 11) condicionaba el cambio de default a re-medir el Gate 2 al generalizar:
+*¿algún adjunto extraído es a su vez un `.eml` indistinguible de un correo del caso?*
+
+| Medición | Muestra | Correos |
+|---|---|---|
+| Original (2026-07) | 11 subcarpetas, 1 etiqueta | 0 |
+| Retrospectiva | 47 subcarpetas, 4 casos, 77 adjuntos | 0 |
+| **Prospectiva** | 24 casos, 462 `.eml`, **444 adjuntos** | **0** |
+
+**Y aquí está el error más caro del día.** Escribí —en el plan, en el commit y **al usuario**— que
+ese cero era **«por construcción»**, porque `particionar_eml` salta `message/rfc822`. **Es falso.**
+Salta por **MIME**, y un `.eml` adjuntado como `application/octet-stream` no casa ese MIME. Lo
+desmentía el propio repositorio: `docs/MEJORAS_FUTURAS.md` **§55.1** ya describía la bifurcación, y
+además advertía que esos ficheros *«solo aparecen si `--extraer-adjuntos` los escribe a disco»* —
+es decir, **que invertir el default es justo lo que abre esa puerta**. Estaba escrito y no lo leí
+antes de afirmar lo contrario. El cero medido sigue valiendo **como medición del corpus**; lo falso
+era la explicación causal.
+
+### 7.2 Lo que la medición sí encontró
+
+De los 444 adjuntos, **205 son imágenes con mediana de 9,1 KB**. Cruzadas por
+`(disposition, Content-ID, tamaño)`: **140 son logotipos de firma**, el 32% de todo lo que el
+default nuevo depositaría. Ese era el coste real, y no estaba en el `PLAN`.
+
+### 7.3 Adjudicación de la R1 — `NO-SHIP`, 4 hallazgos, **4 confirmados, 0 refutados**
+
+Acta: [`…-accion-6b-adjuntos-firmas-r1-adversarial-review.md`](../specs/2026-09-06-accion-6b-adjuntos-firmas-r1-adversarial-review.md).
+
+| # | Sev. | Hallazgo | Adjudicación | Remedio |
+|---|---|---|---|---|
+| H-01 | ALTO | El filtro **descarta imágenes que pueden ser prueba** | **CONFIRMADO** — `es_firma_incrustada` comprueba que *exista* la cabecera `Content-ID`, no que la imagen esté referenciada; y `adjuntos_contenido/router.py` omite las < 50 KB, así que el atomizador tampoco rescata el texto | **Marcar, no excluir** (decisión de Nikolai): se depositan todas, con `PREFIJO_FIRMA` en el nombre |
+| H-02 | ALTO | El `.eml` de MIME genérico entra como correo del caso, eludiendo el filtro de ruido | **CONFIRMADO**, y con antecedente en el propio repo (§55.1) | `es_correo_adjunto`; los adopta el aplanado, con filtro, dedup y procedencia |
+| H-03 | MEDIO | El CLI rompe invocaciones con `--extraer-adjuntos` | **CONFIRMADO** — sustituí el flag en vez de añadir el negativo | Los dos flags conviven; test de las **tres** formas |
+| H-04 | MEDIO | `filtrar_ruido=False` no llega al aplanado ni al rescate | **CONFIRMADO**, y es **defecto que introduje yo el mismo día** al remediar H-01 de la 6a | Propagado por las cinco funciones de la cadena |
+
+### 7.4 Lo que enseña, y que no es el código
+
+**1. Convertí una medición en una garantía.** Medir 444 adjuntos y obtener cero es un hecho sobre el
+corpus. Decir «cero por construcción» es una afirmación sobre el código, y **no la comprobé**. Es la
+misma familia que el comentario de `_va_dirigido_a` que la ronda anterior tumbó, agravada porque
+esta vez la dije en voz alta y porque **el repo tenía la refutación escrita**.
+
+**2. Apliqué la doctrina de la casa al revés.** `contaminacion.py` dice, y lleva meses diciéndolo,
+que en material probatorio se **avisa y no se descarta**. Construí un filtro que descartaba, sobre
+material probatorio, y no me di cuenta hasta que el revisor construyó la aceptación de honorarios
+que se perdía. La regla estaba escrita a dos ficheros de distancia.
+
+**3. Un `try/except` tragó un `NameError` durante toda una tanda.** Al propagar `filtrar_ruido`
+olvidé un eslabón (`_rescata_file`), y el bloque que protege «un enlace problemático no aborta el
+resto» convirtió el fallo en `outcome: error` silencioso. Lo destapó **un aserto de un test viejo**,
+no el rojo del nuevo.
+
+### 7.5 Verificación
+
+- Suite **4.783 / 0 fallos / 0 errores / 16 `skip`**, semillas **777 y 31337**.
+- Los tests que afirmaban el diseño anterior —el default plano y el filtro que descartaba— se
+  **movieron con la decisión, no se borraron**: siguen siendo la guarda de lo que ahora es cierto.

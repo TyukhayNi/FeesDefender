@@ -5,6 +5,14 @@ El filtro conjuntivo de firmas existía **solo para enlaces** `<img src>`
 así que activar `--extraer-adjuntos` por defecto habría depositado en `00_Input` la
 avalancha entera.
 
+> **La R1/H-01 cambió el remedio, no el diagnóstico.** La primera versión de esta pieza
+> **descartaba** las firmas; el revisor construyó una aceptación de honorarios escaneada
+> —pequeña, `inline`, con `Content-ID`— que el filtro tiraba, y demostró que la red de
+> seguridad no existía (`adjuntos_contenido/router.py` vuelve a omitir las imágenes
+> < 50 KB, así que el atomizador tampoco rescataba el texto). **Decisión de Nikolai:
+> marcar, no excluir.** Los tests de abajo se movieron con la decisión; el criterio de
+> `es_firma_incrustada` y su medición siguen valiendo exactamente igual.
+
 **Medido sobre el corpus real el 2026-09-06** (24 casos, 462 `.eml`, 444 adjuntos):
 
 | Imágenes por `(disposition, Content-ID, tamaño)` | n |
@@ -159,23 +167,25 @@ def _correo_con_firma() -> dict[str, bytes]:
     ])}
 
 
-def test_el_logo_no_se_escribe_y_el_contrato_si(tmp_path):
+def test_el_logo_se_MARCA_y_el_contrato_sale_limpio(tmp_path):
+    """Tras R1/H-01: el logo se deposita igual, con prefijo. Un falso positivo del
+    criterio cuesta un nombre feo, no un documento perdido."""
     rep = ee.export_label(_CUENTA, _ETIQUETA, tmp_path, service=_svc(_correo_con_firma()),
                           extract_attachments=True)
 
     escritos = {p.name for p in tmp_path.rglob("*") if p.is_file()}
     assert "contrato.pdf" in escritos
-    assert "image001.png" not in escritos
-    assert "image002.gif" not in escritos
-    assert rep.attachments == 1, "el contador cuenta lo depositado, no lo visto"
+    assert f"{ee.PREFIJO_FIRMA}image001.png" in escritos
+    assert f"{ee.PREFIJO_FIRMA}image002.gif" in escritos
+    assert rep.attachments == 3, "los tres están en el expediente"
 
 
-def test_las_firmas_filtradas_se_CUENTAN(tmp_path):
-    """Como `links_filtered_sig` para enlaces: lo filtrado se declara, no desaparece."""
+def test_las_firmas_marcadas_se_CUENTAN(tmp_path):
+    """Lo marcado se declara. El contador dice cuántas hay, no cuántas se tiraron."""
     rep = ee.export_label(_CUENTA, _ETIQUETA, tmp_path, service=_svc(_correo_con_firma()),
                           extract_attachments=True)
-    assert rep.firmas_filtradas == 2
-    assert "2 firmas" in rep.resumen()
+    assert rep.firmas_marcadas == 2
+    assert "2 marcadas como firma" in rep.resumen()
 
 
 def test_sin_extraer_adjuntos_el_eml_sigue_siendo_FIEL(tmp_path):
@@ -199,7 +209,7 @@ def test_por_DEFECTO_los_adjuntos_se_extraen(tmp_path):
     construcción."""
     rep = ee.export_label(_CUENTA, _ETIQUETA, tmp_path, service=_svc(_correo_con_firma()))
 
-    assert rep.attachments == 1
+    assert rep.attachments == 3
     assert (tmp_path / "2026-06-12_con_imagenes" / "contrato.pdf").is_file()
 
 
@@ -212,13 +222,13 @@ def test_el_flag_de_vuelta_deja_el_eml_plano(tmp_path):
     assert not (tmp_path / "2026-06-12_con_imagenes").exists()
 
 
-def test_un_correo_cuyo_UNICO_adjunto_es_la_firma_NO_crea_subcarpeta(tmp_path):
-    """Si lo único que traía era el logotipo, extraer no aporta nada y una subcarpeta
-    con un solo `.eml` dentro es peor que el fichero plano: ensucia la cronología."""
+def test_un_correo_cuyo_UNICO_adjunto_es_la_firma_SI_crea_subcarpeta(tmp_path):
+    """Invertido tras R1/H-01: si la firma se conserva, hay algo que depositar y la
+    subcarpeta tiene contenido. La versión anterior daba por hecho que no quedaba nada,
+    y eso solo era cierto mientras el filtro descartaba."""
     raws = {"g1": _mensaje([(_PNG, "image/png", "image001.png", "inline", "<l@ev>")])}
     rep = ee.export_label(_CUENTA, _ETIQUETA, tmp_path, service=_svc(raws))
 
-    assert rep.firmas_filtradas == 1
-    assert rep.attachments == 0
-    assert (tmp_path / "2026-06-12_con_imagenes.eml").is_file()
-    assert not (tmp_path / "2026-06-12_con_imagenes").is_dir()
+    assert rep.firmas_marcadas == 1
+    assert rep.attachments == 1
+    assert (tmp_path / "2026-06-12_con_imagenes").is_dir()

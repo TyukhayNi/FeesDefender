@@ -286,6 +286,12 @@ class AdjuntoEml:
     #: Logotipo de la firma del remitente, no documentación del caso. Ver
     #: `es_firma_incrustada` para el criterio y por qué es conjuntivo.
     es_firma: bool = False
+    #: Es un correo adjuntado con MIME GENÉRICO (`application/octet-stream` y nombre
+    #: `.eml`), la bifurcación que `MEJORAS_FUTURAS.md` §55.1 documenta. No sale por
+    #: aquí: lo adopta el aplanado, para que herede filtro de ruido, dedup y
+    #: procedencia. Depositarlo como adjunto suelto lo publicaba en la cronología
+    #: como un correo del caso más (R1/H-02).
+    es_correo: bool = False
 
 
 def es_firma_incrustada(parte: Message, datos: bytes) -> bool:
@@ -315,6 +321,31 @@ def es_firma_incrustada(parte: Message, datos: bytes) -> bool:
     return len(datos) < _FIRMA_MAX_BYTES
 
 
+def es_correo_adjunto(nombre: str, mime: str, datos: bytes) -> bool:
+    """¿Este adjunto es en realidad un correo, aunque su MIME no lo diga?
+
+    `particionar_eml` salta las partes `message/rfc822` **por MIME**, y eso NO cubre un
+    `application/octet-stream; filename="x.eml"`. La bifurcación estaba documentada en
+    `docs/MEJORAS_FUTURAS.md` §55.1 —con el aviso de que esos ficheros «solo aparecen si
+    `--extraer-adjuntos` los escribe a disco»— y la R1/H-02 la reprodujo: una factura
+    adjuntada así entraba en `CRONOLOGIA.md` como correo del caso, sin pasar por el
+    filtro de ruido y sin procedencia.
+
+    Señal conjuntiva, como `_es_eml_bytes` para los enlaces: **nombre de correo** Y
+    **contenido que trae `Message-ID`**. La segunda mitad evita tratar como correo un
+    `.eml` corrupto o un fichero mal nombrado.
+    """
+    if Path(nombre or "").suffix.lower() not in (".eml", ".msg"):
+        return False
+    if mime == "message/rfc822":
+        return False          # ese ya lo ve el aplanado por su MIME
+    try:
+        cabecera = datos[:8192].decode("utf-8", "replace").lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return "message-id:" in cabecera
+
+
 def particionar_eml(raw: bytes) -> tuple[bytes, list[AdjuntoEml]]:
     """El ``.eml`` fiel y sus adjuntos, **cada uno marcado si es firma**.
 
@@ -334,11 +365,12 @@ def particionar_eml(raw: bytes) -> tuple[bytes, list[AdjuntoEml]]:
         payload = parte.get_payload(decode=True)
         if payload is None:
             continue
+        nombre = _sanea_nombre_fichero(filename or "", fallback="adjunto")
+        mime = parte.get_content_type()
         adjuntos.append(AdjuntoEml(
-            nombre=_sanea_nombre_fichero(filename or "", fallback="adjunto"),
-            mime=parte.get_content_type(),
-            datos=payload,
+            nombre=nombre, mime=mime, datos=payload,
             es_firma=es_firma_incrustada(parte, payload),
+            es_correo=es_correo_adjunto(nombre, mime, payload),
         ))
     return raw, adjuntos
 
@@ -510,6 +542,8 @@ def _aplana_anidados(
     vistos: set[str],
     procedencia: dict[str, str],
     report: "ExportReport",
+    *,
+    filtrar_ruido: bool = True,
 ) -> None:
     """Extrae a primer nivel cada email anidado (byte-original), dedup por Message-ID.
 
@@ -520,9 +554,14 @@ def _aplana_anidados(
     los ``Message-ID`` del disco; la idempotencia cross-corrida para hijos sin
     Message-ID no está garantizada (ver ``docs/MEJORAS_FUTURAS.md`` §44.3)."""
     cab_padre = parse_headers(raw_bytes)
-    for inner_bytes, parent_mid in _nested_con_fallback(raw_bytes, report):
+    # Los `message/rfc822` que el rebanado ve, MÁS los `.eml` de MIME genérico que
+    # `particionar_eml` reconoce (R1/H-02). Los segundos no aparecen en el crudo como
+    # `message/rfc822`, así que sin esto no los veía nadie con criterio de correo.
+    mid_padre = message_id_of(raw_bytes)
+    genericos = [(a.datos, mid_padre) for a in particionar_eml(raw_bytes)[1] if a.es_correo]
+    for inner_bytes, parent_mid in [*_nested_con_fallback(raw_bytes, report), *genericos]:
         cab_hijo = parse_headers(inner_bytes)
-        regla = clasificar_ruido(cab_hijo)
+        regla = clasificar_ruido(cab_hijo) if filtrar_ruido else None
         if regla is not None:
             # R1/H-01: el aplanado era una segunda puerta al mismo depósito y no
             # pasaba por el filtro. Extraer el hijo lo hace MÁS accesible que dejarlo
@@ -679,7 +718,14 @@ def extract_drive_links(raw: bytes) -> list[DriveLink]:
 # Glue — rescate de ficheros enlazados a Drive/Gmail (Parte 2)
 # ---------------------------------------------------------------------------
 
-_FIRMA_MAX_BYTES = 50 * 1024            # imágenes < 50 KB → se tratan como firma
+_FIRMA_MAX_BYTES = 50 * 1024            # imágenes < 50 KB → candidatas a firma
+
+#: Prefijo del nombre de un adjunto que parece el logotipo de la firma del remitente.
+#: **Marca, no esconde:** el fichero está en el expediente y se puede abrir; el prefijo
+#: lo hunde en el orden de la carpeta y dice por qué está ahí abajo. Público a
+#: propósito, como `contaminacion.PREFIJO_NOTA`: quien lo reconozca no debe replicarlo.
+PREFIJO_FIRMA = "_firma_"
+
 _MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024  # tope anti-OOM; binarios mayores → manual (worklist)
 _GOOGLE_APPS_PREFIX = "application/vnd.google-apps"
 _RESOLVED_LINKS_NAME = "_resolved_links.json"
@@ -730,7 +776,7 @@ def _es_eml_bytes(data: bytes, info: Any) -> bool:
 
 def _deposita_mensaje_rescatado(
     dest: Path, msg_bytes: bytes, vistos: set[str], procedencia: dict[str, str],
-    report: "ExportReport",
+    report: "ExportReport", *, filtrar_ruido: bool = True,
 ) -> Path | None:
     """Deposita un ``.eml`` rescatado a primer nivel (dedup Message-ID) + aplana anidados.
 
@@ -739,7 +785,7 @@ def _deposita_mensaje_rescatado(
     estaba presente (deduplicado).
     """
     cabeceras = parse_headers(msg_bytes)
-    regla = clasificar_ruido(cabeceras)
+    regla = clasificar_ruido(cabeceras) if filtrar_ruido else None
     if regla is not None:
         # R1/H-01: era la otra puerta trasera. Un permalink de Gmail a un mensaje ya
         # excluido lo volvía a bajar y a depositar, con `links_resolved=1` y sin
@@ -757,13 +803,15 @@ def _deposita_mensaje_rescatado(
     ruta = _ruta_unica(dest, eml_filename(cabeceras))
     ruta.write_bytes(msg_bytes)
     report.files.append(str(ruta.relative_to(dest)))
-    _aplana_anidados(dest, msg_bytes, vistos, procedencia, report)
+    _aplana_anidados(dest, msg_bytes, vistos, procedencia, report,
+                     filtrar_ruido=filtrar_ruido)
     return ruta
 
 
 def _rescata_gmail(
     link: DriveLink, entry: dict[str, Any], dest: Path, vistos: set[str],
     procedencia: dict[str, str], report: "ExportReport", gmail_service: Any,
+    *, filtrar_ruido: bool = True,
 ) -> None:
     """Resuelve un permalink de Gmail vía ``messages.get(format='raw')`` → reentra P1.
 
@@ -790,7 +838,8 @@ def _rescata_gmail(
         entry["outcome"] = "manual_permission"
         entry["reason"] = "permalink Gmail devolvió vacío"
         return
-    ruta = _deposita_mensaje_rescatado(dest, data, vistos, procedencia, report)
+    ruta = _deposita_mensaje_rescatado(dest, data, vistos, procedencia, report,
+                                       filtrar_ruido=filtrar_ruido)
     entry["resolved_as"] = "email"
     if ruta is None:
         entry["outcome"] = "resolved"
@@ -804,7 +853,7 @@ def _rescata_gmail(
 def _rescata_file(
     link: DriveLink, entry: dict[str, Any], dest: Path, parent_stem: str,
     vistos: set[str], procedencia: dict[str, str], index: dict[str, Any],
-    report: "ExportReport", *, from_img: bool = False,
+    report: "ExportReport", *, from_img: bool = False, filtrar_ruido: bool = True,
 ) -> None:
     """Resuelve un enlace FILE/IMAGE_SIG: metadatos → routing por mimeType → descarga byte-fiel.
 
@@ -885,7 +934,8 @@ def _rescata_file(
 
     # .eml rescatado → reentra Parte 1 (primer nivel, dedup Message-ID).
     if _es_eml_bytes(data, info):
-        ruta = _deposita_mensaje_rescatado(dest, data, vistos, procedencia, report)
+        ruta = _deposita_mensaje_rescatado(dest, data, vistos, procedencia, report,
+                                       filtrar_ruido=filtrar_ruido)
         entry["resolved_as"] = "email"
         if ruta is None:
             entry["outcome"] = "resolved"
@@ -918,7 +968,7 @@ def _rescata_file(
 def _resuelve_enlaces(
     dest: Path, raw_bytes: bytes, *, parent_mid: str, vistos: set[str],
     procedencia: dict[str, str], index: dict[str, Any], report: "ExportReport",
-    gmail_service: Any = None,
+    gmail_service: Any = None, filtrar_ruido: bool = True,
 ) -> None:
     """Rescata los ficheros enlazados a Drive/Gmail en el cuerpo del padre (Parte 2).
 
@@ -940,11 +990,12 @@ def _resuelve_enlaces(
                 report.links_skipped_native += 1
                 entry["outcome"] = "skipped_native"
             elif link.type is DriveLinkType.GMAIL:
-                _rescata_gmail(link, entry, dest, vistos, procedencia, report, gmail_service)
+                _rescata_gmail(link, entry, dest, vistos, procedencia, report,
+                               gmail_service, filtrar_ruido=filtrar_ruido)
             else:  # FILE o IMAGE_SIG: resolución unificada por metadatos (filtro de firma §4)
                 _rescata_file(
                     link, entry, dest, parent_stem, vistos, procedencia, index, report,
-                    from_img=link.from_img,
+                    from_img=link.from_img, filtrar_ruido=filtrar_ruido,
                 )
         except Exception as exc:  # noqa: BLE001 — un enlace problemático no aborta el resto
             report.links_error += 1
@@ -1098,10 +1149,16 @@ class ExportReport:
     #: decir «excluí la circularización» con sus bytes en el expediente sería engañoso.
     #: Cada entrada: `asunto`, `regla`, `dentro_de` (asunto del padre que lo transporta).
     ruido_transportado: list[dict[str, str]] = field(default_factory=list)
-    #: Logotipos de firma NO extraídos como fichero (acción 6b). El equivalente de
-    #: `links_filtered_sig` para los adjuntos embebidos: lo filtrado se declara, no
-    #: desaparece. El `.eml` los sigue conteniendo — el filtro decide qué se extrae.
-    firmas_filtradas: int = 0
+    #: Adjuntos extraídos que PARECEN el logotipo de la firma del remitente
+    #: (acción 6b). Se depositan igual, con el prefijo `PREFIJO_FIRMA` en el nombre.
+    #:
+    #: **Se llamaba `firmas_filtradas` y descartaba** hasta la R1/H-01: el revisor
+    #: construyó una aceptación de honorarios escaneada —pequeña, `inline`, con
+    #: `Content-ID`— que el filtro tiraba, y demostró que la red de seguridad no
+    #: existía (`adjuntos_contenido/router.py` vuelve a omitir las imágenes < 50 KB).
+    #: En material probatorio se AVISA, no se descarta, que es la doctrina que
+    #: `contaminacion.py` ya tenía escrita. Decisión de Nikolai, 2026-09-06.
+    firmas_marcadas: int = 0
 
     def resumen(self) -> str:
         enlaces = (
@@ -1115,8 +1172,8 @@ class ExportReport:
         if self.ruido_transportado:
             ruido += (f"{len(self.ruido_transportado)} correos que transporta un "
                       f"mensaje del caso (no extraídos), ")
-        if self.firmas_filtradas:
-            ruido += f"{self.firmas_filtradas} firmas de correo no extraídas, "
+        if self.firmas_marcadas:
+            ruido += f"{self.firmas_marcadas} marcadas como firma, "
         return (
             f"etiqueta {self.label!r} ({self.account}): {self.total_in_label} mensajes; "
             f"{self.written} escritos, {self.skipped} ya presentes, "
@@ -1246,7 +1303,8 @@ def export_label(
             if not flatten_nested_emails:
                 return
             try:
-                _aplana_anidados(dest, raw, vistos, procedencia, report)
+                _aplana_anidados(dest, raw, vistos, procedencia, report,
+                                 filtrar_ruido=filtrar_ruido)
             except Exception as exc:  # noqa: BLE001 — un fallo de aplanado no aborta la corrida
                 report.errors.append(f"{gid}: aplanado de anidados falló: {exc}")
 
@@ -1258,6 +1316,7 @@ def export_label(
                 _resuelve_enlaces(
                     dest, raw, parent_mid=mid, vistos=vistos, procedencia=procedencia,
                     index=link_index, report=report, gmail_service=service,
+                    filtrar_ruido=filtrar_ruido,
                 )
             except Exception as exc:  # noqa: BLE001
                 report.errors.append(f"{gid}: resolución de enlaces falló: {exc}")
@@ -1456,17 +1515,20 @@ def _escribe_mensaje(
     # El filtro decide qué se EXTRAE, nunca qué contiene el `.eml`: los bytes escritos
     # siguen siendo los originales, con su firma dentro. Un `.eml` mutilado no es
     # prueba — el mismo principio que conserva íntegro el correo padre (R1/H-01).
-    firmas = [a for a in adjuntos if a.es_firma]
-    depositables = [a for a in adjuntos if not a.es_firma]
-    report.firmas_filtradas += len(firmas)
+    # Los correos con MIME genérico no salen por aquí: los adopta el aplanado
+    # (R1/H-02), que es quien sabe darles filtro de ruido, dedup y procedencia.
+    adjuntos = [a for a in adjuntos if not a.es_correo]
+    report.firmas_marcadas += sum(1 for a in adjuntos if a.es_firma)
     nombre_eml = eml_filename(headers)
-    if depositables and extract_attachments:
+    if adjuntos and extract_attachments:
         carpeta = _dir_unico(dest, Path(nombre_eml).stem)
         carpeta.mkdir(parents=True, exist_ok=True)
         eml_path = carpeta / nombre_eml
         eml_path.write_bytes(eml_bytes)
-        for idx, adj in enumerate(depositables, start=1):
+        for idx, adj in enumerate(adjuntos, start=1):
             seguro = _sanea_nombre_fichero(adj.nombre, fallback=f"adjunto_{idx}")
+            if adj.es_firma:
+                seguro = PREFIJO_FIRMA + seguro
             _ruta_unica(carpeta, seguro).write_bytes(adj.datos)
             report.attachments += 1
         return eml_path

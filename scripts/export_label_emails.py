@@ -51,8 +51,17 @@ def main(argv: list[str] | None = None) -> int:
                         help="case_id del caso o W-code (p. ej. W-02VND1); se resuelve al case_id canónico.")
     parser.add_argument("--account", required=True, help="Cuenta Gmail (p. ej. ...@engelvoelkers.com).")
     parser.add_argument("--label", required=True, help="Nombre EXACTO de la etiqueta (ruta completa).")
+    # El positivo se CONSERVA aunque ya sea el default (R1/H-03): cambiar el default
+    # no exigia dejar de reconocer el flag que antes activaba esta misma operacion, y
+    # hay invocaciones vivas --incluida la skill `exportar-correos-etiqueta`-- que lo
+    # pasan. Sin el, morian con SystemExit(2) antes de llegar al motor.
+    parser.add_argument("--extraer-adjuntos", dest="extraer_adjuntos",
+                        action="store_true", default=True,
+                        help="Extrae los adjuntos a subcarpetas fechadas. Es el "
+                             "comportamiento por defecto desde la accion 6b; se acepta "
+                             "por compatibilidad con invocaciones y scripts existentes.")
     parser.add_argument("--no-extraer-adjuntos", dest="extraer_adjuntos",
-                        action="store_false", default=True,
+                        action="store_false",
                         help="NO extraer los adjuntos: deja solo el .eml plano, con todo "
                              "embebido. Por defecto SI se extraen a subcarpetas fechadas "
                              "(los logotipos de firma se filtran; el .eml sigue siendo fiel).")
