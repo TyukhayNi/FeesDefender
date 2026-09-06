@@ -30,6 +30,8 @@ def _build_raw(
     subject: str = "Asunto de prueba",
     date: str = "Thu, 12 Jun 2026 10:00:00 +0200",
     from_addr: str = "Eva <eva@engelvoelkers.com>",
+    to_addr: str = "despacho@tyukhay.legal",
+    cc: str | None = None,
     body: str = "Cuerpo del correo.",
     attachments: list[tuple[str, str, bytes]] | None = None,
 ) -> bytes:
@@ -38,7 +40,9 @@ def _build_raw(
     msg["Subject"] = subject
     msg["Date"] = date
     msg["From"] = from_addr
-    msg["To"] = "despacho@tyukhay.legal"
+    msg["To"] = to_addr
+    if cc is not None:
+        msg["Cc"] = cc
     msg.set_content(body)
     for fn, mime, datos in attachments or []:
         maintype, _, subtype = mime.partition("/")
@@ -246,8 +250,15 @@ def test_export_label_adjuntos_en_subcarpeta_fechada(tmp_path):
     assert (carpeta / "contrato.pdf").read_bytes() == b"%PDF datos"
 
 
-def test_export_label_plano_por_defecto_no_extrae_adjuntos(tmp_path):
-    """Por defecto: .eml plano en la raíz, sin subcarpeta ni adjuntos sueltos."""
+def test_export_label_extrae_adjuntos_POR_DEFECTO(tmp_path):
+    """El default se INVIRTIO el 2026-09-06 (accion 6b) y este test se invierte con el,
+    no se borra: sigue siendo la guarda que caza un cambio accidental del default.
+
+    Version anterior: `test_export_label_plano_por_defecto_no_extrae_adjuntos`, que
+    afirmaba lo contrario. Lo que la decision necesitaba estaba medido: Gate 1 hecho,
+    Gate 2 re-medido sobre 444 adjuntos reales (0 correos), y el 32% de basura de firma
+    que aparecio al medir lo filtra ahora `es_firma_incrustada`.
+    """
     raws = {
         "g1": _build_raw(
             message_id="<conadj@x>",
@@ -260,9 +271,14 @@ def test_export_label_plano_por_defecto_no_extrae_adjuntos(tmp_path):
     rep = ee.export_label("nikolai@engelvoelkers.com", _ETIQUETA, tmp_path, service=svc)
 
     assert rep.written == 1
-    assert rep.attachments == 0
-    assert (tmp_path / "2026-06-12_con_adjunto.eml").exists()
-    assert [p.name for p in tmp_path.iterdir() if p.is_dir()] == []  # sin subcarpetas
+    assert rep.attachments == 1
+    carpeta = tmp_path / "2026-06-12_con_adjunto"
+    assert (carpeta / "contrato.pdf").is_file()
+    # El `.eml` acompaña a su adjunto DENTRO de la subcarpeta, no en la raíz: es el
+    # layout que `_escribe_mensaje` produce al extraer, y el que la sala de máquina
+    # espera. En la raíz no queda ni el `.eml` suelto ni el adjunto.
+    assert (carpeta / "2026-06-12_con_adjunto.eml").is_file()
+    assert not (tmp_path / "2026-06-12_con_adjunto.eml").exists()
     assert not list(tmp_path.glob("*.pdf"))
 
 

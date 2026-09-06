@@ -298,7 +298,7 @@ def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
 
 
 def _intake_email(ident, case_dir: Path, cuenta: str, label: str, *, dry_run: bool,
-                  extraer_adjuntos: bool = False) -> None:
+                  extraer_adjuntos: bool = True) -> None:
     """Exporta la etiqueta Gmail del caso a un lote nuevo de ``00_Input``.
 
     ``extraer_adjuntos`` saca además cada adjunto como fichero suelto junto al
@@ -352,7 +352,7 @@ def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> No
 
 
 def _despachar_intake(fuente, ident, case_dir, *, folder_id, team_id, src, rol,
-                      cuenta, label, dry_run, extraer_adjuntos=False):
+                      cuenta, label, dry_run, extraer_adjuntos=True):
     """Despacha el intake de UNA fuente. **Ya no valida flags**: eso corre antes del
     mutex (`MEJORAS #142`), porque fallar por un flag mal puesto no necesita el lock
     adquirido y hacerlo dentro convertia el fallo en un `Exit` bajo exclusion."""
@@ -910,10 +910,11 @@ def main(
     cuenta: str | None = typer.Option(None, "--cuenta", help="email: cuenta gmail"),
     label: str | None = typer.Option(None, "--label", help="email: etiqueta"),
     extraer_adjuntos: bool = typer.Option(
-        False, "--extraer-adjuntos",
+        True, "--extraer-adjuntos/--no-extraer-adjuntos",
         help="email: saca cada adjunto como fichero suelto junto al .eml, para que la "
              "sala de máquina lo OCR-ee (un adjunto que llegue SOLO por correo, sin "
-             "copia en el Drive, no se procesa sin esto)"),
+             "copia en el Drive, no se procesa sin esto). ACTIVO por defecto desde la "
+             "acción 6b; los logotipos de firma se filtran y el .eml sigue siendo fiel"),
     cuantia: float = typer.Option(0.0, "--cuantia"),
     crm: str = typer.Option("api", "--crm", help="api|skip"),
     force: bool = typer.Option(False, "--force"),

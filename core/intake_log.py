@@ -6,7 +6,7 @@ quién hizo qué, cuándo y con qué efecto sobre el repositorio del caso.
 
 Decisiones cerradas (memoria persistente: ``project_intake_estructura_v2.md``):
 
-- M10-Q1: 34 tipos de evento permitidos (constante ``INTAKE_EVENTS``).
+- M10-Q1: 35 tipos de evento permitidos (constante ``INTAKE_EVENTS``).
   *(Decia 27 y eran 33; corregido el 2026-09-03 al medirlo — hallazgo HA-12
   de la R-A del Plan 5. Un contador escrito a mano se pudre en silencio.)*
 - M10-Q2: schema común ``{ts, actor, event, case_id, details}`` con
@@ -77,6 +77,12 @@ INTAKE_EVENTS: frozenset[str] = frozenset({
                                 # "pendientes_vision", "errores"}. En la rama de
                                 # excepción SOLO lleva status + errores: si el motor no
                                 # terminó, el payload no finge saber cuántos hay.
+    "email_excluido_ruido",     # correo de administración del despacho NO depositado
+                                # por el filtro de `export_label` (acción 6a). Es el
+                                # ÚNICO rastro durable de la exclusión: la pantalla se
+                                # pierde y sin esto «lo excluido se puede revisar» no
+                                # lo cumple nadie. details = {"total": int,
+                                # "excluidos": [{"gmail_id", "asunto", "regla"}]}.
     "atomizado_email",          # atomización de correo encadenada por la sala de máquina.
                                  # details_schema 2: {"status": ok|parcial|fallo,
                                  # "eml_en_disco", "eml_leidos", "publicado",

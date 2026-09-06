@@ -763,19 +763,25 @@ def test_intake_email_propaga_extraer_adjuntos_al_motor(tmp_path, export_label_e
     assert export_label_espia["extract_attachments"] is True
 
 
-def test_intake_email_no_extrae_adjuntos_por_defecto(tmp_path, export_label_espia):
-    """El default NO cambia: activarlo mueve la superficie de dedup de todo intake
-    futuro, así que es decisión explícita de quien abre el caso."""
+def test_intake_email_extrae_adjuntos_POR_DEFECTO(tmp_path, export_label_espia):
+    """Invertido el 2026-09-06 (accion 6b), y conservado como guarda.
+
+    Decia: «el default NO cambia: activarlo mueve la superficie de dedup de todo
+    intake futuro». Esa razon **caduco**: la dedup por sha256 de `MEJORAS #147` via A
+    (PR #296) hace que el mismo fichero en dos sitios de UN espejo y dos filas de
+    custodia, que era justo el desorden que se temia. Un documento que llega SOLO por
+    correo no se procesaba sin esto.
+    """
     cli._intake_email(_ident_email(), tmp_path, "c@x", "01. CONTING/X", dry_run=False)
 
-    assert export_label_espia["extract_attachments"] is False
+    assert export_label_espia["extract_attachments"] is True
 
 
 def test_cli_extraer_adjuntos_llega_al_intake_de_email(drive_temporal, monkeypatch):
     """Cablear el flag en el CLI: sin esto, exponerlo en `_intake_email` no sirve."""
     capturado: dict = {}
 
-    def espia(ident, case_dir, cuenta, label, *, dry_run, extraer_adjuntos=False):
+    def espia(ident, case_dir, cuenta, label, *, dry_run, extraer_adjuntos=True):
         capturado["extraer"] = extraer_adjuntos
 
     monkeypatch.setattr(cli, "_intake_email", espia)

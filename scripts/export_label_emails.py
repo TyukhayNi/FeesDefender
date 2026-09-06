@@ -30,6 +30,13 @@ from core.email_export import ExportReport, email_dest_dir, export_label
 def _print_report(report: ExportReport, dest) -> None:
     print(f"[export-label] destino: {dest}")
     print(f"[export-label] {report.resumen()}")
+    if report.excluidos_ruido:
+        # Enumerados y no contados: el operador tiene que poder ver QUÉ se quedó fuera
+        # sin abrir el `.jsonl`, y decidir en el momento si alguno era del caso.
+        print("[export-label] ruido administrativo NO depositado "
+              "(recuperable con --sin-filtro-ruido):")
+        for e in report.excluidos_ruido:
+            print(f"  - [{e['regla']}] {e['asunto']}")
     if report.errors:
         print("[export-label] ERRORES:")
         for err in report.errors:
@@ -44,8 +51,20 @@ def main(argv: list[str] | None = None) -> int:
                         help="case_id del caso o W-code (p. ej. W-02VND1); se resuelve al case_id canónico.")
     parser.add_argument("--account", required=True, help="Cuenta Gmail (p. ej. ...@engelvoelkers.com).")
     parser.add_argument("--label", required=True, help="Nombre EXACTO de la etiqueta (ruta completa).")
-    parser.add_argument("--extraer-adjuntos", dest="extraer_adjuntos", action="store_true",
-                        help="Extrae los adjuntos a subcarpetas fechadas (por defecto: plano, solo .eml).")
+    # El positivo se CONSERVA aunque ya sea el default (R1/H-03): cambiar el default
+    # no exigia dejar de reconocer el flag que antes activaba esta misma operacion, y
+    # hay invocaciones vivas --incluida la skill `exportar-correos-etiqueta`-- que lo
+    # pasan. Sin el, morian con SystemExit(2) antes de llegar al motor.
+    parser.add_argument("--extraer-adjuntos", dest="extraer_adjuntos",
+                        action="store_true", default=True,
+                        help="Extrae los adjuntos a subcarpetas fechadas. Es el "
+                             "comportamiento por defecto desde la accion 6b; se acepta "
+                             "por compatibilidad con invocaciones y scripts existentes.")
+    parser.add_argument("--no-extraer-adjuntos", dest="extraer_adjuntos",
+                        action="store_false",
+                        help="NO extraer los adjuntos: deja solo el .eml plano, con todo "
+                             "embebido. Por defecto SI se extraen a subcarpetas fechadas "
+                             "(los logotipos de firma se filtran; el .eml sigue siendo fiel).")
     parser.add_argument("--workers", type=int, default=8,
                         help="Descargas en paralelo (default 8; 1 = secuencial).")
     parser.add_argument("--force", action="store_true",
@@ -58,6 +77,15 @@ def main(argv: list[str] | None = None) -> int:
                         action="store_false", default=True,
                         help="No rescatar ficheros enlazados a Drive/Gmail en el cuerpo "
                              "(por defecto SÍ se rescatan los binarios de descarga directa).")
+    parser.add_argument("--sin-filtro-ruido", dest="filtrar_ruido",
+                        action="store_false", default=True,
+                        help="Deposita TAMBIÉN el correo de administración del despacho "
+                             "(facturación a Proveedores.ES, auditoría, actas CFO+Legal, "
+                             "volcados al repositorio sin referencias). Por defecto se "
+                             "excluye: no es prueba de ningún caso y arrastra "
+                             "confidencialidad de terceros. Lo excluido queda en el "
+                             "_intake_log.jsonl y el gmail_id NO se marca como exportado, "
+                             "así que esta bandera lo recupera sin --force.")
     args = parser.parse_args(argv)
 
     case_id = resolve_ref(args.ref)
@@ -76,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_workers=args.workers, force=args.force,
                 flatten_nested_emails=args.aplanar,
                 resolve_drive_links=args.resolver_enlaces,
+                filtrar_ruido=args.filtrar_ruido,
             )
     except CasoOcupado as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)

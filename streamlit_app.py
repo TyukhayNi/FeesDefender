@@ -761,12 +761,14 @@ with tab_casos:
             )
             _extraer_adj_em = st.checkbox(
                 "Extraer adjuntos a subcarpetas",
-                value=False,
+                value=True,
                 key="casos_email_extraer",
                 help=(
-                    "Por defecto los correos se guardan planos (.eml con sus adjuntos "
-                    "embebidos). Marca esto para extraer además los adjuntos como "
-                    "ficheros sueltos en subcarpetas fechadas."
+                    "Los adjuntos salen como ficheros sueltos en subcarpetas fechadas, "
+                    "para que la sala de máquina pueda OCR-earlos: un documento que "
+                    "llegue SOLO por correo no se procesa sin esto. Los logotipos de "
+                    "la firma del remitente se filtran, y el .eml se guarda byte-fiel "
+                    "con todo dentro. Desmárcalo para dejar solo el .eml plano."
                 ),
             )
             if st.button(

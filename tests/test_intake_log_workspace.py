@@ -226,7 +226,7 @@ class TestLogPathSeRetira:
 
 
 # ==========================================================================
-# El vocabulario: 28 -> 33, con el doble aserto
+# El vocabulario: 28 -> 35, con el doble aserto
 # ==========================================================================
 
 class TestVocabulario:
@@ -239,9 +239,15 @@ class TestVocabulario:
     #: mide: que los 28 historicos siguen todos ahi.
     NUEVOS_V1 = {"apertura_v1_terminada"}
 
-    def test_son_treinta_y_cuatro(self, root):
+    #: Anadido el 2026-09-06 por el filtro de ruido de `export_label` (accion 6a).
+    #: Mismo motivo que `NUEVOS_V1`: su sitio es un conjunto propio, no la bolsa de
+    #: los historicos. Meterlo ahi seria cuadrar la cifra por resta, que es
+    #: exactamente lo que el doble aserto de abajo existe para impedir.
+    NUEVOS_6A = {"email_excluido_ruido"}
+
+    def test_son_treinta_y_cinco(self, root):
         from core.intake_log import INTAKE_EVENTS
-        assert len(INTAKE_EVENTS) == 34
+        assert len(INTAKE_EVENTS) == 35
 
     def test_los_veintiocho_de_antes_SIGUEN_estando(self, root):
         """El doble aserto que impide cuadrar la cifra por resta (R7/H7-06).
@@ -253,10 +259,12 @@ class TestVocabulario:
         """
         from core.intake_log import INTAKE_EVENTS
         nuevos = set(self.NUEVOS)
-        antiguos = set(INTAKE_EVENTS) - nuevos - set(self.NUEVOS_V1)
+        antiguos = (set(INTAKE_EVENTS) - nuevos - set(self.NUEVOS_V1)
+                    - set(self.NUEVOS_6A))
         assert len(antiguos) == 28
         assert nuevos < set(INTAKE_EVENTS)
         assert set(self.NUEVOS_V1) < set(INTAKE_EVENTS)
+        assert set(self.NUEVOS_6A) < set(INTAKE_EVENTS)
 
     def test_pendiente_checkin_se_conserva(self, root):
         """Lectura historica: su EMISION se retira en la Fase 2, no su nombre."""
