@@ -16,7 +16,7 @@ git log --oneline -5
 
 ```powershell
 cd "C:\Users\tnm33\Dev\FeesDefender"
-python -m pytest -q --tb=no -n auto --dist loadgroup
+python -m pytest -q --tb=no -n auto
 ```
 
 ```powershell

@@ -331,8 +331,20 @@ def componente_valido(draw) -> str:
 
     Se construye en vez de filtrarse: los bordes salen de un alfabeto sin espacios, así
     que nunca hay que descartar por espacio al borde y la estrategia no degenera.
+
+    **Incluye nombres de UN carácter, y esa es una corrección de R2 (H-10).** La versión
+    anterior concatenaba siempre dos bordes, así que la longitud mínima era 2 — sin querer,
+    y sin que nada lo dijera. El revisor lo midió metiendo
+    `if len(valor) == 1: raise ValueError(...)` al principio de la función: **las diez
+    propiedades pasaron**. Un guard que rechazara todas las carpetas de un carácter habría
+    entrado sin que nadie se enterara.
+
+    Es la clase de hueco que no se ve leyendo la estrategia: no hay ninguna línea que diga
+    «longitud mínima 2», solo dos `draw` que se suman.
     """
     borde = st.sampled_from("abcXYZ019áéñÑ")
+    if draw(st.booleans()):
+        return draw(borde)                      # un solo carácter, que también es válido
     return draw(borde) + draw(st.text(alphabet="abcXYZ019 áéñÑ-_.", max_size=18)) + draw(borde)
 
 

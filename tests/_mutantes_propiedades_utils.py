@@ -189,6 +189,19 @@ MUTANTES = [
      '    if not (valor or "").strip():\n'
      '        raise ValueError(f"{campo} no puede estar vacío.")\n',
      {"test_el_guard_ACEPTA_un_componente_valido"}),
+
+    # De R2 (H-10). El revisor lo aplico y **las diez propiedades pasaron**: mi generador
+    # concatenaba siempre dos bordes, asi que nunca producia un nombre de un caracter y un
+    # rechazo de todos ellos era invisible. El hueco no estaba en un aserto: estaba en la
+    # forma de la estrategia, que es donde no se mira.
+    ("M13 `exigir_componente_de_ruta` rechaza los nombres de UN caracter", U,
+     '    if not (valor or "").strip():\n'
+     '        raise ValueError(f"{campo} no puede estar vacío.")\n',
+     "    if len(valor) == 1:\n"
+     '        raise ValueError(f"{campo}: mutante que rechaza un solo caracter.")\n'
+     '    if not (valor or "").strip():\n'
+     '        raise ValueError(f"{campo} no puede estar vacío.")\n',
+     {"test_el_guard_ACEPTA_un_componente_valido"}),
 ]
 
 
@@ -275,8 +288,35 @@ def _es_de_propiedades(identificador: str) -> str:
     return identificador.startswith(_modulo(PROPIEDADES) + "::")
 
 
+#: Bytes originales de cada fichero mutable, leidos ANTES de la primera escritura.
+#: **La restauracion ya no depende de git, y ese es el arreglo de H-05 de R2.** El revisor
+#: construyo un caso en que el preflight pasaba y `git checkout` no podia deshacer nada:
+#: `git rm --cached core/utils.py` + una linea en `.git/info/exclude` deja el `git status`
+#: **vacio** y el fichero fuera del indice. El arnes mutaba, y tanto el `finally` como el
+#: `atexit` morian con `pathspec did not match any file(s) known to git`, dejando produccion
+#: rota.
+#:
+#: Estar dentro de un worktree y ver un `git status` limpio **no demuestra que cada fichero
+#: sea restaurable**. Guardar los bytes si lo demuestra, y ademas no necesita git.
+_BYTES_ORIGINALES: dict[str, bytes] = {}
+
+
+def _memorizar_originales() -> None:
+    for rel in FICHEROS_MUTABLES:
+        _BYTES_ORIGINALES[rel] = (RAIZ / rel).read_bytes()
+
+
 def _restaura() -> None:
-    subprocess.run(["git", "checkout", "--", *FICHEROS_MUTABLES], cwd=RAIZ, check=True)
+    """Repone los bytes exactos. Idempotente, y no toca git.
+
+    Escribe en binario a proposito: `write_text` normalizaria los finales de linea y
+    dejaria el fichero «modificado» para git sin haber cambiado una coma — pasa en este
+    repo, que tiene CRLF en el arbol y LF en el indice.
+    """
+    for rel, bytes_ in _BYTES_ORIGINALES.items():
+        destino = RAIZ / rel
+        if destino.read_bytes() != bytes_:
+            destino.write_bytes(bytes_)
 
 
 #: Ficheros que el arnes tiene permiso para mutar. `_restaura` se limita a ESTOS y no a
@@ -296,34 +336,54 @@ def _preflight() -> str | None:
 
     Devuelve el motivo por el que NO se puede correr, o `None` si se puede.
     """
-    r = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=RAIZ,
-                       capture_output=True, encoding="utf-8", errors="replace")
-    if r.returncode != 0 or (r.stdout or "").strip() != "true":
-        return ("esto no es un arbol de trabajo de git, asi que `git checkout` no podria "
-                "deshacer las mutaciones. El arnes NO muta si no puede restaurar")
+    for rel in FICHEROS_MUTABLES:
+        ruta = RAIZ / rel
+        if not ruta.is_file():
+            return f"{rel} no existe: no hay nada que mutar ni que restaurar"
+        try:
+            ruta.read_bytes()
+        except OSError as e:
+            return f"no se pueden leer los bytes de {rel} ({e}), asi que no se podria repo"
 
-    r = subprocess.run(["git", "status", "--porcelain", *FICHEROS_MUTABLES], cwd=RAIZ,
-                       capture_output=True, encoding="utf-8", errors="replace")
-    if r.returncode != 0:
-        return f"`git status` fallo con codigo {r.returncode}: {(r.stderr or '').strip()}"
-    if (r.stdout or "").strip():
+    # El arbol limpio ya NO es la garantia de restauracion —esa la dan los bytes en
+    # memoria— pero se sigue exigiendo por otra razon: si el fichero tuviera trabajo sin
+    # commitear, una interrupcion entre la mutacion y la reposicion dejaria al autor
+    # mirando un diff que no reconoce. Es una cortesia, y se dice que lo es.
+    r = subprocess.run(["git", "status", "--porcelain", "--", *FICHEROS_MUTABLES],
+                       cwd=RAIZ, capture_output=True, encoding="utf-8", errors="replace")
+    if r.returncode == 0 and (r.stdout or "").strip():
         return ("hay cambios sin commitear en los ficheros que este arnes muta:\n"
                 + r.stdout.rstrip()
-                + "\nSe restauran con `git checkout` DESDE EL INDICE y los perderias. "
-                  "Commitea antes de mutar")
+                + "\nLa restauracion los repondria, pero si el arnes muriera a mitad te "
+                  "quedarias con un diff ajeno delante. Commitea antes de mutar")
     return None
 
 
 def _armar_la_red_de_seguridad() -> None:
-    """Restaura si el proceso muere por donde sea. **Esto falto y costo caro.**
+    """Restaura al salir. **Con su alcance declarado, que la primera version exageraba.**
 
-    El 2026-09-06 el arnes se interrumpio a mitad (Ctrl-C del usuario) despues de escribir
-    el primer mutante y antes de su `finally`. El arbol se quedo con `core/utils.py` **en
-    su version buggy**, y solo se descubrio porque una corrida posterior se nego a
-    arrancar por arbol sucio. La guarda de ENTRADA existia; la de SALIDA no.
+    El 2026-09-06 el arnes se interrumpio a mitad (Ctrl-C) despues de escribir el primer
+    mutante y antes de su `finally`. El arbol se quedo con `core/utils.py` **en su version
+    buggy**, y solo se descubrio porque una corrida posterior se nego a arrancar. La guarda
+    de ENTRADA existia; la de SALIDA no.
 
-    Un `finally` no cubre `SIGINT`/`SIGTERM` ni un `os._exit`. `atexit` cubre la salida
-    normal y la excepcion; los manejadores de señal cubren el resto.
+    ## Que cubre, y que NO
+
+    - **Cubre:** salida normal, excepcion, y `SIGINT`/`SIGTERM` **entregadas al proceso**
+      (Ctrl-C, `kill`). Medido.
+    - **NO cubre:** una terminacion forzosa —`TerminateProcess` en Windows, `SIGKILL`,
+      `os._exit`—. Ahi no corre ningun manejador de Python, ni de señal ni de `atexit`, y
+      **no hay forma de que corra**: es una propiedad del sistema operativo, no un descuido.
+
+    Mi docstring anterior decia «si el proceso muere **por donde sea**», y R2 de Codex
+    (H-05) lo midio: con `Popen.terminate()` el arnes deja el fichero mutado. El revisor
+    fue explicito en que **no exige** interceptar eso — lo que exige es que no se prometa.
+    Un limite declarado se puede planificar; uno escondido bajo un «por donde sea» se
+    descubre con produccion rota delante.
+
+    El remedio practico para ese caso residual no es un manejador: es que la restauracion
+    sea **trivial y sin dependencias** (bytes en memoria, ver `_restaura`) y que el
+    preflight se niegue a arrancar sobre un arbol sucio, para que el rastro sea evidente.
     """
     def restaurar_y_avisar(*_args) -> None:
         try:
@@ -358,6 +418,9 @@ def main() -> int:
         return 2
     print(f"base: verde ({base.total} tests)\n")
 
+    # Los bytes se memorizan ANTES de armar la red y ANTES de la primera escritura: una red
+    # que no sabe a que estado volver no es una red.
+    _memorizar_originales()
     _armar_la_red_de_seguridad()
 
     fallidos = 0

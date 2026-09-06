@@ -134,22 +134,44 @@ def test_render_revision_las_tres_colas(snapshot):
     assert salida == snapshot
 
 
-def test_el_snapshot_SE_PONE_ROJO_si_cambia_la_salida(snapshot):
-    """La prueba de que estos snapshots no son decorado.
+def test_el_snapshot_RECHAZA_una_salida_modificada(snapshot):
+    """La prueba de que estos snapshots no son decorado. **Y la primera versión lo era.**
 
-    Un snapshot recién generado siempre pasa. Este test hace lo contrario: toma la salida
-    real, le cambia **un** fragmento, y exige que deje de coincidir con el snapshot
-    archivado. Si esto pasara en verde, los cinco de arriba estarían aprobando cualquier
-    cosa y nadie se enteraría.
+    Escribí este test para demostrar que los snapshots muerden, y R2 de Codex (H-04) midió
+    que **nunca consultaba el snapshot**: recibía la fixture como parámetro y no la usaba.
+    Comprobaba que un `str.replace` cambia una cadena y que dos llamadas al render
+    coinciden — dos cosas ciertas y ninguna sobre syrupy. Lo demostró pasándole un oráculo
+    cuyo `__eq__` lanza: el test pasó, o sea que jamás lo tocó.
 
-    No usa `snapshot` como oráculo del mutante: compara contra la salida legítima, que es
-    la que los otros tests ya han fijado.
+    Es el defecto que este fichero entero existe para prevenir, cometido en el test que lo
+    previene. Y no fue mala suerte: **poner la fixture en la firma se parece lo bastante a
+    usarla** como para que la lectura no lo cace. Solo lo caza ejercitarlo.
+
+    Esta versión sí lo consulta: toma la salida real, le cambia un fragmento, y exige que
+    la referencia archivada **no** la acepte. Si algún día los snapshots dejaran de comparar,
+    este test se pondría rojo.
     """
     real = R.render_md(_corpus()[1])
     mutada = real.replace("msg_id: MSG-00002", "msg_id: MSG-XXXXX", 1)
     assert mutada != real, ("el fragmento que este test muta ya no está en la salida: "
                             "cámbialo por uno vigente o el test es inerte")
-    assert R.render_md(_corpus()[1]) == real, "el render no es determinista entre llamadas"
+
+    # **Un solo uso de `snapshot`, y no es un detalle de estilo.** En syrupy cada aparición
+    # de la fixture dentro de un test es un snapshot DISTINTO (`…`, `….1`), no el mismo:
+    # escribir `real == snapshot` y luego `mutada != snapshot` archivaba la salida
+    # **mutada** como segunda referencia y el test se volvía rojo contra sí mismo. Medido
+    # al construirlo.
+    #
+    # Así que la referencia se consulta una vez, anclada a la salida legítima, y el rechazo
+    # sale por transitividad: si `real` ES la referencia archivada y `mutada` no es `real`,
+    # entonces la referencia rechaza `mutada`. La primera aserción es la que impide que
+    # esto vuelva a ser teatro — con ella, un oráculo que no se consulta pone el test rojo.
+    assert real == snapshot, (
+        "la salida ya no coincide con la referencia archivada: si el cambio es legítimo, "
+        "lee el diff y actualízalo a propósito; nunca con `--snapshot-update` en ciego")
+    assert mutada != real, (
+        "la salida modificada coincide con la legítima: el fragmento mutado no distingue "
+        "nada y este test no demuestra el rechazo")
 
 
 def test_el_render_es_determinista_entre_llamadas():

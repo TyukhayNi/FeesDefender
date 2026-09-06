@@ -1,4 +1,41 @@
 # serializer version: 1
+# name: test_el_snapshot_RECHAZA_una_salida_modificada
+  '''
+  # GENERADO por core.email_atomize — NO editar (fuente de verdad regenerable).
+  ---
+  msg_id: MSG-00002
+  rfc_message_id: b@x
+  in_reply_to: 
+  hilo: a@x
+  fecha: 2026-06-12T10:30:00+02:00
+  de: per01c@example.invalid
+  de_nombre: "PersonaUno"
+  para:
+    - "per02@example.invalid"
+  cc: []
+  asunto: "Re: Oferta [inmueble]"
+  eml_origen: "2026-06-12_oferta.eml"
+  profundidad: 0
+  ruta_anidacion: []
+  procedencia: [{"eml_origen": "2026-06-12_oferta.eml", "profundidad": 0, "ruta_anidacion": []}]
+  capa: A
+  confianza: alta
+  auth: {"dkim": "pass"}
+  sha256: deadbeef
+  adjuntos: [{"att_id": "ATT-00003", "msg_id_anidado": null, "nombre": "contrato.pdf", "tipo": "application/pdf", "sha256": "cafe"}]
+  idioma: es
+  formato_original: plain
+  etiquetas: []
+  fuente: email
+  cuerpo_recortado_cita: true
+  respuesta_intercalada: true
+  mojibake: true
+  ---
+  
+  Respuesta con adjunto.
+  
+  '''
+# ---
 # name: test_render_correos_lectura_forma_completa
   '''
   <!-- GENERADO por core.email_atomize — NO editar a mano. -->

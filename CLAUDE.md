@@ -238,7 +238,7 @@ Código: este directorio (`C:\Users\tnm33\Dev\FeesDefender`), versionado en Git 
 ```powershell
 cd "C:\Users\tnm33\Dev\FeesDefender"
 git log --oneline -5                              # qué cambió desde la última sesión
-python -m pytest -q --tb=no -n auto --dist loadgroup   # suite verde (94 s, no 371)
+python -m pytest -q --tb=no -n auto               # suite verde (94 s, no 371)
 python -m scripts.sync_sudespacho check-legacy    # PHPSESSID válida
 ```
 
@@ -300,17 +300,18 @@ midió, la otra qué se midió—. Un reemplazo global de la fecha rompe la segu
 ## Tests
 
 - Framework: `pytest`.
-- **Suite entera, en paralelo:** `python -m pytest -q --tb=no -n auto --dist loadgroup` —
-  **94 s en vez de 371 s** (12 CPUs, medido el 2026-09-06: mismo conteo, mismos 88 `skip`,
-  mismos 6 `xfail`).
-- **`--dist loadgroup` NO es opcional, y su ausencia falla hacia el lado que parece que
-  funciona.** Sin él, las marcas `@pytest.mark.xdist_group` no hacen nada y
-  `tests/test_guard_localizador.py` —que escribe sondas dentro de `core/` y lo escanea
-  entero— se reparte entre workers. Da rojos; y lo que costó descubrirlo es que también da
-  **verdes**: un test pasando sin analizar su propio caso, porque leyó la sonda de otro
-  worker y el número coincidió. La suite completa había dado verde tres veces por **suerte
-  de reparto**, no por aislamiento (R1 de Codex, H-01, 2026-09-06). Lo vigila
-  `tests/test_guard_aislamiento_paralelo.py`.
+- **Suite entera, en paralelo:** `python -m pytest -q --tb=no -n auto` — **94 s en vez de
+  371 s** (12 CPUs, medido el 2026-09-06: mismo conteo, mismos 88 `skip`, mismos 6 `xfail`).
+- **Ningún test escribe en el árbol de producción, y esa regla no tiene escotilla.** Lo
+  vigila `tests/test_guard_aislamiento_paralelo.py`. Salió de dos rondas adversariales: unos
+  tests escribían sondas dentro de `core/` vivo y otros lo escaneaban, así que en paralelo
+  daban rojos —y, lo que costó descubrirlo, también **verdes**: un test pasando sin analizar
+  su propio caso porque leyó la sonda de otro worker y el número coincidió. La suite había
+  dado verde tres veces por **suerte de reparto**, no por aislamiento.
+  **Si necesitas escribir para probar algo, monta un árbol sintético en `tmp_path` y pásaselo
+  a la función** (patrón en `test_guard_localizador.py::_arbol_sintetico`). Agrupar con
+  `xdist_group` **no vale**: protege de los otros escritores y no de los lectores que
+  escanean el mismo árbol (medido, R2/H-01).
 - Un subconjunto o un fichero: `python -m pytest -q --tb=short <ruta>`, **en serie**.
 - **`-n auto` NO va en `addopts`, y eso está medido:** sobre un fichero suelto arrancar 12
   workers cuesta más de lo que ahorra (17,0 s contra 11,9 s). Va solo donde corre la suite

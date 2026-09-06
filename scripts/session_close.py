@@ -446,8 +446,19 @@ def _avisar_specs_sin_traza() -> None:
 #: perdia justo en el caso que mas la necesita: un venv incompleto se leeria como codigo
 #: roto. `randomly` entra por lo mismo: la verja fija semillas y sin el plugin el flag no
 #: existe.
+#: **`syrupy` y `pytest_cov` entraron por R2 (H-06), y su ausencia era el MISMO defecto que
+#: R1 me habia hecho arreglar una vez.** Amplie la superficie de la verja —snapshots,
+#: cobertura— y no amplie el preflight. Sin `syrupy`, los seis tests de snapshot no fallan:
+#: **erroran en el setup de su fixture**, y la verja los presenta como «Tests fallando»,
+#: que es exactamente la confusion que este preflight existe para impedir. Reproducido por
+#: el revisor.
+#:
+#: La leccion, escrita aqui porque es donde muerde: **esta tupla no es una lista de
+#: dependencias, es la lista de lo que la VERJA necesita.** Cada vez que la verja aprende a
+#: usar algo nuevo, esto crece con ella o vuelve a mentir.
 DEPS_DE_COLECCION: tuple[str, ...] = (
     "pytest", "dotenv", "yaml", "slugify", "xdist", "hypothesis", "pytest_randomly",
+    "syrupy", "pytest_cov",
 )
 
 #: Las DOS semillas de aceptacion. `CLAUDE.md` §Tests las exige para dar por bueno un
@@ -475,18 +486,18 @@ UMBRAL_COBERTURA_DEL_DIFF = 90
 
 def orden_de_pytest(semilla: int, *, con_durations: bool, con_cobertura: bool = False,
                     extra: list[str] | None = None) -> list[str]:
-    """La linea de ordenes de UNA corrida de la verja.
+    """La linea de ordenes de UNA corrida de la verja. **Fuente unica**, para que la orden
+    que se EJECUTA y la que se IMPRIME para reproducir un rojo no puedan divergir.
 
-    `--dist loadgroup` NO es opcional: sin el, las marcas `xdist_group` no hacen nada y
-    `tests/test_guard_localizador.py` —que escribe sondas dentro de `core/` y lo escanea
-    entero— vuelve a repartirse entre workers. Medido el 2026-09-06 (R1 de Codex, H-01):
-    3 rojos, y peor, un VERDE con un test pasando sin analizar su propio caso.
+    Que divergieran no es hipotetico: la receta de reproduccion estaba escrita a mano en un
+    `print` y **perdia `--runslow`**, o sea que ante un rojo de un test lento imprimia una
+    orden que no lo ejecuta (R2 de Codex, H-09). Ahora las dos salen de aqui.
 
     `--durations` solo en la primera corrida: la segunda no aporta perfil nuevo y duplicar
     quince lineas en cada cierre es ruido.
     """
     return [PYTHON, "-m", "pytest", "-q", "--tb=short",
-            "-n", "auto", "--dist", "loadgroup",
+            "-n", "auto",
             f"--randomly-seed={semilla}",
             *(["--durations=15"] if con_durations else []),
             # Cobertura solo en la PRIMERA corrida: es la misma con cualquier orden, y
@@ -497,16 +508,31 @@ def orden_de_pytest(semilla: int, *, con_durations: bool, con_cobertura: bool = 
             *(extra or [])]
 
 
-def cobertura_del_diff(salida: str) -> int | None:
-    """El porcentaje que reporta `diff-cover`, o `None` si no lo dice.
+def cobertura_del_diff(salida: str, codigo: int = 0) -> int | None:
+    """El porcentaje que reporta `diff-cover`, o `None` si no se puede afirmar.
 
-    **`None` NO es 0%, y confundirlos seria repetir el H-05 con otro nombre:** un diff que
-    no toca codigo medido, un `coverage.xml` ausente o una rama base que git no conoce dan
-    los tres «no se pudo medir», y presentarlos como «cero cobertura» convertiria un hueco
-    del instrumento en una acusacion al autor. Funcion aparte para poder probarlo.
+    **`None` NO es 0%, y confundirlos seria repetir el H-05 de R1 con otro nombre:** un
+    diff que no toca codigo medido, un `coverage.xml` ausente o una rama base que git no
+    conoce dan los tres «no se pudo medir», y presentarlos como «cero cobertura»
+    convertiria un hueco del instrumento en una acusacion al autor.
+
+    **Tres endurecimientos de R2 (H-08), los tres medidos por el revisor:**
+
+    - **Decimales.** `--total-percent-float` imprime `Coverage: 92.73%` y la version
+      anterior devolvia `None`: una medicion perfectamente valida se presentaba como «no se
+      pudo medir». Basta con que alguien cambie el flag o suba de version.
+    - **Ambiguedad.** Con `Coverage: 100%` y `Coverage: 0%` en la misma salida, `re.search`
+      se quedaba con el PRIMERO. Dos resumenes no son una medicion: si hay mas de uno, no
+      se sabe cual es, y eso es `None`, no el que venga antes.
+    - **Codigo de salida.** Un proceso que devuelve error y aun asi imprime un porcentaje
+      producia `[OK] 100%`. Si el proceso fallo, lo que haya en stdout no es de fiar.
     """
-    m = re.search(r"^Coverage:\s+(\d+)%", salida, re.MULTILINE)
-    return int(m.group(1)) if m else None
+    if codigo != 0:
+        return None
+    hallados = re.findall(r"^Coverage:\s+(\d+(?:\.\d+)?)%", salida, re.MULTILINE)
+    if len(hallados) != 1:
+        return None            # cero: no lo dice. Mas de uno: no se sabe cual.
+    return int(float(hallados[0]))
 
 
 def _avisar_cobertura_del_diff(rama_base: str = "origin/main", *,
@@ -534,7 +560,7 @@ def _avisar_cobertura_del_diff(rama_base: str = "origin/main", *,
          f"--compare-branch={rama_base}", "--fail-under=0"],
         cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace")
     salida = (r.stdout or "") + (r.stderr or "")
-    pct = cobertura_del_diff(salida)
+    pct = cobertura_del_diff(salida, getattr(r, "returncode", 0))
     if pct is None:
         primera = next((ln for ln in salida.splitlines() if ln.strip()), "sin salida")
         print(f"[aviso] no se pudo medir: {primera.strip()}")
@@ -570,8 +596,8 @@ def correr_la_verja(pytest_args: list[str], *, corredor=None) -> str | None:
         if resultado.returncode != 0:
             print(f"\n[X] Tests fallando con la semilla {semilla} - commit abortado.")
             print("    Reproducelo con:")
-            print(f"      python -m pytest -q --tb=short -n auto --dist loadgroup "
-                  f"--randomly-seed={semilla}")
+            print("      " + " ".join(orden_de_pytest(
+                semilla, con_durations=False, extra=pytest_args)[1:]))
             return f"semilla {semilla}"
     print(f"\n[OK] Tests verdes con las {len(SEMILLAS_DE_ACEPTACION)} semillas "
           f"{SEMILLAS_DE_ACEPTACION} - puedes continuar con git add / commit.")

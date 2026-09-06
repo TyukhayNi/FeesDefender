@@ -15,11 +15,11 @@ probarlo hubo que extraer `correr_la_verja` de `main()`, que es el mismo movimie
 
 - Que corra **las dos** semillas cuando todo va bien, y ninguna de más.
 - Que **pare en la primera que falle** y no siga gastando dos minutos en la segunda.
-- Que el mensaje del rojo diga **la semilla concreta** y una orden reproducible: sin eso,
-  «tests fallando» con orden aleatorio es un callejón sin salida.
-- Que `--dist loadgroup` viaje en cada orden. Sin él las marcas `xdist_group` son decorado
-  y el guard de aislamiento se cae — pero se caería en la suite, no aquí, y aquí es donde
-  se construye la orden.
+- Que el mensaje del rojo diga **la semilla concreta** y una orden **que de verdad
+  reproduzca**: sin eso, «tests fallando» con orden aleatorio es un callejón sin salida.
+  R2 de Codex (H-09) midió que esa receta perdía `--runslow`, así que ante el rojo de un
+  test lento imprimía una orden que no lo ejecuta. La orden impresa y la ejecutada salen
+  ahora de la misma función.
 """
 
 from __future__ import annotations
@@ -104,20 +104,45 @@ def test_el_mensaje_del_rojo_dice_la_semilla_y_como_reproducirlo(capsys):
     salida = capsys.readouterr().out
     assert f"--randomly-seed={semilla}" in salida, "no dice con qué semilla reproducirlo"
     assert "Reproducelo con:" in salida
-    assert "--dist loadgroup" in salida, (
-        "la orden de reproducción sin `--dist loadgroup` no reproduce: el reparto cambia")
 
 
-def test_toda_orden_lleva_dist_loadgroup_y_el_paralelismo():
+def test_la_orden_de_reproducir_CONSERVA_los_extras(capsys):
+    """H-09 de R2: la receta se escribía a mano en un `print` y perdía `--runslow`.
+
+    O sea que ante el rojo de un test lento —justo el caso en que `--runslow` está
+    puesto— imprimía una orden que **no ejecuta ese test**. El diagnóstico llevaba a un
+    verde y a la conclusión de que el rojo era fantasma.
+
+    El arreglo no fue añadir `--runslow` al `print`: fue que la orden impresa salga de
+    `orden_de_pytest`, la misma que se ejecuta. Dos textos que hay que mantener a mano
+    sincronizados terminan divergiendo; uno solo no puede.
+    """
+    sc = _modulo()
+
+    sc.correr_la_verja(["--runslow"], corredor=_CorredorFalso([1]))
+
+    salida = capsys.readouterr().out
+    assert "--runslow" in salida, (
+        "la orden de reproducción no lleva `--runslow`: con un test lento en rojo, "
+        "ejecutarla daría verde y el rojo parecería un fantasma")
+
+
+def test_toda_orden_lanza_en_paralelo():
+    """Ya no se comprueba `--dist loadgroup`: la escotilla de grupos se retiró entera.
+
+    Existía para que `test_guard_localizador.py` corriera en un solo worker, porque
+    escribía sondas dentro de `core/` vivo. Desde que monta su árbol en `tmp_path` no hay
+    nada que agrupar, y `tests/test_guard_aislamiento_paralelo.py` impide que vuelva a
+    haberlo. Menos piezas: la marca, el flag y su guard se fueron juntos.
+    """
     sc = _modulo()
     corredor = _CorredorFalso([0, 0])
 
     sc.correr_la_verja([], corredor=corredor)
 
     for orden in corredor.ordenes:
-        assert "-n" in orden and "auto" in orden
-        i = orden.index("--dist")
-        assert orden[i + 1] == "loadgroup", f"orden sin loadgroup: {orden}"
+        i = orden.index("-n")
+        assert orden[i + 1] == "auto", f"orden sin paralelismo: {orden}"
 
 
 def test_durations_solo_en_la_primera_corrida():
@@ -148,6 +173,36 @@ def test_cobertura_del_diff_lee_el_porcentaje():
               "core/utils.py (100%)\n-------------\nTotal:   46 lines\n"
               "Missing: 3 lines\nCoverage: 93%\n-------------\n")
     assert sc.cobertura_del_diff(salida) == 93
+
+
+def test_cobertura_del_diff_lee_un_porcentaje_DECIMAL():
+    """R2 (H-08): `--total-percent-float` imprime `Coverage: 92.73%` y el parser devolvía
+    `None`. Una medición perfectamente válida se presentaba como «no se pudo medir», y
+    bastaba con que alguien cambiara un flag o subiera de versión."""
+    sc = _modulo()
+    assert sc.cobertura_del_diff("Coverage: 92.73%\n") == 92
+    assert sc.cobertura_del_diff("Coverage: 100.0%\n") == 100
+
+
+def test_cobertura_del_diff_con_DOS_resumenes_no_elige_el_primero():
+    """Dos resúmenes no son una medición: no se sabe cuál es.
+
+    R2 midió que `Coverage: 100%\\nCoverage: 0%` se leía como **100** porque `re.search`
+    se queda con el primero. Ante la ambigüedad, la respuesta honesta es «no se pudo
+    medir», no el que venga antes.
+    """
+    sc = _modulo()
+    assert sc.cobertura_del_diff("Coverage: 100%\nCoverage: 0%\n") is None
+
+
+def test_cobertura_del_diff_desconfia_de_un_proceso_que_FALLO():
+    """Si `diff-cover` sale con error, lo que haya en stdout no es de fiar.
+
+    R2: un corredor con `returncode=2` y `stdout='Coverage: 100%'` producía `[OK] 100%`.
+    """
+    sc = _modulo()
+    assert sc.cobertura_del_diff("Coverage: 100%\n", 2) is None
+    assert sc.cobertura_del_diff("Coverage: 100%\n", 0) == 100
 
 
 def test_cobertura_del_diff_distingue_NO_PUDE_MEDIR_de_CERO():
