@@ -1,5 +1,5 @@
 ---
-estado: en curso
+estado: vigente
 dueño: Nikolai Tyukhay
 fecha: 2026-09-06
 ---
@@ -125,20 +125,20 @@ en el M9 y el report lo dice nombrando **las dos rutas**. Nunca en silencio.
 
 ## 4. Tasks (TDD — test primero, rojo visto, luego código)
 
-- [ ] **T1** — `clasificar_ruido` y sus cuatro reglas, en `core/email_export.py`. Tests: un mensaje
+- [x] **T1** — `clasificar_ruido` y sus cuatro reglas, en `core/email_export.py`. Tests: un mensaje
       por regla que casa + el negativo de cada una (la señal a medias no excluye).
-- [ ] **T2** — `parse_headers` extrae `cc` (hoy solo `date, subject, from, to, message-id`).
+- [x] **T2** — `parse_headers` extrae `cc` (hoy solo `date, subject, from, to, message-id`).
       Corrección del escéptico, confirmada en `core/email_export.py:74-82`.
-- [ ] **T3** — `_build_raw` de `tests/test_email_export.py:27` parametriza `To` y acepta `Cc`
+- [x] **T3** — `_build_raw` de `tests/test_email_export.py:27` parametriza `To` y acepta `Cc`
       (hoy fija `To="despacho@tyukhay.legal"` en duro).
-- [ ] **T4** — el cableado en el bucle: el excluido no se escribe, no cuenta como duplicado, **y su
+- [x] **T4** — el cableado en el bucle: el excluido no se escribe, no cuenta como duplicado, **y su
       gid no entra en `_exported_ids.json`** (el aserto de reversibilidad).
-- [ ] **T5** — `ExportReport.excluidos_ruido` + `resumen()` + evento `email_excluido_ruido`.
-- [ ] **T6** — `--sin-filtro-ruido` en `scripts/export_label_emails.py`, cableado hasta
+- [x] **T5** — `ExportReport.excluidos_ruido` + `resumen()` + evento `email_excluido_ruido`.
+- [x] **T6** — `--sin-filtro-ruido` en `scripts/export_label_emails.py`, cableado hasta
       `export_label(filtrar_ruido=...)`. Default: **filtrar**.
-- [ ] **T7** — `MEJORAS #168`: destino externo con nombre de lote → no entra en el M9 del caso y el
+- [x] **T7** — `MEJORAS #168`: destino externo con nombre de lote → no entra en el M9 del caso y el
       report nombra las dos rutas.
-- [ ] **T8** — mutantes, uno por frontera. Como mínimo: (a) invertir el `continue` del filtro;
+- [x] **T8** — mutantes, uno por frontera. Como mínimo: (a) invertir el `continue` del filtro;
       (b) quitar el `cc` de `parse_headers`; (c) mover el filtro **detrás** de
       `nuevos_gids.append` (rompe la reversibilidad sin romper la exclusión — el mutante que
       distingue las dos propiedades); (d) cambiar `resolve()` por comparación de nombre en #168.
@@ -149,11 +149,75 @@ en el M9 y el report lo dice nombrando **las dos rutas**. Nunca en silencio.
 datos de cliente — el original vive en Gmail, la exclusión no borra nada y es reversible sin
 `--force`. Por la tabla de `CLAUDE.md` §«Cuántas rondas», eso es una ronda sobre el diff.
 
-## 6. Adjudicación de la R1
+## 6. Adjudicación de la R1 — `NO-SHIP`, 6 hallazgos, **6 confirmados, 0 refutados**
 
-*(pendiente — se rellena cuando la ronda corra. El acta literal irá a su hermana
-`…-accion-6a-filtro-ruido-r1-adversarial-review.md` bajo `docs/superpowers/specs/`; la
-ruta se cita aquí cuando exista, porque el guard **G-citas** de
-`tests/test_docs_gobernanza.py` comprueba que toda cita a un spec o plan esté en disco —
-y tiene razón: una ruta escrita antes de tiempo es una promesa que el índice da por
-cumplida.)*
+**Revisor:** Codex (CLI 0.153.0-alpha.5, `gpt-5.6-sol`), sobre `727190f..17d9336` en copia externa
+`git archive`, solo lectura por construcción — `sha256` de `core/email_export.py` idéntico al abrir
+y al cerrar. **Acta literal, con su digest:**
+[`…-accion-6a-filtro-ruido-r1-adversarial-review.md`](../specs/2026-09-06-accion-6a-filtro-ruido-r1-adversarial-review.md).
+
+**La ronda valió lo que costó porque el revisor EJECUTÓ.** Corrió 152 tests, los 15 de
+`contaminacion`, los 9 mutantes del arnés adaptados a su entorno, **un décimo mutante propio** y 19
+sondas adversariales suyas. Tres de los seis hallazgos vienen con el escenario ejecutado y su log.
+Ninguno salió de leer el diff.
+
+| # | Sev. | Hallazgo | Adjudicación | Remedio |
+|---|---|---|---|---|
+| H-01 | ALTO | La exclusión se rodea por `_aplana_anidados` y `_deposita_mensaje_rescatado` | **CONFIRMADO** — verificado en la fuente antes de remediar: `:430` y `:636` escriben sin clasificar | El hijo anidado ya no se extrae; el rescate por enlace filtra; el **padre entra íntegro** y su carga se declara en `ruido_transportado` |
+| H-02 | ALTO | El guard acepta destinos para los que `_emit_traza` calcula rutas falsas | **CONFIRMADO** — `_emit_traza` traza contra `dest.parent` (`:1424`) y yo solo comprobaba pertenencia | `_es_lote_del_caso`: **hijo directo** cuyo nombre lógico es su ubicación física |
+| H-03 | ALTO | Las regex excluyen asuntos probatorios | **CONFIRMADO** — `\bacta\b.*\bcfo\b` casa a cualquier distancia; `auditor` es prefijo de `auditoría` | Conjunción `cfo`+`legal` a ≤40 caracteres; `auditor(es)?\b` con frontera |
+| H-04 | MEDIO | `input_root.parent` no es el caso si `00_Input` es un alias | **CONFIRMADO** | `_raiz_logica_de` separada de `_input_root_de` |
+| H-05 | MEDIO | La señal de destinatario es una subcadena, no una dirección | **CONFIRMADO** | `getaddresses` sobre la lista de headers |
+| H-06 | MEDIO | El test de dedup no ejerce ninguna colisión | **CONFIRMADO** — y detectado **en paralelo** por el adjudicador | Test reescrito con colisión real + `M10` en el arnés |
+
+### Lo que esta ronda enseña, que vale más que los seis remedios
+
+**1. Remedié el ejemplo y no la frontera. Otra vez.** `MEJORAS #168` reportaba un destino
+*totalmente externo*; cerré esa puerta y di la frontera por cerrada. H-02 demuestra que la
+propiedad real era otra —«`dest.parent` es el `00_Input` del caso»— y que el destino externo era
+**una instancia**, no la clase. Es la séptima aparición documentada de este modo de fallo en esta
+casa, y la memoria que lo describe estaba cargada mientras lo cometía. **La pregunta «¿de qué
+frontera es esto un ejemplo?» no se hace sola.**
+
+**2. Escribí una afirmación sin medir, en un comentario, para justificar un atajo.** El comentario
+de `_va_dirigido_a` decía que comparar por subcadena era seguro porque «un falso positivo no es
+realista». No lo medí: era una intuición vestida de razón, en el sitio donde un lector futuro la
+leería como un hecho comprobado. El revisor construyó el falso positivo en una línea (H-05). Un
+comentario que afirma algo del mundo tiene el mismo deber de prueba que un aserto.
+
+**3. Dos de mis tests pasaban por el camino equivocado, y de dos maneras distintas.**
+`test_el_ruido_no_cuenta_como_duplicado` no ejercía nada porque el fixture no tenía colisiones
+(H-06). Y el primer fixture de H-01 «demostraba» que el hijo anidado no se extraía cuando lo cierto
+es que `add_attachment` con `message/rfc822` **no produce un anidado que `iter_nested_originals`
+reconozca**: el test verde decía «el filtro lo paró» y el hecho era «nadie lo detectó». Los dos son
+la familia del *instrumento que no puede dar el otro valor*, y ninguno de los dos lo habría
+encontrado más cobertura: solo el mutante.
+
+**4. Tres veces seguidas mi expectativa de mutación fue estrecha** (M05, M01, M08). No porque los
+mutantes estuvieran mal apuntados, sino porque enumeré el test *obvio* y no todos los que cuelgan
+de la propiedad atacada. El arnés lo caza al correr; escribirlo no basta.
+
+### Cobertura declarada
+
+- **`M15` sobrevive y se declara SIN COBERTURA**, en vez de fingirla: cierra la mitad del *alias
+  entrante* de H-02 (una junction externa con nombre de lote apuntando dentro) y montarla en un test
+  exige privilegios que el CI no tiene. El arnés lo imprime en cada corrida y avisa si algún día
+  muere, para retirarlo de la lista.
+- **Lo que el revisor declaró SIN VERIFICAR** y por tanto esta ronda no cubre: suite completa, dos
+  semillas, servicios externos, corpus real, frecuencia real de falsos positivos, enlaces simbólicos
+  distintos de junction NTFS, UNC y condiciones de carrera. Las dos semillas **sí** las corrió el
+  autor: 4.748 tests, 0 fallos, 0 errores, 16 `skip`, semillas 777 y 31337.
+
+### Lo que el revisor señaló y NO se remedia aquí, con su porqué
+
+- **El índice de canal marca el `gmail_id` aunque el destino sea externo.** Preexistente, el propio
+  revisor lo declara así y no es regresión de este diff. Queda en `MEJORAS #170`.
+- **Un fallo del emisor durable deja la operación parcialmente materializada** (fichero escrito,
+  índice `ok`, M9 vacío, sin report). El revisor no lo eleva a defecto de política y tiene razón:
+  abortar al perder trazabilidad puede ser deliberado. Anotado, no decidido.
+- **El render real del asunto del CRM con `M/R` vacío** — `SIN VERIFICAR` por el revisor y por mí:
+  haría falta una plantilla renderizada de verdad. Si un volcado al repositorio se colara por ahí,
+  el efecto es que **entra** (falso negativo), que es el lado seguro.
+
+**Estado: los seis remediados, arnés 17 mutantes (16 muertos + 1 declarado), suite verde con dos
+semillas. Una sola ronda, conforme al §5.**
