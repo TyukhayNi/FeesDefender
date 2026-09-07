@@ -374,6 +374,12 @@ borrados** (en el CRM no se borra sin autorización expresa de Nikolai):
 El slug del extrajudicial es **`extrajudiciales`**; `expedientes_extrajudiciales` devuelve censo
 ilegible (`None`), que con la guarda del §4 se traduce en «indeterminado» y no en un falso cero.
 
+**Decisión de Nikolai (2026-09-07): los residuos SE QUEDAN.** El 636 y el 683 siguen siendo banco
+de pruebas y habrá más escrituras; los borrará él **al terminar**, de una vez. Así que **nadie los
+limpia por iniciativa propia** —ni por celo de higiene ni al pasar por aquí—, y el censo de esos
+dos expedientes **no es un indicador de nada** mientras esta línea siga en pie: cualquier medición
+que los use tiene que tomar su propia foto previa, como hizo la rev. 5.
+
 ## 12. Adjudicación de la revisión adversarial R1 (Codex, 2026-09-07) — NO-SHIP, parcial
 
 - **Objeto revisado:** `docs/superpowers/specs/2026-07-19-f3-relate-crm-plugin-roundcube-design.md` rev. 3, commit `01d9060`
