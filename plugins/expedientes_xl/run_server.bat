@@ -24,16 +24,57 @@ REM ===========================================================================
 setlocal enabledelayedexpansion
 set "PROBE_G=G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS"
 set "PROBE_H=H:\Unidades compartidas"
+set /a MAXTRIES=25
+
+REM --- Costura de prueba del gate de montaje ----------------------------------
+REM Los defaults de arriba son los de produccion y mandan cuando nadie toca
+REM nada. Estas tres variables existen para que un TEST pueda gobernar el gate,
+REM y salen de un defecto medido el 2026-09-07: el guard de comportamiento de
+REM `tests/test_mcp_wrappers.py` mide la resolucion del INTERPRETE, pero ese
+REM codigo solo se alcanza pasando antes por aqui. Con G:/H: caidos el wrapper
+REM moria en el gate y el guard leia otra cosa de la que creia leer: el mismo
+REM dia dio 1 rojo con los drives abajo y 23/23 verdes con los drives arriba,
+REM sin que cambiara una linea. Un test que no controla una precondicion no
+REM mide la propiedad, mide el ambiente.
+REM `!VAR!` y NO `%VAR%` al leer el entorno, y tambien al consultarlo abajo: con
+REM la expansion retardada activa, un `%VAR%` mete el valor en la linea y el `!`
+REM que contenga se procesa DESPUES, asi que una ruta con `!` llega deformada.
+REM Medido en la R1 adversarial (H-06): con la sonda en `...\bang!dir` el
+REM diagnostico mostraba `...\bangdir` y el gate cerraba con el override correcto.
+if defined FEESDEFENDER_PROBE_G set "PROBE_G=!FEESDEFENDER_PROBE_G!"
+if defined FEESDEFENDER_PROBE_H set "PROBE_H=!FEESDEFENDER_PROBE_H!"
+
+REM El tope se VALIDA antes de usarse. `set /a` sobre texto del entorno no es
+REM leer una configuracion: es ejecutarla. Medido en la R1 (H-07) con este mismo
+REM wrapper: `1 & echo X` escribia X en STDOUT — el pipe JSON-RPC de MCP, o sea
+REM la regla de oro de este fichero rota por su propia costura de pruebas. `08`
+REM daba error de octal y `1/0` division por cero, los dos dejando el default en
+REM pie pero ensuciando stderr. Se admite solo un entero decimal de 1 a 3 cifras
+REM sin cero a la izquierda; cualquier otra cosa mantiene el tope de produccion y
+REM lo dice por stderr, que si es suyo.
+set "MT="
+if defined FEESDEFENDER_PROBE_MAXTRIES set "MT=!FEESDEFENDER_PROBE_MAXTRIES!"
+if defined MT (
+  for /f "delims=0123456789" %%c in ("!MT!") do set "MT="
+  if defined MT if "!MT:~0,1!"=="0" set "MT="
+  if defined MT if not "!MT:~3!"=="" set "MT="
+)
+if defined MT set /a MAXTRIES=MT
+if not defined MT if defined FEESDEFENDER_PROBE_MAXTRIES echo [xl-wrapper] FEESDEFENDER_PROBE_MAXTRIES no es un entero de 1 a 999; se mantiene el tope de produccion 1>&2
+
 set "LOG=%APPDATA%\Claude\logs\mcp-server-expedientes-xl-wrapper.log"
 if not exist "%APPDATA%\Claude\logs" mkdir "%APPDATA%\Claude\logs" 2>NUL
 set /a TRIES=0
-set /a MAXTRIES=25
 :waitloop
-if exist "%PROBE_G%\" if exist "%PROBE_H%\" goto ready
+if exist "!PROBE_G!\" if exist "!PROBE_H!\" goto ready
 set /a TRIES+=1
 if %TRIES% GEQ %MAXTRIES% (
-  echo [xl-wrapper] TIMEOUT: G:/H: no montaron tras ~50s>>"%LOG%"
+  echo [xl-wrapper] TIMEOUT: sondas de montaje no resueltas>>"%LOG%"
   echo [xl-wrapper] TIMEOUT: G:/H: no montaron - abre Google Drive y reinicia 1>&2
+  REM Las sondas van al diagnostico A PROPOSITO: con el override puesto, decir
+  REM solo "G:/H:" mentiria sobre lo que de verdad se miro.
+  echo [xl-wrapper] PROBE_G=!PROBE_G! 1>&2
+  echo [xl-wrapper] PROBE_H=!PROBE_H! 1>&2
   exit /b 1
 )
 ping -n 3 127.0.0.1 >NUL

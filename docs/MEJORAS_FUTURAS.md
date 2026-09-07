@@ -7634,3 +7634,158 @@ es más barato y más honesto que subir el umbral hasta que deje de fallar.
 
 **Disparador de promoción.** Que vuelva a salir en un cierre. Si aparece una segunda vez, deja de
 ser anécdota.
+
+---
+
+## 172. El guard de los wrappers MCP no mira el artefacto que se ejecuta `[RESUELTO 2026-09-07]`
+
+> ✅ **Resuelto el 2026-09-07.** `tests/test_plugin_desplegado.py` compara lo INSTALADO contra un
+> commit canónico (`origin/main`, fijado a un SHA), fichero a fichero **y en las dos direcciones**,
+> por versión en **tres sitios** (registro, manifiesto instalado y canónico) y cubriendo también los
+> **metadatos de arranque** (`.mcp.json`, `.claude-plugin/plugin.json`), en **todas** las entradas
+> del registro. Con `skip` explicado donde el plugin no está instalado.
+>
+> En su primera corrida encontró un segundo desfase que nadie sabía: `tiers.py` desplegado sin
+> `_apertura_v1.json` ni los temporales de escritura atómica en `PROTOCOL_EDIT` (`MEJORAS #149`,
+> `#146`). Y al arreglarlo salió que **`claude plugin update` compara por VERSIÓN, no por
+> contenido**: con la versión igual dice «already at the latest version» y no copia nada, así que un
+> redespliegue puede parecer hecho sin estarlo. **Ojo al alcance, que la R1 corrigió:** eso explica
+> un desfase *dentro* de una misma versión, no el salto 0.4.0 → 0.4.1, donde las versiones sí
+> diferían y `update` habría copiado. De ese otro solo está acreditado el `lastUpdated 2026-07-20`
+> del registro — que nadie ejecutó la actualización—; su duración y la continuidad de la avería son
+> inferencia, no medición. Procedimiento corregido en `plugin-src/README.md`.
+>
+> **La primera versión de este guard no valía, y lo dijo la R1 adversarial** (`REQUIERE-REVISION`,
+> 8 hallazgos, 8 confirmados): omitía `.mcp.json` —vaciarlo a `{}` pasaba en verde con el
+> manifiesto ya sin declarar ningún MCP (H-01)—, auditaba solo la primera entrada del registro
+> (H-02) y elegía la primera referencia que resolviera, con lo que una `main` local rancia ocultaba
+> lo que ya estaba en `origin/main` (H-03). Arnés final: **7/7 muertos** —fichero alterado, ausente
+> y sobrante, versión del registro, `.mcp.json` vaciado, `plugin.json` vaciado y segunda
+> instalación rota en segundo lugar—, con restauración verificada por hash.
+>
+> **Sigue SIN VERIFICAR, y se declara:** que Claude Code elija de verdad la instalación que el
+> guard audita cuando hay varias, y la frescura de `origin/main` respecto al remoto sin `fetch`.
+
+> Medido el 2026-09-07: `feesdefender@despacho-tyukhay` llevaba instalado en **0.4.0 desde el
+> 2026-07-20**. La reparación del 2026-08-31 (PR #253) estaba en `dist/plugin` como 0.4.1 y **nunca
+> se instaló**: durante cinco semanas Claude Code arrancó los wrappers de junio y julio mientras la
+> suite daba verde sobre los de agosto.
+
+**Qué pasa.** `tests/test_mcp_wrappers.py` recorre `ROOT/plugins/*/run_server.bat` — la SSOT. Lo que
+arranca Claude Code vive en `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`. Son
+ficheros distintos, y el 2026-09-07 la distancia era ésta: el `email_export_mcp` desplegado tenía
+**136 bytes** (2 líneas, del 23-06) contra los 4.178 de la SSOT, y el `expedientes_xl` **2.634**
+(del 19-07) contra 5.047.
+
+**Qué rompía de verdad, separando lo medido de lo heredado.** De `email-export` (caído con
+`CONNECTION_CLOSED`) hay **una causa medida**: el wrapper de junio lanza `%~dp0server.py` sin
+`--repo-root` y **el bundle no lleva `core/`** (comprobado: `0.4.0/` solo contiene
+`email_export_mcp`, `expedientes_xl` y `skills`), así que el server muere importando
+`core.email_export` antes de contestar `initialize`. Lo que **NO** es causa: el intérprete cableado
+—existe y tiene `mcp 1.29.1`, o sea que el pin `<2` aguanta y la avería de agosto por `mcp 2.0` no
+es ésta—.
+
+**Y una regla de oro que hoy no se reprodujo.** El wrapper de `expedientes_xl` 0.4.0 **también**
+lleva `2>>"%LOG%"` en su línea de lanzamiento, y el 2026-09-07 **conectó y sirvió tools** en Claude
+Code 2.1.231 (`list_dir` devolvió el contenido de la unidad) antes de actualizar el plugin. Eso no
+refuta el experimento del 2026-08-31 —dos `.bat` idénticos salvo el `2>>`, el que redirigía daba
+`CONNECTION_CLOSED`—, pero sí dice que la regla **no explica por sí sola** lo que se ve hoy, y que
+atribuirle la caída de `email-export` sería atribuir sin medir. **Antes de que nadie use el `2>>`
+como explicación de nada, hay que volver a medirlo** contra la versión actual del cliente. Seguir
+respetando la regla mientras tanto no cuesta nada; apoyarse en ella, sí.
+
+**Por qué importa.** El guard se escribió el 2026-08-31 exactamente para que los conectores no se
+apagaran otra vez en silencio, y **no puede ver el artefacto que se apaga**. Aunque hubiera estado
+verde del todo no habría cazado nada: el fallo no está en la fuente, está en el paso de despliegue,
+y ese paso no lo vigila nadie. Es la forma «tres copias» de un defecto que esta casa ya conoce —
+SSOT ✅, build ✅, instalado ❌— y la única de las tres que le importa al usuario es la última.
+
+**Remedio candidato.** Un guard que compare **lo instalado** contra la SSOT: leer
+`~/.claude/plugins/installed_plugins.json`, localizar el `installPath` de
+`feesdefender@despacho-tyukhay` y exigir que sus `run_server.bat` coincidan con
+`plugins/*/run_server.bat` módulo fin de línea. Con `skip` **ruidoso y explicado** si el plugin no
+está instalado en esa máquina: un `skip` mudo aquí reproduce el problema en vez de cerrarlo. Y
+cuidado al elegir la aserción — la propiedad no es «los bytes coinciden» sino «lo que corre es lo
+que revisé», así que la versión instalada forma parte de lo que hay que afirmar.
+
+**Disparador de promoción.** La próxima vez que un conector caiga sin que la suite se entere. Mejor
+aún, antes: cada despliegue del plugin es una ocasión nueva de desincronizarse.
+
+---
+
+## 173. El veredicto del guard de wrappers depende de si Google Drive está montado `[RESUELTO 2026-09-07]`
+
+> ✅ **Resuelto el 2026-09-07.** El gate de montaje de `plugins/expedientes_xl/run_server.bat` gana
+> una costura (`FEESDEFENDER_PROBE_G`/`_H`/`_MAXTRIES`, defaults de producción intactos) y el guard
+> de comportamiento la fija abierta, así que deja de depender de Drive. La comprobación de que la
+> costura es de carga es un **experimento diferencial** de tres corridas idénticas salvo una sonda:
+> ninguna corrida suelta prueba nada —en una máquina con los drives montados un override ignorado se
+> ve igual que uno respetado—, pero la diferencia sí. Eso lo levantó el arnés, no el diseño: la
+> primera versión apuntaba las dos sondas a la vez y **sobrevivía** a borrar el override de
+> `PROBE_G`, porque el gate es un AND y bastaba con `PROBE_H`.
+>
+> **Con qué alcance, que la R1 acotó (H-08):** el diferencial prueba la propiedad con el montaje
+> **estable** durante las tres corridas. No prueba independencia del montaje *en general* —las tres
+> ocurren en instantes distintos, y un montaje que apareciera y desapareciera entre ellas podría dar
+> verde con una sonda ignorada; el revisor lo reprodujo en simulación—. La garantía que no depende
+> de ningún montaje es el guard de los defaults, que no ejecuta nada.
+>
+> **La R1 encontró además tres defectos reales en la primera versión:** el guard de defaults solo
+> comprobaba las subcadenas `G:` y `H:`, así que un default movido a `G:\nonexistent` pasaba (H-04);
+> el contador de esperas contaba la subcadena `ping` y un `--basetemp=shipping` daba falso rojo,
+> mientras `<=1` dejaba vivo el mutante `tope+1` (H-05); una ruta con `!` se deformaba por la
+> expansión retardada (H-06); y `set /a` sobre el entorno **ejecutaba** el valor — con
+> `1 & echo X` el wrapper escribía en **stdout**, que es el pipe JSON-RPC (H-07). Arnés final:
+> **9/9 muertos**, incluidos los dos que sobrevivieron a la R1.
+
+> Medido el 2026-09-07 en las dos direcciones, el mismo día y sin tocar una línea de código: con
+> G:/H: caídos, `tests/test_mcp_wrappers.py` da **1 rojo**; con los drives montados, **23/23
+> verdes**.
+
+**Qué pasa.** `test_sin_interprete_capaz_el_wrapper_FALLA_RUIDOSAMENTE` envenena la resolución del
+intérprete y exige que el wrapper muera nombrando `FEESDEFENDER_PYTHON` o `FEESDEFENDER_ROOT`. Pero
+`plugins/expedientes_xl/run_server.bat` tiene **una puerta anterior** que el test no controla: el
+`poll-until-mount` de G: y H:. Sin montaje el wrapper muere ahí, con «abre Google Drive y reinicia»
+—accionable, pero fuera de la lista blanca de dos cadenas—. Y como el test vacía el `PATH`,
+desaparece `ping`: la espera de ~50 s se convierte en 25 vueltas instantáneas y el stderr se llena
+de «"ping" no se reconoce».
+
+**Por qué importa.** No es solo un rojo molesto. **El verde tampoco significa lo mismo según el
+día**: con Drive abajo el test no prueba nada sobre la resolución del intérprete, que es justo lo
+que dice medir. Un instrumento cuyo valor depende de una variable que no controla no está midiendo
+la propiedad, está midiendo el ambiente.
+
+**Remedio candidato — y cuál NO.** El arreglo fácil es añadir la tercera cadena a la lista blanca.
+**Eso sería arreglar el ejemplo por tercera vez**: el propio docstring del test cuenta que la
+primera versión exigía UNA palanca y la ampliaron a DOS cuando `email-export` la puso roja por morir
+antes. La frontera es que **el test controle toda precondición capaz de desviar al wrapper de la
+propiedad que mide**: dar al gate del montaje una costura de prueba —que `PROBE_G`/`PROBE_H` admitan
+override por entorno, con el valor de producción como default— y que el test la fije.
+
+**Disparador de promoción.** Que el rojo reaparezca en un cierre, o que se toque
+`run_server.bat` por cualquier otro motivo.
+
+---
+
+## 174. El `display_name` del `.dxt` de expedientes-xl lleva `/` y `:`
+
+> Observado el 2026-09-07: Claude Desktop mostró
+> `MCP expedientes-xl (Drive como disco G:/H:): path escape: "expedientes-xl (Drive como disco G:/H:)"`.
+
+**Qué se sabe, y qué no.** Medido: el texto entrecomillado en el error coincide **literalmente** con
+el `display_name` de `plugins/expedientes_xl/dxt-build/manifest.json` —`expedientes-xl (Drive como
+disco G:/H:)`—, y ese nombre contiene `/` y `:`. Medido también: la cadena «path escape» **no sale
+de nuestro código** (grep en todo el repo: cero coincidencias), así que la emite el cliente. **NO
+medido:** que el cliente esté tratando ese nombre como ruta y que su propio validador lo rechace por
+eso. No tengo su código; es inferencia, y como inferencia queda anotada.
+
+**Remedio candidato.** Renombrar el `display_name` a algo sin `/` ni `:` —«expedientes-xl (Drive
+como disco local)»— y reconstruir/reinstalar el `.dxt`. Es barato y falsable, pero **hay que hacerlo
+como experimento, no como arreglo**: si se cambia el nombre a la vez que se reconstruye y se
+reinstala, que el aviso desaparezca apoya la hipótesis y no identifica la causa, porque han cambiado
+tres cosas. Cambiar **solo** el nombre, bajo procedimiento controlado, es lo que la distingue. Lo
+señaló la R1 adversarial de `#172`/`#173`.
+
+**Disparador de promoción.** Va junto a `MEJORAS #125` (los tres manifiestos `.dxt` cablean un
+intérprete). Ninguna de las dos merece por sí sola una reinstalación manual de tres extensiones;
+juntas sí, la próxima vez que haya que reconstruir cualquiera de los `.dxt`.

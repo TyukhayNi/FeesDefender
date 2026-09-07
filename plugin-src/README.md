@@ -68,6 +68,41 @@ claude plugin install feesdefender@despacho-tyukhay
 ```
 Las tools del MCP cargan al reiniciar la sesión (host-side).
 
+### Redespliegue: BUMPEA la versión, o no se despliega nada
+
+**Medido el 2026-09-07:** `claude plugin update` decide si copia comparando la
+**versión**, no el contenido. Con `plugin.json` en la misma versión responde
+`already at the latest version (0.4.1)` y **no copia nada**, por mucho que
+`dist/plugin` esté recién construido.
+
+Cuidado con el alcance de eso, que es un error que ya se cometió una vez al
+escribirlo: **explica un desfase de contenido DENTRO de una misma versión** —el
+`tiers.py` rancio del 2026-09-07, con `dist` e instalado los dos en 0.4.1— y
+**no** explica que una instalación 0.4.0 no recibiera una fuente 0.4.1, porque
+ahí las versiones sí diferían y `update` habría copiado. Ese otro desfase, el de
+julio a septiembre, no tiene causa medida: lo único acreditado es que el registro
+daba `lastUpdated 2026-07-20`, o sea que **nadie ejecutó la actualización**. Lo
+levantó la R1 adversarial.
+
+Por eso, al tocar el contenido de un conector:
+
+1. **Bumpear** `plugin-src/.claude-plugin/plugin.json`. No es cosmética: es la
+   llave del despliegue.
+2. `python -m scripts.package_plugin` **desde la raíz del repo** — el
+   marketplace apunta al `dist/` de la raíz, y `package_plugin` fija el destino
+   desde su propia ubicación, así que lanzado desde un worktree construye en el
+   `dist/` equivocado y el despliegue no ve el cambio.
+3. `claude plugin marketplace update despacho-tyukhay`
+4. `claude plugin update feesdefender@despacho-tyukhay`
+
+Si hay que arreglar un desfase **ya existente** sin bumpear (contenido distinto,
+misma versión), la única vía es `claude plugin uninstall` + `claude plugin
+install`: no hay `--force`.
+
+Lo vigila `tests/test_plugin_desplegado.py`, que compara lo instalado contra
+`main` fichero a fichero. Se pone rojo al mergear un cambio de conector y sigue
+rojo hasta que se despliega de verdad.
+
 ---
 
 ## Cowork (Claude Desktop en el PC del abogado)

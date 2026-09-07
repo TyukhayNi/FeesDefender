@@ -231,6 +231,13 @@ def test_sin_interprete_capaz_el_wrapper_FALLA_RUIDOSAMENTE(wrapper: Path, tmp_p
     env["LOCALAPPDATA"] = str(vacio)
     env["APPDATA"] = str(vacio)
     env["PATH"] = str(vacio)
+    # El gate de montaje se fija ABIERTO. Sin esto, en `expedientes_xl` este
+    # test no medía lo que dice medir: con G:/H: caídos el wrapper moría en el
+    # gate y nunca llegaba a resolver intérprete — 1 rojo con los drives abajo
+    # y 23/23 verdes con los drives arriba el mismo día (2026-09-07). Los
+    # wrappers sin gate ignoran estas variables.
+    env["FEESDEFENDER_PROBE_G"] = str(vacio)
+    env["FEESDEFENDER_PROBE_H"] = str(vacio)
 
     r = subprocess.run(
         ["cmd", "/c", str(copia)],
@@ -265,4 +272,298 @@ def test_sin_interprete_capaz_el_wrapper_FALLA_RUIDOSAMENTE(wrapper: Path, tmp_p
     assert not r.stdout.strip(), (
         f"{wrapper.relative_to(ROOT)}: escribió en stdout, que es el pipe "
         f"JSON-RPC de MCP -> {r.stdout[:200]!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# El gate de montaje (poll-until-mount) y su costura de prueba
+# ---------------------------------------------------------------------------
+# Por que existe esto, medido el 2026-09-07 en las dos direcciones y el mismo
+# dia, sin tocar una linea de codigo: con G:/H: caidos este fichero daba 1 rojo;
+# con los drives montados, 23/23 verdes. El motivo es que
+# `test_sin_interprete_capaz_el_wrapper_FALLA_RUIDOSAMENTE` mide la resolucion
+# del interprete, pero en `expedientes_xl` ese codigo solo se alcanza pasando
+# antes el gate de montaje, que el test NO controlaba.
+#
+# El arreglo facil habria sido anadir el mensaje del gate a la lista blanca de
+# palancas. Eso es cerrar el ejemplo por TERCERA vez: la primera version exigia
+# UNA palanca y se amplio a DOS cuando `email-export` la puso roja por morir
+# antes. La frontera es que el test controle toda precondicion capaz de desviar
+# al wrapper de la propiedad que mide.
+
+# Los defaults de PRODUCCION, escritos enteros a proposito. La R1 (H-04) midio
+# que comprobar solo que aparecieran las subcadenas `G:` y `H:` deja pasar un
+# default movido a `G:\nonexistent`: el guard cuyo objeto es «el default no se ha
+# movido» solo miraba la letra de unidad. Si el montaje cambia de verdad, hay que
+# actualizar esta constante Y comprobar que el conector sigue arrancando.
+_DEFAULTS_PRODUCCION = {
+    "PROBE_G": r"G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS",
+    "PROBE_H": r"H:\Unidades compartidas",
+}
+_RE_DEFAULT_SONDA = re.compile(r'^set\s+"(?P<var>PROBE_[A-Z]+)=(?P<val>[^"]*)"$', re.I)
+
+# La queja de `cmd` cuando no encuentra `ping`, que es como se cuentan las vueltas
+# del bucle de espera. Se exige el token ENTRECOMILLADO —`"ping"` en castellano,
+# `'ping'` en ingles— y no la subcadena suelta: la R1 (H-05) midio que un
+# `--basetemp=shipping` metia «ping» en las rutas del diagnostico y daba dos
+# esperas inexistentes. Es la unica parte de este fichero que depende del texto de
+# `cmd`; si un dia una localizacion no entrecomilla el nombre del comando, este
+# guard dara CERO esperas y los topes distintos dejaran de distinguirse — se
+# notaria como rojo en el test del tope, no como verde silencioso.
+_RE_QUEJA_DE_ESPERA = re.compile(r"""['"]ping['"]""", re.I)
+
+
+def _tiene_gate_de_montaje(texto: str) -> bool:
+    """No todos los wrappers esperan montajes: `email_export_mcp` arranca directo."""
+    return ":waitloop" in texto.lower()
+
+
+def _wrappers_con_gate() -> list[Path]:
+    return [w for w in _wrappers() if _tiene_gate_de_montaje(w.read_text(encoding="utf-8"))]
+
+
+def _correr_con_sondas(wrapper: Path, tmp_path: Path, sonda_g, sonda_h,
+                       maxtries: str | None = "1", etiqueta: str = ""):
+    """Ejecuta una COPIA del wrapper con el gate gobernado y el interprete envenenado.
+
+    El interprete se envenena siempre para que los dos modos de muerte sean
+    distinguibles por el mensaje: morir en el gate dice `PROBE_`, morir
+    resolviendo interprete dice `FEESDEFENDER_PYTHON`.
+
+    **El PATH se vacia**, y de ahi sale la cuenta de esperas. Sin `ping`, cada
+    intento de espera deja la queja de `cmd` en stderr, y contarlas mide las
+    vueltas del bucle. De paso, sin `python` ni `where` la resolucion de
+    interprete sigue envenenada, y si el gate se abriera por error el wrapper no
+    LANZA el server y no se cuelga en el pipe hasta el timeout.
+
+    **Por que la cuenta va por el mensaje y no por un doble de `ping`, que es lo
+    que el revisor propuso y yo intente primero:** en `cmd`, un `.bat` invocado
+    desde otro `.bat` **sin `call` no devuelve el control**. Medido el 2026-09-07:
+    con un `ping.bat` en el PATH, la primera espera terminaba el wrapper entero
+    (`returncode=0`, una sola espera contada, stderr vacio). Un doble .bat no
+    instrumenta este bucle: lo corta. Lo que si arregla el falso rojo de H-05 es
+    contar el token **entrecomillado** —`"ping"` en castellano, `'ping'` en
+    ingles—, que no aparece dentro de una ruta llamada `shipping`.
+    """
+    raiz = tmp_path / f"corrida-{etiqueta or 'x'}-{len(list(tmp_path.iterdir()))}"
+    raiz.mkdir()
+    copia = raiz / "run_server.bat"
+    shutil.copy2(wrapper, copia)
+    bin_falso = raiz / "bin"
+    bin_falso.mkdir()
+
+    env = dict(os.environ)
+    env["FEESDEFENDER_PROBE_G"] = str(sonda_g)
+    env["FEESDEFENDER_PROBE_H"] = str(sonda_h)
+    if maxtries is None:
+        env.pop("FEESDEFENDER_PROBE_MAXTRIES", None)
+    else:
+        env["FEESDEFENDER_PROBE_MAXTRIES"] = maxtries
+    env["FEESDEFENDER_PYTHON"] = str(raiz / "no-existe-python.exe")
+    env["FEESDEFENDER_ROOT"] = str(raiz / "no-existe-raiz")
+    vacio = raiz / "vacio"
+    vacio.mkdir()
+    env["USERPROFILE"] = str(vacio)
+    env["LOCALAPPDATA"] = str(vacio)
+    env["APPDATA"] = str(vacio)
+    env["PATH"] = str(bin_falso)
+
+    r = subprocess.run(
+        ["cmd", "/c", str(copia)],
+        capture_output=True, encoding="utf-8", errors="replace",
+        env=env, timeout=120, cwd=str(raiz), input="",
+    )
+    r.esperas = len(_RE_QUEJA_DE_ESPERA.findall(r.stderr))
+    return r
+
+
+def _murio_en_el_gate(r) -> bool:
+    return r.returncode != 0 and "PROBE_" in r.stderr
+
+
+def _llego_a_resolver_interprete(r) -> bool:
+    return "FEESDEFENDER_PYTHON" in r.stderr
+
+
+def test_hay_wrappers_con_gate_que_auditar() -> None:
+    """Hermano de `test_hay_wrappers_que_auditar`: si el detector deja de
+    reconocer el gate, los guards de abajo pasarian VACIOS y en verde."""
+    assert _wrappers_con_gate(), [p.parent.name for p in _wrappers()]
+
+
+@pytest.mark.parametrize("wrapper", _wrappers_con_gate(), ids=lambda p: p.parent.name)
+@pytest.mark.skipif(os.name != "nt", reason="los wrappers son .bat de cmd")
+def test_cada_sonda_del_gate_ES_GOBERNABLE_por_separado(wrapper: Path, tmp_path: Path) -> None:
+    """Experimento DIFERENCIAL: tres corridas identicas salvo una sonda.
+
+    Por que diferencial y no una sola corrida — esto lo levanto el arnes de
+    mutacion, no el diseno. La primera version apuntaba las DOS sondas a algo
+    inexistente y exigia morir en el gate; borrar el override de `PROBE_G`
+    SOBREVIVIA, porque el gate es un AND y bastaba con que `PROBE_H` siguiera
+    funcionando. El test exigia «al menos un override vivo», no «los dos».
+
+    **Que prueba, y bajo que supuesto.** Con el montaje ESTABLE durante las tres
+    corridas, ningun override ignorado puede satisfacer las tres aserciones a la
+    vez: la corrida abierta y la cerrada de esa misma sonda se contradicen. Lo
+    que NO prueba —y la primera version de este docstring lo afirmaba de mas, lo
+    corrigio la R1 (H-08)— es independencia del montaje *en general*: las tres
+    corridas ocurren en instantes distintos, y un montaje que apareciera y
+    desapareciera entre ellas podria producir verde con una sonda ignorada. El
+    revisor lo reprodujo en simulacion. La garantia que NO depende del montaje es
+    `test_el_gate_de_montaje_sigue_apuntando_a_produccion_por_defecto`, que mira
+    los defaults sin ejecutar nada.
+    """
+    existe = tmp_path / "montado"
+    existe.mkdir()
+    no_existe_g = tmp_path / "sin-montar-G"
+    no_existe_h = tmp_path / "sin-montar-H"
+
+    abierto = _correr_con_sondas(wrapper, tmp_path, existe, existe, etiqueta="abierto")
+    sin_g = _correr_con_sondas(wrapper, tmp_path, no_existe_g, existe, etiqueta="sinG")
+    sin_h = _correr_con_sondas(wrapper, tmp_path, existe, no_existe_h, etiqueta="sinH")
+
+    nombre = wrapper.relative_to(ROOT)
+    assert _llego_a_resolver_interprete(abierto), (
+        f"{nombre}: con las dos sondas apuntadas a un directorio que existe, el "
+        f"wrapper NO llego a resolver interprete -> el gate no se abre desde el "
+        f"entorno. stderr={abierto.stderr[:400]!r}"
+    )
+    assert _murio_en_el_gate(sin_g) and not _llego_a_resolver_interprete(sin_g), (
+        f"{nombre}: la sonda G apuntada a algo inexistente no cerro el gate -> "
+        f"FEESDEFENDER_PROBE_G no se respeta. stderr={sin_g.stderr[:400]!r}"
+    )
+    assert _murio_en_el_gate(sin_h) and not _llego_a_resolver_interprete(sin_h), (
+        f"{nombre}: la sonda H apuntada a algo inexistente no cerro el gate -> "
+        f"FEESDEFENDER_PROBE_H no se respeta. stderr={sin_h.stderr[:400]!r}"
+    )
+    for r in (abierto, sin_g, sin_h):
+        assert not r.stdout.strip(), (
+            f"{nombre}: escribio en stdout, que es el pipe JSON-RPC de MCP -> "
+            f"{r.stdout[:200]!r}"
+        )
+
+
+@pytest.mark.parametrize("wrapper", _wrappers_con_gate(), ids=lambda p: p.parent.name)
+@pytest.mark.skipif(os.name != "nt", reason="los wrappers son .bat de cmd")
+def test_el_gate_respeta_EXACTAMENTE_el_tope_de_intentos(wrapper: Path, tmp_path: Path) -> None:
+    """Con tope N, el wrapper espera EXACTAMENTE N-1 veces. Dos topes, no uno.
+
+    Dos cosas que corrige de la R1. **H-05, falso verde:** la version anterior
+    exigia `<=1` espera con el tope en 1, y el mutante que convertia el tope en
+    `N+1` sobrevivia, porque una espera seguia cumpliendo `<=1`. Con la igualdad
+    exacta y DOS topes distintos, el mutante tiene que mentir en los dos a la
+    vez. **H-05, falso rojo:** contaba la subcadena `ping` en stderr, y bastaba
+    un `--basetemp=shipping` para que las rutas del propio diagnostico dieran dos
+    «esperas» inexistentes. Ahora la cuenta la lleva un doble de `ping` en el
+    PATH, que no depende ni del idioma de `cmd` ni de como se llamen los
+    directorios.
+    """
+    existe = tmp_path / "montado"
+    existe.mkdir()
+    ausente = tmp_path / "sin-montar"
+    for tope in ("1", "3"):
+        r = _correr_con_sondas(wrapper, tmp_path, ausente, existe,
+                               maxtries=tope, etiqueta=f"tope{tope}")
+        assert r.esperas == int(tope) - 1, (
+            f"{wrapper.relative_to(ROOT)}: con el tope en {tope} espero "
+            f"{r.esperas} veces y deberia esperar {int(tope) - 1} -> "
+            f"FEESDEFENDER_PROBE_MAXTRIES no se respeta exactamente"
+        )
+
+
+@pytest.mark.parametrize("wrapper", _wrappers_con_gate(), ids=lambda p: p.parent.name)
+@pytest.mark.skipif(os.name != "nt", reason="los wrappers son .bat de cmd")
+def test_un_tope_invalido_NO_se_ejecuta_y_conserva_el_de_produccion(
+    wrapper: Path, tmp_path: Path
+) -> None:
+    """El tope es una configuracion, no un texto que se ejecuta.
+
+    La R1 (H-07) midio que `set /a MAXTRIES=%VAR%` mete el entorno en el parser de
+    ordenes: con `1 & echo REVIEW_MARKER` el wrapper **escribia en STDOUT**, que
+    es el pipe JSON-RPC — la regla de oro de su propia cabecera, rota por su
+    costura de pruebas. `08` daba error de octal y `1/0` division por cero. El
+    contrato ahora es: valor invalido -> se mantiene el tope de produccion, se
+    avisa por stderr, y stdout queda intacto.
+    """
+    existe = tmp_path / "montado"
+    existe.mkdir()
+    ausente = tmp_path / "sin-montar"
+    for i, veneno in enumerate(("1 & echo MARCADOR_DE_PRUEBA", "abc", "08", "1/0", "-1", "")):
+        r = _correr_con_sondas(wrapper, tmp_path, ausente, existe,
+                               maxtries=veneno, etiqueta=f"veneno{i}")
+        nombre = wrapper.relative_to(ROOT)
+        assert not r.stdout.strip(), (
+            f"{nombre}: con FEESDEFENDER_PROBE_MAXTRIES={veneno!r} escribio en "
+            f"STDOUT -> {r.stdout[:200]!r}. Eso rompe el pipe JSON-RPC de MCP"
+        )
+        assert "MARCADOR_DE_PRUEBA" not in r.stdout + r.stderr, (
+            f"{nombre}: con {veneno!r} el valor se EJECUTO en vez de leerse"
+        )
+        assert r.esperas == 24, (
+            f"{nombre}: con el tope invalido {veneno!r} espero {r.esperas} veces; "
+            f"deberia conservar el de produccion (25 intentos -> 24 esperas)"
+        )
+
+
+@pytest.mark.parametrize("wrapper", _wrappers_con_gate(), ids=lambda p: p.parent.name)
+@pytest.mark.skipif(os.name != "nt", reason="los wrappers son .bat de cmd")
+def test_una_sonda_con_admiracion_no_se_deforma(wrapper: Path, tmp_path: Path) -> None:
+    """Una ruta con `!` llega al `if exist` tal cual, en las dos direcciones.
+
+    La R1 (H-06) lo midio: con la expansion retardada activa, un `%VAR%` mete el
+    valor en la linea y el `!` que contenga se procesa DESPUES, asi que
+    `...\\bang!dir` se consultaba como `...\\bangdir`. Efecto: rojo con el override
+    correcto, en cuanto una ruta temporal o un perfil llevaran `!`.
+
+    Se comprueban las dos direcciones porque solo la pareja distingue «respeta el
+    `!`» de «no encuentra nada nunca»: un wrapper que fallara siempre pasaria la
+    mitad negativa del test.
+    """
+    con_bang_existe = tmp_path / "bang!dir"
+    con_bang_existe.mkdir()
+    con_bang_ausente = tmp_path / "no!existe"
+    otro = tmp_path / "montado"
+    otro.mkdir()
+    nombre = wrapper.relative_to(ROOT)
+
+    abre = _correr_con_sondas(wrapper, tmp_path, con_bang_existe, otro, etiqueta="bang-ok")
+    assert _llego_a_resolver_interprete(abre), (
+        f"{nombre}: una sonda EXISTENTE con `!` en el nombre no abrio el gate -> "
+        f"el `!` se pierde por la expansion retardada. stderr={abre.stderr[:400]!r}"
+    )
+
+    cierra = _correr_con_sondas(wrapper, tmp_path, con_bang_ausente, otro, etiqueta="bang-no")
+    assert _murio_en_el_gate(cierra), (
+        f"{nombre}: una sonda inexistente con `!` no cerro el gate. "
+        f"stderr={cierra.stderr[:400]!r}"
+    )
+    assert "no!existe" in cierra.stderr, (
+        f"{nombre}: el diagnostico no conserva el `!` de la sonda pedida, asi que "
+        f"miente sobre lo que miro. stderr={cierra.stderr[:400]!r}"
+    )
+
+
+@pytest.mark.parametrize("wrapper", _wrappers_con_gate(), ids=lambda p: p.parent.name)
+def test_el_gate_de_montaje_sigue_apuntando_a_produccion_por_defecto(wrapper: Path) -> None:
+    """Cada sonda conserva su ruta de produccion ENTERA cuando nadie usa la costura.
+
+    Es la unica garantia de este fichero que no depende de ningun montaje ni de
+    ninguna ejecucion, y por eso importa que sea exacta. La R1 (H-04) tumbo la
+    version anterior: buscaba las subcadenas `G:` y `H:` en el conjunto de las
+    asignaciones, asi que un default movido a `G:\\nonexistent` pasaba en verde —
+    y en una maquina real el conector se quedaria esperando hasta el timeout sin
+    arrancar. Se comprueba sobre las SENTENCIAS: un default correcto escrito
+    dentro de un `REM` no vale.
+    """
+    sentencias = _sentencias(wrapper.read_text(encoding="utf-8"))
+    defaults: dict[str, str] = {}
+    for s in sentencias:
+        m = _RE_DEFAULT_SONDA.match(s)
+        if m and "FEESDEFENDER_PROBE" not in m.group("val").upper():
+            defaults.setdefault(m.group("var").upper(), m.group("val"))
+    assert defaults == _DEFAULTS_PRODUCCION, (
+        f"{wrapper.relative_to(ROOT)}: los defaults de las sondas no son los de "
+        f"produccion.\n  encontrado: {defaults}\n  esperado:   {_DEFAULTS_PRODUCCION}\n"
+        f"Si el montaje ha cambiado de verdad, actualiza `_DEFAULTS_PRODUCCION` Y "
+        f"comprueba que el conector sigue arrancando en la maquina real"
     )
