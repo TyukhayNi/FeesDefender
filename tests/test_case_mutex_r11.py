@@ -167,25 +167,30 @@ class TestPerderElMutexNoSePuedeCallar:
         solo. Si el hilo vuelve a tragarse la excepción, esto se pone rojo y los otros
         tres no.
         """
-        import time
-
         from core.casos.case_mutex import ruta_del_lock, tomado
         from core.casos.workspace_model import MutexPerdido
+        from tests import _espera_mutex
 
+        lease = 1
         detectado_por_el_hilo = {}
         with pytest.raises(MutexPerdido):
             with tomado(W, ahora_fn=lambda: AHORA, raiz=raiz,
-                        lease_seconds=1) as sesion:
+                        lease_seconds=lease) as sesion:
                 p = ruta_del_lock(W, raiz=raiz)
                 estado = json.loads(p.read_text(encoding="utf-8"))
                 estado["nonce"] = "de-otro"
                 p.write_text(json.dumps(estado), encoding="utf-8")
                 # Espera acotada a que el latido intente renovar y falle. NO se llama a
                 # `revalidar()`: la detección tiene que venir del hilo.
-                for _ in range(150):
-                    if sesion.perdido():
-                        break
-                    time.sleep(0.02)
+                #
+                # El presupuesto lo DERIVA `_espera_mutex` del periodo de latido de
+                # producción. Escrito a mano era `range(150)` × 20 ms —tres segundos para
+                # un latido de 0,33 s— y esa relación no constaba en ningún sitio: es la
+                # fragilidad que en el test hermano se volvió un rojo intermitente bajo
+                # `-n auto` (`MEJORAS #145`).
+                _espera_mutex.esperar(
+                    sesion.perdido, lease_seconds=lease,
+                    motivo="el hilo de renovación no registró la pérdida")
                 detectado_por_el_hilo["perdido"] = sesion.perdido()
         assert detectado_por_el_hilo["perdido"] is True, (
             "el hilo de renovación falló y no lo registró: el cuerpo habría seguido "
@@ -286,8 +291,20 @@ class TestElEsquemaSeValidaDeVerdad:
 # ==========================================================================
 
 def _crear_junction(enlace: Path, destino: Path) -> bool:
-    r = subprocess.run(["cmd", "/c", "mklink", "/J", str(enlace), str(destino)],
-                       capture_output=True, text=True)
+    """`False` si esta máquina no puede crear la junction, por el motivo que sea.
+
+    El `except OSError` completa la intención que el test ya declaraba —«esta máquina no
+    permite crear junctions» → `skip`—, que no llegaba a cumplirse donde **no existe
+    `cmd`**: allí `subprocess.run` revienta antes de devolver nada y el test daba ROJO en
+    vez de saltar. En Windows no cambia nada; fuera, la suite del mutex se vuelve
+    ejecutable, que es lo que permite acreditar la regla de las dos semillas sin un rojo
+    que no significa nada.
+    """
+    try:
+        r = subprocess.run(["cmd", "/c", "mklink", "/J", str(enlace), str(destino)],
+                           capture_output=True, text=True)
+    except OSError:
+        return False
     return r.returncode == 0
 
 

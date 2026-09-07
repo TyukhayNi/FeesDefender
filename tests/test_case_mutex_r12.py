@@ -27,7 +27,6 @@ publicar algo irreversible**.
 from __future__ import annotations
 
 import json
-import time
 
 import pytest
 
@@ -132,19 +131,22 @@ def test_un_SystemExit_en_el_hilo_deja_señal(raiz, monkeypatch):
     """
     from core.casos import case_mutex
     from core.casos.workspace_model import MutexPerdido
+    from tests import _espera_mutex
 
     def _renovar_que_se_va(*a, **k):
         raise SystemExit("el hilo se va sin avisar")
 
     monkeypatch.setattr(case_mutex, "renovar", _renovar_que_se_va)
+    lease = 1
     visto = {}
     with pytest.raises(MutexPerdido):
         with case_mutex.tomado(W, ahora_fn=lambda: AHORA, raiz=raiz,
-                               lease_seconds=1) as sesion:
-            for _ in range(150):
-                if sesion.perdido():
-                    break
-                time.sleep(0.02)
+                               lease_seconds=lease) as sesion:
+            # Presupuesto DERIVADO del periodo de latido, no un `range(150)` a mano: ver
+            # `tests/_espera_mutex.py` y `MEJORAS #145`.
+            _espera_mutex.esperar(
+                sesion.perdido, lease_seconds=lease,
+                motivo="el hilo no registró la pérdida tras el SystemExit")
             visto["perdido"] = sesion.perdido()
     assert visto["perdido"] is True, (
         "el hilo murió por un SystemExit y no lo registró: el cuerpo habría seguido "
