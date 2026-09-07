@@ -246,16 +246,25 @@ class TestLiberar:
         assert adquirir(W, ahora=AHORA, raiz=raiz)
 
 
-def _esperar_a_que_renueve(raiz, *, intentos: int = 150) -> None:
-    """Espera activa acotada. Un `sleep` fijo haria el test lento o inestable."""
-    import time
-    from core.casos.case_mutex import leer_estado
-    for _ in range(intentos):
-        estado = leer_estado(W, raiz=raiz)
-        if estado and estado["renewed_at"] != estado["acquired_at"]:
-            return
-        time.sleep(0.02)
-    raise AssertionError("el renovador no latio en 3 s")
+def _estado_bajo_el_guard(raiz) -> dict | None:
+    """`leer_estado` DENTRO de la seccion critica, que es donde no hay carrera.
+
+    El estado se publica con `os.replace` y se lee con un `read_text` normal, y en
+    Windows esas dos operaciones **chocan**: `MEJORAS #145` lo midio con una sonda propia
+    —1,2 % de las lecturas con `PermissionError`, que `leer_estado` presenta como
+    `MutexIlegible`— y ese es el rojo intermitente que traia este fichero.
+
+    El bucle de espera viejo abria el `.lock` unas cincuenta veces por segundo justo
+    mientras el renovador lo reemplazaba: el test **fabricaba** la carrera que luego
+    denunciaba. Bajo el guard el escritor no puede estar dentro, asi que la unica lectura
+    que queda no compite con nadie.
+
+    Que `leer_estado` sea vulnerable sin el guard es de PRODUCCION y sigue abierto en
+    `MEJORAS #145`; que este test se la provocara a si mismo, no.
+    """
+    from core.casos import case_mutex
+    with case_mutex._guard(W, raiz):
+        return case_mutex.leer_estado(W, raiz=raiz)
 
 
 class TestElGestorRenueva:
@@ -268,32 +277,106 @@ class TestElGestorRenueva:
         assert leer_estado(W, raiz=raiz) is None
         assert adquirir(W, ahora=AHORA, raiz=raiz)
 
-    def test_RENUEVA_mientras_el_cuerpo_corre(self, raiz):
+    def test_RENUEVA_mientras_el_cuerpo_corre(self, raiz, monkeypatch):
         """El hallazgo critico R10/H10-04: sin esto, el lease vence y otro entra.
 
-        **El reloj avanza en DECIMAS, no en minutos (R13/H13-01).** Antes saltaba un
+        **El reloj avanza en MICRAS, no en minutos (R13/H13-01).** Antes saltaba un
         minuto por lectura con `lease_seconds=1`, y desde que el tope de desvio es el
         MENOR entre la cota absoluta y el lease, eso es inadmisible por definicion: con
-        un lease de 1 s, un reloj 60 s adelantado agota el lease que protege. El montaje
-        viejo media la renovacion con un reloj que el contrato ya no admite.
+        un lease de 1 s, un reloj 60 s adelantado agota el lease que protege. Las decimas
+        que lo remediaron tenian el mismo defecto una escala mas abajo —el reloj se aleja
+        0,1 s del sistema por cada latido, asi que treinta latidos agotaban el tope de
+        desvio de un lease de 3 s— y con un presupuesto de espera generoso eso ya no es
+        teorico. En micras no llega a importar: mil latidos son un milisegundo de desvio.
+
+        **Y este test ya no MIRA el `.lock` mientras el renovador lo reemplaza
+        (2026-09-07).** Esperaba con un bucle que abria el fichero unas cincuenta veces
+        por segundo, o sea que **fabricaba** la carrera de `MEJORAS #145`: en Windows la
+        lectura y el `os.replace` chocan, el lector recibe `PermissionError` y `tomado`
+        trata cualquier fallo del renovador como perdida de titularidad. Con la suite en
+        `-n auto` eso tumbo la corrida una vez de tres. Ahora la senal la da el propio
+        `renovar` —el de produccion, envuelto para avisar— y la unica lectura va bajo el
+        guard.
+
+        **Lo que este test NO mide, y por eso existe su hermano:** cuando renueva. El
+        presupuesto de espera son veinte latidos porque un plazo de pared no acredita
+        puntualidad en una maquina saturada; la puntualidad se mide contra la constante
+        de produccion en `test_el_renovador_DESPIERTA_dos_veces_por_lease`.
         """
         import itertools
-        from core.casos.case_mutex import adquirir, leer_estado, tomado
-        from core.casos.workspace_model import CaseBusy
+        import threading
 
+        from core.casos import case_mutex
+        from core.casos.case_mutex import adquirir, tomado
+        from core.casos.workspace_model import CaseBusy
+        from tests import _espera_mutex
+
+        lease = 3
         contador = itertools.count()
 
         def reloj():
-            n = next(contador)
-            return f"2026-08-25T12:00:{n // 10:02d}.{n % 10}00000Z"
+            return f"2026-08-25T12:00:00.{next(contador):06d}Z"
 
-        with tomado(W, ahora_fn=reloj, raiz=raiz, lease_seconds=3):
-            _esperar_a_que_renueve(raiz)
-            estado = leer_estado(W, raiz=raiz)
+        renovado = threading.Event()
+        renovar_de_verdad = case_mutex.renovar
+
+        def renovar_y_avisar(*args, **kwargs):
+            renovar_de_verdad(*args, **kwargs)   # la de produccion, sin doblar nada
+            renovado.set()
+
+        monkeypatch.setattr(case_mutex, "renovar", renovar_y_avisar)
+
+        with tomado(W, ahora_fn=reloj, raiz=raiz, lease_seconds=lease) as sesion:
+            _espera_mutex.esperar(
+                renovado.is_set, lease_seconds=lease, sesion=sesion,
+                motivo="el renovador no completo ni una renovacion durante el cuerpo")
+            estado = _estado_bajo_el_guard(raiz)
             assert estado["renewed_at"] != estado["acquired_at"], (
                 "el lease no se renovo ni una vez durante el cuerpo")
-            with pytest.raises(CaseBusy):
+            with pytest.raises(CaseBusy) as excinfo:
                 adquirir(W, ahora=estado["renewed_at"], raiz=raiz)
+            # Y por el motivo BUENO: `_guard` traduce su `Timeout` al mismo `CaseBusy`
+            # (R11/H11-06), asi que un `pytest.raises` a secas se contentaria con «la
+            # seccion critica esta ocupada» —cierto y ajeno a lo que aqui se prueba—.
+            # Solo la rama del lease vivo nombra el instante del titular.
+            assert excinfo.value.fecha is not None, (
+                "el CASE_BUSY no viene del lease vivo sino de la seccion critica")
+
+    def test_el_renovador_DESPIERTA_dos_veces_por_lease(self, raiz, monkeypatch):
+        """La mitad TEMPORAL de la propiedad, medida contra la constante y sin reloj.
+
+        Renovar «alguna vez» no basta: el lease tiene que renovarse **antes de vencer**, y
+        con margen para un latido perdido. Eso lo decide el plazo con el que `tomado()`
+        manda a dormir a su renovador —`lease / _FRACCION_LATIDO`—, y hasta hoy nadie lo
+        afirmaba: lo probaba de refilon el presupuesto de tres segundos del test hermano,
+        o sea un plazo de pared. Y un plazo de pared no vale de prueba, porque el sistema
+        operativo no promete cuando despierta un hilo con la maquina saturada — medido el
+        2026-09-07: con 6x de sobresuscripcion el latido sigue llegando a 1,03 s de su
+        periodo de 1 s, pero el margen que separa el verde del rojo era de dos segundos.
+
+        Aqui no se espera ningun latido: se lee **el plazo con el que se va a dormir**. El
+        `<= lease / 2` es la forma debil de «despierta mas de una vez por lease», que es
+        la propiedad; produccion usa un tercio, que deja margen para dos latidos perdidos.
+        """
+        from core.casos import case_mutex
+        from tests import _espera_mutex
+
+        espia = _espera_mutex.ThreadingQueAnotaEsperas()
+        monkeypatch.setattr(case_mutex, "threading", espia)
+        lease = 60
+
+        with case_mutex.tomado(W, ahora_fn=lambda: AHORA, raiz=raiz,
+                               lease_seconds=lease):
+            assert espia.primera_espera.wait(_espera_mutex.ARRANQUE_DEL_HILO), (
+                "el renovador no llego ni a dormir: el hilo no arranco")
+
+        periodo = espia.esperas[0]
+        assert periodo is not None, (
+            "el renovador espera SIN plazo: no despertaria hasta la salida y el lease "
+            "venceria a mitad del cuerpo")
+        assert 0 < periodo <= lease / 2, (
+            f"el renovador duerme {periodo} s con un lease de {lease} s: al primer "
+            f"latido perdido el lease vence y otro proceso entra")
 
     def test_el_renovador_para_al_salir(self, raiz):
         """Un hilo que sobreviva al `with` renovaria un lock que ya es de otro."""
