@@ -6433,7 +6433,7 @@ resuelva—, o el primer informe de viabilidad que se redacte sobre un expedient
 
 ## 145. Un LECTOR del lock puede hacer que el titular PIERDA su mutex (Windows) `[RECLASIFICADO 2026-09-03: es de PRODUCCIÓN]`
 
-> **Al día 2026-09-07: la mitad de TEST está cerrada (PR #302); la de PRODUCCIÓN, no.**
+> **Al día 2026-09-07: la mitad de TEST está cerrada (PR #302, `3420d4d`); la de PRODUCCIÓN, no.**
 >
 > `test_RENUEVA_mientras_el_cuerpo_corre` **fabricaba** la carrera que denunciaba: esperaba
 > al latido abriendo el `.lock` unas cincuenta veces por segundo, justo el fichero que el
@@ -6448,6 +6448,10 @@ resuelva—, o el primer informe de viabilidad que se redacte sobre un expedient
 > y se declara aquí para que nadie lo descubra por sorpresa: **ya no lo va a levantar un rojo
 > de la suite.** Es deliberado — el rojo no lo levantaba el defecto, lo levantaba el test
 > provocándoselo—, y el disparador escrito abajo nunca fue ese rojo.
+>
+> Cierra además **`#171`**, que describía este mismo rojo atribuyéndolo a la carga de los 12
+> workers. Dos entradas de este fichero explicaban el mismo síntoma con causas incompatibles y
+> nadie las cruzó: la medición del 07 desmiente la de `#171` y confirma la sonda de aquí.
 
 **Medido el 2026-09-03**, cerrando `MEJORAS #144`. En la suite completa con semilla `31337`:
 
@@ -7584,6 +7588,32 @@ segunda corrida escribe 0.
 deriva `dest` del caso.
 
 ## 171. `test_case_mutex::test_RENUEVA_mientras_el_cuerpo_corre` es intermitente bajo `-n auto`
+
+> ✅ **CERRADA el 2026-09-07 (PR [#302](https://github.com/TyukhayNi/FeesDefender/pull/302),
+> `3420d4d`).** El disparador se consumió: volvió a salir al día siguiente, en la suite de la rama
+> del PR #301, y una segunda vez deja de ser anécdota. El remedio es el que esta entrada proponía
+> —medir la renovación **por evento observado** y no por tiempo transcurrido—, y no la otra salida
+> que ofrecía: nada se marcó `serial` ni se subió ningún umbral.
+>
+> **Pero su diagnóstico era falso, y conviene que quede escrito.** Esta entrada decía que «con 12
+> workers compitiendo por CPU y por E/S, la ventana de renovación puede pasarse sin que haya
+> defecto en el código». **Medido el 2026-09-07** con 24 procesos ocupados sobre 4 CPUs (6x de
+> sobresuscripción), 8 corridas instrumentadas: el primer latido llega a **1,00-1,03 s** de su
+> periodo de 1 s —nunca tarde— y el presupuesto del bucle de espera **crece** con la carga (3,05 s
+> en reposo, 3,77-4,09 s saturado). Bajo carga el margen **mejora**. El test aislado bajo esa misma
+> carga, 12/12 verdes.
+>
+> **La causa verdadera estaba escrita en este mismo fichero desde el 2026-09-03: `MEJORAS #145`.**
+> El bucle de espera abría el `.lock` unas cincuenta veces por segundo, justo el fichero que el
+> renovador reemplaza con `os.replace`; en Windows esas dos operaciones chocan, el escritor muere y
+> `tomado` lo lee como pérdida de titularidad. **El test fabricaba la carrera que denunciaba.** Dos
+> entradas de este backlog describían el mismo rojo con causas incompatibles y nadie las cruzó.
+>
+> Lo construido: la propiedad se reparte en dos —el mecanismo por evento, la **puntualidad** contra
+> la constante de producción y sin reloj—, `tests/_espera_mutex.py` deriva el presupuesto del
+> periodo de latido, y seis mutantes mueren cada uno por su frontera
+> (`python -m tests._mutantes_renovacion_mutex`). La mitad de **producción** de `#145` sigue
+> abierta con su precio de dos rondas.
 
 > Medido el 2026-09-06 durante el cierre de la acción 6a: rojo con la semilla 777 en una corrida y
 > **verde al repetir la MISMA semilla**, verde con 31337 y verde 5/5 aislado. No lo causa el diff de
