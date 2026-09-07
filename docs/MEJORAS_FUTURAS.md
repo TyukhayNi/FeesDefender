@@ -7824,3 +7824,88 @@ vale es **apoyarse** en ella para explicar nada.
 
 **Disparador de promoción.** Que vuelva a caer un conector con `CONNECTION_CLOSED`, o que haya que
 tocar la línea de lanzamiento de cualquier wrapper por otro motivo.
+
+---
+
+## 176. F3 verifica el relate por el lado del correo, que es una vista por copia
+
+> Medido el 2026-09-07 con escrituras contra los expedientes de prueba 636 y 683.
+
+`core/procurador_relate.py` verifica el relate **releyendo `findRelations(uid, account)`**
+(§4 del spec de F3). Esa lectura devuelve las relaciones de **esa copia** del correo, y un mismo
+Message-ID tiene **N filas `mail`, una por cuenta** (tres copias medidas: ctas 11, 13, 15). La
+relación que el relate escribe es **global**.
+
+Resultado medido: relacionada la copia de la cuenta 15 con `expedientes_judiciales:683`,
+relacionar la copia de la cuenta 2 con el **mismo** miembro devolvió `ok=False` y
+*«el CRM respondió 200 pero la relectura no lo verifica; ¿existe el miembro?»* — con la relación
+escrita y el miembro existiendo. El expediente no se movió de dos correos y el `mail_id` fue el
+mismo (439232) desde las dos cuentas.
+
+**Arreglo:** verificar por `GET /api/related_register/{elemento}/{id}` → bloque `mail`, que ya
+está cableado en `core.sudespacho_relations.get_relaciones` (`INTEGRACION_SUDESPACHO §15.5`).
+
+**Disparador de promoción.** Cablear `archivar()` a la bandeja (F3 en producción): mientras nadie
+lo llame, el falso negativo no daña a nadie.
+
+---
+
+## 177. Dos mensajes de error de F3 apuntan a la causa equivocada
+
+> Mismo barrido del 2026-09-07 que `#176`.
+
+1. **`resolver_cuenta()` → `None`** cubre dos estados distintos: «no hay fila `mail`» y «hay más
+   de una cuenta». Su motivo dice *«¿no indexado todavía?»*, y en el segundo caso el correo está
+   indexado **tres veces**. El mensaje manda al operador a esperar un paso del webmail que no
+   arregla nada.
+2. **El error del relate** dice *«¿existe el miembro?»* cuando lo que pasa es que la relectura es
+   por copia (`#176`). Un reintento guiado por ese diagnóstico no converge nunca.
+
+Los dos fallan **cerrado** (van a revisión), así que no corrompen nada: el defecto es el
+diagnóstico, y el coste es tiempo humano buscando en el sitio equivocado.
+
+**Disparador de promoción.** El mismo que `#176`, o la primera vez que alguien pierda un rato con
+uno de los dos mensajes.
+
+---
+
+## 178. La guarda anti-duplicado del adjuntar filtra por NOMBRE, y el CRM sí duplica
+
+> Medido el 2026-09-07 sobre `extrajudiciales/636`: censo 3 → 4 → 5.
+
+`relate/attachments` **no es idempotente**. El mismo `att_id`, el mismo nombre final y el mismo
+`mail_id`, posteados dos veces, dejan **dos documentos**; los dos POST contestaron
+`{"status":"success","errors":[]}`.
+
+Eso convierte la guarda por censo de `adjuntar` (`pendientes = [… if n not in antes]`) en
+**portante**: sin ella se duplica un documento en el expediente de un cliente. Y deja su hueco a
+la vista — **filtra por nombre final**, así que si F4 propone dos nombres distintos para el mismo
+adjunto (o alguien renombra), el mismo documento entra dos veces.
+
+**Arreglo:** filtrar además por `att_id` ya subido, no solo por nombre. Requiere que el censo
+del gestor documental exponga la procedencia del documento, que está sin comprobar.
+
+**Disparador de promoción.** Que F4 entre en juego (es quien compone `nombre_final`), o el primer
+duplicado observado en un expediente real.
+
+---
+
+## 179. Las relaciones que hace Ana son un set de evaluación gratis para el matcher de F1
+
+> Observado el 2026-09-07 al medir qué correos de `procesal@` están en el CRM.
+
+De 32 correos de `procesal@` de cuatro días, **23 estaban relacionados con su
+`expedientes_judiciales`**, cada uno con el miembro que **Ana eligió a mano** (`id_creador=23` en
+las 23 filas). Eso es verdad de campo etiquetada por la persona cuyo criterio es el patrón, y se
+renueva cada día.
+
+F1 se validó en junio contra 20 correos con un dataset construido a mano
+(`scripts/eval_matcher_batch.py`). Aquí hay un arnés que no cuesta montar: correr el matcher sobre
+los correos **ya relacionados**, comparar su propuesta con el expediente que Ana eligió, y sacar
+acierto por lote. Mide si el robot acierta **antes** de darle la escritura.
+
+**Cuidado con el sesgo:** solo cubre los correos que Ana **sí** archivó. Los que deja pendientes
+—9 de 32 en la muestra, incluido uno en SPAM— no tienen etiqueta, y son justo los raros.
+
+**Disparador de promoción.** Antes de dejar que F3 escriba en el CRM sin confirmación humana por
+ítem. Mientras la bandeja pida visto bueno, el arnés es deseable y no urgente.

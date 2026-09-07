@@ -965,6 +965,29 @@ endpoint de borrado documentado.
 - **`uid` del elemento `mail` ES el Message-ID RFC** (39/40 en muestra; `filter uid=<id>`
   discrimina 1 de 462.414). → El `mail_id` se recupera **releyendo**, sin re-relacionar, y el
   `account` se resuelve por lectura en vez de por configuración.
+  ⚠️ **Pero `uid` NO es ÚNICO, y ese 1/40 tiene dos formas** (medido el 2026-09-07):
+  1. **Un mismo Message-ID puede tener N filas `mail`, una por CUENTA.** Tres correos probados
+     dieron **tres copias** cada uno (cuentas 11, 13 y 15). Es un buzón de distribución
+     (`procesal@` reenvía a cuatro personas) con una cuenta de correo del CRM por persona.
+     Consecuencia directa: **`filter uid=<id>` puede devolver varias filas**, y un
+     `resolver_cuenta()` que exija unicidad devuelve `None` — que **no** significa «no indexado».
+  2. **Hay filas cuyo `uid` no es un Message-ID en absoluto**: visto `uid=1908692`, con `cuenta`
+     vacía.
+- ⚠️ **`findRelations` da una vista POR COPIA; la relación que escribe el relate es GLOBAL.**
+  Medido: relacionada la copia de la cuenta 15 con `expedientes_judiciales:683`, la relectura
+  desde la cuenta **2** del mismo Message-ID sigue devolviendo vacío, aunque el expediente ya lo
+  vea. Volver a relacionar desde la cuenta 2 devuelve el **mismo `mail_id`** y **no duplica**.
+  → **No hay riesgo de duplicar la relación**, pero **verificar releyendo `findRelations` da
+  falso negativo**. La verificación correcta es por el lado del expediente:
+  `GET /api/related_register/{elemento}/{id}` → bloque `mail` (§15.5), que es la vista global.
+- ⚠️ **`relate/attachments` NO es idempotente: DUPLICA.** El mismo `att_id`, el mismo nombre
+  final y el mismo `mail_id`, posteados dos veces, dejan **dos documentos** en el gestor
+  documental (medido el 2026-09-07 sobre el 636: censo 3 → 4 → 5, los dos POST con
+  `{"status":"success","errors":[]}`). → Quien llame a este endpoint **debe** filtrar antes por
+  censo lo que ya está; y filtrar solo por **nombre** deja el hueco de dos nombres distintos para
+  el mismo adjunto.
+- **`relate/selected` re-posteado sobre un correo YA relacionado sí devuelve el manifiesto**
+  (`mail_id` + `att_id`), que es la única vía conocida de recuperarlos. Medido el 2026-09-07.
 - **`hasAttachments` cuenta también los inline** (logo de firma): puede dar `true` con
   `mailadjunto` vacío. Son dos preguntas distintas; para decidir qué subir vale la segunda.
   (Sí devuelve `false` cuando toca — comprobado; no es inerte.)
@@ -974,7 +997,11 @@ endpoint de borrado documentado.
   `GET /api/mail/autoassign/config` declara 17 elementos válidos que son **fichas de personas**
   (abogados, clientes, procuradores, juzgados, proveedores…), **ni `expedientes_judiciales` ni
   `extrajudiciales`**. Asigna correo a interviniente por dirección, no a expediente. No sirve para esto.
-- **Probado sobre `extrajudiciales`; `expedientes_judiciales` NO está medido** — no asumir por simetría.
+- ~~**Probado sobre `extrajudiciales`; `expedientes_judiciales` NO está medido**~~ — **MEDIDO el
+  2026-09-07** sobre el judicial de prueba **683**: mismo slug pelado, mismas carpetas, sin
+  contaminación cruzada con el extrajudicial. El slug del extrajudicial es `extrajudiciales`
+  (`expedientes_extrajudiciales` da censo ilegible). Esta línea dijo lo contrario hasta que se
+  corrigió: la medición estaba en el spec de F3 §2.10 y no se había propagado al SSOT.
 
 **Plan B — el plugin de Roundcube (lo que hace la interfaz).** `POST
 https://roundcube.sudespacho.net/?_task=mail&_action=plugin.sudespacho_asignaa_<acción>`,
