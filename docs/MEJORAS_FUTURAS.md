@@ -7582,15 +7582,32 @@ ser anécdota.
 
 ## 172. El guard de los wrappers MCP no mira el artefacto que se ejecuta `[RESUELTO 2026-09-07]`
 
-> ✅ **Resuelto el 2026-09-07.** `tests/test_plugin_desplegado.py` compara lo INSTALADO contra
-> `main`, fichero a fichero y por versión, con `skip` explicado donde el plugin no está instalado.
+> ✅ **Resuelto el 2026-09-07.** `tests/test_plugin_desplegado.py` compara lo INSTALADO contra un
+> commit canónico (`origin/main`, fijado a un SHA), fichero a fichero **y en las dos direcciones**,
+> por versión en **tres sitios** (registro, manifiesto instalado y canónico) y cubriendo también los
+> **metadatos de arranque** (`.mcp.json`, `.claude-plugin/plugin.json`), en **todas** las entradas
+> del registro. Con `skip` explicado donde el plugin no está instalado.
+>
 > En su primera corrida encontró un segundo desfase que nadie sabía: `tiers.py` desplegado sin
 > `_apertura_v1.json` ni los temporales de escritura atómica en `PROTOCOL_EDIT` (`MEJORAS #149`,
-> `#146`). Y al intentar arreglarlo salió el **porqué** del defecto original: `claude plugin update`
-> compara por VERSIÓN, no por contenido — con la versión igual dice «already at the latest version»
-> y no copia nada, así que un redespliegue puede parecer hecho sin estarlo. Procedimiento corregido
-> en `plugin-src/README.md`. Arnés de mutación: 3/3 muertos (fichero alterado, fichero ausente,
-> versión del registro movida), con restauración verificada por hash.
+> `#146`). Y al arreglarlo salió que **`claude plugin update` compara por VERSIÓN, no por
+> contenido**: con la versión igual dice «already at the latest version» y no copia nada, así que un
+> redespliegue puede parecer hecho sin estarlo. **Ojo al alcance, que la R1 corrigió:** eso explica
+> un desfase *dentro* de una misma versión, no el salto 0.4.0 → 0.4.1, donde las versiones sí
+> diferían y `update` habría copiado. De ese otro solo está acreditado el `lastUpdated 2026-07-20`
+> del registro — que nadie ejecutó la actualización—; su duración y la continuidad de la avería son
+> inferencia, no medición. Procedimiento corregido en `plugin-src/README.md`.
+>
+> **La primera versión de este guard no valía, y lo dijo la R1 adversarial** (`REQUIERE-REVISION`,
+> 8 hallazgos, 8 confirmados): omitía `.mcp.json` —vaciarlo a `{}` pasaba en verde con el
+> manifiesto ya sin declarar ningún MCP (H-01)—, auditaba solo la primera entrada del registro
+> (H-02) y elegía la primera referencia que resolviera, con lo que una `main` local rancia ocultaba
+> lo que ya estaba en `origin/main` (H-03). Arnés final: **7/7 muertos** —fichero alterado, ausente
+> y sobrante, versión del registro, `.mcp.json` vaciado, `plugin.json` vaciado y segunda
+> instalación rota en segundo lugar—, con restauración verificada por hash.
+>
+> **Sigue SIN VERIFICAR, y se declara:** que Claude Code elija de verdad la instalación que el
+> guard audita cuando hay varias, y la frescura de `origin/main` respecto al remoto sin `fetch`.
 
 > Medido el 2026-09-07: `feesdefender@despacho-tyukhay` llevaba instalado en **0.4.0 desde el
 > 2026-07-20**. La reparación del 2026-08-31 (PR #253) estaba en `dist/plugin` como 0.4.1 y **nunca
@@ -7648,7 +7665,21 @@ aún, antes: cada despliegue del plugin es una ocasión nueva de desincronizarse
 > ninguna corrida suelta prueba nada —en una máquina con los drives montados un override ignorado se
 > ve igual que uno respetado—, pero la diferencia sí. Eso lo levantó el arnés, no el diseño: la
 > primera versión apuntaba las dos sondas a la vez y **sobrevivía** a borrar el override de
-> `PROBE_G`, porque el gate es un AND y bastaba con `PROBE_H`. Arnés final: 5/5 muertos.
+> `PROBE_G`, porque el gate es un AND y bastaba con `PROBE_H`.
+>
+> **Con qué alcance, que la R1 acotó (H-08):** el diferencial prueba la propiedad con el montaje
+> **estable** durante las tres corridas. No prueba independencia del montaje *en general* —las tres
+> ocurren en instantes distintos, y un montaje que apareciera y desapareciera entre ellas podría dar
+> verde con una sonda ignorada; el revisor lo reprodujo en simulación—. La garantía que no depende
+> de ningún montaje es el guard de los defaults, que no ejecuta nada.
+>
+> **La R1 encontró además tres defectos reales en la primera versión:** el guard de defaults solo
+> comprobaba las subcadenas `G:` y `H:`, así que un default movido a `G:\nonexistent` pasaba (H-04);
+> el contador de esperas contaba la subcadena `ping` y un `--basetemp=shipping` daba falso rojo,
+> mientras `<=1` dejaba vivo el mutante `tope+1` (H-05); una ruta con `!` se deformaba por la
+> expansión retardada (H-06); y `set /a` sobre el entorno **ejecutaba** el valor — con
+> `1 & echo X` el wrapper escribía en **stdout**, que es el pipe JSON-RPC (H-07). Arnés final:
+> **9/9 muertos**, incluidos los dos que sobrevivieron a la R1.
 
 > Medido el 2026-09-07 en las dos direcciones, el mismo día y sin tocar una línea de código: con
 > G:/H: caídos, `tests/test_mcp_wrappers.py` da **1 rojo**; con los drives montados, **23/23
@@ -7692,8 +7723,11 @@ medido:** que el cliente esté tratando ese nombre como ruta y que su propio val
 eso. No tengo su código; es inferencia, y como inferencia queda anotada.
 
 **Remedio candidato.** Renombrar el `display_name` a algo sin `/` ni `:` —«expedientes-xl (Drive
-como disco local)»— y reconstruir/reinstalar el `.dxt`. Es una prueba barata y falsable: si el aviso
-desaparece, la inferencia era buena; si no, se descarta y se busca en otro sitio.
+como disco local)»— y reconstruir/reinstalar el `.dxt`. Es barato y falsable, pero **hay que hacerlo
+como experimento, no como arreglo**: si se cambia el nombre a la vez que se reconstruye y se
+reinstala, que el aviso desaparezca apoya la hipótesis y no identifica la causa, porque han cambiado
+tres cosas. Cambiar **solo** el nombre, bajo procedimiento controlado, es lo que la distingue. Lo
+señaló la R1 adversarial de `#172`/`#173`.
 
 **Disparador de promoción.** Va junto a `MEJORAS #125` (los tres manifiestos `.dxt` cablean un
 intérprete). Ninguna de las dos merece por sí sola una reinstalación manual de tres extensiones;
