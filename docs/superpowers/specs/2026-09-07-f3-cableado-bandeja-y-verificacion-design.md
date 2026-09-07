@@ -63,7 +63,7 @@ en la tabla `mail`.**
 | D4 | **Escritura solo en la máquina de Ana** (más la de Nikolai para probar). Paola y Sergio, dry-run |
 | D5 | Alcance **judicial-first** — honra la decisión del 2026-07-19 (entrega §9) |
 | D6 | Si el usuario no es dueño de una copia, **se escribe sobre la copia que haya**; nuestro log registra quién clicó |
-| D7 | **La visibilidad va por el expediente, no por el buzón** (Nikolai, 2026-09-07). No es medible con `x-api-key`: queda como incógnita declarada (§5.1, §11.5) y **no se construye ninguna rama sobre ella** |
+| D7 | **La visibilidad tiene DOS superficies** y las dos afirmaciones del expediente documental eran ciertas (§5.1, explicado por Nikolai el 2026-09-07). Ninguna rama del diseño cuelga de ella |
 
 **D4 gana una razón mejor que la concurrencia con el §2.1 delante:** la copia que existe es la de
 Ana, así que la app que escribe debe ser la de Ana. Hoy es la única configuración coherente, no una
@@ -119,24 +119,30 @@ es **global** y re-relacionar **no duplica**, así que escribir en cualquier cop
 objetivo. La preferencia por la copia propia es para que la traza sea limpia, no una precaución de
 permisos.
 
-### 5.1 Por qué la visibilidad NO entra aquí, y qué se rechazó
+### 5.1 La visibilidad tiene dos superficies, y relacionar es el puente
 
-Una versión anterior de este diseño cortaba a revisión cuando había varias copias ajenas, para no
-«decidir a ciegas la visibilidad». Se apoyaba en el §8 de F3 —*«el correo hereda la visibilidad del
-buzón, y la cuenta desde la que se archiva decide quién lo ve»*— y **se retira**, por dos razones:
+**Explicado por Nikolai el 2026-09-07** (procedencia: el administrador del CRM, no una medición de
+este repo — con `x-api-key`, que es una identidad de servicio, no se puede observar lo que ve una
+persona):
 
-1. **Nikolai, que administra el CRM, sostiene lo contrario** (2026-09-07): si Ana relaciona un
-   correo con un expediente compartido con él, él lo ve. La visibilidad iría por el **expediente**,
-   no por el buzón.
-2. **Y no puedo medirlo.** F3 se autentica con `x-api-key`, que es una identidad de servicio: mis
-   lecturas ven lo que ve la clave, no lo que ve una persona. Sobre visibilidad **por usuario** mi
-   instrumento no puede devolver el otro valor, así que no se construye una rama sobre él.
+| Superficie | Quién ve el correo |
+|---|---|
+| **Roundcube** | **solo el titular del buzón.** Un correo que llegó a la cuenta de Ana no lo ven Sergio, Nikolai ni Paola: nadie entra al Roundcube de otro |
+| **A través del expediente** | **todo el equipo con acceso a ese expediente**, una vez el correo está relacionado con él |
 
-La frase del §8 de F3 puede ser cierta **del elemento `mail` en el módulo de correo** y a la vez
-irrelevante **del correo visto a través del expediente**: son dos superficies y no las distingue.
-**Queda como incógnita declarada (§11.5)**, y quien la cierra es una persona mirando el CRM con su
-propia sesión — no la API. Si resultara que la visibilidad SÍ depende del buzón, esta sección hay
-que rehacerla: es la dependencia más frágil del diseño y por eso está señalada al revisor (§13).
+Las dos afirmaciones que este repo tenía escritas y parecían contradecirse **eran ciertas a la
+vez**, de superficies distintas. La del §8 de F3 —*«el correo hereda la visibilidad del buzón»*— lo
+es **de Roundcube**; que el equipo lo vea al relacionarlo lo es **del expediente**. La frase de F3
+solo fallaba en no decir de cuál hablaba.
+
+**Y de aquí sale algo que no estaba escrito en ninguna parte, y es la mitad del valor de esta
+pieza:** *relacionar no es solo archivar — es el acto que hace el correo visible al equipo.* Antes
+de relacionarlo vive en un solo buzón; después, lo lee cualquiera con acceso al expediente.
+
+**Consecuencia para el diseño: ninguna rama cuelga de esto.** Cualquier copia sirve, porque la
+visibilidad de equipo la da la relación con el expediente y la relación es global. Por eso el §5 no
+corta a revisión el 6,3 % multicopia: una versión anterior lo hacía «para no decidir a ciegas la
+visibilidad», y esa precaución no protegía nada.
 
 ## 6. La verificación (`MEJORAS #176`)
 
@@ -238,10 +244,10 @@ persona la crea su Roundcube. Lo que ese documento debe recoger:
 4. **El contenido de la copia elegida.** Se asume que las N copias del mismo Message-ID son el
    mismo correo con los mismos adjuntos. Es razonable —es un reenvío de la misma pieza— y **no está
    comprobado**: nadie ha cotejado los `att_id` de dos copias.
-5. **De qué depende la visibilidad de un correo archivado** (§5.1). Nikolai sostiene que va por el
-   expediente; el §8 de F3 dice que va por el buzón. **No es medible con `x-api-key`** —es una
-   identidad de servicio— y la cierra una persona mirando el CRM con su sesión. Si va por el buzón,
-   el §5 hay que rehacerlo.
+5. **La visibilidad, no como incógnita sino como procedencia.** El §5.1 descansa en la
+   explicación del administrador del CRM, no en una medición de este repo, y **con `x-api-key` no
+   es medible** —es una identidad de servicio, ve lo que ve la clave—. No bloquea nada porque
+   ninguna rama cuelga de ella; se anota para que nadie la cite luego como «medido».
 
 ## 12. Pruebas
 
@@ -275,10 +281,10 @@ sobre este diseño antes de construir, otra sobre el diff. Contrato en `CLAUDE.m
 
 Al revisor, cuatro cosas señaladas a propósito:
 
-1. **§5.1 / §11.5 — de qué depende la visibilidad.** Es la dependencia más frágil del diseño: una
-   versión anterior cortaba a revisión el 6,3 % de correos multicopia para protegerla, y esa rama
-   se retiró porque la premisa no es medible con `x-api-key`. Si la visibilidad va por el buzón, el
-   §5 hay que rehacerlo.
+1. **§5.1 / §11.5 — la visibilidad viene de una explicación, no de una medición.** Ninguna rama
+   cuelga de ella, pero conviene comprobar que el §5.1 no se apoye en ella sin darse cuenta. Una
+   versión anterior cortaba a revisión el 6,3 % multicopia «para proteger la visibilidad», y esa
+   precaución no protegía nada.
 2. **§6.2 — la comprobación previa degradada a atajo**, apoyada en que re-relacionar no duplica.
    Es una medición de un día sobre tres correos.
 3. **§11.1 — el `id_creador` de una escritura de F3**: incógnita con consecuencia para F6.

@@ -337,6 +337,14 @@ Es una propiedad del diseño, no un detalle: **el correo hereda la visibilidad d
 que la cuenta desde la que se archiva decide quién lo ve. Falta fijar el criterio de aceptación
 (R1-H-10).
 
+⚠️ **MATIZADO el 2026-09-07: esta frase habla de UNA de las dos superficies, y leída sola
+engaña.** Explicado por Nikolai: en **Roundcube** la visibilidad va por el buzón —un correo que
+llegó a la cuenta de Ana no lo ven los otros tres, nadie entra al webmail de otro—; pero **a
+través del expediente** lo ve **todo el equipo con acceso a ese expediente** en cuanto el correo
+está relacionado. Las dos cosas son ciertas a la vez. Corolario que no estaba escrito:
+**relacionar es el acto que hace el correo visible al equipo**, no solo el que lo archiva. Detalle
+en `2026-09-07-f3-cableado-bandeja-y-verificacion-design.md` §5.1.
+
 ## 9. Testing
 
 Transporte fake, sin red. Casos cubiertos: relate OK · `relatedElement` sin `->izq` ·
