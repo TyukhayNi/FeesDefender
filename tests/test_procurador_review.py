@@ -23,6 +23,7 @@ from core.procurador_review import (
     RobotProposal,
     TransicionInvalida,
     compute_divergence,
+    destino_efectivo,
     from_intake_proposal,
     load_queue,
     read_decisions,
@@ -377,3 +378,89 @@ def test_cola_load_item_viejo_sin_contexto(tmp_path):
     assert loaded[0].proposal.signals == {}
     assert loaded[0].proposal.datos_expediente == {}
     assert loaded[0].proposal.coincidencias == []
+
+
+# ---------------------------------------------------------------------------
+# Destino efectivo del archivado — remediación de R1/H-06 (2026-09-07)
+#
+# Antes de esto, la terna guardaba `expediente_id` **sin el tipo de elemento**,
+# mientras la bandeja deja elegir entre judicial y extrajudicial. Un id confirmado
+# no decía a qué tabla pertenece: el extrajudicial 636 y un judicial 636 son
+# expedientes distintos, de clientes distintos. F3 escribe en el CRM con ese par,
+# así que un id huérfano de elemento es un archivado en el expediente equivocado.
+# ---------------------------------------------------------------------------
+
+def _propuesta(**kw):
+    base = dict(email_id="<m@x>", expediente_id=636, confianza="alta",
+                carpeta_id=1, carpeta="General")
+    base.update(kw)
+    return RobotProposal(**base)
+
+
+def test_la_propuesta_del_robot_conserva_el_tipo_de_elemento():
+    p = _propuesta(element="extrajudiciales")
+    assert p.element == "extrajudiciales"
+
+
+def test_destino_efectivo_devuelve_el_par_elemento_id():
+    p = _propuesta(element="extrajudiciales")
+    accion = HumanAction(tipo="confirmar")
+    assert destino_efectivo(p, accion) == ("extrajudiciales", 636)
+
+
+def test_destino_efectivo_aplica_el_override_humano_de_elemento_y_de_id():
+    """Reasignar en la bandeja puede cambiar la tabla, no solo el número."""
+    p = _propuesta(element="extrajudiciales")
+    accion = HumanAction(tipo="confirmar", expediente_id=42, element="expedientes_judiciales")
+    assert destino_efectivo(p, accion) == ("expedientes_judiciales", 42)
+
+
+def test_destino_efectivo_normaliza_el_alias_al_slug_canonico():
+    """`judiciales` es un alias que aparece en el frontmatter; el CRM no lo conoce."""
+    p = _propuesta(element="judiciales")
+    assert destino_efectivo(p, HumanAction(tipo="confirmar")) == ("expedientes_judiciales", 636)
+
+
+def test_destino_efectivo_sin_elemento_es_none_y_no_supone_judicial():
+    """Un ítem viejo (cola de dry-run) no trae elemento: eso es «no sé», no «judicial»."""
+    p = _propuesta()          # sin element
+    assert destino_efectivo(p, HumanAction(tipo="confirmar")) is None
+
+
+def test_destino_efectivo_sin_expediente_es_none():
+    p = _propuesta(expediente_id=None, element="extrajudiciales")
+    assert destino_efectivo(p, HumanAction(tipo="confirmar")) is None
+
+
+def test_destino_efectivo_con_elemento_desconocido_es_none():
+    p = _propuesta(element="una_tabla_que_no_existe")
+    assert destino_efectivo(p, HumanAction(tipo="confirmar")) is None
+
+
+def test_destino_efectivo_de_un_descarte_es_none():
+    p = _propuesta(element="extrajudiciales")
+    assert destino_efectivo(p, HumanAction(tipo="descartar")) is None
+
+
+def test_el_elemento_sobrevive_a_la_ida_y_vuelta_por_el_store(tmp_path):
+    store = tmp_path / "cola.jsonl"
+    item = ReviewItem(email_id="<m@x>", proposal=_propuesta(element="extrajudiciales"),
+                      estado="pendiente")
+    upsert_queue_item(item, store_path=store)
+    assert load_queue(store_path=store)[0].proposal.element == "extrajudiciales"
+
+
+def test_un_item_serializado_sin_elemento_se_lee_como_none(tmp_path):
+    """Compatibilidad hacia atrás: la cola de dry-run existente no tiene el campo.
+
+    Se lee como `None` —no como un default judicial— para que el punto de escritura
+    lo mande a revisión en vez de archivar a ciegas donde nadie eligió.
+    """
+    store = tmp_path / "cola.jsonl"
+    store.write_text(
+        '{"email_id": "<viejo@x>", "estado": "confirmado", "proposal": '
+        '{"email_id": "<viejo@x>", "expediente_id": 636, "confianza": "alta"}}\n',
+        encoding="utf-8")
+    p = load_queue(store_path=store)[0].proposal
+    assert p.element is None
+    assert destino_efectivo(p, HumanAction(tipo="confirmar")) is None

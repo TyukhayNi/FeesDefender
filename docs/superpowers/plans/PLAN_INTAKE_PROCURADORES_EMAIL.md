@@ -149,12 +149,28 @@ existente en FeesDefender.
 **Enlace "abrir en el CRM":** navegación normal → abre el expediente en la sesión
 del CRM de quien pincha (su propio login en el navegador), no comparte sesión.
 
-## 7. Escritura en el CRM (contrato) — ACTUALIZADO 2026-07-19 (HAR `judicial_648.har`)
+## 7. Escritura en el CRM (contrato) — ACTUALIZADO 2026-09-07
 
-> **El HAR refutó las tres hipótesis previas** (`PUT /api/mail/{id}` de nest-mail,
-> `MailRoundcube` de api-crm, AppSync). El "Asignar a Elemento" del webmail lo
-> ejecuta un **plugin propio de Roundcube**. **SSOT del contrato (acciones + params):
-> `docs/INTEGRACION_SUDESPACHO.md §10.10`.** Hallazgo en `DEAD_ENDS.md`. Resumen operativo:
+> ⚠️ **Esta sección estaba equivocada en su conclusión y se corrige.** Decía que el HAR de
+> julio había refutado `MailRoundcube` de api-crm. Lo que el HAR probó es **qué hace la
+> interfaz** (un plugin de Roundcube), no **qué permite la API**. Medido el 2026-09-07: el
+> módulo REST `MailRoundcube` existe, autentica con la `x-api-key` de siempre y **escribe**.
+>
+> **El reparto real, medido de punta a punta:**
+>
+> | Paso | Quién | Cómo |
+> |---|---|---|
+> | **Primer relate** de un correo entrante | **el webmail, con sesión** | `fetch` al plugin desde el origen `roundcube.sudespacho.net` |
+> | Completar adjuntos, renombrar, carpeta | FeesDefender | REST `x-api-key` |
+> | Anti-duplicado, verificación, traza | FeesDefender | REST `x-api-key` |
+>
+> El porqué del primer paso: **la vía REST solo opera sobre correos que el CRM ya tiene en su
+> tabla `mail`**, y un correo entra ahí al relacionarlo desde el webmail. Sobre un correo
+> nuevo, `relate/selected` devuelve 200 y no escribe.
+>
+> **SSOT del contrato: `docs/INTEGRACION_SUDESPACHO.md §10.10`.** Diseño: spec F3 **rev. 4**.
+> Historia del descarte y su reversión: `DEAD_ENDS.md`. Lo de abajo describe el plugin, que
+> sigue siendo lo que hace la interfaz y lo que ejecuta ese primer paso:
 
 - **Transporte:** `POST https://roundcube.sudespacho.net/?_task=mail&_action=plugin.sudespacho_asignaa_*`,
   `application/x-www-form-urlencoded`, cabeceras `X-Requested-With: XMLHttpRequest` +
@@ -339,9 +355,15 @@ Las grabaciones de vistas llegan como **enlace** en el cuerpo
   acción-confirmada vs. quién-y-cuándo* por cada ítem. Sin ese registro el check 2
   (§18) no tiene contra qué comparar. Diseñarlo dentro del modelo de datos de la
   bandeja, **no atornillarlo después**.
-- **F3 — Escritura en el CRM:** resolver auth de nest-mail; relate + adjuntar en
-  un expediente de prueba; verificar marcado en Roundcube. Activar tras validar.
-  Mismo requisito duro de traza que F2.
+- **F3 — Escritura en el CRM: 🔨 EN CURSO (2026-09-07).** *(El «resolver auth de nest-mail»
+  que decía esta línea quedó obsoleto: nest-mail es el correo **saliente**; el entrante va por
+  el módulo `MailRoundcube` — ver §7.)* Construido `core/procurador_relate.py` (cliente REST
+  de las cinco operaciones, con verificación por relectura y por censo del gestor documental,
+  nunca por status) y validado **en vivo** contra el expediente de prueba: relate + adjuntar +
+  renombrado a la carpeta elegida. Falta el paso del webmail para el **primer** relate de un
+  correo entrante (§7), y `expedientes_judiciales` sin medir (todo se probó en extrajudicial).
+  Mismo requisito duro de traza que F2 — el destino es ahora el par `(elemento, id)`, no un id
+  suelto. Diseño: spec F3 **rev. 4**, con su R1 adversarial adjudicada.
 - **F4 — Renombrado + OCR + aprendizaje:** contenido del adjunto → nombre;
   store de correcciones + few-shot.
 - **F5 — Grabaciones:** descarga de enlaces + fallback manual.
