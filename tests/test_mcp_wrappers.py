@@ -231,6 +231,13 @@ def test_sin_interprete_capaz_el_wrapper_FALLA_RUIDOSAMENTE(wrapper: Path, tmp_p
     env["LOCALAPPDATA"] = str(vacio)
     env["APPDATA"] = str(vacio)
     env["PATH"] = str(vacio)
+    # El gate de montaje se fija ABIERTO. Sin esto, en `expedientes_xl` este
+    # test no medía lo que dice medir: con G:/H: caídos el wrapper moría en el
+    # gate y nunca llegaba a resolver intérprete — 1 rojo con los drives abajo
+    # y 23/23 verdes con los drives arriba el mismo día (2026-09-07). Los
+    # wrappers sin gate ignoran estas variables.
+    env["FEESDEFENDER_PROBE_G"] = str(vacio)
+    env["FEESDEFENDER_PROBE_H"] = str(vacio)
 
     r = subprocess.run(
         ["cmd", "/c", str(copia)],
@@ -266,3 +273,174 @@ def test_sin_interprete_capaz_el_wrapper_FALLA_RUIDOSAMENTE(wrapper: Path, tmp_p
         f"{wrapper.relative_to(ROOT)}: escribió en stdout, que es el pipe "
         f"JSON-RPC de MCP -> {r.stdout[:200]!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# El gate de montaje (poll-until-mount) y su costura de prueba
+# ---------------------------------------------------------------------------
+# Por que existe esto, medido el 2026-09-07 en las dos direcciones y el mismo
+# dia, sin tocar una linea de codigo: con G:/H: caidos este fichero daba 1 rojo;
+# con los drives montados, 23/23 verdes. El motivo es que
+# `test_sin_interprete_capaz_el_wrapper_FALLA_RUIDOSAMENTE` mide la resolucion
+# del interprete, pero en `expedientes_xl` ese codigo solo se alcanza pasando
+# antes el gate de montaje, que el test NO controlaba. Sin montaje el wrapper
+# moria en el gate y el guard leia otra cosa de la que creia leer.
+#
+# El arreglo facil habria sido anadir el mensaje del gate a la lista blanca de
+# palancas. Eso es cerrar el ejemplo por TERCERA vez: la primera version exigia
+# UNA palanca y se amplio a DOS cuando `email-export` la puso roja por morir
+# antes. La frontera es que el test controle toda precondicion capaz de desviar
+# al wrapper de la propiedad que mide.
+
+
+def _tiene_gate_de_montaje(texto: str) -> bool:
+    """No todos los wrappers esperan montajes: `email_export_mcp` arranca directo."""
+    return ":waitloop" in texto.lower()
+
+
+def _wrappers_con_gate() -> list[Path]:
+    return [w for w in _wrappers() if _tiene_gate_de_montaje(w.read_text(encoding="utf-8"))]
+
+
+def _correr_con_sondas(wrapper: Path, tmp_path: Path, sonda_g: Path, sonda_h: Path):
+    """Ejecuta una COPIA del wrapper con el gate gobernado y el interprete envenenado.
+
+    El interprete se envenena siempre para que los dos modos de muerte sean
+    distinguibles por el mensaje: morir en el gate dice `PROBE_`, morir
+    resolviendo interprete dice `FEESDEFENDER_PYTHON`. Y el PATH se vacia para
+    que, si el gate se abriera por error, el wrapper no LANCE el server y se
+    quede colgado en el pipe hasta el timeout: un guard que se cuelga en vez de
+    dar rojo no es un guard.
+    """
+    raiz = tmp_path / f"corrida-{sonda_g.name}-{sonda_h.name}"
+    raiz.mkdir()
+    copia = raiz / "run_server.bat"
+    shutil.copy2(wrapper, copia)
+    vacio = raiz / "vacio"
+    vacio.mkdir()
+
+    env = dict(os.environ)
+    env["FEESDEFENDER_PROBE_G"] = str(sonda_g)
+    env["FEESDEFENDER_PROBE_H"] = str(sonda_h)
+    env["FEESDEFENDER_PROBE_MAXTRIES"] = "1"
+    env["FEESDEFENDER_PYTHON"] = str(raiz / "no-existe-python.exe")
+    env["FEESDEFENDER_ROOT"] = str(raiz / "no-existe-raiz")
+    env["USERPROFILE"] = str(vacio)
+    env["LOCALAPPDATA"] = str(vacio)
+    env["APPDATA"] = str(vacio)
+    env["PATH"] = str(vacio)
+
+    return subprocess.run(
+        ["cmd", "/c", str(copia)],
+        capture_output=True, encoding="utf-8", errors="replace",
+        env=env, timeout=120, cwd=str(raiz), input="",
+    )
+
+
+def _murio_en_el_gate(r) -> bool:
+    return r.returncode != 0 and "PROBE_" in r.stderr
+
+
+def _llego_a_resolver_interprete(r) -> bool:
+    return "FEESDEFENDER_PYTHON" in r.stderr
+
+
+def test_hay_wrappers_con_gate_que_auditar() -> None:
+    """Hermano de `test_hay_wrappers_que_auditar`: si el detector deja de
+    reconocer el gate, los guards de abajo pasarian VACIOS y en verde."""
+    assert _wrappers_con_gate(), [p.parent.name for p in _wrappers()]
+
+
+@pytest.mark.parametrize("wrapper", _wrappers_con_gate(), ids=lambda p: p.parent.name)
+@pytest.mark.skipif(os.name != "nt", reason="los wrappers son .bat de cmd")
+def test_cada_sonda_del_gate_ES_GOBERNABLE_por_separado(wrapper: Path, tmp_path: Path) -> None:
+    """Experimento DIFERENCIAL: tres corridas identicas salvo una sonda.
+
+    Por que diferencial y no una sola corrida — esto lo levanto el arnes de
+    mutacion, no el diseno. La primera version apuntaba las DOS sondas a algo
+    inexistente y exigia morir en el gate; borrar el override de `PROBE_G`
+    SOBREVIVIA, porque el gate es un AND y bastaba con que `PROBE_H` siguiera
+    funcionando. El test exigia «al menos un override vivo», no «los dos».
+
+    Y por que diferencial y no absoluto: el gate lee el sistema de ficheros, asi
+    que NINGUNA corrida suelta prueba nada por si misma — en una maquina con los
+    drives montados, un override ignorado se ve igual que uno respetado. Lo que
+    no depende de la maquina es la DIFERENCIA: si un override se ignorara, las
+    tres corridas harian lo mismo (lo que dictaran los drives reales) y las tres
+    aserciones no podrian cumplirse a la vez. Es la forma del experimento del
+    2026-08-31 con el `2>>`: dos ejecuciones identicas salvo la variable.
+    """
+    existe = tmp_path / "montado"
+    existe.mkdir()
+    no_existe_g = tmp_path / "sin-montar-G"
+    no_existe_h = tmp_path / "sin-montar-H"
+
+    abierto = _correr_con_sondas(wrapper, tmp_path, existe, existe)
+    sin_g = _correr_con_sondas(wrapper, tmp_path, no_existe_g, existe)
+    sin_h = _correr_con_sondas(wrapper, tmp_path, existe, no_existe_h)
+
+    nombre = wrapper.relative_to(ROOT)
+    assert _llego_a_resolver_interprete(abierto), (
+        f"{nombre}: con las dos sondas apuntadas a un directorio que existe, el "
+        f"wrapper NO llego a resolver interprete -> el gate no se abre desde el "
+        f"entorno. stderr={abierto.stderr[:400]!r}"
+    )
+    assert _murio_en_el_gate(sin_g) and not _llego_a_resolver_interprete(sin_g), (
+        f"{nombre}: la sonda G apuntada a algo inexistente no cerro el gate -> "
+        f"FEESDEFENDER_PROBE_G no se respeta. stderr={sin_g.stderr[:400]!r}"
+    )
+    assert _murio_en_el_gate(sin_h) and not _llego_a_resolver_interprete(sin_h), (
+        f"{nombre}: la sonda H apuntada a algo inexistente no cerro el gate -> "
+        f"FEESDEFENDER_PROBE_H no se respeta. stderr={sin_h.stderr[:400]!r}"
+    )
+    for r in (abierto, sin_g, sin_h):
+        assert not r.stdout.strip(), (
+            f"{nombre}: escribio en stdout, que es el pipe JSON-RPC de MCP -> "
+            f"{r.stdout[:200]!r}"
+        )
+
+
+@pytest.mark.parametrize("wrapper", _wrappers_con_gate(), ids=lambda p: p.parent.name)
+@pytest.mark.skipif(os.name != "nt", reason="los wrappers son .bat de cmd")
+def test_el_gate_respeta_el_tope_de_intentos(wrapper: Path, tmp_path: Path) -> None:
+    """Con el tope en 1, el wrapper no llega a esperar ni una vez.
+
+    Sin esta asercion `FEESDEFENDER_PROBE_MAXTRIES` seria un knob de produccion
+    que nadie prueba —el arnes de mutacion lo confirmo: borrarlo sobrevivia—, y
+    la rapidez del test de arriba seria un accidente del PATH vacio en vez de una
+    propiedad. Se mide por la huella de la espera: el wrapper espera con `ping`,
+    que con el PATH vaciado no existe, asi que cada intento deja su queja en
+    stderr. Con el tope respetado hay como mucho una; sin el, veinticuatro.
+    """
+    existe = tmp_path / "montado"
+    existe.mkdir()
+    r = _correr_con_sondas(wrapper, tmp_path, tmp_path / "sin-montar", existe)
+    quejas = r.stderr.lower().count("ping")
+    assert quejas <= 1, (
+        f"{wrapper.relative_to(ROOT)}: {quejas} intentos de espera con el tope "
+        f"en 1 -> FEESDEFENDER_PROBE_MAXTRIES no se respeta. "
+        f"stderr={r.stderr[:400]!r}"
+    )
+
+
+@pytest.mark.parametrize("wrapper", _wrappers_con_gate(), ids=lambda p: p.parent.name)
+def test_el_gate_de_montaje_sigue_apuntando_a_produccion_por_defecto(wrapper: Path) -> None:
+    """La costura no puede cambiar a donde mira el wrapper cuando NADIE la usa.
+
+    Un override cuyo default se hubiera ido a otro sitio dejaria los guards de
+    arriba verdes y el conector roto en la maquina de verdad, que es el peor
+    reparto posible. Se comprueba sobre las SENTENCIAS, no sobre el texto crudo:
+    un default correcto escrito dentro de un `REM` no vale.
+    """
+    sentencias = _sentencias(wrapper.read_text(encoding="utf-8"))
+    defaults = [
+        s for s in sentencias
+        if s.upper().startswith('SET "PROBE_') and "FEESDEFENDER_PROBE" not in s.upper()
+    ]
+    assert defaults, f"{wrapper.relative_to(ROOT)}: no asigna PROBE_* por defecto"
+    unidas = " ".join(defaults)
+    for esperado in ("G:", "H:"):
+        assert esperado in unidas, (
+            f"{wrapper.relative_to(ROOT)}: el default de las sondas ya no nombra "
+            f"{esperado} -> apuntaria a otro sitio en produccion. {defaults}"
+        )
