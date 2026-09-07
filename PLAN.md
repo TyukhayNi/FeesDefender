@@ -2272,6 +2272,12 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   **`R1/H-05` REVERTIDO de «refutado» a «confirmado»** (spec §12): el «medido 0/12» de la rev. 4 se
   hizo sobre 12 correos todos de copia única, así que la muestra no podía mostrar el fenómeno.
   Backlog abierto: `MEJORAS #176-#179`.
+  **Estado al 2026-09-07 (noche): la pieza (a) tiene DISEÑO ESCRITO y espera dos cosas de Nikolai.**
+  Spec: `docs/superpowers/specs/2026-09-07-f3-cableado-bandeja-y-verificacion-design.md` (PR #306,
+  commits `f4eb7ac` + `904cff4`). Decisiones D1-D7 tomadas. **Pendiente: (1) que Nikolai revise el
+  spec —puerta del proceso, no se escribe el plan antes—, y (2) si se mide el §11.4 (que las N
+  copias de un Message-ID lleven los mismos adjuntos: asumido, no cotejado, ~30 min).** Después:
+  ronda 1 adversarial **sobre el diseño**, y solo entonces construir. Son 2 rondas por radio de daño.
   **[SIGUIENTE]:** dos piezas, en este orden. **(a) el cableado** — `archivar()` **no tiene
   ningún llamador de producción** (`git grep procurador_relate` solo da su test; la bandeja sigue
   diciendo «NO escribe en el CRM (eso es F3)» en `streamlit_app.py:2699`), y antes de cablearlo hay
