@@ -331,6 +331,8 @@ class TestElGestorRenueva:
                 renovado.is_set, lease_seconds=lease, sesion=sesion,
                 motivo="el renovador no completo ni una renovacion durante el cuerpo")
             estado = _estado_bajo_el_guard(raiz)
+            assert estado is not None, (
+                "el lock desaparecio con el cuerpo dentro: nadie deberia haberlo soltado")
             assert estado["renewed_at"] != estado["acquired_at"], (
                 "el lease no se renovo ni una vez durante el cuerpo")
             with pytest.raises(CaseBusy) as excinfo:

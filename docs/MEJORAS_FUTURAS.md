@@ -6433,6 +6433,22 @@ resuelva—, o el primer informe de viabilidad que se redacte sobre un expedient
 
 ## 145. Un LECTOR del lock puede hacer que el titular PIERDA su mutex (Windows) `[RECLASIFICADO 2026-09-03: es de PRODUCCIÓN]`
 
+> **Al día 2026-09-07: la mitad de TEST está cerrada (PR #302); la de PRODUCCIÓN, no.**
+>
+> `test_RENUEVA_mientras_el_cuerpo_corre` **fabricaba** la carrera que denunciaba: esperaba
+> al latido abriendo el `.lock` unas cincuenta veces por segundo, justo el fichero que el
+> renovador reemplaza con `os.replace`. Ya no lo mira — la señal la da el propio `renovar`
+> y la única lectura va **bajo el guard**—, y la propiedad se reparte en dos porque un
+> plazo de pared no puede probar las dos: el **mecanismo** en ese test y la **puntualidad**
+> en `test_el_renovador_DESPIERTA_dos_veces_por_lease`, contra la constante y sin reloj.
+> Seis mutantes, `python -m tests._mutantes_renovacion_mutex`.
+>
+> **El defecto de producción sigue vivo y con su precio intacto** (dos rondas; `case_mutex.py`
+> declarado intocable por el Plan 5), así que su disparador **no cambia**. Lo que sí cambia,
+> y se declara aquí para que nadie lo descubra por sorpresa: **ya no lo va a levantar un rojo
+> de la suite.** Es deliberado — el rojo no lo levantaba el defecto, lo levantaba el test
+> provocándoselo—, y el disparador escrito abajo nunca fue ese rojo.
+
 **Medido el 2026-09-03**, cerrando `MEJORAS #144`. En la suite completa con semilla `31337`:
 
 ```
@@ -6494,6 +6510,17 @@ apunta a eso. El **mecanismo** está confirmado; su tasa real, no.
 **Por qué importa igual:** la regla de este repo es correr **dos semillas** antes de cerrar. Un test
 que falla una de cada tres corridas hace que esa regla dé rojos que no significan nada, y un rojo
 que no significa nada enseña a ignorar los rojos.
+
+**Lo medido el 2026-09-07, que descarta la lectura fácil del síntoma.** «Bajo carga el hilo de
+renovación no llega a tiempo» **no** explica el rojo. Con 24 procesos ocupados sobre 4 CPUs —6x de
+sobresuscripción— y 8 corridas instrumentadas: el primer latido llega a **1,00-1,03 s** de su
+periodo de 1 s (nunca tarde) y el presupuesto del bucle de espera **crece** con la carga, de 3,05 s
+en reposo a 3,77-4,09 s saturado. O sea que el margen **mejora** cuando la máquina sufre; el test
+aislado bajo esa misma carga dio 12/12 verdes. Lo que queda es que el renovador **muera**, que es
+esta entrada. Confirmado por inyección: un solo `os.replace` fallido del `.lock` produce
+**exactamente** el rojo reportado —«el renovador no latió en 3 s»— con la causa real
+(`PermissionError`) enterrada en `sesion._causa`, o sea que el mensaje del test acusaba al reloj de
+un fallo que no era del reloj.
 
 **Remedio, y el precio no está en el código:** un reintento acotado ante `PermissionError` en
 `leer_estado` y alrededor del `os.replace` de `_escribir_estado` — una violación de compartición en
