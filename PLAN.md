@@ -2230,19 +2230,26 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   el autocomplete legacy devuelve body vacío (`DEAD_ENDS.md`); búsqueda por
   `referencia_cliente`+`referencia_procurador`+nº/serie, sin `clientes`; búsqueda por
   contrario/autos fuera de alcance (`MEJORAS_FUTURAS.md` §31). Suite **935 passed**.
-- **F3 — Escritura en el CRM.** 🎨 **DISEÑO CERRADO (2026-07-19); pendiente construir.** El relate+adjuntar
-  va por un **plugin propio de Roundcube** (`plugin.sudespacho_asignaa_*`), NO nest-mail/`MailRoundcube`/AppSync
-  (refutados por HAR `judicial_648`). Llave = **Message-ID RFC** (conservado en el auto-forward de `procesal@`,
-  verificado con cabeceras). **Spike de auth HECHO** (2 pruebas en vivo + HAR `handshake_webmail`): el plugin es
-  llamable con la sesión del webmail (`fetch`+`X-Roundcube-Request=rcmail.env.request_token` → 200+JSON); el acceso
-  es **SSO por `init.php?dataHash`** (blob cifrado client-side) → **transporte = webview**; headless-puro descartado
-  (regenerar el `dataHash` + credenciales IMAP = frágil/inseguro). **A' viable** (archiva solo). Specs:
-  `docs/superpowers/specs/2026-07-19-f3-relate-crm-plugin-roundcube-design.md` (v2, tras panel adversarial) +
-  `…-intake-miniapp-entrega-design.md` (miniapp bajo demanda por persona, bandeja=visor compartido, índice-caché
-  del emparejamiento en Drive, cada quien su cuenta, judicial-first, autoría→F6). SSOT del CRM:
-  `INTEGRACION_SUDESPACHO §10.10/§14.5`; dead-end en `DEAD_ENDS`. **[SIGUIENTE]:** `writing-plans` → construir
-  cliente `core/procurador_relate.py` (adaptador de transporte webview, TDD) + miniapp/bandeja mínima + índice-caché;
-  validar relate/adjuntar reales en expediente de prueba. ✅ Limpieza de pruebas del CRM hecha (Nikolai, 2026-07-19).
+- **F3 — Escritura en el CRM.** 🔨 **CLIENTE CONSTRUIDO Y VALIDADO EN VIVO (2026-09-07).** Spec **rev. 4**,
+  con su **R1 adversarial adjudicada** (Codex, NO-SHIP, 9 confirmados · 1 rebajado · 1 refutado; acta hermana
+  `…-f3-relate-crm-r1-adversarial-review.md`).
+  **El descarte de `MailRoundcube` era falso:** salió de un HAR, que prueba qué hace la interfaz y no qué
+  permite la API; los cinco endpoints REST estaban en `/api/docs.json` —y en el atlas de este repo— sin que
+  nadie los llamara. Revertido en `DEAD_ENDS`.
+  **El reparto, medido de punta a punta contra el expediente de prueba 636:** el **primer relate** de un correo
+  entrante lo hace el **webmail con sesión** (`fetch` desde el origen `roundcube.sudespacho.net`; no hace falta
+  iframe ni regenerar el `dataHash`) — porque la vía REST **solo opera sobre correos ya indexados** en la tabla
+  `mail`, y un correo entra ahí al relacionarlo. **Todo lo demás es REST `x-api-key`**: completar adjuntos,
+  renombrar, carpeta, anti-duplicado, verificación.
+  **Construido:** `core/procurador_relate.py` + 31 tests, arnés de mutación (todos muertos). Ningún `ok` sale de
+  un status: `relate/attachments` responde `success` haga lo que haga y un miembro inexistente devuelve 200 sin
+  escribir, así que **se verifica por relectura y por censo del gestor documental**.
+  **Remediado de la R1:** el destino del archivado era un id **sin tipo de elemento** (H-06, crítico) → `element`
+  en `RobotProposal`/`HumanAction` + `destino_efectivo()`; y «ya relacionado» ya no significa «ya archivado»
+  (H-01) — **ese caso ocurrió en la primera prueba de campo**, con el documento sin subir.
+  SSOT del CRM: `INTEGRACION_SUDESPACHO §10.10/§14.5`. El spec de entrega (miniapp) queda **afectado y por
+  revisar** (§5). **[SIGUIENTE]:** el paso del webmail dentro de la app, y **medir `expedientes_judiciales`**
+  (todo se probó en extrajudicial). ⚠️ Residuos de prueba en el 636, sin borrar (borrado en CRM = decisión de Nikolai).
 - **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store
   de correcciones few-shot (§10).
 - **F5 — Grabaciones.** ⬜ Descarga de enlaces (WeTransfer caduca) + fallback manual.

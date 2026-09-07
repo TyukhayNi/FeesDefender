@@ -2754,6 +2754,7 @@ with tab_bandeja:
             _kexp = f"sel_exp_{item.email_id}"
             _kdat = f"sel_datos_{item.email_id}"
             _kco = f"sel_coin_{item.email_id}"
+            _kelem = f"sel_elem_{item.email_id}"
             sel_exp_id = st.session_state.get(_kexp, exp_id)
             datos = st.session_state.get(_kdat, dict(prop.datos_expediente or {}))
             coincidencias = st.session_state.get(_kco, list(prop.coincidencias or []))
@@ -2796,6 +2797,9 @@ with tab_bandeja:
                             _new = int(etiqueta["id"])
                             _ndatos = _ps.fetch_expediente_datos(_new, element=elemento)
                             st.session_state[_kexp] = _new
+                            # El elemento viaja con el id: sin él, el número es
+                            # ambiguo entre judicial y extrajudicial (R1/H-06).
+                            st.session_state[_kelem] = elemento
                             st.session_state[_kdat] = _ndatos
                             st.session_state[_kco] = _ps.recompute_coincidencias(sig, _ndatos)
                             st.rerun()
@@ -2812,16 +2816,18 @@ with tab_bandeja:
             col_ok, col_no = st.columns(2)
             if col_ok.button("Confirmar", key=f"ok_{item.email_id}",
                              disabled=not puede_confirmar, type="primary"):
+                _sel_elem = st.session_state.get(_kelem)
                 action = _pr.HumanAction(
                     tipo="confirmar",
                     expediente_id=(sel_exp_id if sel_exp_id != exp_id else None),
+                    element=(_sel_elem if _sel_elem and _sel_elem != prop.element else None),
                     carpeta_id=(int(carpeta_id) if int(carpeta_id) != (prop.carpeta_id or 0) else None),
                 )
                 _pr.record_decision(prop, action, quien=get_actor())
                 nuevo = _pr.transicionar(item, "confirmar")
                 _pr.upsert_queue_item(nuevo)
                 st.toast(f"Confirmado (dry-run): {item.email_id}")
-                for _k in (_kexp, _kdat, _kco):
+                for _k in (_kexp, _kdat, _kco, _kelem):
                     st.session_state.pop(_k, None)
                 st.rerun()
             if col_no.button("Descartar", key=f"no_{item.email_id}"):
@@ -2830,7 +2836,7 @@ with tab_bandeja:
                 nuevo = _pr.transicionar(item, "descartar", motivo="descartado_humano")
                 _pr.upsert_queue_item(nuevo)
                 st.toast(f"Descartado: {item.email_id}")
-                for _k in (_kexp, _kdat, _kco):
+                for _k in (_kexp, _kdat, _kco, _kelem):
                     st.session_state.pop(_k, None)
                 st.rerun()
 

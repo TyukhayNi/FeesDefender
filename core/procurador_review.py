@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .config import settings
+from .alta_crm_politica import elemento_canonico
 from .intake_log import get_actor
 from .utils import now_iso
 
@@ -48,6 +49,10 @@ class RobotProposal:
     confianza: str                       # "alta" | "dudosa" | "ninguna"
     carpeta_id: int | None
     carpeta: str | None
+    # Tabla del CRM a la que pertenece `expediente_id`. Sin él, el id es un número
+    # ambiguo: el extrajudicial 636 y un judicial 636 son expedientes distintos.
+    # `None` significa «no consta», nunca «judicial por defecto» (R1/H-06).
+    element: str | None = None
     attachment_names: dict[str, str] = field(default_factory=dict)
     signals: dict[str, Any] = field(default_factory=dict)
     datos_expediente: dict[str, Any] = field(default_factory=dict)
@@ -85,6 +90,7 @@ def from_intake_proposal(email_id: str, proposal: IntakeProposal) -> RobotPropos
     return RobotProposal(
         email_id=email_id,
         expediente_id=proposal.match.expediente_id,
+        element=getattr(proposal.match, "element", None),
         confianza=proposal.match.confianza,
         carpeta_id=proposal.carpeta_id,
         carpeta=proposal.carpeta_sugerida,
@@ -107,6 +113,7 @@ class HumanAction:
     """
     tipo: str
     expediente_id: int | None = None
+    element: str | None = None
     carpeta_id: int | None = None
     carpeta: str | None = None
     attachment_names: dict[str, str] | None = None
@@ -327,6 +334,35 @@ def queue_store_path() -> Path:
     return settings.project_root / "data" / "_aprendizaje" / "intake_cola.jsonl"
 
 
+def destino_efectivo(
+    proposal: RobotProposal, action: HumanAction,
+) -> tuple[str, int] | None:
+    """El par ``(elemento_canónico, id)`` donde F3 debe archivar, o ``None``.
+
+    Es la frontera F2→F3 y la única fuente del destino: aplica los overrides humanos
+    sobre el snapshot del robot **sin mutarlo** (el snapshot es la pata «propuesta» de
+    la terna §18.9 y tiene que quedar como estaba).
+
+    Devuelve ``None`` —o sea, *a revisión, no se escribe*— cuando el destino no es
+    inequívoco: sin id, sin elemento, con un elemento que el CRM no reconoce, o en un
+    descarte. **Un elemento ausente no se completa con un default** (R1/H-06): la
+    bandeja deja elegir entre judicial y extrajudicial, y suponer el uno cuando la
+    persona eligió el otro archiva el correo en el expediente de otro cliente. Los
+    ítems confirmados en dry-run, anteriores a este campo, caen aquí a propósito: una
+    confirmación de entonces no es permiso para escribir hoy.
+    """
+    if action.tipo != "confirmar":
+        return None
+    expediente_id = action.expediente_id if action.expediente_id is not None else proposal.expediente_id
+    if expediente_id is None:
+        return None
+    element = action.element or proposal.element
+    canonico = elemento_canonico(element)
+    if not canonico:
+        return None
+    return canonico, int(expediente_id)
+
+
 def upsert_queue_item(item: ReviewItem, *, store_path: Path | str | None = None) -> Path:
     """Persiste (o actualiza) un item de la cola.
 
@@ -349,6 +385,7 @@ def _item_from_dict(d: dict[str, Any]) -> ReviewItem:
     proposal = RobotProposal(
         email_id=prop.get("email_id", d.get("email_id", "")),
         expediente_id=prop.get("expediente_id"),
+        element=prop.get("element"),
         confianza=prop.get("confianza", "ninguna"),
         carpeta_id=prop.get("carpeta_id"),
         carpeta=prop.get("carpeta"),

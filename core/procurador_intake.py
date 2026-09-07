@@ -120,6 +120,9 @@ class MatchResult:
     """Resultado del emparejamiento correo → expediente."""
     expediente_id: int | None = None
     confianza: str = "ninguna"  # "alta", "dudosa", "ninguna"
+    # Tabla del CRM donde se buscó. Viaja hasta F3 porque el id solo no basta
+    # para identificar un expediente (R1/H-06).
+    element: str = "expedientes_judiciales"
     datos_expediente: dict[str, Any] = field(default_factory=dict)
     senales_usadas: list[str] = field(default_factory=list)
     candidatos: list[dict[str, Any]] = field(default_factory=list)

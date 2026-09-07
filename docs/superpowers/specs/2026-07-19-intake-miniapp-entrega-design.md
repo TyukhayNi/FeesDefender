@@ -75,6 +75,23 @@ es además el sitio natural donde F6 añadirá la autoría (§8).
 
 ## 5. Auth (relación con el Track 1 de F3)
 
+> ⚠️ **Afectada por la rev. 4 del spec F3 (2026-09-07) — pendiente de revisar este documento.**
+> Lo medido cambia el alcance del webview, no su necesidad:
+> - **Sigue haciendo falta** un navegador con la sesión del CRM, pero **solo para el primer
+>   relate** de cada correo entrante. Todo lo demás —completar adjuntos, renombrar, elegir
+>   carpeta, verificar, anti-duplicado— es REST con `x-api-key` desde Python.
+> - **Ya no hace falta el iframe.** `roundcube.sudespacho.net` en su propio origen, con la
+>   sesión viva, expone `rcmail.env` entero (`sudespacho_id_cuenta`, el mapa
+>   `{uid IMAP: Message-ID}`, el `request_token`). Verificado en vivo.
+> - **§4 queda tocada:** «¿archivado?» no es solo «¿está relacionado?» — un correo puede
+>   constar relacionado y tener sus documentos sin subir (ocurrió en la primera prueba de
+>   campo). El estado ✅ tiene que mirar relación **y** documentos.
+> - **§2 queda tocada:** la cuenta desde la que se archiva **decide quién ve el correo** en el
+>   CRM (los permisos se derivan del buzón). Deja de ser un detalle de implementación.
+>
+> Lo que **no** cambia: la decisión de producto (app instalable, bajo demanda, solo la bandeja)
+> es de Nikolai y esta medición no la revoca.
+
 **RESUELTO por el spike (2026-07-19).** La miniapp lleva un **navegador embebido (webview)**.
 La persona entra al CRM con su login normal; el CRM hace su **SSO** al webmail (abre
 `roundcube…/init.php?dataHash=…`, un token cifrado que **genera el propio CRM** y Roundcube
