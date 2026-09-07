@@ -7789,3 +7789,38 @@ señaló la R1 adversarial de `#172`/`#173`.
 **Disparador de promoción.** Va junto a `MEJORAS #125` (los tres manifiestos `.dxt` cablean un
 intérprete). Ninguna de las dos merece por sí sola una reinstalación manual de tres extensiones;
 juntas sí, la próxima vez que haya que reconstruir cualquiera de los `.dxt`.
+
+---
+
+## 175. La regla de oro del `2>>` no se reprodujo, y hasta volver a medirla no explica nada
+
+> Observado el 2026-09-07 al diagnosticar la caída de los dos conectores MCP.
+
+**Qué dice la regla.** Desde el 2026-08-31, la cabecera de los wrappers y `test_mcp_wrappers.py`
+sostienen que **redirigir en la línea que lanza el server** (`... 2>>"%LOG%"`) da
+`CONNECTION_CLOSED` en Claude Code: el server muere en `stdout.flush()` con `OSError 22` sin haber
+recibido `initialize`. El experimento que la respalda fue **controlado**: dos `.bat` idénticos
+salvo el `2>>`.
+
+**Qué se midió el 2026-09-07.** El wrapper **0.4.0** de `expedientes_xl` —el que estaba realmente
+desplegado— lleva `2>>"%LOG%"` en su línea de lanzamiento (línea 47) y ese día **conectó y sirvió
+tools** en Claude Code 2.1.231: `list_dir` devolvió el contenido de la unidad. La conexión se
+verificó por resultado, no por que el conector apareciera en la lista.
+
+**Qué NO significa eso.** No refuta el experimento de agosto, que fue controlado y este no lo es
+(no se repitieron los dos `.bat` idénticos contra el cliente actual). Lo que significa es que la
+regla **ya no explica lo que se ve**, y por tanto **no puede usarse como explicación de una caída**
+hasta remedirla. En concreto, atribuirle la caída de `email-export` habría sido atribuir sin medir:
+su causa medida es otra —lanza `%~dp0server.py` **sin `--repo-root`** y el bundle **no lleva
+`core/`**, así que muere importando `core.email_export` antes de contestar `initialize`—.
+
+**Qué hacer.** Repetir el experimento de control contra la versión actual del cliente: dos
+wrappers idénticos salvo el `2>>`, arrancados por Claude Code, y ver cuál conecta. Según salga:
+confirmar la regla, acotarla a versiones del cliente, o retirarla.
+
+**Mientras tanto, seguir respetándola.** No cuesta nada —el stderr del server lo recoge el
+cliente— y el coste de equivocarse en el otro sentido es un conector muerto en silencio. Lo que no
+vale es **apoyarse** en ella para explicar nada.
+
+**Disparador de promoción.** Que vuelva a caer un conector con `CONNECTION_CLOSED`, o que haya que
+tocar la línea de lanzamiento de cualquier wrapper por otro motivo.
