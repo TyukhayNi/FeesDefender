@@ -2248,8 +2248,10 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   en `RobotProposal`/`HumanAction` + `destino_efectivo()`; y «ya relacionado» ya no significa «ya archivado»
   (H-01) — **ese caso ocurrió en la primera prueba de campo**, con el documento sin subir.
   SSOT del CRM: `INTEGRACION_SUDESPACHO §10.10/§14.5`. El spec de entrega (miniapp) queda **afectado y por
-  revisar** (§5). **[SIGUIENTE]:** el paso del webmail dentro de la app, y **medir `expedientes_judiciales`**
-  (todo se probó en extrajudicial). ⚠️ Residuos de prueba en el 636, sin borrar (borrado en CRM = decisión de Nikolai).
+  revisar** (§5). **`expedientes_judiciales` MEDIDO** (2026-09-07, judicial de prueba 683): mismo slug pelado,
+  mismas carpetas, sin contaminación cruzada — y las relaciones son **multi-elemento**, así que la
+  idempotencia va por PAR `(elemento, id)`, no por «¿tiene alguna relación?».
+  **[SIGUIENTE]:** el paso del webmail dentro de la app. ⚠️ Residuos de prueba en el 636, sin borrar (borrado en CRM = decisión de Nikolai).
 - **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store
   de correcciones few-shot (§10).
 - **F5 — Grabaciones.** ⬜ Descarga de enlaces (WeTransfer caduca) + fallback manual.

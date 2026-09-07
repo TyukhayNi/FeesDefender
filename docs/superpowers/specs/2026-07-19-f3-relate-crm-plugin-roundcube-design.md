@@ -118,6 +118,24 @@ accesible y trae:
 Composite del plugin: `<MsgID>,,,{uid}|||RC,,,{id_cuenta},,,{carpeta}`, **doblemente
 URL-encodeado** (solo ese campo). Relate ejecutado así en vivo → 200 con su `mailadjunto`.
 
+### 2.10 `expedientes_judiciales` — medido (2026-09-07)
+
+Punta a punta contra el **judicial de prueba 683** (`330/2026`, ref «PRUEBA - BORRAR»), con el
+orquestador y relate real (`ya_estaba=False`):
+
+- **`relatedElement: "expedientes_judiciales"` se acepta.** `expedientes_judiciales->izq` y el
+  alias `judiciales` dan **500** — la misma regla que en extrajudicial: el slug canónico, pelado.
+- El censo del gestor documental con `left.expedientes_judiciales.id` **discrimina**.
+- Las **carpetas son las mismas** del tenant: `312 = DOCUMENTOS` sirve igual.
+- Relación creada, documento subido con su nombre final a la carpeta pedida, **y el
+  extrajudicial 636 intacto**: sin contaminación cruzada.
+
+**Y un hallazgo que no se buscaba: las relaciones son multi-elemento, y la idempotencia tiene
+que ser por PAR.** El correo ya constaba en `extrajudiciales:636` y aun así se relacionó con
+`expedientes_judiciales:683`; ambas conviven. Si el pre-chequeo mirase «¿tiene alguna
+relación?» en vez de «¿tiene **esta**?», habría contestado «ya estaba» y no habría archivado
+nada — y un correo puede pertenecer a dos asuntos a la vez. Fijado con test y mutante.
+
 ## 3. Arquitectura
 
 ### 3.1 `core/procurador_relate.py` — cliente REST
@@ -219,8 +237,8 @@ un navegador, pero solo para este paso.
    prometido. Mitigación: test de integración `slow` contra el expediente de prueba.
 2. **La idempotencia del adjuntar.** No se ha re-posteado el mismo adjunto. Hasta probarlo, el
    cliente no reintenta solo: filtra por censo lo que ya está.
-3. **`expedientes_judiciales` NO está medido**: todas las pruebas fueron sobre un extrajudicial.
-   El plan es judicial-first, así que **hay que medirlo antes de habilitarlo**.
+3. ~~`expedientes_judiciales` sin medir~~ — **MEDIDO el 2026-09-07** (§2.10). Se retira de esta
+   lista.
 4. **Pasar `cookies`+`dataHash` reales al endpoint REST** (§7): no probado.
 5. **Escritura incierta** (timeout tras escribir): no hay protocolo de reconciliación. R1-H-03.
 6. **Dos escritores a la vez**: no hay exclusión ni clave de idempotencia remota. R1-H-04.

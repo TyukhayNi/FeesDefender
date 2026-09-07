@@ -562,3 +562,61 @@ def test_h02_censo_posterior_ilegible_es_indeterminado_no_exito():
     assert "indetermin" in (res.error or "").lower()
     assert "reintentar" in (res.error or "").lower(), \
         "el mensaje tiene que decir explícitamente que NO se reintente a ciegas"
+
+
+# ---------------------------------------------------------------------------
+# Judicial — medido en vivo el 2026-09-07 contra el judicial de prueba 683
+# ---------------------------------------------------------------------------
+
+CON_683_JUD = {"expedientes_judiciales": {
+    "nombre": "Expedientes Judiciales",
+    "relacionados": {"683": {"id": 683, "miembro": 683,
+                             "elemento": "expedientes_judiciales"}}}}
+
+
+def test_judicial_usa_el_slug_sin_sufijo_igual_que_extrajudicial():
+    """`expedientes_judiciales->izq` y el alias `judiciales` dan 500 en REST (medido)."""
+    t = FakeTransport(**{"relate/selected": _relate_ok(),
+                         "findRelations": secuencia(SIN_RELACION, CON_683_JUD)})
+
+    res = relacionar(MSG, "expedientes_judiciales", [683], account="15", transport=t)
+
+    assert res.ok and res.verificado
+    assert t.cuerpos("relate/selected")[0]["relatedElement"] == "expedientes_judiciales"
+
+
+def test_la_idempotencia_es_por_PAR_no_por_estar_relacionado_con_algo():
+    """Un correo ya relacionado con OTRO expediente sí debe relacionarse con este.
+
+    Medido en vivo: el correo constaba en el extrajudicial 636 y el relate contra el
+    judicial 683 escribió igual. Si el pre-chequeo mirase «¿tiene alguna relación?» en
+    vez de «¿tiene ESTA?», habría contestado «ya estaba» y no habría archivado nada —
+    y un correo puede pertenecer a dos asuntos a la vez.
+    """
+    ya_con_otro = {"extrajudiciales": {"relacionados": {"636": {"miembro": 636}}}}
+    ambos = {"extrajudiciales": {"relacionados": {"636": {"miembro": 636}}},
+             "expedientes_judiciales": {"relacionados": {"683": {"miembro": 683}}}}
+    t = FakeTransport(**{"relate/selected": _relate_ok(),
+                         "findRelations": secuencia(ya_con_otro, ambos)})
+
+    res = relacionar(MSG, "expedientes_judiciales", [683], account="15", transport=t)
+
+    assert res.ya_estaba is False, "una relación con OTRO elemento no es esta relación"
+    assert res.ok and res.verificado
+    assert len(t.cuerpos("relate/selected")) == 1, "tiene que postear"
+
+
+def test_el_censo_del_gestor_filtra_por_el_elemento_correcto():
+    """`left.{element}.id`: con judicial no puede colarse el censo del extrajudicial."""
+    censos = iter([_gdocu([]), _gdocu(["x.pdf"])])
+    t = FakeTransport(**{"relate/attachments": {"status": "success", "errors": []},
+                         "element_registries/gdocu": lambda _: _Resp(next(censos))})
+
+    adjuntar("expedientes_judiciales", 683, "464006",
+             [(Adjunto("1", "a.pdf"), "x.pdf")],
+             folder_id="312", message_id=MSG, transport=t)
+
+    params = dict(t.llamadas[0][2])
+    assert params["filterGroup[filterGroups][0][filters][0][property]"] == \
+        "left.expedientes_judiciales.id"
+    assert params["filterGroup[filterGroups][0][filters][0][value]"] == "683"
