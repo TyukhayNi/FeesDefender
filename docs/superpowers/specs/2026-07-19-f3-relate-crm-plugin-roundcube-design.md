@@ -2,263 +2,252 @@
 estado: vigente
 dueño: Nikolai Tyukhay
 fecha: 2026-07-19
-revision: v2 (tras panel de revisión adversarial + verificación del flujo de correo y del código)
+revision: v3 (2026-09-07 — la vía REST del módulo `MailRoundcube`, medida de punta a punta; el plugin pasa a plan B)
 topic: Intake procuradores F3 — escritura en el CRM (relate + adjuntar)
 relacionado:
   - docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md (§7, §15 F3)
-  - docs/INTEGRACION_SUDESPACHO.md (§10.10 — SSOT del contrato del plugin)
+  - docs/INTEGRACION_SUDESPACHO.md (§10.10 — SSOT del contrato)
   - docs/DEAD_ENDS.md (Módulo de correo nest-mail/Roundcube)
-  - docs/superpowers/specs/2026-07-19-intake-miniapp-entrega-design.md (entrega: miniapp bajo demanda por persona)
+  - docs/superpowers/specs/2026-07-19-intake-miniapp-entrega-design.md (entrega; su §5 queda afectada)
 ---
 
 # Diseño — F3: escritura en el CRM (relate correo↔expediente + adjuntar)
 
-> Fase F3 del intake de correos de procuradores. F1 (matcher) y F2 (bandeja) ya están
-> MERGEADAS; hoy todo corre en dry-run. Esta fase añade la escritura real.
+> Fase F3 del intake de correos de procuradores. F1 (matcher) y F2 (bandeja) están
+> MERGEADAS y corren en dry-run. Esta fase añade la escritura real.
 >
-> **v2** incorpora: (a) el panel de 3 revisiones adversariales (HAR / auth-sesión /
-> alcance-reuso); (b) la verificación en código de lo que ya existe; (c) el flujo de
-> correo real, confirmado con cabeceras: `procesal@tyukhay.legal` **reenvía** (auto-forward
-> de Gmail) a las 4 cuentas individuales de los abogados, y Roundcube es un **cliente IMAP
-> sobre esas mismas cuentas de Gmail**. El `Message-ID` se **conserva** en el reenvío
-> (verificado carácter a carácter) → es una llave estable robot↔Roundcube.
+> **El nombre del fichero conserva «plugin-roundcube» por los enlaces entrantes; desde la
+> rev. 3 el plugin ya no es la vía principal.** Lo es la API REST de `api-crm-commons`.
+
+## 0. Qué cambió en la rev. 3, y por qué importa
+
+Las rev. 1 y 2 daban por establecido que **la escritura solo era posible desde dentro de la
+sesión del webmail**: un plugin propio de Roundcube, invocado por `fetch` desde el iframe,
+con la sesión que el CRM monta por SSO. De ahí salía todo lo demás — el transporte por
+webview, la miniapp con navegador embebido, el HTML que había que parsear con guardarraíl,
+y la lista de incógnitas de la §8.
+
+**Eso era cierto de la interfaz y falso del sistema.** El 2026-09-07 se midió que
+`api-crm-commons` expone las mismas cuatro operaciones como REST, autenticadas con la
+`x-api-key` que FeesDefender ya usa, y que **la cadena entera funciona con `cookies` y
+`dataHash` vacíos**.
+
+**El error de método, para no repetirlo:** el HAR del 2026-07-19 probó *qué hace la UI*, y de
+ahí se concluyó *qué permite la API*. `MailRoundcube` llegó a marcarse «candidato descartado»
+en `DEAD_ENDS` sin haberlo llamado nunca. El contrato declarado —`/api/docs.json`, público,
+la Fase A del atlas que este mismo repo genera— lo nombraba desde el principio. Es
+literalmente la trampa que `CLAUDE.md` §14.6 avisa: **leer el contrato declarado antes de
+sondear en vivo**, y no confundir «no lo vi» con «no está».
+
+El disparador de la revisión fue lateral: El Contable había archivado en su spec F10 la
+sospecha de que `POST /api/mail/relate/attachments` «olía a la dirección contraria, a correo
+entrante». Tenía razón y nadie la había seguido.
 
 ## 1. Objetivo y alcance
 
 Dado un correo ya emparejado con su expediente y confirmado en la bandeja (F2),
-**relacionarlo con el expediente en el CRM** y **subir sus adjuntos reales al gestor
-documental** con nombre legible y carpeta correcta, de forma idempotente y con
-verificación y traza del resultado.
+**relacionarlo con el expediente en el CRM** y **subir sus adjuntos al gestor documental**
+con nombre legible y carpeta correcta, de forma idempotente, verificada y trazada.
 
-**Entra (Track 2 — este spec):** el cliente que ejecuta las escrituras contra el plugin
-Roundcube con la **sesión inyectada**; la resolución `Message-ID → (uid, cuenta, carpeta)`;
-las lecturas api-crm que el diálogo necesita (tipos de entidad, carpetas); y la **traza del
-resultado del write**.
+**Entra:** el cliente REST de las cinco operaciones de correo; el anti-duplicado; la
+verificación por relectura; y la traza del resultado del write.
 
 **NO entra:**
-- **Obtención de la sesión Roundcube** (handshake frontal→Roundcube): **Track 1 — spike HECHO
-  2026-07-19 (ver §2).** Resuelto: la sesión se obtiene **vía webview** (navegador embebido de
-  la miniapp), no headless. Este módulo **construye** las peticiones al plugin; el webview ya
-  autenticado las **ejecuta**.
 - **Nombrado LLM** y **decisión de qué adjunto subir** (F4). F3 consume `{nombre_final, subir}`
-  por adjunto; la lógica que los produce es F4.
+  por adjunto.
 - Grabaciones (F5) y control de calidad (F6).
+- **El webview.** Deja de ser necesario para el camino principal (§7 lo conserva como plan B).
 
-## 2. Topología de correo y auth (fundamento del diseño)
+## 2. El contrato, medido
 
-1. El procurador escribe a **`procesal@tyukhay.legal`** (y, residual, `procesal@fglegal.es`).
-2. `procesal@` **no se opera**: por filtros de Gmail hace **auto-forward** a las **4 cuentas
-   individuales** (`nikolai.tyukhay@`, `paola.barreto@`, `sergio.pinol@`, `ana.velastegui@`,
-   todas `@tyukhay.legal`). El reenvío **conserva el `Message-ID` original** (verificado).
-3. **El robot del intake lee `procesal@`** (`BUZONES_DESPACHO` en `core/gmail_source.py`).
-4. **Roundcube (el webmail de sudespacho) es un cliente IMAP/SMTP sobre las cuentas de Gmail
-   de cada abogado** (`imap.gmail.com`/`smtp.gmail.com`). `procesal@` **NO está en Roundcube**.
-5. **Consecuencia clave:** el correo que el robot ve en `procesal@` es **el mismo mensaje**
-   (mismo `Message-ID`) que está, por reenvío, en la cuenta Gmail de cada abogado — y esa
-   cuenta es la que Roundcube abre. Por tanto el relate se hace **en la cuenta de un abogado**
-   (no en `procesal@`), localizando el correo por `Message-ID`.
+Host `api-crm-commons-pro.sudespacho.biz`, header **`x-api-key`**, JSON. Todo lo de esta
+sección se midió en vivo el **2026-09-07**; el detalle literal es el SSOT de
+`INTEGRACION_SUDESPACHO.md §10.10`.
 
-**Tres dominios de auth distintos** (verificado en código + HAR):
-- `api-crm-commons-pro.sudespacho.biz` — REST, **`x-api-key`** (lo usa `core/`: buscar
-  expediente, carpetas). Confirmado en `SudespachoConfig` (`auth_header="x-api-key"`).
-- `tnm.sudespacho.net` — frontal legacy, `PHPSESSID`+`@token` (no lo usa F3).
-- `roundcube.sudespacho.net` — webmail, **sesión Roundcube** (cookies `roundcube_sessid`/
-  `sessauth` + header `X-Roundcube-Request`, token estable por-sesión).
+| Operación | Petición | Respuesta |
+|---|---|---|
+| Leer relaciones | `GET /api/mail/findRelations/{base64(Message-ID)}?account={n}` | `{elemento: {nombre, relacionados: {id: {id, url, texto, elemento, miembro}}}}` |
+| Anti-duplicado en lote | `POST /api/mail/findAssigned` · `{messageIds: [<id>, …]}` | array con **los que ya están asignados** |
+| ¿Trae adjuntos? | `POST /api/mail/attachments` · `{messageIds: "<id>", account}` | `{status, hasAttachments: bool, errors}` |
+| **RELATE** | `POST /api/mail/relate/selected` · `{messageIds, relatedMembers, relatedElement, cookies, dataHash}` | `acumulaDatos.mailadjunto[mail_id] = [{id, nombre_archivo, enlace}]` |
+| **ADJUNTAR** | `POST /api/mail/relate/attachments` · `{datosRelacionados, datosAdjuntos, folderId, messageIds}` | `{status: "success", errors: []}` — **siempre** (§4) |
 
-**Auth RESUELTO — spike en vivo (2026-07-19).** Dos comprobaciones:
-1. **El plugin es llamable programáticamente** con la sesión del webmail: un `fetch` POST a
-   `?_task=mail&_action=plugin.sudespacho_asignaa_get_relaciones` con header
-   `X-Roundcube-Request: rcmail.env.request_token` (+ cookies automáticas) → **200 + JSON** de
-   Roundcube. Read-only, confirmado en vivo. (Roundcube va en **iframe cross-origin** dentro
-   del SPA; `rcmail` vive en el contexto del iframe.)
-2. **El acceso a Roundcube es SSO por token en la URL:** el CRM abre
-   `roundcube…/init.php?randomvar=…&dataHash=…` → `index.php` → `/?_task=&_token=…`. El
-   `dataHash` es un **blob cifrado (~620 chars) generado en el cliente (JS del CRM)** — no
-   aparece en ninguna respuesta; casi seguro cifra los datos/credenciales IMAP de la cuenta
-   (de `nest-mail/…/accounts_links`) que Roundcube descifra (`dataHashDecrypted`).
+Siete hechos que el diseño necesita y que la rev. 2 tenía mal o no tenía:
 
-→ **Decisión de transporte: webview, NO headless-puro.** La miniapp (spec de entrega) lleva un
-navegador embebido; la persona entra al CRM (login normal), el CRM hace el SSO y monta Roundcube
-como siempre, y la app ejecuta el `fetch` del punto 1. **Reproducir la sesión headless con
-`requests` queda descartado**: exigiría regenerar el `dataHash` (reverse-engineering del cifrado
-del JS) y manejar credenciales IMAP — frágil e inseguro (candidato a nota en `DEAD_ENDS`).
+1. **`cookies` y `dataHash` se exigen presentes y funcionan vacíos.** El relate respondió 200
+   y escribió con `""` en ambos. Son el resto de la firma del plugin, no una dependencia real
+   de esta ruta. *(Lo que esto NO prueba: que sigan siendo opcionales mañana. §8.)*
+2. **`relatedElement` va SIN el sufijo `->izq`** del plugin. Con él → 500 en
+   `RelationsViewsService::getRawData()`.
+3. **El relate devuelve el `mail_id` y los `att_id`** en `acumulaDatos.mailadjunto`, igual que
+   el plugin: el encadenado relate→adjuntar se conserva, y la respuesta es **JSON**, no el
+   HTML que la rev. 2 mandaba parsear.
+4. **`uid` del elemento `mail` ES el Message-ID RFC.** Medido aquí (39/40 de una muestra) y
+   antes por El Contable. El filtro `uid = <Message-ID>` discrimina 1 sobre un censo de
+   462.414. **Consecuencia:** el `mail_id` se recupera releyendo, lo que **deroga el «límite
+   conocido» de la rev. 2** (que daba por imposible recuperarlo sin re-relacionar).
+5. **`account` es el campo `cuenta` del elemento `mail`**, y no es decorativo: **determina el
+   buzón donde se busca**. El mismo Message-ID con la cuenta correcta devolvió relaciones y
+   con otra devolvió vacío. Correlación cuenta→dirección medida por El Contable sobre 100
+   correos (`REFERENCIA_SUDESPACHO_API_PERMISOS.md`); **cuenta `0` no es válida** para
+   `findRelations` (400).
+6. **El Message-ID vale con y sin `<>`.** Encaja con lo que ya guarda `gmail_source`, que lo
+   pela con `.strip("<>")`. Sin conversión.
+7. **`hasAttachments` cuenta también los inline** (logo de firma): un correo dio `true` y su
+   `mailadjunto` vino vacío. No es un fallo del endpoint —da `false` cuando toca, comprobado—
+   sino que **son dos preguntas distintas**: `hasAttachments` = «¿hay algo adjunto?»;
+   `mailadjunto` del relate = «¿qué adjuntos son archivables?». Para decidir qué subir, la
+   buena es la segunda.
 
-## 3. Hallazgos que fundamentan el diseño (HAR + UI + cabeceras + código)
+**Prueba de punta a punta** (expediente de prueba extrajudicial 636, 2026-09-07):
+censo previo del gestor documental = 0 documentos → relate → `findRelations` devuelve
+`extrajudiciales:636` → adjuntar 1 de 3 adjuntos → censo posterior = 1 documento, con el
+nombre pedido, en la carpeta 1. La selección se respetó: los otros dos no subieron.
 
-1. **El write es un plugin de Roundcube** (`POST roundcube.sudespacho.net/?_task=mail&_action=
-   plugin.sudespacho_asignaa_*`, form-urlencoded, `X-Requested-With`+`X-Roundcube-Request`).
-   NO es `MailRoundcube` (api-crm) ni `PUT /api/mail/{id}` (nest-mail) ni AppSync. SSOT del
-   contrato: `INTEGRACION_SUDESPACHO.md §10.10`.
-2. **Dos diálogos con dependencia de datos** (confirmado HAR):
-   - Diálogo 1 "Asignación de email": elegir entidad → buscar/seleccionar expediente →
-     **Confirmar** = relate (`set_registros_seleccionados`).
-   - **La respuesta del relate DEVUELVE** `mail_id` (id del correo en el CRM) y la lista de
-     adjuntos con sus `att_id` — en `env.sudespacho_comprueba_adjuntos_email.acumulaDatos.
-     mailadjunto[mail_id] = [{id, nombre_archivo, enlace}]`. **No preexisten** (no salen de
-     `get_relaciones` ni de las GET api-crm). → El adjuntar CONSUME lo que el relate produce;
-     encadenar es obligatorio.
-   - Diálogo 2 "Relacionar adjuntos": marcar casillas + renombrar + carpeta → **Guardar** =
-     adjuntar (`set_adjuntos_relacionar_crm`).
-3. **La llave del write es un composite Roundcube**, no el `Message-ID` pelado:
-   `messageIdsEncontrados = <MsgID>,,,{uid}|||RC,,,{id_cuenta},,,{carpeta}`, **doblemente
-   URL-encodeado** (solo este campo; `get_relaciones` usa el `Message-ID` simple). El `{uid}`
-   es el UID IMAP del mensaje en esa cuenta; `{id_cuenta}` es el id interno de la cuenta en
-   Roundcube; `{carpeta}` es la carpeta IMAP (INBOX **o** una etiqueta como "00. PROCESAL").
-4. **`Message-ID` estable** (verificado): se conserva del procurador a `procesal@` y a la
-   cuenta del abogado. Es la llave de emparejamiento robot↔Roundcube y la entrada para
-   resolver `(uid, cuenta, carpeta)` por búsqueda IMAP.
-5. **Renombrar y marcar casilla NO tienen endpoint**: viajan en el submit del adjuntar
-   (`datosAdjuntos[nombre_adjunto]` / `[seleccionado_adjunto]`). Extensión bloqueada.
-6. **No todo adjunto se sube**: el correo trae inline (logo, `Content-Disposition: inline` +
-   `Content-ID`) y adjuntos reales (`Content-Disposition: attachment`). F4 decide; el criterio
-   inline-vs-attachment es determinista por cabecera, no "a ojo".
-7. **Solo 4 llamadas usan la sesión Roundcube** (get_relaciones, relacionar, adjuntar,
-   get_mails_asignados). Buscar entidad/expediente y carpetas son api-crm `x-api-key`.
+## 3. Arquitectura
 
-## 4. Arquitectura (componentes por responsabilidad y auth)
-
-### 4.1 `core/procurador_relate.py` — cliente del plugin Roundcube (sesión inyectada)
+### 3.1 `core/procurador_relate.py` — cliente REST del módulo de correo
 
 ```
-get_relaciones(session, message_id) -> RelacionesPrevias   # HTML → parse; solo Message-ID
-relacionar(session, message_ids_encontrados, id_elemento, *, element, grupos, usuarios)
-    -> RelateResult   # ok, mail_id, adjuntos=[{att_id, nombre_archivo}], error
-adjuntar(session, id_elemento, adjuntos_a_subir, folder_id, *, mail_id, message_ids_encontrados, element)
-    -> AdjuntarResult   # adjuntos_a_subir = [{att_id, nombre_final}]
-get_mails_asignados(session, uid, message_id) -> list       # verificación (débil, ver §6)
-archivar_en_crm(session, plan) -> ArchivoResult             # orquestador; ver §5
+buscar_relaciones(message_id, account)        -> Relaciones          # findRelations
+filtrar_ya_asignados(message_ids)             -> set[str]            # findAssigned (lote)
+tiene_adjuntos(message_id, account)           -> bool                # attachments
+relacionar(message_id, element, miembros)     -> RelateResult        # relate/selected
+adjuntar(element, miembro, mail_id, adjuntos, folder_id, message_id) -> AdjuntarResult
+archivar(plan)                                -> ArchivoResult       # orquestador §5
 ```
 
-- **Transporte = webview (decidido por el spike, §2), NO `httpx` headless.** El módulo
-  **construye** cada petición (action + params) de forma pura; la **ejecuta el navegador
-  embebido** (un `fetch` en el contexto del iframe de Roundcube, ya autenticado por el SSO del
-  CRM, con `rcmail.env.request_token` como `X-Roundcube-Request`). La «sesión» que el módulo
-  recibe es, pues, **un adaptador de transporte inyectable**, no un cliente HTTP con cookies
-  reproducidas. Tests: adaptador **fake** que captura `(action, params)` y devuelve JSON canned
-  **tomado de la forma real del HAR** (incluida la ruta anidada `acumulaDatos.mailadjunto[mail_id]`).
-- **Encoding:** el módulo pre-encodea `messageIdsEncontrados` una vez y deja que el
-  form-encoder lo encodee otra (doble encoding) — **solo** en ese campo.
+- **Transporte:** `SudespachoClient` (`core/sync_sudespacho.py`), que ya lleva la `x-api-key`.
+  Nada de webview, nada de cookies de Roundcube, nada de credenciales IMAP.
+- **Puro y testeable:** cada función construye su petición sin red; los tests inyectan un
+  transporte fake con respuestas tomadas de la **forma real medida** (incluida la ruta
+  anidada `acumulaDatos.mailadjunto[mail_id]`). El riesgo a evitar sigue siendo el mismo que
+  en la rev. 2: fabricar el fixture desde la descripción y no desde lo observado.
+- **Sin doble URL-encoding.** Era una particularidad del form-urlencoded del plugin. Aquí es
+  JSON.
 
-### 4.2 Resolución `Message-ID → (uid, cuenta, carpeta)`
+### 3.2 Resolución de la cuenta (`account`)
 
-El robot leyó el correo en `procesal@`, pero el relate se hace en la cuenta de un abogado.
-Hay que resolver el UID IMAP + carpeta del correo en esa cuenta a partir del `Message-ID`
-estable. Vía: **búsqueda IMAP en `imap.gmail.com`** de la cuenta del abogado (el robot ya
-tiene OAuth a esas cuentas vía `gmail_source`), o una acción de búsqueda del propio Roundcube
-(a capturar). El `id_cuenta` interno de Roundcube es **por abogado** (hay que conocerlo por
-cuenta). **Este componente es explícito, no un parámetro con default.** *(En modo webview, la
-propia sesión de Roundcube ya expone el `uid` del mensaje abierto vía `rcmail.env`, lo que
-simplifica la resolución.)*
+El robot lee de `procesal@`, que **no está en Roundcube**; el correo vive, por el
+auto-forward, en las cuentas de los abogados, que es donde el CRM lo indexa. Hay que saber
+con qué `account` preguntar.
 
-### 4.3 Capa api-crm (x-api-key, sin handshake)
+**Se resuelve por lectura, no por configuración:** `GET /api/element_registries/mail`
+filtrado por `uid = <Message-ID>` devuelve el registro con su campo `cuenta`. Una llamada, y
+además confirma que el CRM ya conoce el correo. Si no aparece en ninguna cuenta, el correo no
+está indexado y **no se archiva por esta vía** → a revisión, nunca a adivinar iterando.
 
-- **Tipos de entidad:** `GET /api/view/relation/mail` → `relationsViews`. En la práctica,
-  constante (para procuradores el objetivo es `expedientes_judiciales`); no hace falta en caliente.
-- **Buscar/leer expediente:** **reusar `core/procurador_search.py`** (F2). El `id_elemento`
-  del camino feliz ya viene de `RobotProposal.expediente_id` (no hay que re-buscar).
-- **Carpetas:** **`SudespachoClient.list_gdocu_folders` YA EXISTE** (`sync_sudespacho.py`) y
-  ya envía `related_element` + `related_member` con `x-api-key`. **Corrección v1→v2:** el vacío
-  histórico NO era por "faltar related_member". El default es `parent=0`; el HAR usó **`parent=1`**
-  (raíz "General"). Acción: investigar empíricamente (probar `parent=1` + `related_member` +
-  `x-api-key`); si una carpeta destino **vacía** no aparece (dead-end de carpetas vacías, plan
-  §8), resolver el `folder_id` por el mapa estático `CARPETA_ID_TO_PATH`/`CRM_TREE`
-  (`core/config.py`). `FolderInfo = {folder_id, name, raw}`.
+### 3.3 Carpeta del gestor documental
 
-## 5. Flujo end-to-end (un correo confirmado)
+Sin cambios respecto de la rev. 2: `SudespachoClient.list_gdocu_folders` + el mapa estático
+`CARPETA_ID_TO_PATH`/`CRM_TREE` de `core/config.py` como respaldo, porque la API no expone las
+carpetas vacías. Por defecto **1 (General)**, que es lo que la prueba usó.
 
-1. `get_relaciones(session, message_id)` (Message-ID simple) — ¿ya relacionado con este
-   expediente? La respuesta es **HTML** (no estructurada): parsear con guardarraíl. Si ya
-   está → no re-relacionar (idempotente), pero ver §6 para el adjuntar.
-2. (api-crm, F2) `id_elemento` del expediente confirmado.
-3. Resolver `(uid, id_cuenta, carpeta)` del correo en la cuenta del abogado (§4.2) y construir
-   `messageIdsEncontrados`.
-4. `relacionar(...)` → `mail_id` + adjuntos `[{att_id, nombre_archivo}]`. **Persistir estos
-   ids inmediatamente** (§6).
-5. F4 (fuera) decide por adjunto: `subir` sí/no (inline→no por defecto) + `nombre_final`.
-6. (api-crm) `list_gdocu_folders(...)` (o `CARPETA_ID_TO_PATH`) → `folder_id`.
-7. `adjuntar(id_elemento, [{att_id, nombre_final}], folder_id, mail_id=…, message_ids_encontrados=…)`.
-8. `get_mails_asignados(...)` — verificación débil (ver §6); preferir re-`get_relaciones`.
-9. **Grabar la traza del resultado** (§7) y marcar el correo procesado (F2).
+## 4. La regla que gobierna esta pieza: verificar por resultado
 
-## 6. Idempotencia, reanudación y errores
+**`POST /api/mail/relate/attachments` devuelve `{"status": "success", "errors": []}` con los
+tres parámetros vacíos.** Es un instrumento que no puede dar el otro valor: su `success` no
+distingue «subí el documento» de «no hice nada». Comprobado a propósito antes de fiarse de él.
 
-- **Los ids del adjuntar (`mail_id`, `att_id`) SOLO existen tras el relate.** `get_relaciones`
-  no los devuelve. → El orquestador **persiste `mail_id` + lista de `att_id` + `messageIdsEncontrados`
-  en cuanto responde el relate**, para poder (a) adjuntar aunque el proceso se reinicie, y
-  (b) reintentar el adjuntar sin re-relacionar.
-- **Reanudación "ya relacionado":** si `get_relaciones` indica que el correo ya está
-  relacionado pero **no hay ids persistidos**, NO se puede adjuntar por esta vía (no hay forma
-  documentada de recuperar `mail_id`/`att_id` sin re-relacionar). Caso a enrutar a revisión
-  manual (o capturar una acción de lectura que los recupere). Documentar como límite conocido.
-- **El adjuntar NO está probado idempotente** → re-postear puede **duplicar documentos**.
-  Antes de re-subir, comprobar los adjuntos ya presentes (vía `element_registries/gdocu` por
-  nombre) **o** confirmar empíricamente el dedupe server-side con un expediente de prueba.
-- **Errores de sesión:** clasificar "sesión/CSRF caducada" como error propio → re-handshake
-  (Track 1), distinto de "revisión". El resto → `ok=False` + motivo, sin excepción que tumbe
-  el runner.
+De ahí, y no de una preferencia de estilo, salen tres obligaciones del cliente:
 
-## 7. Traza del resultado del write (F3, no F2)
+- **El adjuntar se verifica releyendo el gestor documental** del expediente
+  (`element_registries/gdocu` con `operator=associated`, `property=left.{element}.id`), y se
+  compara el censo antes/después. Sin eso, `adjuntar()` **no puede devolver `ok=True`**.
+- **El relate se verifica releyendo `findRelations`**, no por el 200.
+- Ningún `ok` del módulo se deriva de un código de estado. Es la regla dura de
+  `INTEGRACION_SUDESPACHO.md §14.6`, y aquí hay un caso concreto que la exige.
 
-`record_decision` (F2) graba propuesta-robot vs acción-humana vs quién/cuándo, pero **no el
-resultado del write**. F3 **extiende la traza/estado** con el outcome: `{ok, mail_id, folder_id,
-adjuntos_subidos, error}` y un estado nuevo `archivado_en_crm`. Lo exige el requisito duro
-§18.9 del plan y lo consume F6 (verificar "el correo consta asignado"). Diseñar dentro del
-modelo de datos de la cola, no atornillar después.
+## 5. Flujo end-to-end
 
-## 8. Incógnitas parametrizadas (a fijar en la validación temprana del plan)
+1. **Anti-duplicado en lote:** `filtrar_ya_asignados([…])` con los Message-ID del lote. Una
+   llamada para todos. Los que vuelven, ya están archivados → se muestran ✅, no se re-archivan.
+2. Resolver `account` por lectura del elemento `mail` (§3.2).
+3. `buscar_relaciones(...)` — ¿ya relacionado **con este expediente**? Idempotencia fina: puede
+   estar relacionado con otro y aun así faltar el nuestro.
+4. `relacionar(...)` → `mail_id` + `[{att_id, nombre_archivo}]`. **Persistir los ids en cuanto
+   responde**, para poder reanudar el adjuntar sin re-relacionar. *(Ya no es imprescindible
+   —§2.4 permite recuperarlos releyendo— pero ahorra una llamada y una carrera.)*
+5. Verificar el relate por relectura (§4).
+6. F4 (fuera) decide por adjunto `subir` sí/no y `nombre_final`.
+7. Resolver `folder_id`.
+8. `adjuntar(...)` **solo con los seleccionados**.
+9. Verificar el adjuntar por censo del gestor documental (§4).
+10. Grabar la traza del resultado (§6) y marcar el correo procesado (F2).
 
-1. Verificación exacta del `Message-ID` robot↔cuenta-abogado — **CERRADA v2** (idénticos,
-   verificado carácter a carácter; el auto-forward de Gmail lo conserva).
-2. Composite `messageIdsEncontrados`: forma `<MsgID>,,,{uid}|||RC,,,{id_cuenta},,,{carpeta}`,
-   doble-encodeada. Confirmar `id_cuenta` por abogado y que `{carpeta}` refleje la etiqueta
-   real (p. ej. "00. PROCESAL") vs INBOX.
-3. `_unlock=loading{ts}`: id de lock del UI; presumiblemente no validado por el server.
-4. `groups/usersAccessRegister[identifiers][]`: permisos de visibilidad (en el HAR ambos `=2`;
-   grupo 2 = EV MMC). Confirmar origen (fijo por tenant vs por expediente) para grupo **y** usuario.
-5. `folders/gdocu` con `x-api-key` + `parent=1`: pendiente de probar en vivo.
-6. Recuperación de `mail_id`/`att_id` sin re-relacionar (§6): no documentada; capturar si se
-   quiere reanudación completa.
+## 6. Traza del resultado
 
-## 9. Testing (TDD)
+Sin cambios de fondo respecto de la rev. 2: `record_decision` (F2) graba propuesta-robot vs
+acción-humana vs quién/cuándo, y F3 **extiende** ese modelo con el outcome del write
+`{ok, mail_id, folder_id, adjuntos_subidos, verificado, error}` y el estado `archivado_en_crm`.
+Lo exige el requisito duro §18.9 del plan y lo consume F6. Se diseña dentro del modelo de
+datos de la cola, no se atornilla después.
 
-- Sesión Roundcube **fake** que captura `(action, params)` y devuelve respuestas canned con la
-  **estructura real del HAR** (ruta anidada `acumulaDatos.mailadjunto[mail_id]`). Riesgo a evitar:
-  construir el fixture desde la descripción y no desde el HAR → verde en test, roto en real.
-- Casos: relate OK (extrae `mail_id`/`att_id`) · adjuntar OK (params exactos, nombre/carpeta) ·
-  adjunto inline/desmarcado no viaja · ya-relacionado → no-op · reintento adjuntar sin re-relate ·
-  respuesta de error → `ok=False` · doble-encoding del composite.
-- `list_gdocu_folders`: mock inyectando cliente/transport fake (es método de `SudespachoClient`
-  con `self._client.get`, **no** `httpx.get` a nivel módulo); asertar `related_element`+`related_member`+`parent`.
-- **Lo que los tests NO cubren** (validación en vivo): auth/handshake real, resolución del `uid`,
-  validez de `->izq` para no-judiciales, idempotencia real del adjuntar.
+Novedad de la rev. 3: **`verificado` es un campo propio**, distinto de `ok`. Un write cuyo
+status fue 200 pero cuya relectura no confirmó nada es un caso real (§4) y tiene que poder
+distinguirse en la traza.
+
+## 7. El plugin y el webview, como plan B
+
+No se tiran: se degradan a respaldo documentado.
+
+- Si un día la API REST **empezara a exigir de verdad `cookies`/`dataHash`** (§8.1), el
+  camino conocido es capturarlos de un webview donde el CRM haya hecho su SSO y **pasárselos
+  al mismo endpoint REST** — que es bastante más simple que el `fetch` dentro del iframe
+  cross-origin de la rev. 2, porque las peticiones se siguen construyendo en Python.
+- El contrato del plugin (`plugin.sudespacho_asignaa_*`, form-urlencoded, doble encoding del
+  composite, `X-Roundcube-Request`) queda archivado en `INTEGRACION_SUDESPACHO.md §10.10` con
+  su HAR de origen. Sigue siendo lo que hace la interfaz.
+- **La miniapp con navegador embebido deja de ser necesaria para archivar.** El spec de
+  entrega (`…-intake-miniapp-entrega-design.md` §5) queda afectado y hay que revisarlo: sin
+  webview, la bandeja puede correr como la app Streamlit que ya existe. **No se resuelve aquí**
+  — es su documento.
+
+## 8. Lo que NO está probado, dicho por delante
+
+1. **Que `cookies`/`dataHash` vacíos sigan valiendo.** Están declarados como obligatorios en
+   el 400 que el servidor devuelve al omitirlos; hoy se aceptan vacíos. Es un comportamiento
+   observado, no un contrato prometido. **Mitigación:** un test de integración —marcado
+   `slow`, no en la suite normal— que lo compruebe contra el expediente de prueba, y un error
+   clasificado aparte si un día cambia.
+2. **La idempotencia del adjuntar.** No se ha probado a re-postear el mismo adjunto. Hasta que
+   se pruebe, el cliente **no reintenta el adjuntar solo**: comprueba primero el censo.
+3. **`extrajudiciales` está probado; `expedientes_judiciales`, no.** La prueba fue sobre el
+   636, que es extrajudicial. El plan es judicial-first, así que **esto hay que medirlo antes
+   de habilitarlo** — no se asume por simetría.
+4. **Permisos de visibilidad.** El plugin llevaba `groups/usersAccessRegister`; la vía REST no
+   los pide. Queda por ver con qué visibilidad nace la relación y si eso importa.
+5. **Qué pasa con un `relatedMembers` inexistente.** Devuelve 200 y no escribe (comprobado con
+   un id inventado: censo idéntico antes y después). O sea: **el 200 tampoco prueba que el
+   miembro exista** → una más para la §4.
+
+## 9. Testing
+
+- Transporte **fake** que captura `(path, body)` y devuelve respuestas canned con la forma
+  real medida. Nada de red en la suite.
+- Casos: relate OK (extrae `mail_id`/`att_id`) · `relatedElement` sin `->izq` · adjuntar solo
+  los seleccionados · **adjuntar cuyo `success` no se corresponde con el censo → `ok=False`**
+  · ya-relacionado → no-op · anti-duplicado en lote · Message-ID con y sin `<>` · cuenta
+  ausente → revisión, no adivinar.
+- **El caso que no puede faltar** (§4): un fake que devuelve `success` y un censo que no
+  cambia. Si el módulo lo da por bueno, el test tiene que ponerse rojo.
+- Lo que los tests **no** cubren, y se valida en vivo: la vigencia de §8.1, la idempotencia
+  del adjuntar y el caso judicial.
 
 ## 10. Dependencias y orden
 
-- **Bloqueante para producción, NO para construir el cliente:** Track 1 (handshake). La vía A'
-  (automatización) queda **reforzada por v2**: el correo está en Gmail (accesible por IMAP/OAuth)
-  y el `Message-ID` es estable, así que resolver el `uid` y localizar el correo es factible; el
-  POST al plugin sigue necesitando la sesión Roundcube. Fallback **C** (humano 1 clic) si el
-  handshake no es replicable headless.
-- **F4** (nombrado + decidir qué subir) consume la salida del relate. Frontera: F4 entrega
-  `{att_id?, nombre_final, subir}`; el `att_id` real se conoce **post-relate**, así que el join
-  F4↔relate se hace por `nombre_archivo`/orden con **guardarraíl** (verificar conteo, exigir
-  unicidad de nombres o coincidencia de orden; si ambiguo → revisión, nunca adivinar).
-- **element/permisos:** `RobotProposal` no persiste `element` ni `permisos`. Definir la
-  transformación ReviewItem→`plan`: `element` se re-deriva (procuradores → `expedientes_judiciales`);
-  `permisos` por default de tenant (grupo/usuario) hasta confirmar §8.4.
+- **Ya no hay bloqueo de auth.** El Track 1 (handshake del webmail) desaparece del camino
+  crítico.
+- **F4** consume la salida del relate. Frontera sin cambios: F4 entrega
+  `{att_id?, nombre_final, subir}`; el join F4↔relate se hace por `nombre_archivo`/orden con
+  guardarraíl (verificar conteo, exigir unicidad o coincidencia de orden; si es ambiguo →
+  revisión, nunca adivinar).
+- **Alcance:** judicial-first, pendiente de §8.3. `clientes` fuera (F2 lo retiró; YAGNI).
 
-## 11. Decisiones abiertas
+## 11. Higiene
 
-- **Cuenta de relate: RESUELTA (2026-07-19).** Cada persona archiva desde **su propia cuenta**
-  del webmail (modelo miniapp por persona — ver spec de entrega). No hay «cuenta fija». El
-  `id_cuenta` y el `uid` se resuelven en la cuenta del usuario de la app.
-- **Alcance de elementos: DECIDIDO judicial-first (2026-07-19).** Solo expedientes judiciales;
-  extrajudicial = interruptor a activar cuando surja (con sus params por confirmar); `clientes`
-  **fuera** (F2 lo retiró a propósito; YAGNI + gobernanza CLAUDE.md).
-- Idempotencia del adjuntar (§6): confirmar vía prueba antes de habilitar reintentos automáticos.
-
-## 12. Higiene
-
-HAR y cabeceras usados en el análisis contienen PII real: **no se commitean** (gitignored) y se
-borran tras el análisis. El spec usa placeholders (Message-ID, uid, ids, nombres). Relates/adjuntos
-de prueba en el CRM se limpian (hecho por Nikolai el 2026-07-19).
+Los HAR y cabeceras del análisis original contienen PII real: no se commitean y se borran. Este
+spec usa placeholders. **Del sondeo del 2026-09-07 quedan residuos deliberados en el
+expediente de prueba 636** —tres correos relacionados y el documento `gdocu 42865`
+(`SONDA FEESDEFENDER 2026-09-07 - borrable.pdf`)— que **no se han borrado**: en el CRM no se
+borra nada sin autorización expresa de Nikolai.

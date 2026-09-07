@@ -909,54 +909,83 @@ endpoint de borrado documentado.
 
 ---
 
-### 10.10 Relacionar un correo ENTRANTE ↔ expediente + adjuntar al gestor (plugin Roundcube `sudespacho_asignaa`)
+### 10.10 Relacionar un correo ENTRANTE ↔ expediente + adjuntar al gestor (módulo `MailRoundcube`)
 
-> Confirmado por HAR el 2026-07-19 (expediente judicial). Es el "Asignar a Elemento" del webmail.
-> **El write NO es REST de api-crm ni de nest-mail** (refuta las 3 hipótesis del plan de intake §7 y
-> la entrada de `DEAD_ENDS.md`): lo ejecuta un **plugin propio de Roundcube** con POSTs AJAX a
-> `roundcube.sudespacho.net`. Distinto del §10.9 (que ENVÍA un correo saliente por nest-mail). Los
-> HAR nunca se commitean (higiene).
+> **Contrato REST medido de punta a punta el 2026-09-07** (expediente de prueba extrajudicial 636).
+> Es el "Asignar a Elemento" del webmail, pero por API: mismo host y misma `x-api-key` que el resto
+> de `core/`, **sin sesión de Roundcube, sin webview y sin `dataHash`**. Distinto del §10.9 (que
+> ENVÍA un correo saliente por nest-mail). Diseño: spec F3 rev. 3.
+>
+> **Corrección de la versión anterior de esta sección.** Hasta hoy decía que el write «NO es REST de
+> api-crm» y que lo ejecuta un plugin propio de Roundcube. Eso describía **lo que hace la interfaz**,
+> capturado por HAR el 2026-07-19, y de ahí se concluyó indebidamente **lo que permite la API**.
+> `MailRoundcube` llegó a marcarse «candidato descartado» en `DEAD_ENDS` sin haberse llamado nunca,
+> estando declarado en `/api/docs.json` —que es público y es la Fase A del atlas de este repo— todo
+> el tiempo. El contrato del plugin se conserva más abajo como **plan B**: sigue siendo lo que hace
+> la UI.
 
-**Host / transporte.** `POST https://roundcube.sudespacho.net/?_task=mail&_action=plugin.sudespacho_asignaa_<acción>`,
-body `application/x-www-form-urlencoded`, cabeceras `X-Requested-With: XMLHttpRequest` +
-`X-Roundcube-Request: <request-token>` (CSRF de Roundcube). Respuesta: JSON de Roundcube
-(`{action, env, texts, exec, callbacks, unlock}`).
+**Host / transporte.** `https://api-crm-commons-pro.sudespacho.biz`, header **`x-api-key`**, JSON.
 
-**Auth y acceso programático (spike en vivo, 2026-07-19).**
-- El webmail se autentica por **SSO desde el frontal**: el CRM abre
-  `roundcube…/init.php?randomvar=<nonce>&dataHash=<blob>` → `index.php` → `/?_task=&_token=<t>`.
-  El `dataHash` es un **blob cifrado (~620 chars) generado en el cliente** (JS del CRM), que Roundcube
-  descifra (`env.sudespacho_dataHashDecrypted`); **no viaja por ninguna respuesta REST**. Roundcube corre
-  en **iframe cross-origin** dentro del SPA `tnm.sudespacho.net` (la global `rcmail` vive en ese iframe).
-  Cookies de sesión propias `roundcube_sessid`/`roundcube_sessauth` + el request-token.
-- **Llamada programática confirmada:** desde el contexto del iframe (sesión viva), un `fetch` POST a la
-  acción del plugin con header `X-Roundcube-Request: rcmail.env.request_token` (+ las cookies de sesión,
-  automáticas) responde **200 + JSON**. Verificado en vivo con `get_relaciones` (read-only) el 2026-07-19.
-- **Automatización (decidido en F3):** la vía es **webview** — navegador embebido donde el CRM hace su
-  SSO y la app dispara el `fetch`. Reproducir la sesión **headless con `requests` queda DESCARTADO**
-  (exigiría regenerar el `dataHash` cifrado client-side + manejar credenciales IMAP; ver `DEAD_ENDS.md`).
-  Diseño completo: spec F3 (`docs/superpowers/specs/2026-07-19-f3-relate-crm-plugin-roundcube-design.md`).
+| Operación | Método · path | Cuerpo / query | Respuesta |
+|---|---|---|---|
+| Leer relaciones previas | `GET /api/mail/findRelations/{uid}` | `{uid}` = **base64(Message-ID)** en la ruta · `?account={n}` | `{elemento: {nombre, relacionados: {id: {id, url, texto, elemento, miembro}}}}` |
+| **Anti-duplicado en lote** | `POST /api/mail/findAssigned` | `{"messageIds": ["<id>", …]}` (**array**) | array con los Message-ID **ya asignados** |
+| ¿Trae adjuntos? | `POST /api/mail/attachments` | `{"messageIds": "<id>", "account": "{n}"}` (**string**) | `{status, hasAttachments: bool, errors}` |
+| **RELATE** correo→elemento | `POST /api/mail/relate/selected` | `{messageIds, relatedMembers:[id], relatedElement, cookies, dataHash}` | `acumulaDatos.mailadjunto[{mail_id}] = [{id, nombre_archivo, enlace}]` |
+| **ADJUNTAR** al gestor | `POST /api/mail/relate/attachments` | `{datosRelacionados, datosAdjuntos, folderId, messageIds}` | `{status:"success", errors:[]}` — **siempre**, ver ⚠️ |
 
-**Llave del correo = Message-ID RFC** (`<...@...>`), aceptado tal cual → hay **puente directo
-Gmail↔CRM** (corrige el "no hay puente Message-ID → id numérico" que asumía la ruta nest-mail).
+```jsonc
+// relate/selected — cuerpo mínimo que escribe (medido)
+{ "messageIds": "<abc@dominio>",           // Message-ID; vale CON y SIN los <>
+  "relatedMembers": [636],                  // id(es) del elemento destino
+  "relatedElement": "extrajudiciales",      // ⚠️ SIN el sufijo `->izq` del plugin
+  "cookies": "", "dataHash": "" }           // exigidos presentes; vacíos funcionan
 
-| Acción (`_action=plugin.sudespacho_asignaa_…`) | Qué hace | Params (form) |
-|---|---|---|
-| `get_relaciones` | lee relaciones previas del correo | `messageId=<MsgID>` · `_remote=1` · `_unlock=0` |
-| `set_registros_seleccionados` | **RELATE** correo→elemento | `registrosSeleccionados[]={idExpediente}` · `elementoSeleccionado=expedientes_judiciales->izq` · `messageIdsEncontrados=<MsgID>,,,{uid}` · `groupsAccessRegister[identifiers][]={idGrupo}` · `usersAccessRegister[identifiers][]={idUsuario}` · `_unlock=loading{ts}` |
-| `set_adjuntos_relacionar_crm` | **ADJUNTAR** al gestor documental | `datosRelacionados[expedientes_judiciales][]={idExpediente}` · `datosAdjuntos[seleccionado_adjunto][{mailId}][]={attId}` · `datosAdjuntos[nombre_adjunto][{mailId}][{attId}]={NOMBRE.ext}` · `folderId={idCarpeta}` · `messageIdsEncontrados=<MsgID>,,,{uid}` |
-| `get_mails_asignados` | verifica (correos ya asignados del buzón) | `messageIds[{uidRoundcube}]=<MsgID>` |
+// relate/attachments — sube al gestor solo los adjuntos seleccionados
+{ "datosRelacionados": {"extrajudiciales": [636]},
+  "datosAdjuntos": { "seleccionado_adjunto": {"{mail_id}": ["{att_id}"]},
+                     "nombre_adjunto":       {"{mail_id}": {"{att_id}": "NOMBRE.ext"}} },
+  "folderId": "1",                          // 1 = General (CARPETA_ID_TO_PATH)
+  "messageIds": "<abc@dominio>" }
+```
 
-Notas:
-- `elementoSeleccionado` = `<elemento>->izq` (posición izquierda de la relación; `expedientes_judiciales`,
-  `extrajudiciales`, `clientes`).
-- `groups/usersAccessRegister[identifiers][]` = permisos de visibilidad del registro (en el HAR, id `2` = EV MMC).
-- **F4 (renombrado) enchufa en `nombre_adjunto`:** la cadena que se pasa ahí es el nombre con el que
-  el CRM guarda el adjunto en el gestor documental.
-- `{idExpediente}`, `{mailId}` (id del correo en el CRM) y `{attId}` (id del adjunto) salen de las GET
-  api-crm del diálogo: buscador = `GET /api/element_registries/expedientes_judiciales`; carpetas =
-  `GET /api/folders/gdocu/{parent}` (⚠️ en este HAR devolvió **200** para `{1,306,315}` — revisar el
-  "dead end de carpetas vacías" del plan de intake §8).
+**Gotchas, todos medidos:**
+
+- ⚠️ **`relate/attachments` es una guarda inerte:** devuelve `{"status":"success","errors":[]}`
+  **también con los tres parámetros vacíos**. Su status no distingue «subí» de «no hice nada».
+  **Verificar SIEMPRE por censo del gestor documental** (`element_registries/gdocu` con
+  `operator=associated`, `property=left.{element}.id`, §3.1) antes y después. Regla §14.6.
+- ⚠️ **Un `relatedMembers` inexistente devuelve 200 y no escribe** (comprobado con un id
+  inventado: censo idéntico antes y después). El 200 tampoco prueba que el miembro exista.
+- **`relatedElement` sin `->izq`.** Con el sufijo → 500 en `RelationsViewsService::getRawData()`.
+- **`account` = el campo `cuenta` del elemento `mail`, y determina el buzón donde se busca:**
+  el mismo Message-ID con la cuenta correcta devuelve relaciones y con otra devuelve vacío.
+  Cuenta `0` (noreply) → 400. Correlación cuenta↔dirección medida sobre 100 correos en
+  [`../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md`](../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md).
+- **`uid` del elemento `mail` ES el Message-ID RFC** (39/40 en muestra; `filter uid=<id>`
+  discrimina 1 de 462.414). → El `mail_id` se recupera **releyendo**, sin re-relacionar, y el
+  `account` se resuelve por lectura en vez de por configuración.
+- **`hasAttachments` cuenta también los inline** (logo de firma): puede dar `true` con
+  `mailadjunto` vacío. Son dos preguntas distintas; para decidir qué subir vale la segunda.
+  (Sí devuelve `false` cuando toca — comprobado; no es inerte.)
+- **El relate devuelve JSON**, no HTML, y trae ya el `mail_id` + los `att_id` que consume el
+  adjuntar: **encadenar es obligatorio y suficiente**.
+- **`POST /api/mail/autoassign` es un falso amigo:** exige `{messages, cookies, dataHash}` y su
+  `GET /api/mail/autoassign/config` declara 17 elementos válidos que son **fichas de personas**
+  (abogados, clientes, procuradores, juzgados, proveedores…), **ni `expedientes_judiciales` ni
+  `extrajudiciales`**. Asigna correo a interviniente por dirección, no a expediente. No sirve para esto.
+- **Probado sobre `extrajudiciales`; `expedientes_judiciales` NO está medido** — no asumir por simetría.
+
+**Plan B — el plugin de Roundcube (lo que hace la interfaz).** `POST
+https://roundcube.sudespacho.net/?_task=mail&_action=plugin.sudespacho_asignaa_<acción>`,
+form-urlencoded, cabeceras `X-Requested-With: XMLHttpRequest` + `X-Roundcube-Request:
+rcmail.env.request_token`. Acciones `get_relaciones` · `set_registros_seleccionados` ·
+`set_adjuntos_relacionar_crm` · `get_mails_asignados`. Auth = SSO por
+`init.php?randomvar=&dataHash=` (blob cifrado client-side que empaqueta credenciales IMAP;
+Roundcube corre en iframe cross-origin). Su llave es el composite
+`<MsgID>,,,{uid}|||RC,,,{id_cuenta},,,{carpeta}`, **doblemente URL-encodeado** (solo ese campo).
+Confirmado por HAR el 2026-07-19. Se conserva por si la vía REST endureciera la exigencia de
+`cookies`/`dataHash`; entonces bastaría **capturarlos de un webview y pasárselos al endpoint REST**.
 
 ---
 
@@ -1670,18 +1699,25 @@ documental** — reutilizable por cualquier producto del ecosistema (FeesDefende
 procuradores → expediente; **El Contable: futuro intake de facturas de `contabilidad@`**, ver
 `MEJORAS_FUTURAS.md #73`). Confirmado en vivo 2026-07-19.
 
-- **Webmail = Roundcube** (`roundcube.sudespacho.net`), embebido en **iframe cross-origin** dentro del
-  SPA, montado como **cliente IMAP** sobre las cuentas de correo del despacho (Gmail).
-- **Auth = SSO por token en la URL:** el frontal abre `…/init.php?randomvar=<nonce>&dataHash=<blob>`; el
-  `dataHash` es un **blob cifrado generado client-side** (JS del CRM) que empaqueta datos/credenciales
-  IMAP de la cuenta; Roundcube lo descifra. **No hay endpoint REST para obtenerlo** → automatización por
-  **webview** (dejar que el CRM haga el SSO), **no headless**.
-- **Relate/adjuntar = plugin `plugin.sudespacho_asignaa_*`** por `fetch`/POST form-urlencoded con
-  `X-Roundcube-Request: rcmail.env.request_token`. Acciones: `get_relaciones` (lee), 
-  `set_registros_seleccionados` (relate correo↔elemento), `set_adjuntos_relacionar_crm` (sube adjuntos al
-  gestor documental de ese elemento), `get_mails_asignados` (verifica). La respuesta del relate
-  **devuelve** el id del correo en el CRM y los ids de sus adjuntos (que consume el adjuntar).
-- **Contrato completo + params + gotchas:** `§10.10`. Dead-end (headless): `DEAD_ENDS.md`.
+- **Se hace por REST, con `x-api-key`** (módulo `MailRoundcube` de `api-crm-commons`): cinco
+  operaciones —`findRelations` (lee), `relate/selected` (relate correo↔elemento),
+  `relate/attachments` (sube los adjuntos al gestor documental del elemento), `findAssigned`
+  (anti-duplicado en lote), `attachments` (¿trae adjuntos?)—. **Sin sesión de webmail, sin webview.**
+  La respuesta del relate **devuelve** el id del correo en el CRM y los ids de sus adjuntos, que es
+  justo lo que consume el adjuntar: encadenar es obligatorio y suficiente.
+- **La llave es el Message-ID RFC**, y además **`uid` del elemento `mail` ES ese Message-ID** → el id
+  del correo en el CRM y su cuenta se resuelven **por lectura**, sin escribir.
+- ⚠️ **`relate/attachments` responde `success` aunque no haga nada** (también con los parámetros
+  vacíos). **Verificar por censo del gestor documental**, nunca por status.
+- **El webmail sigue siendo Roundcube** (`roundcube.sudespacho.net`), en **iframe cross-origin**,
+  montado como cliente IMAP sobre las cuentas del despacho, con **SSO por `dataHash` cifrado
+  client-side**. Su plugin `plugin.sudespacho_asignaa_*` es lo que usa la interfaz y queda como
+  **plan B**; reproducir esa sesión headless sigue descartado (credenciales IMAP), pero **ya no hace
+  falta**.
+  - **Lección de método transferible:** el descarte inicial de la vía REST salió de un HAR, que prueba
+    *qué hace la UI* y no *qué permite la API*. Los cinco endpoints estaban en el `/api/docs.json`
+    público todo el tiempo. **Leer el contrato declarado antes de sondear** (§14.6).
+- **Contrato completo + params + gotchas:** `§10.10`. Historia del descarte y su reversión: `DEAD_ENDS.md`.
 - **Ojo El Contable:** el alta de una **factura recibida** en contabilidad es un camino **distinto** del
   relate (es `facturas_recibidas`, ver enums §14.4), no lo cubre este plugin. El plugin solo sirve para
   la parte "correo↔expediente + adjunto al gestor documental" (p. ej. facturas de procurador al caso).
