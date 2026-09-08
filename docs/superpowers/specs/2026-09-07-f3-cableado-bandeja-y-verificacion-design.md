@@ -42,7 +42,10 @@ Esto no es contexto: gobierna el diseño, y yo lo tenía mal.
   **Cuenta 20 = el buzón de Ana.**
 - **Medido el 2026-09-07 sobre 3.710 Message-ID** (4.000 filas ordenadas por `uid`, bordes de la
   muestra descartados): **6,3 % tiene más de una copia** — 203 con dos, 17 con tres, 15 con cuatro.
-  Los pares observados son `['15','20']` y `['20','3']`.
+  Los pares observados son `['15','20']` y `['20','3']`. **Re-ejecutable:**
+  `python -m scripts.sondeo_copias_mail --paginas 8`, que lo reprodujo el 2026-09-08 (234/3.712).
+  ⚠️ **Con muestra corta el mismo sondeo devuelve 0 %** (2 páginas), y por eso imprime un control
+  que lo declara: ese cero no es evidencia.
 
 ### 2.1 El límite que de aquí se deriva, y es el importante
 

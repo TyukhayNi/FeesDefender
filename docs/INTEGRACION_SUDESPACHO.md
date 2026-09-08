@@ -988,6 +988,12 @@ endpoint de borrado documentado.
   el mismo adjunto.
 - **`relate/selected` re-posteado sobre un correo YA relacionado sí devuelve el manifiesto**
   (`mail_id` + `att_id`), que es la única vía conocida de recuperarlos. Medido el 2026-09-07.
+- 🔁 **Estos hechos son RE-EJECUTABLES, no folklore.** Dos sondeos de solo lectura los reproducen:
+  `python -m scripts.sondeo_copias_mail` (censo de copias por Message-ID; `--uid` para el detalle
+  de uno con sus relaciones por copia) y `python -m scripts.sondeo_join_gmail_crm` (qué correos de
+  un buzón de Gmail conoce el CRM y con qué están relacionados). Los dos imprimen un **CONTROL**:
+  si no han visto ni un caso positivo, su cero **no acredita nada** y lo dicen — con dos páginas el
+  censo devuelve 0 % y con ocho, 6,3 %.
 - **`hasAttachments` cuenta también los inline** (logo de firma): puede dar `true` con
   `mailadjunto` vacío. Son dos preguntas distintas; para decidir qué subir vale la segunda.
   (Sí devuelve `false` cuando toca — comprobado; no es inerte.)

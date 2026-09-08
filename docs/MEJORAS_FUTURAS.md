@@ -7909,3 +7909,35 @@ acierto por lote. Mide si el robot acierta **antes** de darle la escritura.
 
 **Disparador de promoción.** Antes de dejar que F3 escriba en el CRM sin confirmación humana por
 ítem. Mientras la bandeja pida visto bueno, el arnés es deseable y no urgente.
+
+---
+
+## 180. En un worktree, TODO script que use credenciales falla, y no dice por qué
+
+> Medido el 2026-09-07 y el 2026-09-08, al promover los sondeos del módulo de correo.
+
+`core/config.py` hace `load_dotenv(_PROJECT_ROOT / ".env")` sobre la raíz del árbol en el que
+corre. **Un worktree no tiene `.env`** —está gitignored, y lo gitignored no viaja—, así que
+cualquier script que necesite `SUDESPACHO_API_KEY` u otra credencial arranca sin ella y muere con
+un error de red o de autenticación que **no menciona el `.env`**. Es el mismo mecanismo que dejó
+inerte la blocklist del `leak-guard` (`#161`), aplicado a las credenciales.
+
+Ayer costó pasar la ruta absoluta a mano en cada sondeo; `scripts/diag_expediente_648.py` tiene el
+mismo defecto latente, y por definición lo tiene **cualquier** script del repo que dependa de
+`core.config` para las credenciales.
+
+**Lo remediado (el ejemplo):** `scripts/_sondeo_crm.resolver_env` busca el `.env` en este árbol y,
+si no está, en el checkout principal (`git worktree list`), y **devuelve de dónde cargó** — un
+cargador que no lo dice no distingue «no había» de «no pude mirar». Sus dos sondeos lo imprimen y
+abortan con un mensaje claro si no hay `.env`.
+
+**Lo NO remediado (la frontera):** el sumidero es `core/config.py`, por donde pasan todos. Mientras
+la carga viva ahí sin fallback, cada script nuevo hereda el defecto y hay que acordarse.
+
+**Por qué no se arregla ya:** tocar `core/config.py` cambia el arranque de **todo** el repo
+—`streamlit_app`, los pipelines, los tests— y merece su propio diseño y su ronda. No es un cambio
+de una línea disfrazado de trivial.
+
+**Disparador de promoción.** El próximo script que necesite credenciales y vaya a correr en un
+worktree, o la próxima vez que alguien pierda tiempo con un error de autenticación que resulte ser
+esto.
