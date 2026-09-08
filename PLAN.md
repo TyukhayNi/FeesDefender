@@ -24,7 +24,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
-| 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | pieza 3 **bloqueada** por la fila #1 (OCR ciego); plan de la pieza 4 por reescribir | medio |
+| 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | **disparador REAL desde el 2026-09-08** (W-02VEKE, juicio con la prueba en `99_Otros` — `MEJORAS #176`). El gate escrito («pieza 3 después de la fila #1») **está rancio**: la (e) de la fila #1 se cerró el 2026-08-01 y su pieza A está construida. Reformular la dependencia antes de retomar — no darla por levantada. Plan de la pieza 4 por reescribir | medio |
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 **decidible, sin gates** (#98 cerrado, PR #155) | solo queda la decisión de Nikolai: `--extraer-adjuntos` a default `True` mueve la superficie de dedup de todo intake futuro | bajo |
 
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
@@ -1021,6 +1021,19 @@ dependencias aguas arriba que no son suyas:
       de la sesión concurrente** (`MEJORAS #90`, fila #1 de esta cola): `estado: ok` puede ser
       mentira justo para los documentos con sello de firma, que son la mayoría de lo procesal. Va
       **después** de esa fila, no en paralelo.
+      **Revisado el 2026-09-08 — el gate de arriba ya no describe el estado, y no por eso queda
+      levantado.** Lo que ha cambiado en la fila #1: la **(e) se cerró el 2026-08-01** (los tres
+      casos medidos dan +0/−6/+288 chars: ruido), `MEJORAS #111` quedó **refutada al medirla**
+      (7 de 7 conservan el 100 % de las palabras) y la **pieza A está construida** (PR #193). Y el
+      2026-09-08 se midió sobre 10 adjuntos reales de procuradores que **el OCR local lee todo lo
+      legible**: 8 de 10 ni lo necesitan, el escaneado íntegro se recupera entero, y las 2 páginas
+      residuales de un traslado de 91 son **fotografía**, no texto perdido. Con eso, el argumento
+      original —«autenticar por hash no garantiza que el texto esté completo»— se sostiene mucho
+      peor. **Pero la medición no generaliza** (sus propias palabras: «las cuentas anuales de
+      W-02VND1 son otra población»), así que lo correcto es **reformular** qué dependencia queda
+      —si es la calidad declarada de la cobertura, dígase eso y no «la fila #1»— y que Nikolai
+      decida. **El atajo a evitar, que ya está señalado en memoria:** leer «el OCR está arreglado»
+      y concluir «desbloqueada».
 - [ ] **4. La vista procesal** encima, ya sin dependencias. Su plan se reescribe desde cero.
 
 **Bidireccional (contexto del 2026-07-27).** Lo que genera el despacho sube al CRM (para el
@@ -1031,8 +1044,22 @@ spec) → `MEJORAS_FUTURAS.md`. Y **falta dueño** para la preparación de la do
 (nadie produce hoy el `D-04_chat_whatsapp.pdf`).
 
 **Dependencias con otras filas:** la fila **#1 (OCR ciego)** bloquea la pieza 3 y acota lo que esta
-vista puede prometer sobre buscabilidad. La fila **#10 (`.doc`)** no la bloquea —copia el crudo y
-avisa— pero la audiencia previa de W-02MA0R la necesita.
+vista puede prometer sobre buscabilidad — **redacción de 2026-07-27, revisada el 2026-09-08: ver la
+nota bajo la pieza 3**. La fila **#10 (`.doc`)** no la bloquea —copia el crudo y avisa— pero la
+audiencia previa de W-02MA0R la necesita, y W-02VEKE también (su demanda vive en el CRM como `.doc`
+y las minutas como `.rtf`).
+
+**Disparador real, 2026-09-08 — W-02VEKE.** Hasta ahora esta fila tenía un caso piloto
+(`W-02MA0R`, en audiencia previa) y ningún caso con la vista encima. Ya lo hay: W-02VEKE es un
+ordinario con audiencia previa **celebrada**, testigos citados y juicio pendiente, y su intake
+judicial dejó **45 de 76 documentos en `99_Otros`** —las dos minutas de prueba, la de audiencia
+previa, las dos citaciones de testigos, el señalamiento, la grabación de la vista, el decreto de
+admisión, la sentencia conexa y la apelación— con `02_Contestacion` **sin crear** aunque la
+contestación existe y el clasificador la reconoció en esa misma corrida. Medición y frontera en
+`MEJORAS #176`; el recorrido del intake, ahora escrito, en `RUNBOOK_APERTURA_EXPEDIENTE.md §3-bis`.
+Dos cosas que este caso aporta al diseño y el piloto no tenía: **la fase de prueba y juicio
+existe de verdad en el corpus** (el modelo actual se acaba en la contestación), y **el rol que el
+clasificador ya resuelve no se usa para el destino** — dos señales que no se cruzan.
 
 ---
 

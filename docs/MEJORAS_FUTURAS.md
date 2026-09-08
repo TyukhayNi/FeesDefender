@@ -7824,3 +7824,124 @@ vale es **apoyarse** en ella para explicar nada.
 
 **Disparador de promoción.** Que vuelva a caer un conector con `CONNECTION_CLOSED`, o que haya que
 tocar la línea de lanzamiento de cualquier wrapper por otro motivo.
+
+---
+
+## 176. El intake judicial no modela la fase procesal: ni bucket ni rol para la prueba y el juicio
+
+> Medido el 2026-09-08 montando `W-02VEKE` (expediente judicial CRM #540, 76 documentos;
+> autos de 2025, audiencia previa ya celebrada, testigos citados, juicio pendiente).
+
+**Lo que se midió.** `intake-judicial --full` escribió 72 documentos de 76 (4 solapados, 0
+errores) y los repartió en dos cajones: `01_Demanda` = 31 y `99_Otros` = 45. El bucket
+`02_Contestacion` **no llegó a crearse**.
+
+En `99_Otros` acabó todo lo que hace falta para preparar un juicio: las dos minutas de prueba
+(la propia y la del contrario), la minuta de audiencia previa, la solicitud de prueba, las dos
+citaciones de testigos, las diligencias que fijan y suspenden la vista, la grabación de la
+audiencia previa (`.mkv`, 150 MB), el decreto de admisión, la sentencia de un pleito conexo y
+la apelación — junto al burofax extrajudicial de 2024.
+
+**La frontera, no el ejemplo.** `_VALID_BUCKETS` (`core/case_manager.py`) tiene seis buckets y
+los cinco con nombre son todos de la fase de **alegaciones** (`01_Demanda`, `02_Contestacion`,
+`03_Monitorio_Demanda`, `04_Monitorio_Oposicion`, `05_Diligencias_Preliminares`). Y
+`core/judicial_classifier.py` define exactamente dos roles, `ROLE_DEMANDA` y
+`ROLE_CONTESTACION`. **El modelo se acaba donde acaba la contestación**: de la audiencia previa
+en adelante no hay ni vocabulario ni destino. No es que falte un id de carpeta — es que la fase
+de prueba y juicio no existe como categoría en ningún punto del intake.
+
+**Y la señal que sí existe se descarta.** En esta corrida el clasificador acertó
+—`contestacion: ok -> CONTESTACION DDA`— y el fichero se depositó en
+`99_Otros/contestacion_dda.pdf`. El bucket lo resuelve `crm_branch_path` por la **carpeta del
+CRM** (aquí `306|CIVIL`, porque el procurador no archiva por fase) y el rol lo resuelve el
+**nombre del documento**; las dos señales no se cruzan en ningún punto del código. El intake
+sabía el rol y archivó como si no lo supiera. Hay escape manual (`bucket_override`, D11), pero
+exige que el letrado descubra el problema.
+
+**Esto no es nuevo, y ahí está lo relevante.** El 40º cierre (2026-07-27) ya lo midió en
+`W-02MA0R` / CRM 487 con la formulación correcta: «el CRM no archiva por fase procesal —38 de 70
+en un cajón genérico CIVIL, así que ningún mapeo de `id_carpeta` lo desenreda— y la señal útil
+es el **lote de presentación** (`modified_at`), no la carpeta». La respuesta diseñada es la
+**vista procesal de `05_Procedimiento`** (`PLAN.md` fila #9, spec v3.1 con dos revisiones
+adversariales de Codex consumidas, piezas 1-2 mergeadas). Lo que este caso añade no es el
+diagnóstico: es el **corpus** que le faltaba a la pieza 3 y un caso real con la vista encima.
+
+**Remedio candidato, dentro de esa vista y no aparte.** (1) Vocabulario de fase para lo
+posterior a la contestación; (2) cruzar rol y bucket: un rol resuelto `ok` manda sobre la
+carpeta del CRM, o al menos se avisa cuando discrepan; (3) `modified_at` como eje, que es la
+señal que el 40º cierre ya identificó. Ampliar `CARPETA_ID_TO_PATH` **no** vale: los tres ids
+nuevos de este expediente (`305` DECLARATIVO, `306` CIVIL, `63` RGPD) los resuelve ya la
+heurística de label, y los resuelve a `99_Otros` correctamente — el cajón no está mal mapeado,
+está mal concebido para esta fase.
+
+**Disparador de promoción.** Ya disparado: caso real en fase de juicio con la prueba
+indiferenciada. Va contra `PLAN.md` fila #9, no como entrada independiente.
+
+---
+
+## 177. `abrir_caso` INVENTA `referencia_crm` copiando el `case_id`, y el invento dispara después la alarma de desalineación
+
+> Medido el 2026-09-08 en `W-02VEKE`, un caso que ya existía en el CRM antes de abrirse en Drive.
+
+**Lo que hace.** `scripts/abrir_caso.py:1081` llama a `ensure_case(..., referencia_crm=ident.case_id)`.
+El campo que dice ser «la referencia del CRM» se rellena **siempre** con el nombre local recién
+construido, sin consultar al CRM. Con `--crm api` el alta crea la referencia con ese mismo texto y
+las dos coinciden, así que el campo es correcto por construcción. **Con `--crm skip` —el caso que ya
+está en el CRM— el campo queda falso.**
+
+Medido en este caso: `_caso.md` quedó con `referencia_crm: BaRS10 - … - Negativa arras`, mientras el
+CRM dice `BaRS10 - … - Negativa con oferta aceptada` para los dos expedientes (#464 y #540).
+
+**Lo que NO es.** No es un falso verde de la guarda. `verify_expediente_referencia` funciona:
+medida con los dos valores da `match=False` con lo que hay en `_caso.md` y `match=True` con la
+referencia real. Control positivo y negativo, los dos. El «Referencia CRM coincide» que imprimió
+el pull fue **correcto**, porque se le pasó la referencia real por `--referencia`.
+
+**La consecuencia real es la contraria de la temida:** el sistema generará una **falsa alarma
+recurrente sobre su propio dato**. El primer pull que se corra sin `--referencia` comparará el CRM
+contra el valor inventado y sacará el «Referencia desalineada CRM <-> caso local», invitando a
+abortar y revisar `_caso.md` por un desajuste que escribió el propio alta.
+
+**Y `--referencia` no lo arregla.** `ensure_case` fija `referencia_crm` solo si el índice es nuevo
+(`is_new`), coherente con su contrato de no sobrescribir. Así que el flag sirve para la validación
+de esa corrida y **no repara el dato**, que queda mal para siempre. En este caso se repuso a mano
+con el escritor atómico y se verificó contra el CRM (`match=True` en #464 y #540) — tanto el
+frontmatter (raíz y `meta`) como la línea del cuerpo, que `_actualizar_cuerpo` no regenera.
+
+**Remedio candidato.** Con `--crm skip`, no inventar: leer la referencia del CRM por W-code (una
+llamada REST por elemento; `_rest_search_expedientes` ya lo hace y devolvió los dos ids sin más
+dato que el W-code) y, si no se puede leer, **dejar el campo vacío** en vez de rellenarlo con un
+derivado. Un campo vacío es honesto y la guarda ya sabe tratarlo (`expected_referencia=None`);
+un campo inventado es peor que ninguno porque se presenta como dato del CRM. Alternativa mínima:
+que `ensure_case` acepte reponerlo cuando el llamador lo pasa explícito.
+
+---
+
+## 178. La plantilla del `case_id` no puede reproducir la referencia del CRM, y eso deja ciego el dedup exacto
+
+> Medido el 2026-09-08 en `W-02VEKE`.
+
+**El choque.** `core/abrir_caso.py:56` compone `f"{codigo} - {direccion} ({w_code}) - {sufijo}"`.
+Las referencias que este tenant tiene en el CRM llevan un separador **extra** antes del paréntesis
+—`BaRS10 - <via> - (W-02VEKE) - …`— que la plantilla no genera. No hay valor de `--direccion`
+que lo reproduzca salvo colgando un guion al final de la dirección.
+
+**Por qué importa.** `find_expediente_judicial_by_referencia` (y su gemela extrajudicial) exigen
+coincidencia **exacta tras normalizar espacios, acentos y case**; un separador de más no lo salva.
+Son las funciones que se consultan «antes de crear un expediente para detectar duplicados», así que
+para todo caso cuya referencia venga del CRM ese dedup devuelve `None` y **no protege**: un alta
+futura podría crear un judicial duplicado. El dedup por W-code
+(`list_expedientes_judiciales_candidatos`, filtro `like`) sí funciona y es el que localizó #464 y
+#540 en este caso.
+
+**Y hay un choque de nombres debajo.** `core/config.py` manda que el descriptor del `case_id` salga
+**siempre** del `tipo_caso` canónico («si no, hay que renombrar cross-sistema»). Aquí el tipo
+canónico es `NEGATIVA_ARRAS` -> sufijo `Negativa arras`, y el CRM dice `Negativa con oferta
+aceptada`. Esa regla está escrita suponiendo que **el alta local es la primera**; cuando el CRM va
+delante hay dos fuentes y una tiene que ceder, y ceder por el lado del CRM significa renombrar la
+referencia de un expediente judicial vivo. Se resolvió usando el sufijo canónico y dejando la
+referencia real en `referencia_crm` (ver `#177`), pero la regla no tiene caso escrito para esto.
+
+**Remedio candidato.** Que el dedup «antes de crear» use el **W-code** y no la referencia completa
+—es la clave estable, y ya existe la función—, dejando el match exacto para lo que de verdad
+necesite igualdad textual. Y escribir en `config.py` qué manda cuando el CRM va primero.
