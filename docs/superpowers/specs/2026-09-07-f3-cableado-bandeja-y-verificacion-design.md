@@ -244,9 +244,18 @@ persona la crea su Roundcube. Lo que ese documento debe recoger:
 2. **El contenido binario del adjunto subido**: se verifica nombre y carpeta, no los bytes (F3 §8.7).
 3. **La ventana del censo**: entre leer el censo y postear el adjunto hay un hueco sin cerrojo. D4
    lo hace inalcanzable hoy; **no lo cierra**.
-4. **El contenido de la copia elegida.** Se asume que las N copias del mismo Message-ID son el
-   mismo correo con los mismos adjuntos. Es razonable —es un reenvío de la misma pieza— y **no está
-   comprobado**: nadie ha cotejado los `att_id` de dos copias.
+4. ~~**El contenido de la copia elegida**~~ — **MEDIDO el 2026-09-08, y sostiene el diseño.**
+   `hasAttachments` —que es propiedad del **mensaje**— **coincide entre copias en 10 de 10** de los
+   casos divergentes sondeados. Las copias son el mismo correo, así que `elegir_cuenta` (§5) puede
+   tomar cualquiera sin perder adjuntos.
+   ⚠️ **Y de camino, una trampa que casi tumbó este párrafo en falso: el campo `adjuntos` del
+   elemento `mail` NO es el número de adjuntos.** Es estado **por copia** y no sigue a
+   `hasAttachments`: hay ocho casos con `hasAttachments=False` y una copia con `adjuntos=1`. Leído
+   como «trae N adjuntos» da que **31,2 %** de los multicopia «difieren en adjuntos» — conclusión
+   que se publicó y se retiró el mismo día al discriminar con `hasAttachments`. Qué significa
+   `adjuntos` sigue **sin saberse**, y F3 no lo usa: el manifiesto lo da el relate.
+   *(Lo que sigue sin medirse es el cotejo de `att_id` entre copias: obtenerlos exige POSTear el
+   relate, que escribe, y no se hace sobre correos reales de cliente.)*
 5. **La visibilidad, no como incógnita sino como procedencia.** El §5.1 descansa en la
    explicación del administrador del CRM, no en una medición de este repo, y **con `x-api-key` no
    es medible** —es una identidad de servicio, ve lo que ve la clave—. No bloquea nada porque

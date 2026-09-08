@@ -997,6 +997,13 @@ endpoint de borrado documentado.
 - **`hasAttachments` cuenta también los inline** (logo de firma): puede dar `true` con
   `mailadjunto` vacío. Son dos preguntas distintas; para decidir qué subir vale la segunda.
   (Sí devuelve `false` cuando toca — comprobado; no es inerte.)
+- ⚠️ **El campo `adjuntos` del elemento `mail` NO es el número de adjuntos del correo.** Es estado
+  **por copia** y **no sigue a `hasAttachments`**: medido el 2026-09-08, hay correos con
+  `hasAttachments=False` en todas sus copias y a la vez una copia con `adjuntos=1`. Qué significa
+  exactamente **no está medido**. Lo que sí está: leerlo como un contador de adjuntos hace concluir
+  que el 31,2 % de los Message-ID multicopia «difieren en adjuntos», y es **falso** — con
+  `hasAttachments`, que sí es propiedad del mensaje, las copias **coinciden 10 de 10**. Para saber
+  si un correo trae adjuntos, `hasAttachments`; para saber cuáles, el manifiesto del relate.
 - **El relate devuelve JSON**, no HTML, y trae ya el `mail_id` + los `att_id` que consume el
   adjuntar: **encadenar es obligatorio y suficiente**.
 - **`POST /api/mail/autoassign` es un falso amigo:** exige `{messages, cookies, dataHash}` y su
