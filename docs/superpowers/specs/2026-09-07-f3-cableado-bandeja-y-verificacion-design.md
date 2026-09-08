@@ -62,7 +62,7 @@ en la tabla `mail`.**
 |---|---|
 | D1 | **Un clic**: «Confirmar» archiva. Con **interruptor global** por variable de entorno, y **ausente ⇒ dry-run** |
 | D2 | Un correo no indexado **bloquea el botón**, y la tarjeta dice que falta el paso del webmail |
-| D3 | Los adjuntos se suben con su **nombre ORIGINAL**. Renombrar es de F4 |
+| D3 | ~~nombre ORIGINAL~~ → **CAMBIADA el 2026-09-08 con medición**: la tarjeta lleva **un campo de nombre por adjunto**, prerellenado con el original, y lo escribe la persona. Ver §9 |
 | D4 | **Escritura solo en la máquina de Ana** (más la de Nikolai para probar). Paola y Sergio, dry-run |
 | D5 | Alcance **judicial-first** — honra la decisión del 2026-07-19 (entrega §9) |
 | D6 | Si el usuario no es dueño de una copia, **se escribe sobre la copia que haya**; nuestro log registra quién clicó |
@@ -248,17 +248,61 @@ que poder distinguir «no escribí», «escribí y no lo confirmé» y «escrib�
 El penúltimo importa: **censo ilegible no es fallo**, porque un fallo invita a reintentar y
 reintentar **duplica** (F3 §8.2, medido).
 
-## 9. Los adjuntos (D3)
+## 9. Los adjuntos y su nombre (D3, **cambiada el 2026-09-08**)
 
-Se suben con el nombre original: `[(nombre, nombre)]`. Tres razones, y la segunda no es estética:
+**La tarjeta lleva un campo de texto por adjunto, prerellenado con el nombre original, y el nombre
+final lo escribe la persona.** Un `text_input` por adjunto y nada más: el nombre final viaja al CRM
+en el mapa `att_id → nombre` de `relate/attachments`, así que **no hace falta bajar el adjunto**, ni
+OCR, ni LLM, ni `MEJORAS #181`, ni F4.
 
-1. F4 —quien compone el nombre— **no está construido**, y `propose_attachment_name` (existe en
-   `core/procurador_intake.py:533`, también sin llamador) necesita el **contenido extraído** del
-   adjunto, que es justo la parte que falta.
-2. **La guarda anti-duplicado del adjuntar filtra por NOMBRE**, y `relate/attachments` **duplica**
-   (medido: censo 3→4→5). Un nombre estable la hace fiable; un nombre propuesto la esquiva. Elegir
-   nombres bonitos hoy agravaría a propósito `MEJORAS #178`.
-3. Los nombres reales son feos y se acepta: `Todos-1531714.pdf`, `LXN202609041126090071.PDF`.
+### 9.1 Por qué cambió, con el censo delante
+
+La versión anterior subía el nombre original, razonando que renombrar era trabajo de F4. **Medido
+el 2026-09-08 sobre 4.000 documentos del gestor documental**, eso era un retroceso:
+
+| | |
+|---|---|
+| documentos cuyo nombre final **sigue siendo de máquina** | **34 de 4.000 — el 1 %** |
+| renombrados **desde** un nombre de máquina (`LXN…`, `Env_…`) | **541** |
+| no renombrados (`nombrefinal == nombreoriginal`) | 2.482 (62 %) — llegaron ya con nombre descriptivo |
+
+Los dos últimos no se contradicen: **el renombrado ocurre justo cuando el original es de máquina**,
+que es exactamente el caso de los adjuntos de LexNET. Con la D3 anterior, FeesDefender habría
+entrado **sistemáticamente en ese 1 %** — inyectando `LXN202609071009040422.PDF` en un corpus donde
+891 documentos de 16 expedientes judiciales siguen una convención humana, sin una sola excepción.
+
+**Y el error de razonamiento fue anterior al diseño:** al ofrecer las opciones se descartó «que lo
+escriba la persona en la tarjeta» por *«más teclear que ahora»*. Falso: hoy la persona **ya compone
+un nombre con convención**, y los 4.000 documentos lo prueban. La opción descartada por costosa no
+añade trabajo — lo **mueve** del webmail a la app.
+
+### 9.2 La convención de la casa, censada (no inventada)
+
+Prefijo de tipo procesal, descripción en mayúsculas, a veces importe o fecha. Los más frecuentes:
+
+`DIOR` (305, diligencia de ordenación) · `JUSTIF PROCU` (100) · `JUST PROCU` (87) · `D XX` (85) ·
+`PROCU` (65) · `ESCR PROCU` (63) · `ESCR CRIO` (55) · `DECR` (52) · `AUTO` (51) · `FRA PROCU` (50) ·
+`PROV` (25) · `D 01`–`D 07` y `DOC 02`–`DOC 11` (~22 cada uno, el probatorio).
+
+**Es inconsistente a propósito de nadie:** `JUSTIF` y `JUST` designan lo mismo, y el probatorio se
+escribe `D NN` y `DOC NN`. **No hay taxonomía limpia que aprender**, así que F4 tendrá que
+**proponer y dejar corregir**, nunca imponer. Y la convención que debe aprender es **ésta**, no la
+`AAAA-MM-DD_descripcion` del repo — que es un hallazgo con el que se habría construido lo
+equivocado. El campo `categoria` de `gdocu` viene **vacío**: el tipo vive en el nombre.
+
+### 9.3 Lo que la guarda anti-duplicado exige de este cambio
+
+`relate/attachments` **duplica** (medido: censo 3→4→5) y la guarda de `adjuntar` filtra **por
+nombre**. Con nombres escritos a mano eso deja un hueco real: **dos nombres distintos para el mismo
+adjunto la esquivan y el documento entra dos veces** (`MEJORAS #178`). Mitigación de esta pieza: el
+campo se prerellena y **el nombre efectivamente usado se guarda en la traza** (§7), así que una
+segunda pasada compara contra lo que se subió y no contra lo que se propuso.
+
+### 9.4 F4 deja de ser prerequisito y pasa a ser mejora
+
+Cuando exista, **prerellena** el campo con su propuesta y la persona corrige en vez de teclear. Y
+tiene su set de evaluación esperándole: los **541 pares `nombreoriginal → nombrefinal`** del censo
+son trabajo etiquetado a mano — ver `MEJORAS #182`.
 
 ## 10. Lo que este diseño obliga a corregir en el spec de entrega
 
@@ -309,7 +353,9 @@ basura ⇒ dry-run · `sin_registro` ⇒ revisión sin POST · copia propia pres
 copia ajena (una o varias) ⇒ se usa la de menor cuenta y se anota (D6) ·
 extrajudicial ⇒ bloqueado sin POST · **verificación desde el expediente con el `mail_id` presente y
 ausente** · relate ok + adjunto fallido ⇒ `ok=False` con la relación registrada · censo ilegible ⇒
-indeterminado · adjunto ya en el censo ⇒ no re-sube · la traza guarda los tres hechos por separado.
+indeterminado · adjunto ya en el censo ⇒ no re-sube · la traza guarda los tres hechos por separado ·
+**el nombre que viaja al CRM es el del campo, no el original** (D3) · **campo dejado en blanco ⇒ se
+usa el original, nunca una cadena vacía** · **el nombre USADO queda en la traza** (§9.3).
 
 **Arnés de mutación**, y cada mutante tiene que poner rojo un test:
 
@@ -320,7 +366,9 @@ indeterminado · adjunto ya en el censo ⇒ no re-sube · la traza guarda los tr
 | la verificación vuelve a `findRelations` por copia | que `#176` está realmente cerrado |
 | `varias_cuentas` se trata como `sin_registro` | que los dos estados se distinguen (`#177`) |
 | `elegir_cuenta` toma siempre la primera copia | que la preferencia por la propia está sujeta (§5) |
-| el nombre final deja de ser el original | que D3 lo sujeta un test y no un comentario |
+| el nombre del campo se ignora y se manda el original | que D3 la sujeta un test y no un comentario |
+| un campo en blanco manda `""` al CRM | que el vacío no se convierte en un documento sin nombre |
+| la traza guarda el nombre propuesto en vez del usado | que §9.3 —la mitigación del hueco de `#178`— no es decorado |
 
 Un guard recién escrito **siempre pasa**: hasta que se le ha visto rojo, no es una defensa.
 

@@ -8021,3 +8021,39 @@ del repo, y el destino natural es el `00_Input` del expediente por la vía de in
 
 **Disparador de promoción.** Cuando se aborde F4, o el primer intento de OCR-izar adjuntos desde el
 flujo real en vez de a mano.
+
+---
+
+## 182. El CRM guarda 541 renombrados hechos a mano: el set de evaluación de F4 ya existe
+
+> Medido el 2026-09-08, censando 4.000 documentos de `gdocu` para decidir la D3 del cableado de F3.
+
+El elemento `gdocu` guarda **`nombreoriginal` Y `nombrefinal`**. De 4.000 documentos, **541 tienen
+un `nombreoriginal` de máquina** (`LXN…`, `Env_…`, `AcuseMensajeLexnet…`) **y un `nombrefinal`
+compuesto por una persona**. Eso es exactamente la tarea de F4 —proponer el nombre de un adjunto—
+**ya resuelta 541 veces, con la respuesta guardada al lado del enunciado**.
+
+Es el hermano de `MEJORAS #179` (las relaciones de la secretaria como set de evaluación del matcher
+de F1), para la otra mitad del trabajo.
+
+**Cómo se usa:** correr el propuesto de F4 sobre los 541 `nombreoriginal` y comparar con su
+`nombrefinal`. Con el añadido de que el adjunto **también está** en el gestor documental, así que se
+le puede dar el contenido real y no solo el nombre.
+
+**Dos cautelas medidas, y la segunda decide el criterio de acierto:**
+
+1. **62 % de los documentos NO se renombran** porque llegaron ya con nombre descriptivo. El set son
+   los 541, no los 4.000: F4 no debe aprender «renombra siempre».
+2. **La convención es inconsistente.** `JUSTIF PROCU` (100) y `JUST PROCU` (87) designan lo mismo;
+   el probatorio se escribe `D NN` (85 + ~22×7) y `DOC NN` (~23×10). Así que **la métrica no puede
+   ser la igualdad literal** — sería injusta con una propuesta correcta escrita con la otra
+   variante. Lo que tiene sentido medir es el **prefijo de tipo** acertado, y dejar la descripción a
+   corrección humana.
+
+**Y el catálogo de prefijos, censado y no inventado:** `DIOR` 305 · `JUSTIF PROCU` 100 ·
+`JUST PROCU` 87 · `D XX` 85 · `PROCU` 65 · `ESCR PROCU` 63 · `ESCR CRIO` 55 · `DECR` 52 ·
+`AUTO` 51 · `FRA PROCU` 50 · `PROV` 25. El campo `categoria` viene **vacío**: el tipo vive en el
+nombre, no en un enum.
+
+**Disparador de promoción.** Cuando se aborde F4. Antes no: sin el propuesto no hay nada que
+evaluar.
