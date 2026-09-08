@@ -7945,3 +7945,78 @@ referencia real en `referencia_crm` (ver `#177`), pero la regla no tiene caso es
 **Remedio candidato.** Que el dedup «antes de crear» use el **W-code** y no la referencia completa
 —es la clave estable, y ya existe la función—, dejando el match exacto para lo que de verdad
 necesite igualdad textual. Y escribir en `config.py` qué manda cuando el CRM va primero.
+
+---
+
+## 179. Un `/` en el nombre del documento del CRM parte el slug y el fichero pierde su identidad
+
+> Medido el 2026-09-08 en `W-02VEKE` (expediente judicial CRM #540).
+
+**Lo que se midió.** Dos documentos del gestor documental llegaron a `05_CRM/99_Otros` llamados
+`26_10_30_hs.pdf` y `2026_11_30_hs.pdf`. Sus nombres en el CRM son:
+
+- `DIOR-POR CONSTESTADA DDA+FIJA AUD PREVIA 24/3/26, 10:30 HS`
+- `DIOR-SUSPENDE AUD Y SEÑALA NVA VISTA  30/04/2026, 11:30 HS`
+
+El slug conservó **solo el fragmento posterior a la última barra** y descartó todo lo anterior.
+Son las dos resoluciones que **fijan y suspenden la audiencia previa**: el fichero que dice qué
+día hay vista se llama `26_10_30_hs.pdf`.
+
+**La frontera.** Es el mismo defecto que `[APER-56]` —el `/` en `--direccion` partía la carpeta
+del caso en dos— pero en otro sitio: allí lo sufría el nombre de la **carpeta**, aquí el del
+**documento**. `[APER-56]` se cerró con `MEJORAS #148` validando los campos del **alta**
+(`--codigo-caso`, `--direccion`, `--sufijo`); el nombre que llega del CRM no pasa por esa
+validación, y no puede: no es un campo que escriba el operador, es un dato remoto. Lo que hace
+falta aquí no es abortar —el documento hay que bajarlo igual— sino **normalizar la barra en vez
+de tratarla como separador de ruta**.
+
+Y hay un agravante de fecha: en un procedimiento español las resoluciones llevan la fecha con
+barras (`24/3/26`, `30/04/2026`) **por convención**, así que este caso no es raro. Cualquier
+señalamiento, plazo o vencimiento que el juzgado nombre con fecha entra por esta puerta.
+
+**Remedio candidato.** En `_safe_stem_ext` (o donde se compone el slug del documento del CRM),
+sustituir `/` y `\` por un separador inocuo **antes** de cualquier tratamiento del nombre, en vez
+de dejar que la última barra actúe como frontera. El `_` es suficiente: `dior_por_contestada_
+dda_fija_aud_previa_24_3_26_10_30_hs.pdf` es feo y es legible, y sobre todo dice qué es.
+
+**Cómo comprobar que el remedio funciona, sin fiarse del verde.** Un test con un nombre sin
+barra pasa hoy y pasaría después: no prueba nada. El test tiene que llevar la barra dentro y
+afirmar que el stem conserva el prefijo — y hay que **verlo rojo** contra el código actual antes
+de arreglarlo.
+
+**Disparador de promoción.** Bajo: los ficheros están en el expediente y su contenido es
+correcto; solo el nombre es ilegible. Sube si alguna vez hay que localizar un señalamiento por
+nombre en un caso con muchas resoluciones, o si se construye la vista procesal (`MEJORAS #176`),
+que ordena por lote y presentaría estos dos sin identidad.
+
+---
+
+## 180. `node_modules` no está en `.gitignore`, y dos skills lo necesitan para funcionar
+
+> Medido el 2026-09-08 al generar los entregables de `preparacion-juicio-oral`.
+
+**Lo que se midió.** La skill `preparacion-juicio-oral` declara `docx: ^9.7.1` en su
+`package.json` y **no trae `node_modules`** (se vendorizó a propósito sin él, 2026-06-12). Sus
+cuatro generadores `gen_*.js` no corren sin esa dependencia. Y
+`git check-ignore .claude/skills/preparacion-juicio-oral/node_modules` devuelve **no ignorado**:
+un `npm install` en la carpeta de la skill mete miles de ficheros al índice de git.
+
+O sea: la skill no funciona sin instalar, e instalar en el sitio natural contamina el repo. Hoy
+se resuelve por disciplina del operador —instalar fuera del árbol y apuntar `NODE_PATH`—, que es
+justo la clase de cosa que se olvida.
+
+**Remedio candidato.** Dos líneas independientes, y las dos merecen la pena:
+
+1. **`node_modules/` a `.gitignore`** (patrón global, no por skill). Barato y sin discusión: es
+   una red, no una solución.
+2. **Que la skill diga cómo se instala.** Su `flujo.md` describe siete fases y ninguna menciona
+   la dependencia; la Fase 3 empieza directamente en «genera `CONCLUSIONES_[REF].docx]`». Basta
+   una línea en la Fase 0 con el comando y el `NODE_PATH`, o un script que lo prepare.
+
+**Ojo con el alcance:** comprobar si le pasa lo mismo a las otras skills con `package.json`
+(`preparacion-audiencia-previa` al menos comparte generadores). El punto 1 las cubre a todas; el
+2 hay que escribirlo en cada una.
+
+**Disparador de promoción.** Ya disparado en su forma leve: hizo falta para el juicio de
+`W-02VEKE` y se resolvió instalando fuera del árbol. La entrada existe para que la próxima vez
+no haya que descubrirlo — y para que nadie cierre el hueco con un `npm install` dentro del repo.
