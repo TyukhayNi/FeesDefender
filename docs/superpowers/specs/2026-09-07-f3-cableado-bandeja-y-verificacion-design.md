@@ -67,6 +67,7 @@ en la tabla `mail`.**
 | D5 | Alcance **judicial-first** — honra la decisión del 2026-07-19 (entrega §9) |
 | D6 | Si el usuario no es dueño de una copia, **se escribe sobre la copia que haya**; nuestro log registra quién clicó |
 | D7 | **La visibilidad tiene DOS superficies** y las dos afirmaciones del expediente documental eran ciertas (§5.1, explicado por Nikolai el 2026-09-07). Ninguna rama del diseño cuelga de ella |
+| D8 | **FD sigue leyendo `procesal@`** (2026-09-08). Leer el buzón del propio usuario es la **arquitectura objetivo**, con disparador escrito — §5.2 |
 
 **D4 gana una razón mejor que la concurrencia con el §2.1 delante:** la copia que existe es la de
 Ana, así que la app que escribe debe ser la de Ana. Hoy es la única configuración coherente, no una
@@ -146,6 +147,43 @@ de relacionarlo vive en un solo buzón; después, lo lee cualquiera con acceso a
 visibilidad de equipo la da la relación con el expediente y la relación es global. Por eso el §5 no
 corta a revisión el 6,3 % multicopia: una versión anterior lo hacía «para no decidir a ciegas la
 visibilidad», y esa precaución no protegía nada.
+
+### 5.2 Por qué se sigue leyendo `procesal@`, y qué la sustituirá
+
+Se planteó leer **el buzón de Gmail del usuario que corre la app** en vez de `procesal@`. Decidido
+el 2026-09-08: **se mantiene `procesal@`**, y lo otro queda como objetivo con disparador.
+
+**Tres opciones, y solo dos son distintas.** (A) API de Gmail sobre `procesal@` —hoy—; (B) API de
+Gmail sobre el buzón del propio usuario; (C) IMAP contra ese mismo buzón, que es «lo que lee
+Roundcube». **B y C leen el mismo almacén** —Roundcube es un cliente, no un almacén, y detrás está
+Gmail—; solo cambia el protocolo, y C exige credenciales IMAP, que es justo lo que `DEAD_ENDS`
+manda no reproducir. Si algún día se cambia, se cambia a **B**.
+
+**Lo que B arregla de verdad.** El grano: Roundcube es por persona, la fila `mail` es por persona,
+el acto de relacionar es por persona, y **la lectura de FD es lo único compartido**. Con B
+desaparecen `elegir_cuenta` (§5), D6 y `PROCURADOR_CUENTA_CRM`: la cuenta de la app **es** la
+cuenta. Y da la **certeza** —no la casi-certeza— de que el correo está en el buzón sobre el que
+actuará el webview.
+
+⚠️ **Un argumento que se usó a favor de B y es FALSO, anotado para que nadie lo resucite:** que B
+«le da a la app el uid IMAP» que necesita el composite del plugin. **No.** La API de Gmail no expone
+uids de IMAP; el uid se saca del `rcmail.env` del webmail en los dos casos, y como el Message-ID
+sobrevive al reenvío —medido, 23 de 32— la búsqueda funciona igual leyendo la lista.
+
+**Por qué se queda A:**
+
+1. **Con D4 —solo escribe la máquina de Ana— A y B dan hoy el mismo resultado.** El desajuste de
+   grano solo muerde cuando escribe una segunda persona, y D4 aplaza ese caso.
+2. **La lista es la puerta canónica.** Los buzones personales están detrás del reenvío, que **pierde
+   cosas**: filtros, reglas, spam. Medido: 1 de 32 correos de la muestra estaba en SPAM.
+3. **A cuesta cero.** B cuesta cuatro tokens OAuth —sobre una app con problema conocido de
+   caducidad— y debilita el visor compartido del §3 de la entrega, que hoy sale gratis porque las
+   cuatro apps leen la misma lista.
+
+**Disparador para pasar a B:** el día que escriba en el CRM alguien que no sea Ana. **Y de ahí se
+sigue algo que el revisor debe saber:** `elegir_cuenta`, D6 y `PROCURADOR_CUENTA_CRM` son
+**andamio con fecha de caducidad**, no diseño definitivo. Se construyen porque hoy hacen falta y se
+retiran con B.
 
 ## 6. La verificación (`MEJORAS #176`)
 
@@ -300,7 +338,10 @@ Al revisor, cuatro cosas señaladas a propósito:
 2. **§6.2 — la comprobación previa degradada a atajo**, apoyada en que re-relacionar no duplica.
    Es una medición de un día sobre tres correos.
 3. **§11.1 — el `id_creador` de una escritura de F3**: incógnita con consecuencia para F6.
-4. **§11.4 — que las N copias sean el mismo correo con los mismos adjuntos**: asumido, no cotejado.
+4. ~~**§11.4 — que las N copias sean el mismo correo**~~ — **MEDIDO** el 2026-09-08; ver §11.4.
+5. **§5.2 — `elegir_cuenta`, D6 y `PROCURADOR_CUENTA_CRM` son ANDAMIO**, con disparador de retirada
+   escrito. Atacar su elegancia como si fueran diseño definitivo es gastar ronda: lo que sí merece
+   ataque es si **fallan** mientras existan.
 
 ## 14. Higiene
 
