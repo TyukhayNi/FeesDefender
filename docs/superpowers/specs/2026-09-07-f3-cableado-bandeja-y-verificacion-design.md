@@ -338,10 +338,14 @@ Al revisor, cuatro cosas señaladas a propósito:
 2. **§6.2 — la comprobación previa degradada a atajo**, apoyada en que re-relacionar no duplica.
    Es una medición de un día sobre tres correos.
 3. **§11.1 — el `id_creador` de una escritura de F3**: incógnita con consecuencia para F6.
-4. ~~**§11.4 — que las N copias sean el mismo correo**~~ — **MEDIDO** el 2026-09-08; ver §11.4.
-5. **§5.2 — `elegir_cuenta`, D6 y `PROCURADOR_CUENTA_CRM` son ANDAMIO**, con disparador de retirada
-   escrito. Atacar su elegancia como si fueran diseño definitivo es gastar ronda: lo que sí merece
+4. **§5.2 — `elegir_cuenta`, D6 y `PROCURADOR_CUENTA_CRM` son ANDAMIO**, con disparador de retirada
+   escrito. Atacar su elegancia como si fueran diseño definitivo es gastar ronda; lo que sí merece
    ataque es si **fallan** mientras existan.
+
+Y una nota sobre las mediciones que este diseño cita: **todas se hicieron el 2026-09-07/08 y varias
+corrigen conclusiones previas mías del mismo día.** El §0 del spec de F3 rev. 5 lleva el catálogo.
+Si una cifra de aquí no cuadra con la fuente, la fuente gana — y el sondeo que la reproduce está en
+`scripts/sondeo_copias_mail.py` y `scripts/sondeo_join_gmail_crm.py`, los dos con control positivo.
 
 ## 14. Higiene
 
