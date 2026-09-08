@@ -7824,3 +7824,62 @@ vale es **apoyarse** en ella para explicar nada.
 
 **Disparador de promoción.** Que vuelva a caer un conector con `CONNECTION_CLOSED`, o que haya que
 tocar la línea de lanzamiento de cualquier wrapper por otro motivo.
+
+## 176. El atlas del CRM mide su cobertura contra `/api/elements`, que oculta 28 elementos
+
+**Medido el 2026-09-08.** `GET /api/elements` devuelve **89 elementos**, y `poderes` **no está entre
+ellos** — pese a que el elemento responde con normalidad a `element_registries`, `element_register`,
+`view/config/{element}/fields`, `view/config/{element}/relations`, `view/enums/*` y
+`related_register`, y a que el fichero tiene 85 registros vivos en el tenant.
+
+`core/crm_atlas.fetch_elements` construye la lista de la Fase B llamando a `/api/elements`
+(`crm_atlas.py`, la llamada a `/api/elements` dentro de `fetch_elements`). Por tanto:
+
+- el atlas **no tiene ni tendrá** ficha de `poderes` por regenerarlo;
+- su cabecera dice **«Fase B (esquema por elemento) ⚠️ 87/89 (2 degradados)»**, que se lee como
+  cobertura casi total y **mide otra cosa**: la cobertura sobre la lista que el CRM confiesa.
+
+**Cuánto falta, medido sin llamadas nuevas** — cruzando los elementos que el propio atlas ya cita en
+sus líneas `Relaciones · parent: … · children: …` contra los 89 con ficha, salen **105 citados** y
+por tanto **28 sin ficha**:
+
+```
+poderes, mandatos, proyectos, rgpdlopd, plantillas, templates, usuarios, mail, conceptos,
+remesas, signatures_documents, tracking, lesionados, panels, reports, grupos, gruposcontables,
+pagos_proveedores, cron, gdoculogdescargas, conceptos_varios, conceptos_finance,
+conceptos_recibidas, conceptos_recibidas_gastos, conceptos_recibidas_honorarios,
+catalogo_conceptos_provision, cuentascontables_configuracion, tarifas_conceptos_honorario
+```
+
+O sea que el denominador real es **117 como mínimo**, y «89» no es la superficie: es lo que
+`/api/elements` admite.
+
+⚠️ **Precisión sobre lo que esto demuestra y lo que no:** son 28 **nombres citados sin ficha**. Que
+un elemento sin ficha *responda* solo está comprobado en **uno**, `poderes` (esquema, enums,
+relaciones, listado, detalle y escritura — §16 de `INTEGRACION_SUDESPACHO.md`). De los otros 27 se
+sabe que el CRM los declara como relaciones válidas de otros elementos, y nada más. No llamarlos
+«operativos verificados» hasta sondearlos: es justo la clase de salto que esta entrada denuncia.
+
+**Por qué importa más de lo que parece:** el atlas existe para no descubrir endpoints a mano
+(`CLAUDE.md`: «consultarlo ANTES de descubrir un endpoint a mano»). Un elemento ausente del atlas
+invita a concluir que no existe, que es exactamente el error contra el que avisa
+`feedback-no-lo-se-no-es-no-hay`: **«no está en el atlas» tiene que poder leerse como «no pude
+mirar», no como «no hay»**. En esta sesión el elemento ausente resultó tener 85 registros, 87
+documentos y 16 poderes caducados que nadie veía.
+
+**Vías posibles, sin decidir:**
+
+1. **Ampliar la semilla de la Fase B**: unir a `/api/elements` los nombres que aparecen en las
+   relaciones ya descubiertas (`parent`/`children`), que es un cierre transitivo barato y no
+   necesita ninguna llamada nueva para arrancar. Sondear cada uno con `view/config/{e}/fields`, que
+   es lo que la Fase B ya hace.
+2. **Corregir el rótulo de cobertura** para que declare su denominador: «87 de los 89 que
+   `/api/elements` lista; hay ≥28 elementos operativos fuera de esa lista».
+3. **Dejarlo y documentar el punto ciego** — que es lo que se ha hecho de momento, en
+   `INTEGRACION_SUDESPACHO.md` §16.1.
+
+La (2) es barata y quita el falso sentido de completitud; la (1) es la que de verdad cierra el hueco
+y necesita medir cuántos de los 28 responden.
+
+**Disparador para promoverla:** que haga falta el esquema de alguno de esos 28. Hoy solo hacía falta
+`poderes`, y ese ya está escrito a mano en el §16.

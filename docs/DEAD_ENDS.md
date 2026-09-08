@@ -6,6 +6,36 @@
 
 ---
 
+## `POST relation_element` con el lado equivocado: HTTP 201 «Created!» y el vínculo no existe
+
+- **Intentado:** vincular el poderdante a un poder con el patrón del §10.6/§15.3, que funciona para
+  `clientes_propios`/`colaboradores`/`actuaciones` sobre un expediente:
+  `POST /api/relation_element/poderes/43` con body `["right.clientes_propios.2"]`.
+- **Resultado:** **HTTP 201 con cuerpo `"Created!"`** y **ninguna relación creada**. Verificado con
+  `GET /api/related_register/poderes/43` inmediatamente después: los vínculos seguían siendo los de
+  antes (`procuradores_propios`, `gdocu`). Ni error, ni warning, ni pista en la respuesta.
+- **Confirmado:** 2026-09-08, tenant `tnm`, sobre el fichero de poderes.
+- **Causa raíz:** el lado del prefijo no es libre, depende de si el elemento relacionado es `parent`
+  o `children` del elemento sobre el que se hace el POST.
+  `GET /api/view/config/poderes/relations` devuelve
+  `{"parent": ["clientes_propios"], "children": ["clientes_propios","gdocu","procuradores_propios"]}`,
+  y la forma que **sí** crea el vínculo es `["left.clientes_propios.2"]` — `left.` para el padre.
+  Para el hijo (`procuradores_propios`) el bueno es `right.`, verificado también en vivo.
+- **Lo que NO sirve:** fiarse del status. Tampoco `POST relation_element/clientes_propios/{id}` con
+  `["right.poderes.{id}"]` ni las otras tres variantes probadas antes de dar con la buena: todas
+  devuelven 2xx sin efecto o no llegan a probarse porque la primera correcta cortó el barrido.
+- **Conclusión:** **antes de escribir una relación en un elemento nuevo, leer
+  `view/config/{element}/relations`**, y **verificar con `related_register` (§15.5)**, no con el
+  status. El lado se deriva de ahí (`parent` → `left.`, `children` → `right.`) **solo cuando el
+  elemento relacionado aparece en UN lado**; si aparece en los dos —como `clientes_propios` aquí—,
+  la pertenencia no dice cuál expresa el papel y hace falta evidencia, no una prueba a ver qué pasa.
+  Y hacerlo sobre un registro cuyo vínculo sea el que de verdad se quiere: hay un
+  `DELETE /api/relation_element/{element}/{id}` **declarado** (§15.5 y el atlas) pero **sin validar**
+  en este tenant, así que no hay red probada bajo un vínculo mal creado.
+- **Dónde vive el contrato:** `docs/INTEGRACION_SUDESPACHO.md` §16.3.
+
+---
+
 ## El force-push está DENEGADO por política: una rama ya pusheada no se sanea reescribiéndola en su sitio
 
 - **Intentado:** quitar de la historia de una rama **ya publicada** un término de PII que se

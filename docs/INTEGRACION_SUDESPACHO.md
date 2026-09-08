@@ -71,10 +71,17 @@ de otro elemento) no aparecen aquí; para esas, seguir usando el patrón confirm
 ### 0.4 Atajo previo: consultar el atlas ya generado
 
 **Antes de un HAR (§0.2) o un probe (§0.3), mirar el atlas** `docs/CRM_SUDESPACHO_ATLAS.md`:
-ya mapea toda la superficie del tenant `tnm` de forma generada y re-ejecutable — endpoints
-(Fase A: 548 ops / 486 paths / 125 módulos) **y** por elemento sus campos, relaciones y enums
-de tipo `Select` (Fase B: 89 elementos). Es el **SSOT de "qué existe"**; a menudo evita el
-descubrimiento a mano. Regenerar y ver la deriva del tenant:
+mapea de forma generada y re-ejecutable los endpoints (Fase A: 548 ops / 486 paths / 125 módulos)
+**y**, por elemento, sus campos, relaciones y enums de tipo `Select` (Fase B: 89 elementos). Es el
+mejor inventario que hay y a menudo evita el descubrimiento a mano.
+
+> ⚠️ **Pero no es exhaustivo, y su cobertura no se puede leer como total (medido 2026-09-08).** La
+> Fase B recorre `/api/elements`, que devuelve 89 nombres y **oculta al menos 28 elementos que el
+> propio atlas cita como relaciones** — `poderes` entre ellos, con 85 registros vivos. **«No está en
+> el atlas» no significa «no existe»**: significa que la Fase B no pudo mirarlo. Detalle y lista:
+> §16.1 y `MEJORAS_FUTURAS.md` #176.
+
+Regenerar y ver la deriva del tenant:
 
 ```
 python -m scripts.crm_atlas discover --phase all   # requiere SUDESPACHO_API_KEY en el entorno
@@ -175,8 +182,9 @@ document.cookie.split(';').map(c=>c.trim()).filter(c=>c.startsWith('PHPSESSID')|
 ### 3.1 API REST nueva (`api-crm-commons-pro.sudespacho.biz`)
 
 > Esta tabla lista **solo los endpoints confirmados con payload** (el "qué usamos y cómo",
-> hogar legítimamente distinto). El inventario **exhaustivo** de la superficie REST (toda la
-> superficie, aunque no la usemos) vive en el atlas `docs/CRM_SUDESPACHO_ATLAS.md`.
+> hogar legítimamente distinto). El inventario **amplio** de la superficie REST (lo que hay, aunque
+> no lo usemos) vive en el atlas `docs/CRM_SUDESPACHO_ATLAS.md` — con el límite de cobertura que
+> declara el §0.4: su Fase B no ve los elementos que `/api/elements` no lista (≥28, §16.1).
 
 | Método | Endpoint | Descripción | Estado |
 |---|---|---|---|
@@ -446,8 +454,15 @@ Para cada doc_id:
         → bytes → guardar en disco
 ```
 
-Este flujo no requiere PHPSESSID. Solo necesita `x-api-key`.  
-**Pendiente de implementar en `core/sync_sudespacho.py`** como reemplazo de los métodos legacy.
+Este flujo no requiere PHPSESSID. Solo necesita `x-api-key`.
+
+> ⚠️ **OBSOLETO desde 2026-05-11, y esta sección no se había actualizado.** El CRM rompió
+> `/api/files/presigned_download_url/{fileId}` server-side (400 «Unable to generate an IRI»), igual
+> que `/api/documents/presigned_urls/s3/download/{id}` (500). El flujo vivo es
+> **`GET /api/documents/{id}/downloadUri` → `presignedDownloadUrl`**, que es lo que
+> `core/sync_sudespacho.py` implementa desde entonces (`ENDPOINTS["document_download_uri"]`) — la
+> línea «pendiente de implementar» que había aquí llevaba **cuatro meses** desmentida por el código.
+> Diagnóstico: `DEAD_ENDS.md`. Uso reciente: §16.7.
 
 ### 5.2 Flujo legacy — válido pero requiere PHPSESSID + @token
 
@@ -1878,3 +1893,218 @@ huérfanos** caen justo ahí: lista acordada endpoint por endpoint, o nada.
 
 > ℹ️ **Contexto de permisos (2026-08-03):** `Delete` se retiró de los cuatro `api.key.*`, así que un
 > sondeo accidental ya no puede borrar. `facturas`-Create **sigue ON**. Detalle en la referencia común §3.
+
+---
+
+## 16. El elemento `poderes` — leer, escribir y relacionar (confirmado 2026-09-08)
+
+Salió de organizar el fichero entero (85 registros, 87 documentos) desde la API. Todo lo de esta
+sección está **verificado en vivo sobre el tenant `tnm`**, y la verificación fue siempre **por
+lectura**, nunca por status — con razón, porque aquí hay un `201` que no crea nada (§16.3).
+
+### 16.1 El elemento existe pero `/api/elements` no lo lista — punto ciego del atlas
+
+`GET /api/elements` devuelve **89 elementos y `poderes` no está entre ellos**, aunque el elemento
+responde con normalidad a `element_registries`, `element_register`, `view/config/*`, `view/enums/*`
+y `related_register`. Como `scripts/crm_atlas` construye la Fase B recorriendo `/api/elements`
+(`core/crm_atlas.fetch_elements`), **el atlas no tiene ni tendrá ficha de `poderes`**: su
+«87/89 resueltos» mide la cobertura contra la lista que el CRM confiesa, no contra la superficie real.
+
+Cruzando los elementos que el propio atlas cita como relaciones (`parent`/`children`) contra esos 89
+salen **28 elementos citados sin ficha**. De esos 28, el único que se ha comprobado que responde de
+verdad es `poderes` (esta sección entera); **de los otros 27 solo se sabe que el CRM los declara como
+relaciones válidas de otros elementos**, no que sus endpoints contesten. La lista literal y las vías
+de arreglo viven en `MEJORAS_FUTURAS.md` **#176** — un hecho, un hogar.
+
+**Consecuencia práctica:** que un elemento no esté en el atlas **no significa que no exista**. Para
+descubrir su esquema, el atajo del §15.1 (`GET /api/view/config/{element}/fields`) funciona igual, y
+la sonda de propiedad inválida (§0.3) enumera el contrato entero.
+
+### 16.2 Esquema, enums y relaciones de `poderes`
+
+Ocho campos editables — es un elemento **pobre**, y eso condiciona cualquier diseño encima:
+
+| Campo | Tipo | Enum |
+|---|---|---|
+| `Fecha_Poder` | `Date` · **required** | — |
+| `Tipo` | `Select` | `-1`=Ninguno · `General` · `Especial` |
+| `Formato` | `Select` | `Apud Acta` · `Notarial` |
+| `Apoderado` | `Select` | `Abogado` · `Procurador` |
+| `Numero_Poder` | `TextCorto` | libre |
+| `Numero_Protocolo` | `TextCorto` | libre |
+| `Notario` | `TextCorto` | libre |
+| `Notas` | `EditorHtmlSimple` | libre |
+
+Más los de sistema, que la sonda de propiedad inválida enumera: `id`, `grupo_contable_id`,
+`id_creador`, `id_ultimo_modificador`, `fecha_creacion`, `fecha_ultima_modificacion`.
+
+**Lo que NO hay, y descarta de entrada tres soluciones naturales:**
+
+- **sin `tags`** → no se puede etiquetar;
+- **sin `id_carpeta`** → no admite carpetas. `GET /api/folders/poderes/1` devuelve `[]`, y el
+  instrumento sí sabe devolver datos (control positivo: `folders/gdocu/1` → 4 carpetas,
+  `folders/actuaciones/1` → 2). El `POST /api/folders/poderes/{parent}` existiría, pero no hay campo
+  donde colgar la asignación;
+- **sin campo de vigencia ni de caducidad** — y los poderes **sí caducan** (§16.6);
+- **sin relación al expediente.** `GET /api/view/config/poderes/relations` devuelve exactamente
+  `{"parent": ["clientes_propios"], "children": ["clientes_propios","gdocu","procuradores_propios"]}`.
+  No hay `expedientes_judiciales` ni `extrajudiciales`: la conexión poder↔expediente pasa hoy por el
+  poderdante o por el procurador.
+
+**Properties de relación (lectura):** `right.procuradores_propios.{nombre,poblacion,provincia,notas}`
+funcionan y son filtrables. **`left.procuradores_propios.*` da 500** (`Base table or view not found:
+eplanv2_TNM.r_procuradores_propios_poderes`): el nombre de la tabla de relación revela la dirección.
+
+**Formulario de alta rápida** (`GET /api/view/quick_creation/poderes`): pide solo `Fecha_Poder`,
+`Numero_Poder` y `Notas`. No pide `Tipo`, `Formato`, `Apoderado` ni el cliente — de ahí que 52 de 85
+registros llevaran `Tipo = -1` (Ninguno). **Un alta por API debe rellenar los tres Selects
+explícitamente**, porque la UI no los va a pedir.
+
+**Buscador global** (`GET /api/view/global_quick_search/poderes`): busca en `Notario`,
+`Numero_Poder` y `left.clientes_propios.nombre`. Es la razón por la que conviene que `Numero_Poder`
+sea un título canónico y no un cajón de sastre.
+
+### 16.3 Relacionar un poder: `left.` para el padre, `right.` para el hijo — y un `201` que MIENTE
+
+**El fallo que esta sección existe para evitar:**
+
+```
+POST /api/relation_element/poderes/43
+Body: ["right.clientes_propios.2"]
+-> HTTP 201  "Created!"        <-- y el vinculo NO existe
+```
+
+Verificado con `GET /api/related_register/poderes/43` inmediatamente después: las relaciones seguían
+siendo las de antes. **Ni error, ni warning, ni pista.** Es el mismo patrón que el «200 con el listado
+completo» del §14.6, pero en escritura.
+
+La forma que **sí** funciona depende de si el elemento relacionado es `parent` o `children` en
+`view/config/{element}/relations`:
+
+| Relacionado | Es | Body correcto |
+|---|---|---|
+| `clientes_propios` (poderdante) | **parent** | `["left.clientes_propios.{id}"]` |
+| `procuradores_propios` (apoderado) | **children** | `["right.procuradores_propios.{id}"]` |
+
+Las dos verificadas en vivo (poderes 43 y 1, y luego 20 vínculos más, todos confirmados por lectura).
+Con `right.` sobre el parent: 201 y nada.
+
+⚠️ **Y la reversión no está garantizada.** `DELETE /api/relation_element/{element}/{id}` **sí está
+declarado** —en la tabla del §15.5 y en el atlas— pero **nadie lo ha validado** en este tenant, y con
+un endpoint hermano que responde 201 sin hacer nada, «declarado» no es «funciona». Así que **no se
+cuenta con el borrado como red**: probar siempre sobre un registro cuyo vínculo sea el que de verdad
+se quiere, no sobre uno cualquiera. Si alguien valida el DELETE, que lo mida por lectura y lo escriba
+aquí.
+
+> **Regla que generaliza, y su límite.** Antes de escribir una relación en un elemento nuevo, leer
+> `GET /api/view/config/{element}/relations`. Si el relacionado aparece en **un solo lado**, el lado
+> se deriva: `parent` → `left.`, `children` → `right.`. **Si aparece en los DOS —que es justo el caso
+> de `clientes_propios` aquí— la pertenencia no desambigua nada** y las dos formas son sintácticamente
+> admisibles: hay que resolver el papel con evidencia (una captura, o el contrato del proveedor), no
+> probando variantes sobre fichas reales. Y verificar siempre con `related_register` (§15.5), que
+> además viene **acumulado** — y comprobando **elemento e id esperados**, no que haya «algún» bloque.
+
+### 16.4 PUT parcial: confirmado también sobre `poderes`
+
+`PUT /api/element_register/poderes/{id}` con JSON plano de solo los campos que cambian **preserva los
+omitidos**, igual que en `extrajudiciales` (§10.7). Comprobado con el control explícito: leer los 8
+campos, escribir uno, releer y verificar que solo ese cambió. Repetido sobre 85 registros y 431
+campos, con **0 alteraciones no pedidas** contra un snapshot previo.
+
+El GET-detalle necesita `?properties=a,b,c` (forma coma); el plano da 500. La respuesta trae los
+campos en `values` como **lista** de `{property:{name},value}`, hay que aplanarla por `property.name`.
+
+### 16.5 El CRM corrompe lo que no cabe en cp1252
+
+```
+PUT poderes/12  {"Notas": "... [U+26A0] CADUCADO ..."}   -> HTTP 200
+GET poderes/12                                            -> "... â?\xa0 CADUCADO ..."
+```
+
+`U+26A0` se guarda como mojibake **con status 200**. Las tildes, la `ñ`, el punto medio `·` y el guion
+`-` van bien. **Regla: antes de un PUT, comprobar que todo el valor es representable en cp1252**
+(`valor.encode("cp1252")`), y si no, cambiar la notación. No usar emojis ni guiones tipográficos
+(`–`, `—`) en nada que se escriba al CRM.
+
+**Y una regla del proyecto que es fácil violar aquí:** el certificado del registro de apoderamientos
+declara el ámbito del poder **incluyendo el N.I.G. del procedimiento**. Volcarlo literal a `Notas`
+mete un NIG en un payload, que `CLAUDE.md` prohíbe. Hay que filtrarlo antes de escribir.
+
+### 16.6 Los poderes caducan, y el CRM no tiene dónde decirlo
+
+Dos fuentes de vigencia, ninguna de ellas un campo del elemento:
+
+- **Apud acta:** el PDF que se archiva es el *Certificado de inscripción de apoderamiento apud-acta*
+  del Archivo Electrónico de Apoderamientos Judiciales (`sedejudicial.justicia.es`). Es **texto
+  nativo, no escaneado**, con formato fijo, y trae: número de referencia, compareciente y entidad
+  representada, `PODER GENERAL PARA PLEITOS` del art. 25.1 LEC y/o `PODER ESPECIAL PARA` con la lista
+  de facultades del 25.2, `PARA INTERVENIR EN` (el ámbito), el apoderado con NIF y colegio,
+  y **`VIGENCIA: DESDE dd/mm/aaaa HASTA dd/mm/aaaa`**. El `ESTADO: VIGENTE` que imprime se refiere
+  **a la fecha de expedición del certificado**, no a hoy — el propio documento lo advierte; lo que
+  sirve es la fecha de fin.
+- **Notariales otorgados en Rusia:** llevan **plazo expreso** (`сроком на N лет` — uno, dos, tres,
+  cinco o diez años), al contrario que los españoles, indefinidos salvo pacto. Muchos traen
+  traducción jurada adjunta al mismo registro, que es donde leerlo sin OCR de cirílico.
+
+Medido el 2026-09-08 sobre los 85: **16 caducados** que el CRM presentaba igual que los vivos. Sin
+campo propio, la vigencia se escribe en `Notas` (que era el único campo libre sin uso: 0/85), con
+formato `VIGENCIA: dd/mm/aaaa - dd/mm/aaaa` y, cuando procede, `-- CADUCADO hace N dias`.
+
+### 16.7 Renombrar un documento del gestor y ponerle asunto
+
+```
+PUT /api/element_register/gdocu/{doc_id}
+Body: {"nombrefinal": "<nombre nuevo>", "asunto": "<titulo>"}
+```
+
+Verificado sobre 86 documentos: escribe `nombrefinal` y `asunto`, y **preserva `nombreoriginal`**, así
+que el nombre con el que el fichero entró no se pierde. Importa porque los certificados apud-acta se
+descargan todos como `CertificadoRegistro (N).pdf` — 24 de los 87 se llamaban así, cuatro de ellos
+idénticos, y sin abrirlos no se distinguían.
+
+Para bajar el binario, `GET /api/documents/{id}/downloadUri` → `presignedDownloadUrl`. Es lo que
+implementa `core/sync_sudespacho.get_presigned_download_url` y lo que se usó aquí para los 87
+documentos. ⚠️ **No seguir el §5.1**: describe el flujo por `/api/files/presigned_download_url/{doc_id}`,
+que el CRM rompió en mayo de 2026 y el propio `DEAD_ENDS.md` da por muerto (con su hermano
+`/api/documents/presigned_urls/s3/download/{id}`).
+
+### 16.8 Convención del fichero de poderes (fijada por Nikolai el 2026-09-08)
+
+Con ocho campos y sin etiquetas ni carpetas, el orden se consigue devolviendo cada dato a su campo y
+dejando en el título **solo lo que no tiene campo propio**:
+
+| Campo | Qué lleva |
+|---|---|
+| `Numero_Poder` | **título canónico** `<OBJETO> · <APELLIDOS, NOMBRE>` — el apoderado solo si es procurador; si es abogado basta el Select. El poderdante **no** va: lo da la relación |
+| `Numero_Protocolo` | el **número** del poder: referencia del apoderamiento apud-acta, o protocolo notarial. Nada de nombres |
+| `Notas` | la **vigencia** y, cuando el poder acota su ámbito, `AMBITO:` |
+| `Tipo` · `Formato` · `Apoderado` | siempre rellenos; `Apoderado` casa con la relación (si hay procurador vinculado, `Procurador`) |
+| `Fecha_Poder` | la del **documento**, no la del día en que se dio de alta |
+
+Vocabulario cerrado de OBJETO, **y su correspondencia con el Select `Tipo`** — hace falta escribirla
+porque `Tipo` no tiene valor combinado y el vocabulario sí:
+
+| OBJETO en el título | `Tipo` |
+|---|---|
+| `Pleitos general` | `General` |
+| `Pleitos general + especial` | **`General`** — el general es el que fija la naturaleza; el «+ especial» queda en el título y sus facultades en `Notas` |
+| `Especial - herencia` · `- bancario` · `- donación` · `- permuta` · `- gestión inmobiliaria` · `- representación fiscal` · `- querellas` | `Especial` |
+
+⚠️ **Si el documento no encaja en ninguna de esas materias, PARAR y preguntar — no inventar una
+categoría ni dejar `Tipo` en `Ninguno`.** El vocabulario es cerrado a propósito: la alternativa es
+volver al cajón de sastre del que se viene. Ampliarlo es una decisión de la casa, y se escribe aquí.
+
+⚠️ **Y hay un caso que el enum `Formato` no sabe describir:** los documentos que acreditan un
+apoderamiento **administrativo** (autorización privada ante la AEAT o la CNMV, justificante de
+bastanteo) no son apud acta ni notariales. Tres registros del fichero son de esa clase. Hasta que se
+decida —enum nuevo, o sacarlos del elemento— **no se les asigna `Formato` a la fuerza**.
+
+El **partido judicial** no se guarda en el poder: es dato del procurador y cambia con él. Vive en
+`procuradores_propios.notas`, en un bloque con encabezado fijo `PARTIDOS JUDICIALES: A; B; C` y nada
+más dentro. Desde el listado de poderes se filtra con
+`right.procuradores_propios.notas like "<PARTIDO>"` (verificado: filtra de verdad, con control
+negativo a 0). Mezclar en ese bloque prosa como «solo apelaciones» produce falsos positivos.
+
+Nombre del PDF en el gestor: `AAAA-MM-DD_<CLIENTE> - <OBJETO> - <APODERADO>.pdf`, con el cliente
+abreviado y estable (`EV MMC`, `EV SPAIN`, apellidos del particular) — la razón social entera alarga
+la ruta y ya nos costó un dead end con Office a 260 caracteres.

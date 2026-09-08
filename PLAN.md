@@ -38,6 +38,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 21 | [Las doce acciones del informe de Codex sobre el alta](#siguiente-alta-codex-las-doce-acciones-del-informe-de-codex-sobre-el-alta-de-expedientes) | **9 de 12 cerradas** (1, 2, 3, 4, 5, 7, 10, 11 y **6 salvo su checklist** — PR #299); 8 encargada a la sesión hermana; **9 y 12 sin empezar**, las dos dimensionadas el 2026-09-06 | **disparador: encargo expreso de Nikolai del 2026-09-05.** Siguiente: la **12** es la más barata de las dos — `_apertura_v1.json` ya tiene `ronda_id`/`iniciada`/`terminada` y solo falta llevarlos al evento durable de `registrar_cierre_v1` | medio |
 | 22 | [El arnés de tests: paralelismo, doctrina anti-trampa y las dos técnicas que faltaban](docs/superpowers/plans/2026-09-06-arnes-de-tests-paralelismo-y-propiedades.md) | **Fases 0-3 ✅** (paralelismo + doctrina + `hypothesis`); **R1 de Codex sobre el diff adjudicada: `NO-SHIP`, 8 hallazgos, 8 confirmados, 0 refutados, remediados en `691f5e4`** (acta: `docs/superpowers/specs/2026-09-06-arnes-de-tests-r1-adversarial-review.md`; adjudicación en el §4 del plan). **Las cinco fases ✅ CERRADAS, y DOS rondas adversariales adjudicadas** (R1: 8 hallazgos, 8 confirmados, `691f5e4`; **R2 sobre el diff completo, escalada autorizada por Nikolai**: 10 hallazgos, 10 confirmados, `4875c53`). Actas en `docs/superpowers/specs/2026-09-06-arnes-de-tests-r{1,2}-adversarial-review.md`; adjudicaciones en los §4 y §8 del plan. Suite **4.698 / 0 fallos / 0 errores / 88 skip**; verja 203 s con dos semillas; cobertura del diff **96%**; arnés **13/13 mutantes muertos**. **R2 declaró INCOMPLETAS 3 de las 8 remediaciones de R1**, las tres por remediar el caso y no la clase — y su H-01 acabó **retirando** código (marca `xdist_group`, `--dist loadgroup` y su guard): la regla pasó a «ningún test escribe en el árbol de producción», sin escotilla | **disparador: decisión expresa de Nikolai del 2026-09-06.** Medido ese día: la suite tardaba **371 s** y la regla de las dos semillas **743 s (12,4 min)** — un precio que la hacía saltable bajo presión, y ya costó ocho rojos que tres merges no vieron. Con `-n auto`: **94 s** y **243 s**, con el conteo **idéntico** (4.656 / 0 / 0 / 88 `skip` / 6 `xfail`) y **cero tests serializados**. `--runslow` en paralelo: 136 s, también verde. **Nada de esto estaba en `MEJORAS_FUTURAS.md`**: es entrada nueva, no promoción | bajo |
 | 23 | El test del renovador del mutex daba rojos que no significaban nada (`MEJORAS #145` mitad de test, y **`MEJORAS #171` completa**) | ✅ **CERRADA el 2026-09-07 (PR #302, `3420d4d`)** — la propiedad se **reparte en dos**, porque un plazo de pared no puede probar las dos: el **mecanismo** en `test_RENUEVA_mientras_el_cuerpo_corre` (la señal la da el propio `renovar`, la única lectura del `.lock` va bajo el guard, el reloj falso avanza en micras y el presupuesto son 20 latidos **derivados** de `_FRACCION_LATIDO`) y la **puntualidad** en `test_el_renovador_DESPIERTA_dos_veces_por_lease`, nuevo, que lee el plazo con el que el renovador se va a dormir y exige `<= lease / 2` **sin reloj**. `tests/_espera_mutex.py` deriva el presupuesto y nombra la causa cuando el renovador muere; migrados los dos hermanos que tenían el mismo bucle a mano (r11, r12). **6/6 mutantes muertos por su frontera** (`python -m tests._mutantes_renovacion_mutex`) | **disparador: rojo real en la suite completa de la rama del PR #301, 2026-09-07.** Medido ese día: con 6x de sobresuscripción el latido llega a **1,00-1,03 s** de su periodo de 1 s —nunca tarde— y el presupuesto del bucle **crece** con la carga (3,05 s → 4,09 s), o sea que «el hilo no llega a tiempo» **no** lo explica: el margen mejora cuando la máquina sufre. Lo explica que el renovador **muera**, y el test se lo provocaba abriendo el `.lock` ~50 veces por segundo justo mientras el renovador lo reemplaza. Y `MEJORAS #171` —la entrada propia de este flaky, abierta el 06 con el disparador «que vuelva a salir en un cierre»— **consumió su disparador al día siguiente** y queda cerrada: su diagnóstico («la carga de los 12 workers se come la ventana de renovación») quedó **desmentido por la medición**, y la causa verdadera llevaba escrita en `#145` desde el 03. Dos entradas del mismo fichero explicaban el mismo rojo con causas incompatibles. **La mitad de PRODUCCIÓN de `#145` sigue ABIERTA**, con su presupuesto de dos rondas y su disparador propio — y ya no la levantará un rojo de la suite, que es deliberado y está declarado en la entrada | bajo |
+| 24 | [Alta canónica de un poder en el CRM desde el PDF](#siguiente-alta-poder-alta-canónica-de-un-poder-en-el-crm-desde-el-pdf-con-su-procurador-enganchado) | **pendiente — sin diseño escrito** | disparador: decisión expresa de Nikolai el 2026-09-08, al cerrar el saneado del fichero de poderes. El contrato del elemento está medido y escrito (`docs/INTEGRACION_SUDESPACHO.md` §16), así que queda **cablear, no descubrir**. Único hueco sin contrato: la **subida** del PDF al gestor documental (3 pasos). Gate duro: el POST de relación devuelve 201 sin crear nada y **no hay endpoint para borrar un vínculo** | medio |
 
 > **Fila 23 añadida el 2026-09-07, al final y sin reordenar, igual que las anteriores.** Es la mitad
 > de test de `MEJORAS #145`, no una promoción de la entrada: la de producción se queda donde está
@@ -3053,3 +3054,88 @@ trabajo para que no contamine).
 - ✅ **[ESTILO-DE-LA-CASA]** Infraestructura de escritura del despacho (claridad + persuasión + no-IA) — 2026-06-17, sin hash registrado · plano `PLANO_Code_skill_estilo_casa.md`
 - ✅ **[CRITICO-PRESIGNED-DOWNLOAD-BUG]** Descarga del Gestor Documental (bug presigned URL) — RESUELTO 2026-06-10, sin hash registrado · detalle `docs/DEAD_ENDS.md`
 - ✅ **[IDEA-GOBERNANZA-DOCS]** Malla de referencias cruzadas + regla de promoción backlog→`PLAN.md` — RESUELTO 2026-06-10, sin hash registrado
+
+## [SIGUIENTE-ALTA-PODER] Alta canónica de un poder en el CRM desde el PDF, con su procurador enganchado
+
+**Disparador: decisión expresa de Nikolai el 2026-09-08**, al cerrar el saneado del fichero de
+poderes: *«quiero que a la próxima, cuando haga un poder y te lo dé, FD pueda crear la ficha de poder
+canónica y relacionarla con la ficha del procurador ya creada antes por Ana»*.
+
+**Qué es.** Dado un PDF de poder (el certificado apud-acta del Archivo Electrónico, o la escritura
+notarial con su traducción), dar de alta el registro en el elemento `poderes` **ya canónico** —los
+tres Selects rellenos, el título con la plantilla, la referencia en su campo y la vigencia en
+`Notas`— y **vincularlo al poderdante y al procurador que ya existen** como fichas, sin crear
+duplicados.
+
+**Por qué es construible hoy y no antes.** El 2026-09-08 se hizo a mano sobre los 85 registros del
+fichero, así que el contrato entero está medido y escrito: `INTEGRACION_SUDESPACHO.md` **§16**
+(esquema, enums, relaciones, PUT parcial, direcciones `left.`/`right.`, encoding, renombrado de
+documentos y la convención de la casa). Lo que queda es cablearlo, no descubrirlo.
+
+**Las piezas, en el orden en que se pueden construir:**
+
+1. **Extractor del certificado apud-acta.** El PDF del Archivo Electrónico es **texto nativo con
+   formato fijo** y trae, ya estructurado: referencia del apoderamiento, compareciente y entidad
+   representada, general del 25.1 LEC y/o especial del 25.2 con sus facultades, `PARA INTERVENIR EN`,
+   el apoderado con **NIF y colegio**, y `VIGENCIA: DESDE … HASTA …`. Rinde el registro entero sin
+   intervención. ⚠️ Las etiquetas del PDF salen **desordenadas** respecto al contenido (el extractor
+   las emite en orden de caja): hay que anclar cada dato por su propio patrón, no partir por etiqueta
+   en secuencia. Prototipo funcionando de esta sesión, fuera del repo.
+2. **Resolución del procurador contra su ficha.** Es el corazón de lo que pide Nikolai: el
+   certificado da **NIF**, y `procuradores_propios` tiene `nif_cif` — así que el enganche debe ir
+   **por NIF**, que es unívoco, y no por nombre. Por nombre hay que apoyarse solo como respaldo, y
+   entonces con cuidado: `1apellido`/`2apellido` están **vacíos en los 79** procuradores y el nombre
+   completo vive en `nombre` en una sola cadena, con «DON/DOÑA» en 12 y con estado del tipo
+   «JUBILADO - NO USAR» metido dentro en 4. Si no hay ficha, **parar y preguntar**: dar de alta un
+   procurador es otra operación (y un apoderado que resulte ser **abogado** no va a
+   `procuradores_propios` en absoluto — de los 47 apoderados del fichero, 3 eran abogados).
+3. **Resolución del poderdante.** Igual: por NIF/CIF contra `clientes_propios`. Si no existe, **no
+   crearlo**: en esta sesión apareció un poder (`#85`) cuyo poderdante —una sociedad, con su CIF en
+   el certificado— no está entre los 230 clientes propios; y dar de alta un cliente es una decisión,
+   no un efecto colateral del alta de un poder.
+4. **El alta y los vínculos.** `POST /api/element_register/poderes` con los ocho campos, y luego
+   **`left.clientes_propios.{id}`** para el poderdante y **`right.procuradores_propios.{id}`** para
+   el procurador. Aquí el gate es duro: el POST de relación **devuelve 201 y puede no crear nada**
+   (`DEAD_ENDS.md`), y **no hay endpoint para borrar un vínculo**, así que cada uno se verifica con
+   `related_register` y el alta **falla en alto** si la lectura desmiente al status.
+5. **El documento al gestor.** Subir el PDF y renombrarlo a
+   `AAAA-MM-DD_<CLIENTE> - <OBJETO> - <APODERADO>.pdf` con `asunto` = el título del registro
+   (§16.7 — el renombrado preserva `nombreoriginal`). La subida en 3 pasos es la única parte del
+   flujo **sin contrato medido todavía**: hay que capturarla o sondearla antes.
+
+**Gates y avisos que no se pueden saltar:**
+
+- **Verificar por resultado, nunca por status** — en este elemento hay un 201 que miente y un 200
+  que guarda mojibake.
+- **Comprobar que todo valor a escribir es representable en cp1252** antes del PUT/POST.
+- **Filtrar el N.I.G.** del ámbito que declara el certificado: el proyecto lo prohíbe en payloads, y
+  el documento oficial lo trae dentro.
+- **El alta rápida de la UI no pide los Selects** (solo `Fecha_Poder`, `Numero_Poder` y `Notas`), que
+  es de donde venían los 52 `Tipo = Ninguno`: el alta por API los rellena **siempre**.
+- **La `Fecha_Poder` es la del documento**, no la del día del alta. En el fichero viejo, 5 de 52 no
+  cuadraban y 2 con desvíos de 218 y 794 días.
+- **Los notariales rusos llevan plazo expreso** (`сроком на N лет`) y por tanto caducan; el extractor
+  del apud-acta no vale para ellos y su vigencia sale de la traducción jurada.
+
+**Alcance de la primera entrega, a decidir con Nikolai:** lo barato y de mayor rendimiento es el
+camino **apud-acta electrónico** (59 de los 85 del fichero, y el que se repite cada vez que Ana da de
+alta un procurador nuevo), dejando el notarial para una segunda pieza. Los notariales son pocos, muy
+heterogéneos y con OCR de por medio.
+
+**Radio de daño y rondas: DOS — una sobre el diseño y una sobre el diff.** La regla de `CLAUDE.md`
+dice «destruir **o corromper** datos de cliente», y esta pieza puede corromperlos sin borrar nada:
+un vínculo al poderdante equivocado deja un poder colgando de un cliente que no lo otorgó. No es
+hipotético — el saneado del 2026-09-08 encontró ese caso exacto (`#56`), y encima el `DELETE` de
+vínculo está declarado pero **sin validar** (ver más abajo), así que la reversión no está garantizada.
+Revisión adversarial la ejecuta Codex, la adjudica Claude.
+
+> Esta línea decía «1 ronda» porque recortaba el predicado de la regla a «destruir». Lo levantó la
+> R1 sobre este mismo diff, y es el defecto de [[feedback-no-redefinir-mi-regla-de-parada]]: cuando
+> mi propia regla me obliga a parar, invento un matiz.
+
+**Deuda del saneado que este trabajo hereda** (no bloquea, pero está sin resolver): 7 registros
+bloqueados —6 sin PDF, que esperan el portal de apud-acta de Nikolai, y el `#35`, que **no es un
+poder** y para el que el enum `Formato` no tiene valor—; 3 sin poderdante (`#82`, `#85`, `#86`); el
+duplicado demostrado `#54`/`#56` (mismo poder, y el `#56` con el cliente equivocado vinculado); el
+par `#17`/`#18` que comparte PDF byte a byte; y `#1`/`#13`, con la fecha del CRM tan lejos de la del
+documento que probablemente sean dos poderes en un registro.
