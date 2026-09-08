@@ -3684,6 +3684,55 @@ WhatsApp (venían de `.jpg`, sin capa de texto que saltar → el OCR corrió ent
 tiene 8.766: ocrmypdf sí los OCR-izó). El discriminante «la fuente tiene capa de texto» elimina el
 grueso del ruido pero no sustituye a la medición; el detector sirve para **acotar a quién medir**.
 
+### Medición del 2026-09-08 — 10 adjuntos reales de procuradores, y la red FUNCIONA
+
+Pedida por Nikolai para decidir si los adjuntos del intake de procuradores debían mandarse a
+**Mistral OCR en la nube** (`PLAN.md` §MOTOR-DOCUMENTAL los lista como opción). Corpus: **10 PDFs
+bajados de `procesal@`** —tres `LXN*`, dos `AcuseMensajeLexnet*`, dos `Env_*`, un traslado de 91
+páginas, un `Diligencia` escaneado y un ordinario—, medidos con **las funciones del propio repo**
+(`pdf_paginas.perfilar_paginas`, `paginas_ciegas`, `sala_maquina.ocr_quality`,
+`calidad_por_pagina`) y con `anon.ocr.ocr_pdf_escalera`.
+
+| | |
+|---|---|
+| **8 de 10 no necesitan OCR** | los PDFs de LexNET **traen capa de texto limpia**: 1.061–2.511 char/pág, gibberish 0,01–0,09 |
+| El escaneado íntegro (`Diligencia`, 2 pp.) | la escalera lo **recupera entero**: 0 → **3.003** chars, gibberish 0,013, ciegas 2→0, `empty`→`ok`, **28,4 s**, peldaño `redo` |
+| El traslado (91 pp., 7 ciegas) | ciegas **7 → 2**, por-página **`low` → `ok`**, +12.257 chars, **285 s**, `degradado=False` |
+
+**La señal por página de la pieza (b) hizo exactamente su trabajo:** el traslado puntuaba `ok` a
+nivel de documento —210.357 caracteres diluyen 7 páginas mudas entre 91— y **solo
+`calidad_por_pagina` lo marcó `low`**. Eso es la tesis de esta entrada, verificada en un documento
+real que no se eligió para eso.
+
+**Las 2 páginas residuales, discriminadas hasta el final** (porque «quedan 2 ciegas» no es una
+conclusión): la 29 tiene **84 chars** y es una página corta legítima; la 31 da **2 chars**. Sobre la
+31 se descartaron dos hipótesis por medición, las dos mías:
+
+1. *«Es un problema de resolución»* (900 px de ancho contra 1.200 de sus vecinas, ~110 dpi).
+   **Falso:** `ocrmypdf` con `oversample=400` devuelve **los mismos 2 chars**.
+2. *«Tiene 15,6 % de tinta, luego hay texto que el OCR no leyó»*. **Falso, y el error es de
+   método: la cobertura de tinta no distingue texto de fotografía.** El histograma sí:
+
+   | | extremos (blanco/negro) | grises medios | chars |
+   |---|---|---|---|
+   | pág. 30 (control, es texto) | 17,6 % | 18,8 % | 1.169 |
+   | **pág. 31** | **5,9 %** | **52,6 %** | 2 |
+
+   Un escaneo de texto es **bimodal**; la 31 es **tono continuo** — es una **fotografía**. Que
+   Tesseract devuelva 2 caracteres ahí es **correcto**, y `degradado=False` con `ok` es el veredicto
+   acertado, no un silencio.
+
+**Conclusión, y cierra una decisión abierta:** en este corpus **el OCR local lee todo lo legible**.
+No hay caso medido para mandar los adjuntos a un OCR en la nube, así que **no hace falta ampliar la
+excepción de RGPD** de «texto del correo» a «documentos judiciales de clientes», ni poner el DPA de
+Scaleway en el camino crítico. Si algún día aparece el caso, la puerta de entrada es un número y ya
+existe: el `_cobertura.md` que genera la sala de máquina.
+
+**Lo que esta medición NO dice:** nada sobre corpus distintos de éste. Las cuentas anuales de
+W-02VND1 —el caso vivo con 81-83 % de pérdida que promovió esta entrada— son otra población, y su
+número sigue siendo el de arriba. Reproducible: los PDFs se bajaron con un script del scratchpad,
+porque **bajar adjuntos no existe en el código** (`MEJORAS #181`).
+
 ---
 
 ## 91. `sala_maquina apply` no comprueba el motor OCR antes de una corrida larga
@@ -7941,3 +7990,34 @@ de una línea disfrazado de trivial.
 **Disparador de promoción.** El próximo script que necesite credenciales y vaya a correr en un
 worktree, o la próxima vez que alguien pierda tiempo con un error de autenticación que resulte ser
 esto.
+
+---
+
+## 181. Bajar los adjuntos de un correo no existe en el código, y es prerequisito de tres cosas
+
+> Medido el 2026-09-08, al intentar medir el OCR sobre adjuntos reales.
+
+`core/gmail_source.py` **no menciona adjuntos**: baja cabeceras y cuerpo y nada más. La API de Gmail
+exige una llamada aparte (`users.messages.attachments.get`) que **nadie hace**.
+
+Y hay una ruta declarada de punta a punta que por eso llega siempre vacía:
+`EmailMessage.attachment_texts` existe (`core/procurador_runner.py:44`),
+`procurador_runner.py:84` se lo pasa a `extract_signals`, `procurador_intake.py:291` lo consume…
+y **ningún productor lo rellena**. Es la tercera pieza construida sin encadenar de esta semana.
+
+**Bloquea tres cosas distintas**, y conviene no confundirlas:
+
+1. **F4** (renombrado por contenido): `propose_attachment_name` —que existe en
+   `core/procurador_intake.py:533`, también sin llamador— pide `attachment_text`, y sin bytes no hay
+   texto.
+2. **El OCR de los adjuntos**, local o de cualquier otro tipo.
+3. **Cualquier decisión sobre mandarlos a un tercero**: no se puede mandar lo que no se baja. La
+   medición de `MEJORAS #90` del 2026-09-08 hubo que hacerla con un script del scratchpad.
+
+**Cuidado al construirlo, porque son bytes de cliente:** los adjuntos no se depositan en el árbol
+del repo, y el destino natural es el `00_Input` del expediente por la vía de intake que ya existe
+—con su evento y su `sha256`— o un temporal fuera del repo si es solo para extraer texto. Uno de los
+10 adjuntos de la medición pesaba **13,5 MB**, así que el tope y el streaming no son teóricos.
+
+**Disparador de promoción.** Cuando se aborde F4, o el primer intento de OCR-izar adjuntos desde el
+flujo real en vez de a mano.

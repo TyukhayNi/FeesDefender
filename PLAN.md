@@ -1871,6 +1871,14 @@ Tres reglas que gobiernan TODO pipeline de procesado (aplican a `[SIGUIENTE-MOTO
 > El diseño queda de referencia para retomarlo. Estudio de mercado 2026 + opciones de motor (OSS local
 > Docling(MIT)>MinerU(AGPL) / **Mistral OCR cloud+ZDR+DPA como opción de fase de construcción** / Azure
 > contenedor para manuscrito, post-anonimización) en §F del doc.
+>
+> ⚠️ **La opción «Mistral OCR cloud» tiene MEDICIÓN EN CONTRA para el corpus de procuradores
+> (2026-09-08).** Sobre 10 adjuntos reales de `procesal@`: **8 no necesitan OCR** (los PDFs de LexNET
+> traen capa de texto limpia), el único escaneado íntegro lo **recuperó la escalera local** en 28 s
+> (0 → 3.003 chars) y el traslado de 91 páginas pasó de 7 páginas ciegas a 2 —siendo una de esas dos
+> una **fotografía**, donde no hay texto que leer—. Detalle y las dos hipótesis falsas que se
+> descartaron por el camino, en `MEJORAS #90`. **No generaliza a otros corpus** (las cuentas anuales
+> de W-02VND1 son otra población), pero sí retira el argumento «el local flaquea con LexNET».
 
 > **Plano completo y memoria de diagnóstico: [`docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`](docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md).**
 > Consolida `MEJORAS #21/#24/#39/#42/#43/#41`. **Solo diseño escrito; sin código todavía.**
