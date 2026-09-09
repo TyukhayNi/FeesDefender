@@ -60,8 +60,16 @@ def test_contener_construye_desde_la_raiz_y_no_desde_la_ruta(tmp_path):
 
 @pytest.mark.parametrize("parte", [
     "..", "../fuera", "05_Procedimiento/../..", "/abs", "C:/otra", r"\\servidor\share",
+    # Este último es el que DISTINGUE la guarda léxica de la de contención: resuelve
+    # DENTRO de la raíz, así que el `relative_to` final lo aprueba. Medido el 2026-09-09:
+    # sin la guarda léxica, los otros seis los caza igualmente la contención o el test de
+    # ruta absoluta, así que el mutante que la quita SOBREVIVÍA — y sobrevivió. Se rechaza
+    # porque un `..` en medio permite atravesar un componente que el bucle ya aprobó y
+    # volver a entrar, y el mapa no tiene por qué poder expresar eso.
+    "05_Procedimiento/../05_Procedimiento",
 ])
 def test_contener_rechaza_lo_que_sale_de_la_raiz(tmp_path, parte):
+    (tmp_path / "05_Procedimiento").mkdir(exist_ok=True)
     with pytest.raises(sede.SedeError):
         sede.contener(tmp_path, parte)
 
