@@ -8127,3 +8127,141 @@ decisión, que son puras.
 
 **Disparador de promoción.** La próxima vez que se cite una cifra de estos sondeos en un spec o en
 la bitácora, o antes de que alguien que no sea su autor los use para decidir algo.
+
+## 185. El intake de correo dice «OK Caso abierto» dejando el material sin OCR y sin avisar
+
+> Medido el 2026-09-09 en la apertura de `W-04A6LI`, ejecutando el comando, no leyendo el código.
+
+`scripts/abrir_caso.py` en modo `libre` con `--fuente email` deposita el lote y termina así, literal:
+
+```
+Email: etiqueta '…' exportada a …\00_Input\2026-09-09_email_01
+CRM omitido (--crm skip): referencia pendiente + TODO
+OK Caso abierto: <case_id>
+```
+
+En ese momento el expediente tenía **43 `.eml` y 18 adjuntos en crudo**: sin atomizar, sin
+`.contenido.md` y sin espejo en la sala de máquina. La corrida sale con **código 0** y la última
+línea dice «OK». No encadena `sala_maquina apply`, no lo sugiere y **no deja pendiente durable**
+—ni evento, ni marcador, ni aviso—.
+
+**El OCR del correo no falta: está cableado.** Dentro de `apply` el orden lo garantiza el código
+(`scripts/sala_maquina.py`, `_atomizar_correo` → `_procesar_adjuntos` → `_construir_plan` → OCR) y
+lo vigila `test_atomiza_antes_de_construir_el_plan_de_ocr`. Un `.eml` en `00_Input` recibe OCR
+igual que un PDF del Drive, y sus adjuntos también porque `--extraer-adjuntos` (default desde el
+PR #299) los deja como ficheros sueltos ahí dentro. Lo que falta es que **alguien vuelva a
+llamar a `apply`**, y eso hoy es memoria del operador.
+
+**Por qué es caro y no molesto.** El daño no se ve: no hay traza roja. Se manifiesta semanas
+después como una **ausencia que se disfraza de «no hay»** — se busca en el expediente un documento
+que llegó como adjunto de correo, no aparece porque nadie extrajo su texto, y se concluye que no
+está. Es el mismo defecto de `feedback-no-lo-se-no-es-no-hay`, con la agravante de que la
+herramienta ha dicho «OK». Y afecta igual a la sala de lectura y a la viabilidad, que trabajarían
+sobre un expediente incompleto creyéndolo completo.
+
+**Lo que NO es la solución.** Encadenar `apply` desde `libre` reintroduce en la secuencia lo que la
+puerta de V1 excluye a propósito (`--fuente email` llama a Gmail, que es de V3), y el
+descubrimiento de correo está **diferido a V3 por decisión de Nikolai del 2026-08-24**
+(`PLAN.md`). Esta entrada no pide adelantar V3.
+
+**Lo que sí:** que un intake que ha depositado algo **no pueda terminar diciendo «OK» a secas**.
+Declararlo, no desplazarlo: el pendiente ya existe como vocabulario en V1
+(`etapa_no_ejecutada:<etapa>`, `EstadoV1.preparado_con_pendientes`), así que la pieza es reusar ese
+vocabulario en `libre` en vez de inventar uno. Mínimo viable: si el intake depositó ficheros,
+imprimir el paso que falta y registrarlo en `_intake_log.jsonl`, de modo que la ausencia quede
+**escrita** y no dependa de que el operador se acuerde.
+
+**Hermano mayor, peor por radio de daño.** El `RUNBOOK` deja anotado que la UI de Streamlit
+exporta correo y lanza el intake judicial **sin sostener el mutex del caso**. Eso puede corromper,
+no solo omitir. Si se gasta esfuerzo en cableado, va antes que esto.
+
+**Disparador de promoción.** La primera vez que alguien que no sea yo corra el intake de correo de
+un caso —Paola o Ana por la UI, o una sesión que no haya leído este runbook—, o la primera vez que
+se busque en un expediente un documento llegado por correo y no aparezca.
+
+## 186. `layout_bundle_hilo` llavea por basename, y `email_export` no lo hace único dentro del lote
+
+> Medido el 2026-09-09 montando la sala de lectura de `W-04A6LI`. Bloqueó el bundle por hilo.
+
+`layout_bundle_hilo` (`.claude/skills/organizar-sala-lectura/scripts/preclasificar.py`) usa el
+**nombre de fichero** como llave del grupo y **aborta con `ValueError`** si se repite. Su docstring
+justifica que eso es tolerable porque el choque solo puede venir de **dos lotes distintos**:
+«`_ruta_unica` solo desambigua dentro de su propio lote».
+
+**Esa premisa es falsa.** `email_export` desambigua la **carpeta contenedora**, no el nombre del
+`.eml`: un mensaje con adjuntos va a su propia subcarpeta (`…`, `…_2`, `…_3`, `…_4`) y el `.eml`
+de dentro conserva el nombre pelado. Medido en el lote `2026-09-09_email_01` de `W-04A6LI`, **un
+solo lote**:
+
+| basename | veces | parents |
+|---|---|---|
+| `2026-07-03_gracias_por_rellenar_este_formulario_pbc_comunicacion_intern.eml` | **4** | `…`, `…_2`, `…_3`, `…_4` |
+| `2026-08-14_pbc_referencia_w_04a6li_<dir>.eml` | 3 | `…`, `…_2`, `…_3` |
+| `2026-08-17_pbc_referencia_w_04a6li_<dir>.eml` | 3 | idem |
+| `2026-09-09_requerimiento_de_restitucion_honorarios_de_intermediacion_in.eml` | 3 | raíz, `…`, `…_2` |
+| `2026-06-30_arras_con_abogado_por_parte_compradora_w_04a6li.eml` | 2 | raíz, `…` |
+
+Cinco de nueve hilos del caso, uno de ellos el del **requerimiento**. Con los basenames
+repetidos no hay forma de resolver el fichero de origen desde el grupo, así que la sala de
+`W-04A6LI` se montó con los `.eml` **PLANOS** y el discriminante `sha256[:6]` — desviación
+declarada en su `_plan/`.
+
+**Dos frentes, y el segundo es la frontera.** (1) `layout_bundle_hilo` puede llavear por **ruta
+relativa** en vez de por basename: la ruta sí es única por construcción, y `agrupar_por_hilo` ya
+agrupa por la descripción del nombre, así que la llave y el agrupador son cosas distintas que hoy
+comparten valor por accidente. (2) Y la propiedad de la que esto es un ejemplo: **el export
+promete unicidad de un identificador y entrega unicidad de otro**. Cualquier consumidor que
+llavee por nombre hereda el mismo defecto — `senales_gate` lo demuestra al reportar estos cinco
+casos como «casi-duplicado: mismo nombre de origen con N sha256 distintos», que es un
+diagnóstico equivocado sobre una detección correcta.
+
+**Coste de no arreglarlo:** los hilos de correo no se agrupan y la sala pierde la lectura por
+conversación. No hay pérdida de información (el manifiesto llavea por `sha256`) ni riesgo de
+sobrescritura; `plano_existente=True` ya contempla convivir con hilos materializados planos, así
+que arreglarlo después no obliga a re-montar nada.
+
+**Disparador de promoción.** El próximo caso con correo cuya lectura por hilo importe —o antes,
+si se toca `layout_bundle_hilo` por cualquier otro motivo, porque el cambio de llave es de una
+línea y el test que lo fija es el que falta.
+
+## 187. La sala de máquina identifica por BYTES y la de lectura filtra por EXTENSIÓN, en silencio
+
+> Medido el 2026-09-09 en `W-04A6LI`: 4 documentos reales del Drive fuera del catálogo.
+
+Dos componentes del mismo expediente deciden «esto es un documento» por criterios distintos:
+
+- **Sala de máquina:** auto-detecta por **firma de bytes** desde el PR #55 (`[APER-21]` del
+  runbook). Un fichero del Drive E&V cuyo nombre no tiene punto se OCR-iza igual.
+- **Sala de lectura:** `core/inventory.py:95` hace
+  `if path.suffix.lower() not in _RELEVANT_EXTS: skipped.append(...)`. **Sin extensión no hay
+  fila**, y por tanto no hay entrada en `indice_documental.yaml` ni copia en la sala.
+
+**Y la omisión no se dice.** `core/sala_lectura.py:851` solo lee `inv["skipped"]` dentro de
+`if not catalogo_documental.load_catalog(case_id)` — o sea, únicamente cuando el catálogo queda
+**vacío**, para distinguir `sin_extension_relevante` de `input_vacio`. Con catálogo no vacío
+—el caso normal— el `skipped` no se cuenta, no se imprime y no queda en ningún evento.
+
+**Los cuatro de `W-04A6LI`**, todos con espejo MD y texto útil, todos invisibles para la sala:
+
+| Fichero en `00_Input/01_Drive EV/` | Lo que contiene | chars |
+|---|---|---|
+| `certificado Ayuntam pago tributos` | certificado municipal de estar al corriente de tributos, firmado el 30-07-2026 | 1.407 |
+| `FACTURA AGUA` | factura de agua de 27-05-2026 | 590 |
+| `FACTURA AGUA 2` | factura de agua de 24-02-2026 | 621 |
+| `facturas luz listado 2` | histórico de facturación eléctrica del inmueble | 430 |
+
+No es un caso raro: E&V sube ficheros desde el móvil sin extensión con normalidad. En este
+expediente eran **documentación de suministros y de tributos del inmueble** — la que acredita
+la actividad de la agencia sobre la finca.
+
+**Dos arreglos, y son independientes.** (1) Que `inventory.scan` decida por firma de bytes
+cuando no hay extensión, reusando lo que la sala de máquina ya tiene: entonces las dos salas
+ven lo mismo. (2) Y, con arreglo o sin él, **que `skipped` se diga siempre**: contar los
+omitidos y enumerarlos, en pantalla y en un evento de `_intake_log.jsonl`. La segunda es la
+que importa, porque el criterio de relevancia puede seguir siendo discutible mientras el
+silencio no lo es — la frontera es la misma de `MEJORAS #185`: **una ausencia que se disfraza
+de «no hay»**.
+
+**Disparador de promoción.** La primera vez que se monte una sala de lectura de un caso cuya
+prueba llegue por foto de móvil sin extensión; o antes, si se toca `inventory.scan`, porque
+enumerar `skipped` son tres líneas y el test que lo fija es el que falta.
