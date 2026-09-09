@@ -8213,6 +8213,12 @@ una página con 2.000 caracteres también, pero los umbrales no son los mismos y
 silencio devolvería `empty` cuando lo correcto es «no había habla». Hay que decidir el
 criterio explícitamente, no heredarlo.
 
+**Y una regla que hereda de MEJORAS #184, descubierta en la misma sesión:** un audio que **no
+se pudo leer** no es un audio sin habla. La ruta debe comprobar que el origen sigue montado
+antes de dar por fallido un fichero, y no debe producir un espejo vacío en un fallo de lectura
+— si no, una caída del Drive a mitad de tanda deja 38 documentos con veredicto de un problema
+que no era suyo.
+
 **Disparador de promoción.** Ya está disparado: W-02USSI tiene 67 documentos ilegibles y la
 demanda está sin presentar. Lo urgente del caso se cubre fuera del pipeline (transcripción en
 scratchpad, fuera del repo, que es donde debe estar el dato real); lo que esta entrada pide es
@@ -8273,5 +8279,62 @@ esos pares es el chat del que son crudo, no su hash.
 
 **Disparador de promoción.** Cualquier caso cuyo WhatsApp llegue por el espejo del Drive de E&V
 o por lote de correo, que son la mayoría — W-02USSI ya lo hizo por las dos.
+
+---
+## 184. El presupuesto de reintentos se gasta en una causa que no es del documento
+
+**Medido el 2026-09-09, en vivo, sobre W-02USSI.** Una tanda larga de transcripción que leía
+`.opus` desde `G:` iba por el fichero 18 de 56 cuando **`G:` (Drive Stream) se colgó**. Los 38
+restantes fallaron uno a uno con `FileNotFoundError`. Al comprobarlo después: el directorio
+respondía `Permission denied`, `Test-Path "G:\"` daba **`Access to the path 'G:\' is denied`**,
+la raíz de `CASOS` listaba **0 entradas**, había **cuatro procesos `GoogleDriveFS`** y hasta
+`Get-PSDrive -PSProvider FileSystem` **se colgaba 120 s**. No era el fichero: era el volumen.
+
+**El síntoma miente sobre la causa.** Un `FileNotFoundError` por fichero se lee como ruta mala
+o fichero ausente. Lo que había pasado es global, y la prueba es que **los 18 que sí se
+procesaron tampoco eran visibles después** — ni los que fallaron ni los que no.
+
+**Qué hace hoy la sala de máquina en esa situación** (verificado en el código, no supuesto):
+
+1. `core/sala_maquina.py:1408` captura **cualquier** excepción por documento y escribe la fila
+   `tipo: "error"`, `estado: "empty"`, `chars: 0`, `nota: "fallo al procesar: …"`. El
+   comentario —«cualquier fallo del documento: no tumbar el lote»— es correcto para un PDF
+   corrupto y es justo lo que no conviene cuando la causa es del volumen.
+2. **Nada distingue una causa global de una del documento.** No hay comprobación de que el
+   origen siga montado; el único `except OSError` cercano (`:1479`) trata la desaparición de un
+   fichero como carrera entre el `rglob` y el `stat`, no como caída del montaje.
+3. **Lo que sí está bien y hay que decirlo:** `_exitosos_por_bundle`
+   (`scripts/sala_maquina.py:333`) marca hecho un documento **solo si salió `ok`/`low`**, así
+   que un fallo **no** se cachea como éxito y **se reintenta** en la corrida siguiente. El
+   censo no queda envenenado de forma inmediata.
+
+**El hueco, entonces, es estrecho y es este:** `scripts/sala_maquina.py:962` suma **`+1` al
+contador de intentos de cada documento que se procesó y no salió bien**, y con
+`MAX_INTENTOS = 3` (`core/sala_maquina.py:214`) el sha pasa a `agotados` y **se salta hasta que
+alguien use `--force`**. Es decir: **tres caídas del Drive gastan el presupuesto de reintentos
+de documentos que nunca fueron ilegibles.** El tope existe para que nada bucle, y su docstring
+ya advierte del riesgo —«saltarse algo en silencio es el defecto que este tope podría
+introducir si nadie lo cuenta»—; el CLI **cumple** esa parte y avisa (`:806`, `:907`). Lo que no
+está cubierto es que **el intento se cobre a quien no tiene la culpa**. Hoy, en W-02USSI, 38
+documentos van con 1 de 3.
+
+**La frontera de la que esto es ejemplo:** *aislar el fallo por unidad de trabajo supone que la
+causa es de esa unidad.* Cuando la causa es del entorno compartido —el volumen, la red, el
+binario externo—, el aislamiento convierte un fallo en N veredictos. Mismo patrón que el aviso
+de `soffice` (`:270`), que precisamente se resolvió al revés y bien: **se comprueba la
+dependencia ANTES de procesar**, y se avisa una vez en vez de N notas por documento.
+
+**Qué hacer.** (a) Un centinela de salud del origen —`00_Input` existe y no está vacío— que se
+consulte **antes de cobrar un intento**; si el origen no responde, la corrida **para y lo
+declara**, en vez de recorrer el resto marcando fallos. (b) Que el contador solo suba cuando el
+origen esté vivo. (c) Que la nota del censo diga **cuál de las dos causas** fue, porque hoy
+`fallo al procesar: [Errno 2]…` no permite distinguirlas al leer el `_cobertura.json` después.
+(d) Heredarlo en la ruta `audio` de **MEJORAS #182**: un audio que no se pudo leer no es un
+audio sin habla. Ya está implementado y probado fuera del repo, en el script de reanudación de
+esta sesión, con las tres reglas: comprobar el volumen antes de rendirse, no producir salida
+en un fallo de lectura, e idempotencia por existencia de la salida.
+
+**Disparador de promoción.** La próxima corrida de `sala_maquina apply` sobre un caso grande en
+`G:` — que es el caso normal, no el excepcional.
 
 ---
