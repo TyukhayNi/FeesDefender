@@ -1871,6 +1871,14 @@ Tres reglas que gobiernan TODO pipeline de procesado (aplican a `[SIGUIENTE-MOTO
 > El diseño queda de referencia para retomarlo. Estudio de mercado 2026 + opciones de motor (OSS local
 > Docling(MIT)>MinerU(AGPL) / **Mistral OCR cloud+ZDR+DPA como opción de fase de construcción** / Azure
 > contenedor para manuscrito, post-anonimización) en §F del doc.
+>
+> ⚠️ **La opción «Mistral OCR cloud» tiene MEDICIÓN EN CONTRA para el corpus de procuradores
+> (2026-09-08).** Sobre 10 adjuntos reales de `procesal@`: **8 no necesitan OCR** (los PDFs de LexNET
+> traen capa de texto limpia), el único escaneado íntegro lo **recuperó la escalera local** en 28 s
+> (0 → 3.003 chars) y el traslado de 91 páginas pasó de 7 páginas ciegas a 2 —siendo una de esas dos
+> una **fotografía**, donde no hay texto que leer—. Detalle y las dos hipótesis falsas que se
+> descartaron por el camino, en `MEJORAS #90`. **No generaliza a otros corpus** (las cuentas anuales
+> de W-02VND1 son otra población), pero sí retira el argumento «el local flaquea con LexNET».
 
 > **Plano completo y memoria de diagnóstico: [`docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`](docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md).**
 > Consolida `MEJORAS #21/#24/#39/#42/#43/#41`. **Solo diseño escrito; sin código todavía.**
@@ -2257,7 +2265,50 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   revisar** (§5). **`expedientes_judiciales` MEDIDO** (2026-09-07, judicial de prueba 683): mismo slug pelado,
   mismas carpetas, sin contaminación cruzada — y las relaciones son **multi-elemento**, así que la
   idempotencia va por PAR `(elemento, id)`, no por «¿tiene alguna relación?».
-  **[SIGUIENTE]:** el paso del webmail dentro de la app. ⚠️ Residuos de prueba en el 636, sin borrar (borrado en CRM = decisión de Nikolai).
+  **Rev. 5 (2026-09-07, tarde) — medido CON ESCRITURAS contra el 636 y el 683.** Se cerraron las
+  tres incógnitas del §8 que estaban sin probar: `cookies`/`dataHash` vacíos **escriben** sobre un
+  correo indexado; re-postear el relate **sí** devuelve el manifiesto de un correo ya relacionado
+  (el mecanismo del §5.5 funciona — y ojo, `relacionar()` NO sirve, corta con `ya_estaba`);
+  y **`relate/attachments` DUPLICA**: mismo `att_id`, mismo nombre, mismo `mail_id`, dos POST →
+  dos documentos (censo 3→4→5). Eso hace **portante** la guarda por censo del cliente.
+  **Y un hallazgo que ninguna ronda había mirado:** `findRelations` es una vista **POR COPIA** —un
+  Message-ID tiene N filas `mail`, una por cuenta (3 copias medidas, ctas 11/13/15)— mientras la
+  relación que escribe el relate es **global**. Así que la verificación del §4 daba **falso
+  negativo** sobre una escritura buena. Corregido en el spec §4.1: se verifica por
+  `related_register/{elemento}/{id}`, que **ya estaba cableado** en
+  `core.sudespacho_relations.get_relaciones`.
+  **`R1/H-05` REVERTIDO de «refutado» a «confirmado»** (spec §12): el «medido 0/12» de la rev. 4 se
+  hizo sobre 12 correos todos de copia única, así que la muestra no podía mostrar el fenómeno.
+  Backlog abierto: `MEJORAS #176-#179`.
+  **Estado al 2026-09-09: R1 CONSUMIDA y dos rebanadas de tres CONSTRUIDAS.**
+  Spec **rev. 2** (`docs/superpowers/specs/2026-09-07-f3-cableado-bandeja-y-verificacion-design.md`),
+  con la **R1 adversarial de Codex adjudicada en su §15: NO-SHIP, 14 hallazgos, 14 confirmados,
+  0 refutados** (acta hermana `…-r1-adversarial-review.md`, informe literal y digest verificado).
+  Tres de los catorce cambiaron el ALCANCE, no la redacción: H-01 hizo crecer la pieza hacia la
+  ingesta, H-02 la encogió —**§5 retirado**: la copia sobre la que se escribe **la elige el
+  servidor**, medido— y H-06 cambió el contrato de `procurador_relate`.
+  - ✅ **Rebanada 1 — el inventario de adjuntos** (H-01, el crítico): de Gmail a la cola, con los
+    tres estados `None`/`()`/con-nombres. 10 tests, 9 mutantes muertos.
+  - ✅ **Rebanada 2 — los tres hechos del archivado** (H-06): `ArchivoResult` con `relacion` y
+    `documentos` por separado, `verificado` plano eliminado. 8 tests, 6 mutantes muertos.
+  - ⬜ **Rebanada 3 — el orquestador, y la ÚNICA que escribe en el CRM.**
+  Backlog abierto: `MEJORAS #176`–`#184`.
+  **Estado anterior (2026-09-07, noche): el diseño escrito esperaba dos cosas de Nikolai.**
+  Spec: `docs/superpowers/specs/2026-09-07-f3-cableado-bandeja-y-verificacion-design.md` (PR #306,
+  commits `f4eb7ac` + `904cff4`). Decisiones D1-D7 tomadas. **Pendiente: (1) que Nikolai revise el
+  spec —puerta del proceso, no se escribe el plan antes—, y (2) si se mide el §11.4 (que las N
+  copias de un Message-ID lleven los mismos adjuntos: asumido, no cotejado, ~30 min).** Después:
+  ronda 1 adversarial **sobre el diseño**, y solo entonces construir. Son 2 rondas por radio de daño.
+  **[SIGUIENTE]:** dos piezas, en este orden. **(a) el cableado** — `archivar()` **no tiene
+  ningún llamador de producción** (`git grep procurador_relate` solo da su test; la bandeja sigue
+  diciendo «NO escribe en el CRM (eso es F3)» en `streamlit_app.py:2699`), y antes de cablearlo hay
+  que mover la verificación al lado del expediente (`MEJORAS #176`). **(b) el paso del webmail**,
+  que sigue siendo el paso 0 real: medido el 2026-09-07, **indexado ⟺ Ana lo relacionó** (las 23
+  filas de `cuenta 20` las creó `id_creador=23` = Ana, y `fecha_creacion` sigue su jornada, no la
+  llegada del correo). Sin ese primer relate, `archivar()` no puede empezar nada — solo completar.
+  ⚠️ Residuos de prueba sin borrar en el **636** (5 docs, dos de ellos las copias de
+  `ZZ BORRAR test idempotencia adjuntar 2026-09-07.docx`) y en el **683** (relación con un correo
+  de marketing). Borrado en CRM = decisión de Nikolai.
 - **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store
   de correcciones few-shot (§10).
 - **F5 — Grabaciones.** ⬜ Descarga de enlaces (WeTransfer caduca) + fallback manual.

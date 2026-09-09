@@ -3684,6 +3684,55 @@ WhatsApp (venían de `.jpg`, sin capa de texto que saltar → el OCR corrió ent
 tiene 8.766: ocrmypdf sí los OCR-izó). El discriminante «la fuente tiene capa de texto» elimina el
 grueso del ruido pero no sustituye a la medición; el detector sirve para **acotar a quién medir**.
 
+### Medición del 2026-09-08 — 10 adjuntos reales de procuradores, y la red FUNCIONA
+
+Pedida por Nikolai para decidir si los adjuntos del intake de procuradores debían mandarse a
+**Mistral OCR en la nube** (`PLAN.md` §MOTOR-DOCUMENTAL los lista como opción). Corpus: **10 PDFs
+bajados de `procesal@`** —tres `LXN*`, dos `AcuseMensajeLexnet*`, dos `Env_*`, un traslado de 91
+páginas, un `Diligencia` escaneado y un ordinario—, medidos con **las funciones del propio repo**
+(`pdf_paginas.perfilar_paginas`, `paginas_ciegas`, `sala_maquina.ocr_quality`,
+`calidad_por_pagina`) y con `anon.ocr.ocr_pdf_escalera`.
+
+| | |
+|---|---|
+| **8 de 10 no necesitan OCR** | los PDFs de LexNET **traen capa de texto limpia**: 1.061–2.511 char/pág, gibberish 0,01–0,09 |
+| El escaneado íntegro (`Diligencia`, 2 pp.) | la escalera lo **recupera entero**: 0 → **3.003** chars, gibberish 0,013, ciegas 2→0, `empty`→`ok`, **28,4 s**, peldaño `redo` |
+| El traslado (91 pp., 7 ciegas) | ciegas **7 → 2**, por-página **`low` → `ok`**, +12.257 chars, **285 s**, `degradado=False` |
+
+**La señal por página de la pieza (b) hizo exactamente su trabajo:** el traslado puntuaba `ok` a
+nivel de documento —210.357 caracteres diluyen 7 páginas mudas entre 91— y **solo
+`calidad_por_pagina` lo marcó `low`**. Eso es la tesis de esta entrada, verificada en un documento
+real que no se eligió para eso.
+
+**Las 2 páginas residuales, discriminadas hasta el final** (porque «quedan 2 ciegas» no es una
+conclusión): la 29 tiene **84 chars** y es una página corta legítima; la 31 da **2 chars**. Sobre la
+31 se descartaron dos hipótesis por medición, las dos mías:
+
+1. *«Es un problema de resolución»* (900 px de ancho contra 1.200 de sus vecinas, ~110 dpi).
+   **Falso:** `ocrmypdf` con `oversample=400` devuelve **los mismos 2 chars**.
+2. *«Tiene 15,6 % de tinta, luego hay texto que el OCR no leyó»*. **Falso, y el error es de
+   método: la cobertura de tinta no distingue texto de fotografía.** El histograma sí:
+
+   | | extremos (blanco/negro) | grises medios | chars |
+   |---|---|---|---|
+   | pág. 30 (control, es texto) | 17,6 % | 18,8 % | 1.169 |
+   | **pág. 31** | **5,9 %** | **52,6 %** | 2 |
+
+   Un escaneo de texto es **bimodal**; la 31 es **tono continuo** — es una **fotografía**. Que
+   Tesseract devuelva 2 caracteres ahí es **correcto**, y `degradado=False` con `ok` es el veredicto
+   acertado, no un silencio.
+
+**Conclusión, y cierra una decisión abierta:** en este corpus **el OCR local lee todo lo legible**.
+No hay caso medido para mandar los adjuntos a un OCR en la nube, así que **no hace falta ampliar la
+excepción de RGPD** de «texto del correo» a «documentos judiciales de clientes», ni poner el DPA de
+Scaleway en el camino crítico. Si algún día aparece el caso, la puerta de entrada es un número y ya
+existe: el `_cobertura.md` que genera la sala de máquina.
+
+**Lo que esta medición NO dice:** nada sobre corpus distintos de éste. Las cuentas anuales de
+W-02VND1 —el caso vivo con 81-83 % de pérdida que promovió esta entrada— son otra población, y su
+número sigue siendo el de arriba. Reproducible: los PDFs se bajaron con un script del scratchpad,
+porque **bajar adjuntos no existe en el código** (`MEJORAS #181`).
+
 ---
 
 ## 91. `sala_maquina apply` no comprueba el motor OCR antes de una corrida larga
@@ -7824,3 +7873,257 @@ vale es **apoyarse** en ella para explicar nada.
 
 **Disparador de promoción.** Que vuelva a caer un conector con `CONNECTION_CLOSED`, o que haya que
 tocar la línea de lanzamiento de cualquier wrapper por otro motivo.
+
+---
+
+## 176. F3 verifica el relate por el lado del correo, que es una vista por copia
+
+> Medido el 2026-09-07 con escrituras contra los expedientes de prueba 636 y 683.
+
+`core/procurador_relate.py` verifica el relate **releyendo `findRelations(uid, account)`**
+(§4 del spec de F3). Esa lectura devuelve las relaciones de **esa copia** del correo, y un mismo
+Message-ID tiene **N filas `mail`, una por cuenta** (tres copias medidas: ctas 11, 13, 15). La
+relación que el relate escribe es **global**.
+
+Resultado medido: relacionada la copia de la cuenta 15 con `expedientes_judiciales:683`,
+relacionar la copia de la cuenta 2 con el **mismo** miembro devolvió `ok=False` y
+*«el CRM respondió 200 pero la relectura no lo verifica; ¿existe el miembro?»* — con la relación
+escrita y el miembro existiendo. El expediente no se movió de dos correos y el `mail_id` fue el
+mismo (439232) desde las dos cuentas.
+
+**Arreglo:** verificar por `GET /api/related_register/{elemento}/{id}` → bloque `mail`, que ya
+está cableado en `core.sudespacho_relations.get_relaciones` (`INTEGRACION_SUDESPACHO §15.5`).
+
+**Disparador de promoción.** Cablear `archivar()` a la bandeja (F3 en producción): mientras nadie
+lo llame, el falso negativo no daña a nadie.
+
+---
+
+## 177. Dos mensajes de error de F3 apuntan a la causa equivocada
+
+> Mismo barrido del 2026-09-07 que `#176`.
+
+1. **`resolver_cuenta()` → `None`** cubre dos estados distintos: «no hay fila `mail`» y «hay más
+   de una cuenta». Su motivo dice *«¿no indexado todavía?»*, y en el segundo caso el correo está
+   indexado **tres veces**. El mensaje manda al operador a esperar un paso del webmail que no
+   arregla nada.
+2. **El error del relate** dice *«¿existe el miembro?»* cuando lo que pasa es que la relectura es
+   por copia (`#176`). Un reintento guiado por ese diagnóstico no converge nunca.
+
+Los dos fallan **cerrado** (van a revisión), así que no corrompen nada: el defecto es el
+diagnóstico, y el coste es tiempo humano buscando en el sitio equivocado.
+
+**Disparador de promoción.** El mismo que `#176`, o la primera vez que alguien pierda un rato con
+uno de los dos mensajes.
+
+---
+
+## 178. La guarda anti-duplicado del adjuntar filtra por NOMBRE, y el CRM sí duplica
+
+> Medido el 2026-09-07 sobre `extrajudiciales/636`: censo 3 → 4 → 5.
+
+`relate/attachments` **no es idempotente**. El mismo `att_id`, el mismo nombre final y el mismo
+`mail_id`, posteados dos veces, dejan **dos documentos**; los dos POST contestaron
+`{"status":"success","errors":[]}`.
+
+Eso convierte la guarda por censo de `adjuntar` (`pendientes = [… if n not in antes]`) en
+**portante**: sin ella se duplica un documento en el expediente de un cliente. Y deja su hueco a
+la vista — **filtra por nombre final**, así que si F4 propone dos nombres distintos para el mismo
+adjunto (o alguien renombra), el mismo documento entra dos veces.
+
+**Arreglo:** filtrar además por `att_id` ya subido, no solo por nombre. Requiere que el censo
+del gestor documental exponga la procedencia del documento, que está sin comprobar.
+
+**Disparador de promoción.** Que F4 entre en juego (es quien compone `nombre_final`), o el primer
+duplicado observado en un expediente real.
+
+---
+
+## 179. Las relaciones que hace Ana son un set de evaluación gratis para el matcher de F1
+
+> Observado el 2026-09-07 al medir qué correos de `procesal@` están en el CRM.
+
+De 32 correos de `procesal@` de cuatro días, **23 estaban relacionados con su
+`expedientes_judiciales`**, cada uno con el miembro que **Ana eligió a mano** (`id_creador=23` en
+las 23 filas). Eso es verdad de campo etiquetada por la persona cuyo criterio es el patrón, y se
+renueva cada día.
+
+F1 se validó en junio contra 20 correos con un dataset construido a mano
+(`scripts/eval_matcher_batch.py`). Aquí hay un arnés que no cuesta montar: correr el matcher sobre
+los correos **ya relacionados**, comparar su propuesta con el expediente que Ana eligió, y sacar
+acierto por lote. Mide si el robot acierta **antes** de darle la escritura.
+
+**Cuidado con el sesgo:** solo cubre los correos que Ana **sí** archivó. Los que deja pendientes
+—9 de 32 en la muestra, incluido uno en SPAM— no tienen etiqueta, y son justo los raros.
+
+**Disparador de promoción.** Antes de dejar que F3 escriba en el CRM sin confirmación humana por
+ítem. Mientras la bandeja pida visto bueno, el arnés es deseable y no urgente.
+
+---
+
+## 180. En un worktree, TODO script que use credenciales falla, y no dice por qué
+
+> Medido el 2026-09-07 y el 2026-09-08, al promover los sondeos del módulo de correo.
+
+`core/config.py` hace `load_dotenv(_PROJECT_ROOT / ".env")` sobre la raíz del árbol en el que
+corre. **Un worktree no tiene `.env`** —está gitignored, y lo gitignored no viaja—, así que
+cualquier script que necesite `SUDESPACHO_API_KEY` u otra credencial arranca sin ella y muere con
+un error de red o de autenticación que **no menciona el `.env`**. Es el mismo mecanismo que dejó
+inerte la blocklist del `leak-guard` (`#161`), aplicado a las credenciales.
+
+Ayer costó pasar la ruta absoluta a mano en cada sondeo; `scripts/diag_expediente_648.py` tiene el
+mismo defecto latente, y por definición lo tiene **cualquier** script del repo que dependa de
+`core.config` para las credenciales.
+
+**Lo remediado (el ejemplo):** `scripts/_sondeo_crm.resolver_env` busca el `.env` en este árbol y,
+si no está, en el checkout principal (`git worktree list`), y **devuelve de dónde cargó** — un
+cargador que no lo dice no distingue «no había» de «no pude mirar». Sus dos sondeos lo imprimen y
+abortan con un mensaje claro si no hay `.env`.
+
+**Lo NO remediado (la frontera):** el sumidero es `core/config.py`, por donde pasan todos. Mientras
+la carga viva ahí sin fallback, cada script nuevo hereda el defecto y hay que acordarse.
+
+**Por qué no se arregla ya:** tocar `core/config.py` cambia el arranque de **todo** el repo
+—`streamlit_app`, los pipelines, los tests— y merece su propio diseño y su ronda. No es un cambio
+de una línea disfrazado de trivial.
+
+**Disparador de promoción.** El próximo script que necesite credenciales y vaya a correr en un
+worktree, o la próxima vez que alguien pierda tiempo con un error de autenticación que resulte ser
+esto.
+
+---
+
+## 181. Bajar los adjuntos de un correo no existe en el código, y es prerequisito de tres cosas
+
+> Medido el 2026-09-08, al intentar medir el OCR sobre adjuntos reales.
+
+`core/gmail_source.py` **no menciona adjuntos**: baja cabeceras y cuerpo y nada más. La API de Gmail
+exige una llamada aparte (`users.messages.attachments.get`) que **nadie hace**.
+
+Y hay una ruta declarada de punta a punta que por eso llega siempre vacía:
+`EmailMessage.attachment_texts` existe (`core/procurador_runner.py:44`),
+`procurador_runner.py:84` se lo pasa a `extract_signals`, `procurador_intake.py:291` lo consume…
+y **ningún productor lo rellena**. Es la tercera pieza construida sin encadenar de esta semana.
+
+**Bloquea tres cosas distintas**, y conviene no confundirlas:
+
+1. **F4** (renombrado por contenido): `propose_attachment_name` —que existe en
+   `core/procurador_intake.py:533`, también sin llamador— pide `attachment_text`, y sin bytes no hay
+   texto.
+2. **El OCR de los adjuntos**, local o de cualquier otro tipo.
+3. **Cualquier decisión sobre mandarlos a un tercero**: no se puede mandar lo que no se baja. La
+   medición de `MEJORAS #90` del 2026-09-08 hubo que hacerla con un script del scratchpad.
+
+**Cuidado al construirlo, porque son bytes de cliente:** los adjuntos no se depositan en el árbol
+del repo, y el destino natural es el `00_Input` del expediente por la vía de intake que ya existe
+—con su evento y su `sha256`— o un temporal fuera del repo si es solo para extraer texto. Uno de los
+10 adjuntos de la medición pesaba **13,5 MB**, así que el tope y el streaming no son teóricos.
+
+**Disparador de promoción.** Cuando se aborde F4, o el primer intento de OCR-izar adjuntos desde el
+flujo real en vez de a mano.
+
+---
+
+## 182. El CRM guarda 541 renombrados hechos a mano: el set de evaluación de F4 ya existe
+
+> Medido el 2026-09-08, censando 4.000 documentos de `gdocu` para decidir la D3 del cableado de F3.
+
+El elemento `gdocu` guarda **`nombreoriginal` Y `nombrefinal`**. De 4.000 documentos, **541 tienen
+un `nombreoriginal` de máquina** (`LXN…`, `Env_…`, `AcuseMensajeLexnet…`) **y un `nombrefinal`
+compuesto por una persona**. Eso es exactamente la tarea de F4 —proponer el nombre de un adjunto—
+**ya resuelta 541 veces, con la respuesta guardada al lado del enunciado**.
+
+Es el hermano de `MEJORAS #179` (las relaciones de la secretaria como set de evaluación del matcher
+de F1), para la otra mitad del trabajo.
+
+**Cómo se usa:** correr el propuesto de F4 sobre los 541 `nombreoriginal` y comparar con su
+`nombrefinal`. Con el añadido de que el adjunto **también está** en el gestor documental, así que se
+le puede dar el contenido real y no solo el nombre.
+
+**Dos cautelas medidas, y la segunda decide el criterio de acierto:**
+
+1. **62 % de los documentos NO se renombran** porque llegaron ya con nombre descriptivo. El set son
+   los 541, no los 4.000: F4 no debe aprender «renombra siempre».
+2. **La convención es inconsistente.** `JUSTIF PROCU` (100) y `JUST PROCU` (87) designan lo mismo;
+   el probatorio se escribe `D NN` (85 + ~22×7) y `DOC NN` (~23×10). Así que **la métrica no puede
+   ser la igualdad literal** — sería injusta con una propuesta correcta escrita con la otra
+   variante. Lo que tiene sentido medir es el **prefijo de tipo** acertado, y dejar la descripción a
+   corrección humana.
+
+**Y el catálogo de prefijos, censado y no inventado:** `DIOR` 305 · `JUSTIF PROCU` 100 ·
+`JUST PROCU` 87 · `D XX` 85 · `PROCU` 65 · `ESCR PROCU` 63 · `ESCR CRIO` 55 · `DECR` 52 ·
+`AUTO` 51 · `FRA PROCU` 50 · `PROV` 25. El campo `categoria` viene **vacío**: el tipo vive en el
+nombre, no en un enum.
+
+**Disparador de promoción.** Cuando se aborde F4. Antes no: sin el propuesto no hay nada que
+evaluar.
+
+---
+
+## 183. En un worktree el intake de procuradores descarta TODOS los correos, en silencio
+
+> Medido el 2026-09-09, al escribir los tests de la rebanada 1 del cableado de F3.
+
+`core.procurador_intake.cargar_procuradores_conocidos` lee `data/_config/procuradores_conocidos.yaml`
+—**gitignored**— y su docstring lo dice: *«Ausente o ilegible → (set(), set())»*.
+
+**Medido en este worktree: 0 dominios, 0 emails.** La raíz principal sí tiene el YAML; el worktree
+solo tiene el `.example`, que **no se lee**. Consecuencia: `is_procurador_email()` devuelve `False`
+para todo, y `procurador_runner.process_email` descarta **cada** correo con
+`motivo="remitente_no_procurador"`.
+
+**Por qué es peor que el caso hermano de la blocklist (`#161`):** allí el vacío producía un **verde
+falso** en un guard. Aquí produce un **descarte falso con un motivo que parece una clasificación
+legítima** — «este remitente no es un procurador» se lee como una decisión, no como «no tenía
+catálogo con el que decidir». Nadie audita un descarte razonado.
+
+**Es la misma frontera que `#180`** (el `.env` que no viaja a los worktrees): un artefacto
+gitignored del que depende el comportamiento, y cuyo estado vacío es indistinguible de una
+respuesta.
+
+**Remedio, dos piezas y la primera es la que importa:**
+
+1. **Que el vacío se OIGA.** Igual que el `leak-guard` cuenta sus términos: exponer cuántas entradas
+   cargó y de dónde, y que `run_intake` lo diga al arrancar. Un contador es lo que separa «miré y no
+   es procurador» de «no tenía con qué mirar».
+2. **Buscar también en el checkout principal**, como hace `scripts/_sondeo_crm.resolver_env` con el
+   `.env` (`git worktree list`). Cuesta poco y quita la asimetría worktree/raíz.
+
+**Lo que NO se hace:** leer el `.example` como respaldo. Un catálogo de ejemplo respondiendo
+preguntas de producción es peor que no tener catálogo.
+
+**Disparador de promoción.** La primera vez que alguien corra el intake desde un worktree y lea
+«remitente_no_procurador» como un hecho, o cuando se cablee `archivar_confirmado` (rebanada 2),
+porque entonces el silencio afecta a una escritura.
+
+---
+
+## 184. Los dos sondeos del módulo de correo están al 0 % de cobertura
+
+> Medido por `session_close` el 2026-09-09, al cerrar la sesión que los promovió.
+
+`scripts/sondeo_copias_mail.py` y `scripts/sondeo_join_gmail_crm.py` tienen **0 % de líneas
+cubiertas**. Su helper compartido `scripts/_sondeo_crm.py` está al **100 %** con 10 mutantes
+muertos, pero los cuerpos de los sondeos —`censo()`, `detalle()`, `main()`— no los ejecuta ningún
+test.
+
+**Por qué importa más de lo que parece:** son las herramientas que **reproducen las mediciones que
+acaban citadas en los specs**. Un sondeo roto no da un error: da **un número**, y ese número entra
+en un documento. Toda esta sesión giró alrededor de instrumentos que no podían dar el otro valor.
+
+**Es abordable, y por eso es deuda y no limitación:** `censo(t, …)` y `detalle(t, …)` **reciben el
+transporte**, así que se prueban con el `FakeTransport` que ya existe en
+`tests/test_procurador_relate.py`. Lo que merece test:
+
+- `censo`: que la distribución salga de las páginas que devuelve el fake; que **pare** cuando una
+  página da HTTP != 200; que el mensaje del control diga «no acredita nada» con cero multicopia y
+  «SÍ, mide» con al menos uno.
+- `detalle`: que un censo ilegible (`filas_mail_por_uid` → `None`) se reporte como
+  **indeterminado** y no como «no hay filas».
+- `main`: que sin `.env` aborte con código 2 en vez de dar un error de red confuso.
+
+**Lo que NO hace falta:** cubrir la paginación real ni la red. El valor está en las ramas de
+decisión, que son puras.
+
+**Disparador de promoción.** La próxima vez que se cite una cifra de estos sondeos en un spec o en
+la bitácora, o antes de que alguien que no sea su autor los use para decidir algo.
