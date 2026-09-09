@@ -107,11 +107,31 @@ def construir(raiz: Path, case_id: str, expediente_id: str, *, m: mp.MapaProcesa
     # Puerta 7-bis del spec: un eco es una afirmación sobre el CRM y puede ser falsa. La
     # rev. 1 usaba `eco_crm` para excluir un doc_id de lo pendiente sin validar que ese
     # doc_id existiera, así que un eco equivocado ocultaba un documento real.
+    asignados_crm = {e.doc_id for e in m.entradas if e.origen == mp.ORIGEN_CRM}
     for doc_id, clave in sorted(ecos.items()):
         if doc_id not in c.listadas:
             bloqueos.append(
                 f"{clave}: declara `eco_crm: {doc_id!r}` y el CRM no enumera ese documento "
                 f"en el expediente {expediente_id}")
+        elif doc_id in asignados_crm:
+            # La otra mitad de la puerta 7-bis, que faltaba (R1/H-15): el spec §5.7-bis
+            # prohíbe las dos vías a la vez. Con las dos, el mismo documento sale por
+            # duplicado y el informe se declara completo.
+            bloqueos.append(
+                f"{clave}: declara `eco_crm: {doc_id!r}` y ese documento **también** está "
+                f"asignado como entrada `crm`. El eco existe para evitar la copia, no "
+                f"para acompañarla: quita una de las dos")
+
+    # Y los ecos repetidos, que el dict colapsaba a la última clave sin decir nada.
+    repetidos: dict[str, list[str]] = {}
+    for e in m.entradas:
+        if e.origen == mp.ORIGEN_DESPACHO and e.eco_crm:
+            repetidos.setdefault(e.eco_crm, []).append(e.logical_key)
+    for doc_id, claves in sorted(repetidos.items()):
+        if len(claves) > 1:
+            bloqueos.append(
+                f"el `doc_id` {doc_id!r} está declarado como eco por {len(claves)} "
+                f"entradas del despacho: {sorted(claves)}. Solo una puede ser su eco")
 
     asignados: set[str] = set()
     for e in m.entradas:
@@ -154,8 +174,29 @@ def construir(raiz: Path, case_id: str, expediente_id: str, *, m: mp.MapaProcesa
                 f"{e.logical_key}: la ruta de origen no existe: 00_Input/{rev['path']}")
             continue
 
+        # **La cadena es ocurrencia -> cobertura -> bytes, y hay que verificar los DOS
+        # eslabones.** Antes se hasheaba el crudo y se buscaba ese SHA en la cobertura,
+        # pero nunca se comparaba con el de la ocurrencia: un fichero sustituido por los
+        # bytes de otro documento que también tuviera cobertura se aceptaba para este
+        # `doc_id` (R1/H-10). Coinciden cobertura y bytes entre sí, y no con la identidad
+        # documental declarada.
+        sha_actual = _sha(crudo)
+        sha_ocurrencia = str(rev.get("sha256") or "")
+        if sha_ocurrencia and sha_actual != sha_ocurrencia:
+            bloqueos.append(
+                f"{e.logical_key}: los bytes de 00_Input/{rev['path']} no son los que el "
+                f"registro declara para este documento "
+                f"({sha_actual[:12]}… frente a {sha_ocurrencia[:12]}…). El fichero se "
+                f"sustituyó, o la ocurrencia está rancia: vuelve a correr el pull")
+            continue
+        if not sha_ocurrencia:
+            bloqueos.append(
+                f"{e.logical_key}: la ocurrencia no declara `sha256`, así que no se puede "
+                f"acreditar que estos bytes sean los de este documento")
+            continue
+
         eleccion = art.elegir(raiz, cob, raw_rel=f"00_Input/{rev['path']}",
-                              raw_sha256=_sha(crudo),
+                              raw_sha256=sha_actual,
                               sin_cobertura_ok=e.sin_cobertura_ok)
         if eleccion.bloqueo:
             bloqueos.append(f"{e.logical_key}: {eleccion.bloqueo}")
@@ -165,6 +206,23 @@ def construir(raiz: Path, case_id: str, expediente_id: str, *, m: mp.MapaProcesa
         filas.append(Fila(e.logical_key, e.carpeta, nombre, e.origen, e.doc_id,
                           str(eleccion.clase), eleccion.rel, eleccion.calidad,
                           eleccion.avisos))
+
+    # **Colisión de destinos EFECTIVOS, que el mapa no puede ver** (R1/H-11). Allí se
+    # compara el tronco sin extensión de una entrada `crm` contra el basename completo de
+    # una `despacho`, así que `orden=00, descripcion=documento` (que da `00_documento.pdf`)
+    # y un fichero propio llamado `00_documento.pdf` pasan los dos. Aquí ya se conocen las
+    # extensiones y el presupuesto de longitud, que es lo único que hace comparables los
+    # nombres finales. Sin esto, dos filas apuntan al mismo fichero y el informe se declara
+    # completo — y 4b no podría consumir esta salida como destinos validados.
+    efectivos: dict[str, list[str]] = {}
+    for f in filas:
+        efectivos.setdefault(f"{f.carpeta}/{f.destino}".casefold(), []).append(
+            f.logical_key)
+    for destino, claves in sorted(efectivos.items()):
+        if len(claves) > 1:
+            bloqueos.append(
+                f"{len(claves)} entradas producen el MISMO fichero de destino "
+                f"{destino!r}: {sorted(claves)}. Una pisaría a la otra")
 
     # Lo no asignado se mide contra el UNIVERSO (I4), no contra lo materializado.
     sin_asignar = tuple(

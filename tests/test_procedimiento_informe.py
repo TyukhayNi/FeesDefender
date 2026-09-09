@@ -232,3 +232,79 @@ def test_completo_sigue_siendo_cierto_sin_incoherencias(caso):
     inf = vista.construir(raiz, "CASO", "540", m=mapa.cargar(raiz), c=_conjuntos(sha),
                           cob=artefacto.cargar(raiz), incoherencias=())
     assert inf.completo is True
+
+
+# ---------------------------------------------------------------- R1/H-10, H-11, H-15
+
+def test_un_crudo_SUSTITUIDO_por_otros_bytes_con_cobertura_bloquea(caso):
+    """R1/H-10: se hasheaba el crudo y se buscaba ese SHA en la cobertura, pero nunca se
+    comparaba con el de la OCURRENCIA. Un fichero sustituido por los bytes de otro
+    documento que tambien tenga cobertura se aceptaba para este doc_id: cobertura y bytes
+    coinciden entre si, y no con la identidad documental declarada."""
+    import hashlib
+    import json
+    raiz, sha = caso
+    nuevos = b"%PDF-1.4 OTRO DOCUMENTO"
+    sha_nuevo = hashlib.sha256(nuevos).hexdigest()
+    (raiz / "00_Input/05_CRM/99_Otros/decreto.pdf").write_bytes(nuevos)
+    (raiz / SM / "_cobertura.json").write_text(json.dumps(
+        [{"slug": "otro", "rel_path": "05_CRM/99_Otros/decreto.pdf",
+          "metodo": "pypdf", "estado": "ok", "sha256": sha_nuevo}]), encoding="utf-8")
+    inf = vista.construir(raiz, "CASO", "540", m=mapa.cargar(raiz), c=_conjuntos(sha),
+                          cob=artefacto.cargar(raiz))
+    assert any("no son los que el registro declara" in b for b in inf.bloqueos), inf.bloqueos
+    assert inf.filas == ()
+
+
+def test_una_ocurrencia_SIN_sha_no_acredita_nada(caso):
+    raiz, sha = caso
+    c = _conjuntos(sha)
+    c.materializadas["1"]["sha256"] = None
+    inf = vista.construir(raiz, "CASO", "540", m=mapa.cargar(raiz), c=c,
+                          cob=artefacto.cargar(raiz))
+    assert any("no declara `sha256`" in b for b in inf.bloqueos)
+
+
+def test_dos_entradas_con_el_MISMO_destino_efectivo_bloquean(caso):
+    """R1/H-11: el mapa compara el tronco sin extension de una `crm` contra el basename
+    completo de una `despacho`, asi que `00_documento` y `00_documento.pdf` pasan los dos.
+    Aqui ya se conocen las extensiones."""
+    raiz, sha = caso
+    (raiz / "05_Procedimiento" / CARP).mkdir(parents=True, exist_ok=True)
+    (raiz / "05_Procedimiento" / CARP / "00_documento.pdf").write_bytes(b"propia")
+    m = _mapa_con(raiz,
+                  "    - {origen: crm, doc_id: '1', orden: '00', descripcion: documento}\n"
+                  "    - {origen: despacho, fichero: 00_documento.pdf}\n")
+    inf = vista.construir(raiz, "CASO", "540", m=m, c=_conjuntos(sha),
+                          cob=artefacto.cargar(raiz))
+    assert any("MISMO fichero de destino" in b for b in inf.bloqueos), inf.bloqueos
+    assert inf.completo is False
+
+
+def test_un_eco_a_un_docid_YA_asignado_como_crm_bloquea(caso):
+    """R1/H-15: se validaba que el eco existiera en el universo, pero no que ese doc_id no
+    estuviera ya asignado como entrada CRM. El spec 5.7-bis prohibe las dos vias."""
+    raiz, sha = caso
+    (raiz / "05_Procedimiento" / CARP).mkdir(parents=True, exist_ok=True)
+    (raiz / "05_Procedimiento" / CARP / "DEMANDA.docx").write_bytes(b"propia")
+    m = _mapa_con(raiz,
+                  "    - {origen: despacho, fichero: DEMANDA.docx, eco_crm: '1'}\n"
+                  "    - {origen: crm, doc_id: '1', orden: '00', descripcion: decreto}\n")
+    inf = vista.construir(raiz, "CASO", "540", m=m, c=_conjuntos(sha),
+                          cob=artefacto.cargar(raiz))
+    assert any("también" in b and "asignado como entrada" in b for b in inf.bloqueos)
+
+
+def test_dos_entradas_del_despacho_con_el_MISMO_eco_bloquean(caso):
+    """El dict colapsaba a la ultima clave y no decia nada."""
+    raiz, sha = caso
+    d = raiz / "05_Procedimiento" / CARP
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "A.docx").write_bytes(b"a")
+    (d / "B.docx").write_bytes(b"b")
+    m = _mapa_con(raiz,
+                  "    - {origen: despacho, fichero: A.docx, eco_crm: '1'}\n"
+                  "    - {origen: despacho, fichero: B.docx, eco_crm: '1'}\n")
+    inf = vista.construir(raiz, "CASO", "540", m=m, c=_conjuntos(sha),
+                          cob=artefacto.cargar(raiz))
+    assert any("declarado como eco por 2" in b for b in inf.bloqueos)

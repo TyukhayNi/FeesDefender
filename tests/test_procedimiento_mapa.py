@@ -278,3 +278,135 @@ def test_el_truncado_es_ESTABLE_entre_llamadas(tmp_path):
 def test_un_nombre_que_cabe_no_se_toca(tmp_path):
     assert mapa.presupuesto_longitud(
         tmp_path, "05_Otros escritos", "D-02_corto.pdf") == "D-02_corto.pdf"
+
+
+# ---------------------------------------------------------------- R1/H-13 y H-14
+
+def test_un_orden_con_SALTO_DE_LINEA_final_se_rechaza(tmp_path):
+    """En Python `$` casa tambien justo antes de un salto final, asi que `match` aceptaba
+    `orden: "00\n"` y metia un caracter de control en el nombre del fichero. `fullmatch`
+    no (R1/H-13)."""
+    raiz = _escribir(tmp_path, """
+version: 1
+expediente_crm: '540'
+carpetas:
+  "05_Otros escritos":
+    - {origen: crm, doc_id: '1', orden: "00\n", descripcion: x}
+""")
+    with pytest.raises(mapa.MapaInvalidoError) as exc:
+        mapa.cargar(raiz)
+    assert "orden" in chr(10).join(exc.value.problemas)
+
+
+@pytest.mark.parametrize("fichero", ["'COM¹.docx'", "'LPT².txt'", "'com³'"])
+def test_los_reservados_con_SUPERINDICE_tambien_se_rechazan(tmp_path, fichero):
+    """Windows reserva COM/LPT con ¹ ² ³ ademas de con 1-9 (R1/H-13)."""
+    raiz = _escribir(tmp_path, f"""
+version: 1
+expediente_crm: '540'
+carpetas:
+  "05_Otros escritos":
+    - {{origen: despacho, fichero: {fichero}}}
+""")
+    with pytest.raises(mapa.MapaInvalidoError) as exc:
+        mapa.cargar(raiz)
+    assert "reservado" in chr(10).join(exc.value.problemas)
+
+
+@pytest.mark.parametrize("valor,que", [
+    ("['1']", "doc_id"),
+    ("{a: b}", "doc_id"),
+])
+def test_un_doc_id_que_no_es_un_id_se_rechaza(tmp_path, valor, que):
+    """Se convertian a su repr de Python y acababan en la clave logica."""
+    raiz = _escribir(tmp_path, f"""
+version: 1
+expediente_crm: '540'
+carpetas:
+  "05_Otros escritos":
+    - {{origen: crm, doc_id: {valor}, orden: '00', descripcion: x}}
+""")
+    with pytest.raises(mapa.MapaInvalidoError) as exc:
+        mapa.cargar(raiz)
+    assert que in chr(10).join(exc.value.problemas)
+
+
+def test_una_descripcion_que_es_una_lista_se_rechaza(tmp_path):
+    raiz = _escribir(tmp_path, """
+version: 1
+expediente_crm: '540'
+carpetas:
+  "05_Otros escritos":
+    - {origen: crm, doc_id: '1', orden: '00', descripcion: [a, b]}
+""")
+    with pytest.raises(mapa.MapaInvalidoError) as exc:
+        mapa.cargar(raiz)
+    assert "descripcion" in chr(10).join(exc.value.problemas)
+
+
+@pytest.mark.parametrize("valor", ["true", "'   '"])
+def test_un_expediente_crm_que_no_es_un_id_se_rechaza(tmp_path, valor):
+    """`true` pasaba a `'True'` y un expediente de espacios quedaba vacio DESPUES de
+    validarse."""
+    raiz = _escribir(tmp_path, f"version: 1\nexpediente_crm: {valor}\ncarpetas: {{}}\n")
+    with pytest.raises(mapa.MapaInvalidoError) as exc:
+        mapa.cargar(raiz)
+    assert "expediente_crm" in chr(10).join(exc.value.problemas)
+
+
+def test_el_presupuesto_cuenta_UNIDADES_UTF16_y_no_puntos_de_codigo(tmp_path):
+    """R1/H-14: un caracter fuera del BMP ocupa DOS unidades. Presupuestar con `len()`
+    autorizaba un temporal de 294 unidades creyendo que eran 259."""
+    def u16(s):
+        """Se mide AQUÍ y no con `mapa._unidades_utf16`: un test que usa la función que
+        prueba **muta con ella**, y el mutante que la degrada a `len()` sobrevivía por
+        eso. El instrumento del test tiene que ser independiente del que mide el código.
+        """
+        return len(s.encode("utf-16-le")) // 2
+
+    raiz = tmp_path / ("emoji_" + "\U0001F600" * 40)      # 40 pares suplentes
+    n = mapa.presupuesto_longitud(raiz, "05_Otros escritos", "D-02_" + "x" * 300 + ".pdf")
+    final = (raiz / "05_Procedimiento" / "05_Otros escritos" / n)
+    temporal = final.with_name(f".{n}.{'9' * 6}.tmp")
+    assert u16(str(temporal)) <= mapa.LIMITE_RUTA, (
+        f"{u16(str(temporal))} unidades UTF-16 sobre un límite de {mapa.LIMITE_RUTA}; "
+        f"`len()` decía {len(str(temporal))} — esa es justo la diferencia")
+
+
+def test_el_truncado_no_parte_un_par_suplente(tmp_path):
+    """Cortar directamente en unidades UTF-16 partiria un emoji por la mitad."""
+    n = mapa.presupuesto_longitud(tmp_path, "05_Otros escritos",
+                                  "D-02_" + "\U0001F600" * 200 + ".pdf")
+    n.encode("utf-8")                       # no lanza: no hay surrogate suelto
+    assert n.endswith(".pdf")
+
+
+def test_el_nombre_del_CRM_no_PUEDE_ser_un_reservado_y_por_que(tmp_path):
+    """**La validacion del nombre CRM es defensa en profundidad INERTE hoy, y se dice.**
+
+    Se le pasa `nombre_destino(e, "pdf")` por `_validar_nombre_windows` igual que al del
+    despacho, pero **no puede disparar**: el nombre del CRM es siempre
+    `<orden>_<slug>.<ext>`, el `orden` esta constrenido por la gramatica a empezar por
+    letra o digito, y `_slug` reduce la descripcion a `[a-z0-9_]`. Un reservado de Windows
+    es un token unico sin `_`, asi que el prefijo lo hace estructuralmente imposible.
+
+    Se conserva porque si manana cambia la gramatica o el slug, la guarda ya esta puesta.
+    Pero un test que afirmara que «caza» algo seria falso, y una guarda inerte que se cree
+    activa es peor que no tenerla. Lo que este test prueba es la razon, no la captura.
+    """
+    raiz = _escribir(tmp_path, """
+version: 1
+expediente_crm: '540'
+carpetas:
+  "05_Otros escritos":
+    - {origen: crm, doc_id: '1', orden: '00', descripcion: 'nul'}
+""")
+    (e,) = mapa.cargar(raiz).entradas
+    nombre = mapa.nombre_destino(e, "pdf")
+    assert nombre == "00_nul.pdf"
+    assert nombre.split(".")[0].lower() not in mapa._RESERVADOS_WINDOWS, (
+        "el prefijo del orden es lo que lo hace imposible")
+    # y el control: sin el prefijo, la guarda SI cazaria
+    problemas = []
+    assert mapa._validar_nombre_windows("nul.pdf", "sonda", problemas) is False
+    assert "reservado" in problemas[0]

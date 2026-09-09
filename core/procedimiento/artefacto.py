@@ -130,7 +130,20 @@ def cargar(raiz: Path) -> Cobertura:
         if f.metodo == METODO_DUPLICADO and getattr(f, "alias_de", ""):
             titulares[f.slug] = f.alias_de
         if f.sha256:
-            por_sha[f.sha256] = f
+            # **El titular gana al alias, y el empate se resuelve por slug.** Titular y
+            # copia comparten SHA en el productor real, así que «la última fila gana»
+            # hacía que el ORDEN del JSON decidiera: si ganaba un titular `error`,
+            # bloqueaba; si ganaba su alias, degradaba a crudo (R1/H-09). Un `duplicado`
+            # solo ocupa el índice si no hay titular para ese SHA.
+            previo = por_sha.get(f.sha256)
+            if previo is None:
+                por_sha[f.sha256] = f
+            elif previo.metodo == METODO_DUPLICADO and f.metodo != METODO_DUPLICADO:
+                por_sha[f.sha256] = f
+            elif (previo.metodo == METODO_DUPLICADO) == (f.metodo == METODO_DUPLICADO):
+                # dos del mismo rango: determinista por slug, no por orden de lectura
+                if (f.slug or "") < (previo.slug or ""):
+                    por_sha[f.sha256] = f
 
     grupos: dict[str, GrupoBundle] = {}
     for sha, segs in segmentos.items():
@@ -149,6 +162,33 @@ def cargar(raiz: Path) -> Cobertura:
             metodo=sorted(metodos)[0] if metodos else "")
     return Cobertura(por_sha=por_sha, grupos=grupos, titulares=titulares,
                      por_slug=por_slug)
+
+
+def _resolver_titular(cob: Cobertura, fila: DocCobertura) -> tuple[str, str]:
+    """Sigue la cadena de alias hasta el titular real. ``(slug, "")`` o ``("", problema)``.
+
+    Es un GRAFO, no un salto: el productor no promete que un alias apunte directamente al
+    titular, y la R1 midió que una cadena ``copia → medio → titular`` no llegaba al PDF
+    existente y que un ciclo se aceptaba como crudo (su H-09). Se recorre con cota y con
+    detección de ciclos, y **falla cerrado**: un ciclo o un titular ausente bloquean, no
+    degradan.
+    """
+    vistos: list[str] = []
+    actual = fila.slug
+    siguiente = cob.titulares.get(actual) or getattr(fila, "alias_de", "")
+    while siguiente:
+        if siguiente in vistos or siguiente == actual:
+            return "", (f"la cadena de alias forma un ciclo: "
+                        f"{' -> '.join(vistos + [siguiente])}")
+        vistos.append(actual)
+        actual = siguiente
+        if len(vistos) > 32:
+            return "", "la cadena de alias es demasiado larga: no se sigue"
+        siguiente = cob.titulares.get(actual, "")
+    if actual == fila.slug:
+        return "", ("`metodo: duplicado` sin `alias_de`, así que no se sabe de qué "
+                    "fichero es copia")
+    return actual, ""
 
 
 def _artefacto_de(raiz: Path, slug: str) -> tuple[str, bool]:
@@ -213,23 +253,36 @@ def elegir(raiz: Path, cob: Cobertura, *, raw_rel: str, raw_sha256: str,
 
     metodo = (fila.metodo or "").strip()
 
-    # (2) duplicado: el representante es el del TITULAR
+    # (2) duplicado: el representante es el del TITULAR, resuelto como GRAFO
     if metodo == METODO_DUPLICADO:
-        titular = cob.titulares.get(fila.slug) or getattr(fila, "alias_de", "")
-        if not titular:
-            return Eleccion(bloqueo=(
-                f"{raw_rel}: `metodo: duplicado` sin `alias_de`, así que no se sabe de "
-                f"qué fichero es copia"))
+        titular, problema = _resolver_titular(cob, fila)
+        if problema:
+            return Eleccion(bloqueo=f"{raw_rel}: {problema}")
         ft = cob.por_slug.get(titular)
-        rel, existe = _artefacto_de(raiz, titular)
         avisos.append(f"copia byte-idéntica: su representante es el del titular "
                       f"{titular!r}")
-        calidad = ft.estado if ft else fila.estado
-        if existe:
-            return Eleccion(clase=Clase.CONVERTIDO, rel=rel, ext="pdf", calidad=calidad,
-                            avisos=tuple(avisos))
-        return Eleccion(clase=Clase.CRUDO, rel=raw_rel, ext=ext, calidad=calidad,
-                        avisos=tuple(avisos))
+        # **Se hereda la DECISIÓN del titular, no solo su ruta.** Antes se miraba si
+        # existía un PDF y se degradaba a crudo si no; con eso, un titular en `error`
+        # dejaba pasar su copia como si nada, y una cadena de alias no llegaba nunca al
+        # PDF que sí existía (R1/H-09).
+        if ft is None:
+            return Eleccion(bloqueo=(
+                f"{raw_rel}: su titular {titular!r} no está en la cobertura, así que no "
+                f"se puede saber qué representa esta copia"))
+        heredada = elegir(raiz, cob, raw_rel=f"00_Input/{ft.rel_path}",
+                          raw_sha256=ft.sha256 or "", sin_cobertura_ok=sin_cobertura_ok)
+        if heredada.bloqueo:
+            return Eleccion(bloqueo=(
+                f"{raw_rel}: es copia de {titular!r}, y su titular bloquea — "
+                f"{heredada.bloqueo}"))
+        if heredada.clase is Clase.CONVERTIDO:
+            return Eleccion(clase=Clase.CONVERTIDO, rel=heredada.rel, ext=heredada.ext,
+                            calidad=heredada.calidad,
+                            avisos=tuple(avisos) + heredada.avisos)
+        # el titular se representa por su propio crudo: esta copia, por el suyo
+        return Eleccion(clase=Clase.CRUDO, rel=raw_rel, ext=ext,
+                        calidad=heredada.calidad,
+                        avisos=tuple(avisos) + heredada.avisos)
 
     # (3) error: bloquea, pero diciendo QUÉ pasó — el remedio no es el mismo que el de
     # un método desconocido.

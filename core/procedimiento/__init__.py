@@ -43,6 +43,11 @@ def _resolver(case_id: str | None, case_dir: str | None):
             "hay que dar exactamente uno: la identidad del caso o `case_dir`")
 
     ahora = now_iso()
+    # **Antes de tocar el registro, comprobar que se puede leer.** `WorkspaceRegistry`
+    # pone en cuarentena —renombra con `os.replace`— un JSON ilegible al leerlo, así que
+    # una lectura de esta mitad podía provocar una escritura (R1/H-05). Se mira primero y
+    # se falla con un mensaje útil en vez de dejar que el rename ocurra por sorpresa.
+    sede.registro_legible(raiz_por_defecto())
     # `WorkspaceRegistry` exige su raíz y el instante: los dos son parte de su contrato,
     # no valores por defecto. Y `drive_accesible` NO se pasa a `True` a pelo — eso es lo
     # que dejó muerta la rama offline entera en `sala_maquina` hasta su Task 10.
@@ -63,7 +68,11 @@ def informe(case_id: str | None = None, expediente_id: str = "", *,
     """Qué hay en el procedimiento, qué falta y qué bloquea. **No escribe nada.**"""
     case_id, ws = _resolver(case_id, case_dir)
     raiz = sede.raiz_autorizada(ws)
-    c = universo.leer(case_id, expediente_id)
+    # La MISMA raíz para todo lo que se lee. Antes `universo.leer` recibía solo el
+    # `case_id` y volvía al catálogo por su cuenta: se autorizaba una raíz y se leía otra,
+    # así que en un checkout con el mismo identificador la vista mezclaba mapa y bytes
+    # locales con ocurrencias y D8 del canon (R1/H-06).
+    c = universo.leer(case_id, expediente_id, raiz=raiz)
     return _vista.construir(raiz, case_id, expediente_id,
                               m=mapa.cargar(raiz), c=c,
                               cob=artefacto.cargar(raiz),
@@ -74,5 +83,5 @@ def borrador_mapa(case_id: str | None = None, expediente_id: str = "", *,
                   case_dir: str | None = None) -> str:
     """YAML de partida para el mapa. **No escribe nada:** se devuelve como texto."""
     case_id, ws = _resolver(case_id, case_dir)
-    sede.raiz_autorizada(ws)       # se exige READ_CASE aunque no se lea el árbol
-    return borrador.proponer(universo.leer(case_id, expediente_id))
+    raiz = sede.raiz_autorizada(ws)
+    return borrador.proponer(universo.leer(case_id, expediente_id, raiz=raiz))

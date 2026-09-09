@@ -29,17 +29,23 @@ ORIGENES = (ORIGEN_CRM, ORIGEN_DESPACHO)
 #: Gramática de ``orden``. Cubre ``00``, ``01``, ``D-01``, ``D-02A``, ``DA-9``; y NADA
 #: más — porque este valor se incrusta en un nombre de fichero. La rev. 1 no lo validaba
 #: y ``orden: ../00`` producía un destino fuera de la carpeta de fase.
-_RE_ORDEN = re.compile(r"^[A-Z]{0,2}-?\d{1,3}[A-Z]?$")
+#:
+#: Se casa con ``fullmatch`` y no con ``match``: en Python, ``$`` casa **también justo
+#: antes de un salto de línea final**, así que ``match`` aceptaba un ``orden`` terminado
+#: en salto de línea y metía un carácter de control en el nombre del fichero (R1/H-13).
+_RE_ORDEN = re.compile(r"[A-Z]{0,2}-?\d{1,3}[A-Z]?")
 
 #: Caracteres que Windows no admite en un nombre de fichero.
 _PROHIBIDOS = set('<>:"/\\|?*') | {chr(c) for c in range(32)}
 
 #: Nombres de dispositivo reservados. Se compara el PRIMER componente: el ``.stem`` de
 #: ``NUL.extra.docx`` es ``NUL.extra`` y no casaría el set.
+#: Windows reserva `COM`/`LPT` con los dígitos 1-9 **y con los superíndices ¹ ² ³**, que
+#: es la variante que la R1 señaló (su H-13) y que `COM¹.docx` explotaba.
 _RESERVADOS_WINDOWS = frozenset(
     ["con", "prn", "aux", "nul"]
-    + [f"com{i}" for i in range(1, 10)]
-    + [f"lpt{i}" for i in range(1, 10)])
+    + [f"{fam}{d}" for fam in ("com", "lpt")
+       for d in [str(i) for i in range(1, 10)] + ["¹", "²", "³"]])
 
 #: Tope práctico de ruta absoluta en Windows sin rutas largas activadas.
 LIMITE_RUTA = 259
@@ -124,29 +130,46 @@ def nombre_destino(e: EntradaMapa, ext: str) -> str:
     return f"{e.orden}_{_slug(e.descripcion or '')}" + (f".{ext}" if ext else "")
 
 
+def _unidades_utf16(s: str) -> int:
+    """Longitud en **unidades UTF-16**, que es como Windows cuenta sus rutas.
+
+    `len()` cuenta puntos de código, y un carácter fuera del BMP —un emoji en el nombre de
+    una carpeta, por ejemplo— ocupa **dos** unidades. La R1 lo midió (su H-14): un temporal
+    autorizado con 259 puntos de código ocupaba 294 unidades. Presupuestar en la unidad
+    equivocada es no presupuestar.
+    """
+    return len(s.encode("utf-16-le")) // 2
+
+
 def presupuesto_longitud(raiz: Path, carpeta: str, nombre: str) -> str:
     """``nombre``, truncado con sufijo hash ESTABLE si la ruta no cabe **con su temporal**.
 
     El sufijo sale del nombre completo, así que es determinista entre corridas: dos
-    lecturas seguidas producen el mismo destino.
+    lecturas seguidas producen el mismo destino. Se cuenta en unidades UTF-16, que es la
+    unidad de la API de destino.
     """
     base = Path(raiz).resolve() / "05_Procedimiento" / carpeta
     tope = LIMITE_RUTA - MARGEN_TEMPORAL
-    if (len(str(base / nombre)) <= tope
-            and len(nombre) + MARGEN_TEMPORAL <= LIMITE_SEGMENTO):
+    if (_unidades_utf16(str(base / nombre)) <= tope
+            and _unidades_utf16(nombre) + MARGEN_TEMPORAL <= LIMITE_SEGMENTO):
         return nombre
     stem, _, ext = nombre.rpartition(".")
     if not stem:
         stem, ext = nombre, ""
     sufijo = "~" + hashlib.sha256(nombre.encode("utf-8")).hexdigest()[:8]
     cola = f".{ext}" if ext else ""
-    margen = min(tope - len(str(base)) - 1 - len(sufijo) - len(cola),
+    margen = min(tope - _unidades_utf16(str(base)) - 1 - len(sufijo) - len(cola),
                  LIMITE_SEGMENTO - MARGEN_TEMPORAL - len(sufijo) - len(cola))
     if margen < 1:
         raise MapaInvalidoError([
             f"la ruta de {carpeta!r} no admite ningún nombre con su temporal: "
-            f"{len(str(base))} caracteres de carpeta sobre un tope de {tope}"])
-    return f"{stem[:margen]}{sufijo}{cola}"
+            f"{_unidades_utf16(str(base))} unidades de carpeta sobre un tope de {tope}"])
+    # El corte se hace por puntos de código y luego se COMPRUEBA en unidades: cortar
+    # directamente en unidades partiría un par suplente por la mitad.
+    recorte = stem[:margen]
+    while recorte and _unidades_utf16(f"{recorte}{sufijo}{cola}") + MARGEN_TEMPORAL > LIMITE_SEGMENTO:
+        recorte = recorte[:-1]
+    return f"{recorte}{sufijo}{cola}"
 
 
 def _validar_nombre_windows(nombre: str, donde: str, problemas: list[str]) -> bool:
@@ -185,12 +208,19 @@ def _validar_entrada(carpeta: str, i: int, raw: object,
             problemas.append(f"{donde}: la rama `crm` exige {faltan}")
             return None
         orden = str(raw["orden"])
-        if not _RE_ORDEN.match(orden):
+        if not _RE_ORDEN.fullmatch(orden):
             problemas.append(
                 f"{donde}: `orden` {orden!r} no casa la gramática {_RE_ORDEN.pattern} — "
                 f"este valor se incrusta en el nombre del fichero")
             return None
-        descripcion = str(raw["descripcion"])
+        descripcion = raw["descripcion"]
+        if not isinstance(descripcion, (str, int)):
+            problemas.append(
+                f"{donde}: `descripcion` debe ser texto y es {type(descripcion).__name__}; "
+                f"una lista o un dict se convertían a su repr de Python y acababan en el "
+                f"nombre del fichero")
+            return None
+        descripcion = str(descripcion)
         if not _slug(descripcion):
             problemas.append(
                 f"{donde}: `descripcion` {descripcion!r} queda vacía al normalizarla, "
@@ -203,8 +233,19 @@ def _validar_entrada(carpeta: str, i: int, raw: object,
                 f"({type(sco).__name__}). `'false'` no desactiva nada: `bool('false')` es "
                 f"True, y este permiso autoriza a copiar documentos no buscables")
             return None
-        return EntradaMapa(carpeta=carpeta, origen=origen, doc_id=str(raw["doc_id"]),
-                           orden=orden, descripcion=descripcion, sin_cobertura_ok=sco)
+        if not isinstance(raw["doc_id"], (str, int)) or isinstance(raw["doc_id"], bool):
+            problemas.append(
+                f"{donde}: `doc_id` debe ser el id del documento y es "
+                f"{type(raw['doc_id']).__name__}")
+            return None
+        e = EntradaMapa(carpeta=carpeta, origen=origen, doc_id=str(raw["doc_id"]),
+                        orden=orden, descripcion=descripcion, sin_cobertura_ok=sco)
+        # El nombre que ESTA entrada va a producir pasa la misma validación que el de la
+        # rama `despacho`. La rev. 1 solo validaba el `fichero` del despacho, así que un
+        # `orden`/`descripcion` que produjera un nombre imposible no se veía hasta escribir.
+        if not _validar_nombre_windows(nombre_destino(e, "pdf"), donde, problemas):
+            return None
+        return e
 
     fichero = raw.get("fichero")
     if not fichero or not isinstance(fichero, str):
@@ -251,9 +292,16 @@ def cargar(raiz: Path) -> MapaProcesal:
             f"`version` es {version!r} ({type(version).__name__}); soportada: el entero "
             f"{VERSION_SOPORTADA}")
     expediente = datos.get("expediente_crm")
-    if not expediente or not isinstance(expediente, (str, int)):
-        problemas.append("falta `expediente_crm`, o no es el id del expediente")
-    expediente = str(expediente).strip() if expediente else ""
+    if (not expediente or isinstance(expediente, bool)
+            or not isinstance(expediente, (str, int))):
+        problemas.append(
+            f"falta `expediente_crm`, o no es el id del expediente (es "
+            f"{type(expediente).__name__}). `true` se convertía en `'True'`")
+        expediente = ""
+    else:
+        expediente = str(expediente).strip()
+        if not expediente:
+            problemas.append("`expediente_crm` queda vacío al quitarle los espacios")
 
     crudas = datos.get("carpetas") or {}
     if not isinstance(crudas, dict):

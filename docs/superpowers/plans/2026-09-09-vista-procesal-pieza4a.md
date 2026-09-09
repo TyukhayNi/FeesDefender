@@ -3048,7 +3048,7 @@ El encargo al revisor debe pedirle expresamente:
 - **Revisor:** Codex (`codex-cli 0.153.4`, `model_reasoning_effort=high`), en solo lectura sobre copia congelada
 - **Informe recibido:** `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4a-r1-adversarial-review.md` (`sha256 4d32d8b3…3dc003`)
 - **Hallazgos:** 17 — 2 CRÍTICO, 10 ALTO, 5 MEDIO. **17 confirmados, 0 refutados.** Dos ya remediados en `16c646a`, anterior al informe y posterior al objeto
-- **Remediado en:** H-02 y el `drive_accesible` en `16c646a`; H-03, H-04 y H-12 en `a9630aa`; **H-01 por decisión de alcance de Nikolai** (la ampliación del helper sale a su propia pieza); los 11 restantes exigen una segunda pasada antes de mergear
+- **Remediado en:** los 17. `16c646a` (H-02), `a9630aa` (H-03, H-04, H-12), `0fb10df` (H-01, por decisión de alcance de Nikolai) y esta pasada (H-05 a H-11, H-13 a H-17)
 
 **Acepto el NO-SHIP.** No se mergea 4a como está. Y acepto lo primero que dice el informe, que
 es lo que más me importa: **el presupuesto de una sola ronda estaba mal fundado.**
@@ -3160,11 +3160,62 @@ parte del objeto — el revisor solo pudo reconstruir 13, y los 13 murieron. Eso
 mi propia trazabilidad, no suyo: una afirmación cuantitativa cuyo instrumento no viaja con el
 diff no es auditable.
 
+### Cierre de los doce restantes (2026-09-09, misma sesión)
+
+**Una corrección de esta propia adjudicación antes que nada: eran DOCE, no once.** 17 menos
+los 5 remediados son 12, y yo escribí «los 11 restantes». Lo destapó contarlos al ir a
+cerrarlos. Es la segunda vez en esta pieza que un reparto mío no cuadra —la primera fue dejar
+H-06 sin frontera— y las dos veces lo encontró **contar**, no releer.
+
+| | Qué se hizo |
+|---|---|
+| **H-05** | `sede.registro_legible` mira el registro de workspaces **antes** de que el resolver lo lea: `WorkspaceRegistry` renombra un JSON ilegible al leerlo, así que una lectura de 4a provocaba una escritura. Queda declarada la ventana entre el preflight y la lectura real (`MEJORAS #208`) |
+| **H-06** | `universo.leer` **exige** la raíz autorizada y falla cerrado sin ella. El registro se construye redirigiendo su `path` —reutilizando su parser— y el `pull_state` reusa `read_md` y `_find_expediente_entry` cambiando solo la base. Un test con dos árboles del mismo `case_id` prueba que la raíz manda |
+| **H-07** | La cadena se inspecciona en `raiz_autorizada`, **antes** de `resolve()`, que es donde la ruta entra por primera vez |
+| **H-08** | La política pasa de una lista de dos tags al **bit Name Surrogate**, que es la propiedad. Y se cierran los tres fallos abiertos: un `OSError` que no sea «no existe» ya no es «no redirige», y agotar la cota de ancestros devuelve `False` |
+| **H-09** | El alias se resuelve como **grafo** —ciclos, cadenas, titular ausente— y se hereda la **decisión** del titular, no solo su ruta. Con el mismo SHA el titular gana al alias, así que el orden del JSON deja de decidir |
+| **H-10** | El SHA de la **ocurrencia** se cruza con los bytes actuales. Faltaba el primer eslabón de la cadena |
+| **H-11** | La colisión de destinos **efectivos** se comprueba en la vista, que es donde se conocen las extensiones |
+| **H-13** | `fullmatch` en vez de `match` —el `$` casaba antes del salto final—, `COM¹`/`LPT²`/`³`, y tipos estrictos para `doc_id`, `descripcion` y `expediente_crm` |
+| **H-14** | El presupuesto cuenta **unidades UTF-16**, y el truncado no parte un par suplente |
+| **H-15** | La otra mitad de la puerta 7-bis: un eco a un `doc_id` ya asignado como `crm` bloquea, y dos ecos al mismo `doc_id` también |
+| **H-16** | El test del corpus recibe **su** cobertura y exige la **clase esperada por fila** |
+| **H-17** | `materializadas` es un estado del registro y se dice; la presencia física se comprueba bajo la raíz, y «no la miré» se separa de «no cuadra» |
+
+**187 tests de la pieza, 32 mutantes y todos muertos, suite verde con las dos semillas
+(5028 tests, 0 fallos, 92 `skip`).**
+
+**Cuatro cosas que salieron del arnés y no de escribir, que es la parte que vale:**
+
+1. El mutante de H-16 **sobrevivió a mi primer arreglo**. Había corregido la *entrada* del
+   test —darle la cobertura real— y dejado la aserción débil: «la mayoría se resuelve» pasa
+   con 40 contra 15. La contraprueba exacta del revisor seguía viva hasta que exigí la **clase
+   esperada por fila**. Arreglar la mitad de un defecto se parece mucho a arreglarlo.
+2. El mutante de H-14 sobrevivía porque **mi test medía con la función que probaba**: al
+   degradar `_unidades_utf16` a `len()`, la aserción se degradaba con ella. El instrumento del
+   test tiene que ser independiente del que mide el código.
+3. Añadí al mapa una validación del nombre del CRM que resultó **inerte**: el prefijo
+   `<orden>_` hace estructuralmente imposible un reservado. Se conserva como defensa en
+   profundidad, pero su test dice que prueba **la razón**, no una captura — una guarda inerte
+   que se cree activa es peor que no tenerla.
+4. Poner «no comprobé el disco» entre las incoherencias hacía falso el `completo` en cuanto
+   alguien inyectaba los lectores. Eso no es un desacuerdo entre fuentes, es **cobertura
+   ausente**, y va por otro canal. Me lo dijo el test antes que ningún revisor.
+
 ### Qué pasa ahora
 
-**4a no se mergea.** Los quince pendientes se remedian sobre este mismo plan —no hace falta una
-rev. 2 del documento, porque el diseño no está mal: están mal la clave de agrupación, la
-propagación de la raíz, cuatro puertas y el instrumento que las medía—. Y **el presupuesto de
-rondas se corrige**: la ampliación del helper de la Tarea 2 sale de 4a y va donde le
-corresponde, o 4a asume que su radio de daño no es cero y lleva su segunda ronda. Esa decisión
-es de Nikolai, no mía: es alcance, no ingeniería.
+**Los 17 están cerrados y 4a queda lista para PR.** El presupuesto de rondas se resolvió
+sacando la ampliación del helper a su propia pieza (decisión de Nikolai, `0fb10df`), con lo que
+el radio de daño de esta mitad vuelve a ser cero por construcción; el resto se remedió sobre
+este mismo plan, porque el diseño no estaba mal — estaban mal la clave de agrupación, la
+propagación de la raíz, cuatro puertas y el instrumento que las medía.
+
+**Lo que sigue SIN VERIFICAR y no lo cierra esta pasada**, porque no depende de escribir
+código: la regresión sobre el corpus real de W-02VEKE —el Drive no estaba montado, los fixtures
+no se generaron y sus 4 tests se saltan con ese motivo—, el *reparse tag* real de un fichero en
+`G:`, y el reparto del piloto W-02MA0R. Los tres estaban declarados desde el plan y siguen
+declarados.
+
+**Y una deuda nueva:** la ventana entre el preflight del registro y la lectura del resolver
+(`MEJORAS #208`). El preflight cubre el caso práctico —un registro corrupto ya puesto— y no
+cierra la carrera.

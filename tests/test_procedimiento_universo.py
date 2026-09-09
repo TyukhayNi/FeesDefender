@@ -112,3 +112,86 @@ def test_los_errores_del_ultimo_pull_se_reportan():
                       pull_state={"documents_total_crm": 1, "doc_ids": ["1"],
                                   "errors": ["timeout en gdocu"]})
     assert any("timeout en gdocu" in x for x in universo.incoherencias(c))
+
+
+# ------------------------------------------------------------- R1/H-06 y H-17
+
+def test_leer_EXIGE_la_raiz_autorizada_y_no_vuelve_al_catalogo():
+    """R1/H-06: sin raiz, `RegistroOcurrencias` y `read_pull_state` resuelven por
+    `case_locator` contra CASOS_ROOT. Se autorizaba una raiz y se leia otra, asi que en un
+    checkout con el mismo identificador la vista mezclaba lo local con el canon. Falla
+    CERRADO: es mas facil olvidar pasarla que darse cuenta de que se leyo mal."""
+    with pytest.raises(universo.UniversoError) as exc:
+        universo.leer("CASO", "540")
+    assert "raíz autorizada" in str(exc.value)
+
+
+def test_leer_lee_el_registro_DE_LA_RAIZ_que_se_le_da(tmp_path):
+    """La prueba de que la raiz manda: dos arboles con el mismo case_id y distinto
+    contenido devuelven universos distintos."""
+    import json
+    for nombre, doc in (("local", "LOCAL"), ("canon", "CANON")):
+        base = tmp_path / nombre / "00_Input"
+        base.mkdir(parents=True)
+        (base / "_ocurrencias_crm.json").write_text(json.dumps({
+            "version": 1, "generado": "2026-09-09T00:00:00",
+            "ocurrencias": {f"crm:540:{doc}": {
+                "source": "crm", "expediente_id": "540", "doc_id": doc,
+                "revisiones": [{"estado": "listada", "filename": "x.pdf",
+                                "modified_at": "x", "id_carpeta": "1",
+                                "path": None, "sha256": None,
+                                "registrada_en": "2026-09-09T00:00:00"}]}}}),
+            encoding="utf-8")
+    a = universo.leer("CASO", "540", raiz=tmp_path / "local", pull_state=None)
+    b = universo.leer("CASO", "540", raiz=tmp_path / "canon", pull_state=None)
+    assert set(a.listadas) == {"LOCAL"}
+    assert set(b.listadas) == {"CANON"}
+
+
+def test_un_materializado_que_NO_esta_en_disco_se_reporta(tmp_path):
+    """R1/H-17: `materializadas` filtra por ESTADO del registro y no hace I/O. Un crudo
+    borrado deja el registro y D8 cuadrando entre si."""
+    c = universo.leer("CASO", "540", raiz=tmp_path,
+                      registro=_registro({"1": "materializada"}),
+                      pull_state={"documents_total_crm": 1, "doc_ids": ["1"]})
+    assert c.ausentes_verificado is True
+    assert c.ausentes_en_disco == ("1",)
+    assert any("raíz autorizada" in x for x in universo.incoherencias(c))
+
+
+def test_un_materializado_que_SI_esta_en_disco_no_se_reporta(tmp_path):
+    (tmp_path / "00_Input/05_CRM/99_Otros").mkdir(parents=True)
+    (tmp_path / "00_Input/05_CRM/99_Otros/1.pdf").write_bytes(b"x")
+    c = universo.leer("CASO", "540", raiz=tmp_path,
+                      registro=_registro({"1": "materializada"}),
+                      pull_state={"documents_total_crm": 1, "doc_ids": ["1"]})
+    assert c.ausentes_en_disco == ()
+    assert universo.incoherencias(c) == ()
+
+
+def test_no_haber_mirado_el_disco_NO_es_una_incoherencia(tmp_path):
+    """«No lo mire» es cobertura ausente, no un desacuerdo entre fuentes. Meterlo en
+    `incoherencias` hacia falso el `completo` en cuanto alguien inyectaba los lectores,
+    que es la senal de que estaba en el sitio equivocado."""
+    c = universo.leer("CASO", "540", registro=_registro({"1": "materializada"}),
+                      pull_state={"documents_total_crm": 1, "doc_ids": ["1"]})
+    assert c.ausentes_verificado is False
+    assert universo.incoherencias(c) == ()
+
+
+def test_los_campos_de_RegistroOcurrencias_no_han_cambiado():
+    """`_registro_bajo` construye el registro por `__new__` porque su `__init__` resuelve
+    la ruta por el catalogo y lanza en un checkout. Eso obliga a fijar a mano los campos
+    que el constructor pone, y este test ata esa lista: si `RegistroOcurrencias` gana uno,
+    aqui sale rojo en vez de fabricarse un objeto a medias mas adelante."""
+    import inspect
+
+    import re
+
+    fuente = inspect.getsource(RegistroOcurrencias.__init__)
+    # `self.<campo>` seguido de `=` o de una anotacion `:`; un split a mano se queda los
+    # dos puntos de `self.ocurrencias: dict[...] = {}`.
+    puestos = set(re.findall(r"self\.(\w+)\s*[:=]", fuente))
+    assert puestos == {"case_id", "path", "ocurrencias", "_dirty"}, (
+        f"`RegistroOcurrencias.__init__` fija ahora {sorted(puestos)}: actualiza "
+        f"`universo._registro_bajo`")

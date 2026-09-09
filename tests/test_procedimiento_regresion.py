@@ -24,6 +24,7 @@ from core.procedimiento import artefacto, universo
 from core.sala_maquina import cobertura_desde_dicts
 
 FIX = pathlib.Path(__file__).parent / "fixtures" / "procedimiento"
+SM = "01_Procesado/02_Sala de máquina"
 
 pytestmark = pytest.mark.skipif(
     not (FIX / "w02veke_cobertura.json").is_file(),
@@ -48,24 +49,72 @@ def test_CONTROL_el_corpus_trae_lo_que_esta_pieza_debe_cubrir(corpus):
     assert len(metodos) >= 3, f"el corpus no tiene variedad: {sorted(metodos)}"
 
 
-def test_el_selector_resuelve_TODO_el_corpus_y_con_MAYORIA_resuelta(tmp_path, corpus):
-    """Bloquear es una respuesta válida; petar no. Y **la mayoría debe resolverse**: un
-    selector que bloquea todo pasaría el primer aserto y sería inútil — es el test que la
-    rev. 1 tenía y que la R1 señaló como aprobable con todos los métodos inutilizables.
+def test_el_selector_recibe_LA_COBERTURA_del_corpus_y_no_una_vacia(tmp_path, corpus):
+    """**El defecto que la R1 encontró en este mismo test** (su H-16), y que es el mismo
+    que la ronda anterior había señalado en los tests de corpus de la rev. 1: pasaba
+    `artefacto.Cobertura()` **vacía** y `sin_cobertura_ok=True`, así que recorría solo la
+    rama de override. La «mayoría resuelta» salía del *fallback*, no del selector, y el
+    test seguía verde con los dos sets de métodos inutilizados.
+
+    Ahora se construyen los índices con las filas del fixture, se materializan los
+    artefactos que la cobertura declara, y se exige resultado **por clase**.
     """
-    _, cob = corpus
-    resueltos = bloqueados = 0
-    for fila in cobertura_desde_dicts(cob):
-        e = artefacto.elegir(tmp_path, artefacto.Cobertura(),
-                             raw_rel=f"00_Input/{fila.rel_path}",
-                             raw_sha256=fila.sha256 or "",
-                             sin_cobertura_ok=True)
-        assert e.bloqueo or e.clase, f"ni elección ni bloqueo para {fila.slug}"
-        resueltos += not e.bloqueo
-        bloqueados += bool(e.bloqueo)
-    assert resueltos > bloqueados, (
-        f"el selector bloqueó más de lo que resolvió ({bloqueados} vs {resueltos}): "
-        f"pasaría el test sin servir para nada")
+    _, cob_filas = corpus
+    (tmp_path / SM).mkdir(parents=True, exist_ok=True)
+    (tmp_path / SM / "_cobertura.json").write_text(json.dumps(cob_filas),
+                                                   encoding="utf-8")
+    # Los artefactos que la cobertura declara, materializados: sin ellos el selector
+    # bloquea con razón y el test volvería a medir el fallback.
+    ocr = tmp_path / SM / "01_OCR"
+    ocr.mkdir(parents=True, exist_ok=True)
+    for f in cob_filas:
+        slug = f.get("parent_slug") or f.get("slug")
+        if f.get("metodo") in ("ocr", "ofimatica") and slug:
+            (ocr / f"{slug}.pdf").write_bytes(b"%PDF-1.4")
+    cob = artefacto.cargar(tmp_path)
+    assert cob.por_sha or cob.grupos, "los índices salieron vacíos: el test no probaría nada"
+
+    # **La clase ESPERADA por fila, no «la mayoría se resuelve».** Con la mayoría, el
+    # mutante que vacía `METODOS_CON_ARTEFACTO` sobrevive: sus 15 filas pasan a bloqueo,
+    # las otras 40 siguen en crudo, y 40 > 15 aprueba el test. Lo comprobé ejecutándolo.
+    esperado_por_metodo = {
+        "pypdf": artefacto.Clase.CRUDO,
+        "nativo": artefacto.Clase.CRUDO,
+        "vision": artefacto.Clase.CRUDO,
+        "sin_soporte": artefacto.Clase.CRUDO,
+        "ocr": artefacto.Clase.CONVERTIDO,
+        "ofimatica": artefacto.Clase.CONVERTIDO,
+    }
+    por_clase: dict[str, int] = {}
+    desviaciones: list[str] = []
+    for fila in cobertura_desde_dicts(cob_filas):
+        # se materializa el crudo para que la elección no dependa de su ausencia
+        crudo = tmp_path / "00_Input" / fila.rel_path
+        crudo.parent.mkdir(parents=True, exist_ok=True)
+        if not crudo.exists():
+            crudo.write_bytes(b"x")
+        e = artefacto.elegir(tmp_path, cob, raw_rel=f"00_Input/{fila.rel_path}",
+                             raw_sha256=fila.sha256 or "", sin_cobertura_ok=False)
+        clave = "bloqueo" if e.bloqueo else str(e.clase)
+        por_clase[clave] = por_clase.get(clave, 0) + 1
+
+        esperada = esperado_por_metodo.get(fila.metodo)
+        if esperada is None:                 # `duplicado`, `error`: su propio contrato
+            continue
+        if fila.estado == "empty" and not str(fila.rel_path).lower().endswith(".pdf"):
+            continue                          # imagen sin texto: el original la representa
+        if e.bloqueo or e.clase is not esperada:
+            desviaciones.append(
+                f"{fila.slug} ({fila.metodo}/{fila.estado}): esperaba {esperada}, "
+                f"salió {clave} — {e.bloqueo[:70]}")
+
+    assert por_clase, "no se evaluó ni una fila"
+    assert not desviaciones, (
+        f"{len(desviaciones)} fila(s) del corpus no dieron la clase que su método exige "
+        f"(muestra: {desviaciones[:3]})")
+    # Y que se ejerciten LAS DOS clases: con una sola, el test volvería a medir un camino.
+    assert {"crudo", "convertido"} <= set(por_clase), (
+        f"el corpus no ejercitó las dos clases del selector: {por_clase}")
 
 
 def test_el_universo_del_corpus_separa_los_tres_conjuntos(corpus):

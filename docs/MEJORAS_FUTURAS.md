@@ -8192,3 +8192,32 @@ clon o worktree sin `CASOS_ROOT` — donde **toda** invocación se iría a offli
 
 **Disparador de promoción.** Bajo. Hoy las dos coinciden y el drift está atado por un test. Sube
 si aparece un tercer consumidor, porque entonces la duplicación deja de ser de dos.
+
+## 208. `WorkspaceRegistry` no tiene modo de lectura no mutante, y por eso un lector necesita un preflight
+
+**Qué pasa.** `WorkspaceRegistry._leer` (`core/casos/workspace_registry.py:170-180`) pone en
+**cuarentena** un JSON ilegible antes de lanzar: lo renombra a `<fichero>.corrupto.<fecha>` con
+`os.replace`. Para su módulo es la decisión correcta —preserva la evidencia y no borra nunca— pero
+significa que **una lectura provoca una escritura**, y eso rompe el contrato de cualquier consumidor
+que declare no escribir.
+
+Lo destapó la R1 del diff de la vista procesal 4a (su H-05), demostrándolo: con el arranque de la
+fachada arreglado, resolver un caso para un informe renombraba el registro sin haber llegado siquiera
+a exigir `READ_CASE`.
+
+**Cómo está mitigado hoy, y qué no cubre.** `core/procedimiento/sede.py::registro_legible` comprueba
+los `*.json` del registro **antes** de que el resolver los lea, y falla con un mensaje que dice qué
+pasa y qué hacer. Cubre el caso práctico —un registro corrupto que ya está ahí— y **no cierra la
+ventana**: entre el preflight y la lectura real del resolver, el fichero puede corromperse y la
+cuarentena ocurriría igual.
+
+**Remedio.** Un modo de lectura no mutante en `WorkspaceRegistry` —un `cargar(..., cuarentena=False)`
+o un `inspeccionar()` que informe sin mover bytes— y que los lectores lo usen. Con eso el preflight
+duplicado de `sede.py` sobra y desaparece la ventana.
+
+**Lo que NO hay que hacer:** quitarle la cuarentena. Es correcta para quien escribe, y un registro
+ilegible es evidencia que no se borra. Lo que falta es poder **leer sin ejercerla**.
+
+**Disparador de promoción.** Bajo. La ventana es estrecha y el preflight cubre lo que pasa en la
+práctica. Sube si aparece un segundo consumidor de solo lectura, porque entonces el preflight habría
+que duplicarlo otra vez.

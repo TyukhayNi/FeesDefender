@@ -303,3 +303,85 @@ def test_un_bundle_con_metodo_desconocido_bloquea_en_vez_de_adivinar(tmp_path):
                          raw_rel="00_Input/05_CRM/99_Otros/raro.pdf", raw_sha256=sha,
                          sin_cobertura_ok=False)
     assert "teletransporte" in e.bloqueo
+
+
+# ---------------------------------------------------------------- R1/H-09
+
+def test_una_CADENA_de_alias_llega_al_titular_real(tmp_path):
+    """`copia -> medio -> titular`. Antes se miraba un solo salto, asi que la cadena no
+    llegaba al PDF que SI existia y degradaba a crudo en silencio."""
+    sha = _crudo(tmp_path, "00_Input/01_Drive EV/copia.pdf")
+    raiz = _arbol(tmp_path, [
+        {"slug": "titular", "rel_path": "05_CRM/01_Demanda/o.pdf", "metodo": "ocr",
+         "estado": "ok", "sha256": "SHA_T"},
+        {"slug": "medio", "rel_path": "01_Drive EV/m.pdf", "metodo": "duplicado",
+         "estado": "ok", "sha256": "SHA_M", "alias_de": "titular"},
+        {"slug": "copia", "rel_path": "01_Drive EV/copia.pdf", "metodo": "duplicado",
+         "estado": "ok", "sha256": sha, "alias_de": "medio"},
+    ], ocr=["titular"])
+    _crudo(tmp_path, "00_Input/05_CRM/01_Demanda/o.pdf", b"titular")
+    e = artefacto.elegir(raiz, artefacto.cargar(raiz),
+                         raw_rel="00_Input/01_Drive EV/copia.pdf", raw_sha256=sha,
+                         sin_cobertura_ok=True)
+    assert e.bloqueo == "", e.bloqueo
+    assert e.rel == f"{SM}/01_OCR/titular.pdf"
+
+
+def test_un_CICLO_de_alias_bloquea_en_vez_de_degradar(tmp_path):
+    sha = _crudo(tmp_path, "00_Input/01_Drive EV/a.pdf")
+    raiz = _arbol(tmp_path, [
+        {"slug": "a", "rel_path": "01_Drive EV/a.pdf", "metodo": "duplicado",
+         "estado": "ok", "sha256": sha, "alias_de": "b"},
+        {"slug": "b", "rel_path": "01_Drive EV/b.pdf", "metodo": "duplicado",
+         "estado": "ok", "sha256": "SHA_B", "alias_de": "a"},
+    ])
+    e = artefacto.elegir(raiz, artefacto.cargar(raiz),
+                         raw_rel="00_Input/01_Drive EV/a.pdf", raw_sha256=sha,
+                         sin_cobertura_ok=False)
+    assert "ciclo" in e.bloqueo
+
+
+def test_un_titular_INEXISTENTE_bloquea(tmp_path):
+    sha = _crudo(tmp_path, "00_Input/01_Drive EV/copia.pdf")
+    raiz = _arbol(tmp_path, [
+        {"slug": "copia", "rel_path": "01_Drive EV/copia.pdf", "metodo": "duplicado",
+         "estado": "ok", "sha256": sha, "alias_de": "no_existe"}])
+    e = artefacto.elegir(raiz, artefacto.cargar(raiz),
+                         raw_rel="00_Input/01_Drive EV/copia.pdf", raw_sha256=sha,
+                         sin_cobertura_ok=False)
+    assert "no_existe" in e.bloqueo and "cobertura" in e.bloqueo
+
+
+def test_una_copia_HEREDA_el_bloqueo_de_su_titular(tmp_path):
+    """El caso que mas duele: si el titular esta en `error`, su copia pasaba como si nada
+    porque solo se miraba si habia un PDF."""
+    sha = _crudo(tmp_path, "00_Input/01_Drive EV/copia.pdf")
+    _crudo(tmp_path, "00_Input/05_CRM/99_Otros/roto.pdf", b"roto")
+    raiz = _arbol(tmp_path, [
+        {"slug": "titular", "rel_path": "05_CRM/99_Otros/roto.pdf", "metodo": "error",
+         "estado": "empty", "sha256": __import__("hashlib").sha256(b"roto").hexdigest(),
+         "nota": "fallo al procesar: PdfReadError"},
+        {"slug": "copia", "rel_path": "01_Drive EV/copia.pdf", "metodo": "duplicado",
+         "estado": "ok", "sha256": sha, "alias_de": "titular"},
+    ])
+    e = artefacto.elegir(raiz, artefacto.cargar(raiz),
+                         raw_rel="00_Input/01_Drive EV/copia.pdf", raw_sha256=sha,
+                         sin_cobertura_ok=False)
+    assert e.bloqueo != ""
+    assert "titular" in e.bloqueo and "PdfReadError" in e.bloqueo
+
+
+def test_con_el_MISMO_sha_el_titular_gana_al_alias_sea_cual_sea_el_orden(tmp_path):
+    """Titular y copia comparten SHA en el productor real, asi que «la ultima fila gana»
+    dejaba que el ORDEN del JSON decidiera si se bloqueaba o se degradaba."""
+    sha = _crudo(tmp_path, "00_Input/05_CRM/01_Demanda/o.pdf")
+    filas = [
+        {"slug": "titular", "rel_path": "05_CRM/01_Demanda/o.pdf", "metodo": "ocr",
+         "estado": "ok", "sha256": sha},
+        {"slug": "copia", "rel_path": "01_Drive EV/c.pdf", "metodo": "duplicado",
+         "estado": "ok", "sha256": sha, "alias_de": "titular"},
+    ]
+    for orden in (filas, list(reversed(filas))):
+        cob = artefacto.cargar(_arbol(tmp_path, orden, ocr=["titular"]))
+        assert cob.por_sha[sha].slug == "titular", (
+            "el alias ocupo el indice: el orden del JSON decide")
