@@ -8469,3 +8469,563 @@ de «no hay»**.
 **Disparador de promoción.** La primera vez que se monte una sala de lectura de un caso cuya
 prueba llegue por foto de móvil sin extensión; o antes, si se toca `inventory.scan`, porque
 enumerar `skipped` son tres líneas y el test que lo fija es el que falta.
+## 199. `sync_sudespacho pull|intake-judicial` con un W-code CREA carpeta sombra en el Drive
+
+**Medido el 2026-09-08 abriendo W-02USSI, sobre el Drive real del despacho.** El caso ya
+existía, correctamente materializado en `CASOS\Barcelona\BaRS6 - … (W-02USSI) - Negativa
+escritura`, con `meta.id_go: W-02USSI` en su `_caso.md`. Estos dos comandos:
+
+```powershell
+python -m scripts.sync_sudespacho pull --case W-02USSI --expediente 519 --element extrajudiciales
+python -m scripts.sync_sudespacho intake-judicial --case W-02USSI --expediente 622 --full
+```
+
+**crearon `CASOS\W-02USSI`** —carpeta plana, hermana de `_ARCHIVO` y de las ciudades— y
+depositaron ahí los 31 documentos del gestor documental, con su `_caso.md` (`case_id:
+W-02USSI`, `id_go: null`), su `_intake_hashes.json`, su `_intake_log.jsonl` y su plantilla
+de informe de viabilidad. **Los dos comandos salieron con código 0 e imprimieron
+`documents_written: 9` y `22`.** El caso real quedó con `05_CRM` vacío.
+
+**Por qué.** `case_locator.buscar(case_id)` resuelve **solo por nombre de carpeta**: prueba
+`root/case_id`, luego `root/<ciudad>/case_id`, y devuelve `None`. **No mira `id_go`.**
+`ensure_case` materializa en `destino_de_alta(case_id)`, que es `buscar(...) or root/case_id`
+→ con un W-code el `or` gana y nace la carpeta plana. Los dos entrypoints de
+`sync_sudespacho` pasan `--case` **crudo** a `ensure_case`, sin `resolve_ref` de por medio.
+
+`scripts/export_label_emails.py` **no** tiene el defecto: hace `resolve_ref(args.ref)`
+antes de tocar nada, y por eso su `--ref W-XXXXXX` sí funciona.
+
+**El aviso que lo delata ya existe, y es el único síntoma antes del daño.** El
+`intake-judicial` imprimió:
+
+> `[aviso] este caso no declara W-code, así que el intake judicial NO va bajo el mutex`
+
+Es falso sobre el caso real —declara `id_go`— y cierto sobre la carpeta que el propio
+comando estaba a punto de crear: `_mutex_cli.w_code_de` usa `resolve_ref` (que no encontró
+nada) mientras `ensure_case` usaba `buscar` (que tampoco, y creó). **Las dos funciones
+discrepaban, y la discrepancia se imprimió como un aviso de mutex.** El segundo pull, ya con
+el `case_id` completo, no lo imprimió.
+
+**Familia conocida, arreglada en otro sitio.** El docstring de `destino_de_alta` nombra
+literalmente este fallo —«devolver siempre la flat haría que un alta sobre un caso que ya
+vive en su ciudad creara un duplicado plano al lado — el defecto CRÍTICO que R6 encontró en
+el `--force` del `--modo v1`, una carpeta sombra con el W-code duplicado»— y lo cerró **para
+`abrir_caso`**. `sync_sudespacho` se quedó fuera. Es el patrón de
+`feedback-remediar-la-frontera-no-el-ejemplo`: se remedió el ejemplo (`abrir_caso`), no la
+frontera (todo llamador de `ensure_case` con una referencia de usuario).
+
+**Qué hacer.** La frontera, no el ejemplo: **`ensure_case` no debe aceptar una referencia sin
+resolver.** Dos vías, la segunda es la buena:
+
+1. Parche: `resolve_ref` en `pull` e `intake_judicial` antes de `ensure_case`. Arregla estos
+   dos y deja la frontera abierta para el siguiente llamador.
+2. Frontera: que `ensure_case` (o `destino_de_alta`) **falle en vez de crear** cuando la
+   referencia tiene forma de W-code y no resuelve a ningún caso. Un alta legítima por W-code
+   no existe: la vía de alta es `abrir_caso`, que sí trae identidad completa. Y añadir el
+   guard: `buscar()` con algo que casa `^W-[A-Z0-9]{5,6}$` es un error de programación, no un
+   caso nuevo.
+
+**El guard de este CLI ya existe, está verde, y no puede dar el otro valor.**
+`tests/test_guard_sync_cli_pull_v2.py::test_pull_deposita_en_05_crm_y_no_crea_el_layout_congelado`
+corre el motor v2 real y comprueba el destino del pull — exactamente la propiedad que aquí
+falló. Pasa porque su fixture elimina las dos condiciones necesarias a la vez:
+
+- invoca `["pull", "--case", CASE_ID]` con el **case_id canónico**, nunca un W-code;
+- y monta el caso **plano** en `tmp_casos_root / CASE_ID`, así que `buscar()` acierta en su
+  primera rama (`root/case_id`) y la rama por ciudad —la que devuelve `None` y dispara el
+  `or`— no se ejecuta nunca.
+
+Es el patrón de `feedback-guarda-inerte-comprobar-el-otro-valor`: un guard que mide la
+propiedad correcta sobre el único escenario en que no puede romperse. **La regresión tiene
+que variar las dos cosas**: caso bajo `tmp_casos_root/<ciudad>/<case_id>` + `--case <w-code>`
+→ assert que `tmp_casos_root/<w-code>` **no existe** y que el `05_CRM` del caso real tiene
+los documentos. Y que **mida el disco, no el código de salida**: los dos comandos informaron
+éxito con `documents_written` correcto — escribieron, y escribieron donde no tocaba.
+
+**Coste real de este incidente.** Ninguno irreversible. La sombra se apartó renombrándola a
+`_SOMBRA_W-02USSI_pull_mal_dirigido_2026-09-08` (el prefijo `_` la saca del espacio de
+nombres de `buscar`), los 31 documentos se volvieron a bajar contra el `case_id` completo y
+se verificó por contenido; **Nikolai borró la sombra del Drive el mismo 2026-09-08**, con lo
+que se fue también su `_intake_log.jsonl` huérfano. Lo que queda es el defecto, no rastro
+sucio.
+
+**Disparador de promoción.** La próxima apertura de un caso que ya esté dado de alta en el
+CRM antes de existir en el Drive — es decir, todas las que vienen de una reclamación
+extrajudicial previa. Es el camino normal, no el raro.
+
+---
+
+## 200. El informe de viabilidad de E&V ya está en `00_Input` y `viabilidad-prerelleno` no lo sabe
+
+**Medido el 2026-09-08 abriendo W-02USSI.** El fichero que E&V nombra
+`<REF> - RECLAMACIÓN HONORARIOS PROFESIONALES.xlsx`, que vive en la subcarpeta
+`_RECLAMACION` de la carpeta de la propiedad y entra al intake como
+`00_Input/01_Drive EV/_RECLAMACION/…`, **es el informe de viabilidad** — el que rellena
+Nikolai o su equipo, y el **ancestro** del informe de viabilidad de FeesDefender. Su primera
+celda dice literalmente `INFORME DE VIABILIAD`.
+
+Tres hojas, y cada una es el ancestro de una pieza distinta de FD:
+
+| Hoja de E&V | Equivalente en FD |
+|---|---|
+| `INFORMACION` (REF, fecha, director/asesor captador y buscador, motivos de impago, precio, total honorarios, total deuda, semáforo JURÍDICO/FINANZAS, **`DATOS OPERACIÓN`**, `ACTIVIDADES`) | `Informe viabilidad - <W-code>.xlsx` |
+| `PREGUNTAS` (guion de entrevista: captación, comercialización, visita, oferta, comunicación interna, agencia-vendedor, arras, team leader) | `_cuestionario_viabilidad.xlsx` |
+| `DOCUMENTOS` (fichas y actividades GO3, exposés, reporte de visitas, las 4 comunicaciones de la oferta, negociación de arras) | ramo documental / `indice_documental.yaml` |
+
+**La filiación está en el código, no en la palabra.** Las claves de hito que admite la skill
+—`CUANTIA, ENCARGO, IDENT_PROPIETARIO, TITULARIDAD, HOJA_VISITA, OFERTA, IDENT_BUSCADOR,
+ARRAS_ARRENDAMIENTO, RECON_HON_ARRAS, ESCRITURA, RECON_HON_ESCRITURA, RECLAMACION_JURIDICO,
+RESPUESTA_RECLAMACION, OFERTA_VINCULANTE_CONFIDENCIAL`
+(`.claude/skills/viabilidad-prerelleno/SKILL.md:141`, mismo orden en
+`scripts/render_informe.py:41`)— son **fila por fila** el bloque `DATOS OPERACIÓN` de esa
+hoja. El esquema de FD está calcado de ahí.
+
+**El hueco.** La skill declara leer «toda la documental no anonimizada de `00_Input/`» y trata
+los hitos de existencia documental como la pregunta «¿existe este documento concreto?»
+(`SKILL.md:46`). No sabe que **un fichero del propio `00_Input` ya trae las respuestas del
+consultor a esos mismos hitos**, con su score y su fecha. Resultado: re-deriva desde cero lo
+que E&V ya contestó, y la única fuente del expediente que habla en las palabras del consultor
+—la hoja `PREGUNTAS`— se lee como un `.xlsx` cualquiera.
+
+**Y el repo no lo documenta en ninguna parte.** `grep -rn "RECLAMACI.N HONORARIOS
+PROFESIONALES"` sobre `*.md` y `*.py` no devuelve **nada** (medido). Ni `SKILL.md`, ni
+`CONVENCIONES_DESPACHO.md`, ni el runbook. El coste de no documentarlo se pagó el mismo día:
+con el fichero ya dentro del intake que yo había corrido, declaré «el informe de viabilidad no
+existe» porque busqué `name contains 'viabilidad'` y E&V no lo nombra así (memoria
+`feedback-el-nombre-de-una-cosa-no-es-la-cosa`).
+
+**Qué hacer.** Por orden de coste:
+
+1. **Documentar la filiación** en `SKILL.md` de `viabilidad-prerelleno` y en el
+   `RUNBOOK_APERTURA_EXPEDIENTE` (§8): este fichero es el informe, se llama así, vive en
+   `_RECLAMACION/`, y se lee **primero**. Barato y cierra el fallo de nombrado.
+2. **Cablearlo como fuente prioritaria** del pre-relleno: leer `INFORMACION` para cabecera
+   (ref, fecha, los cuatro consultores por rol) y `DATOS OPERACIÓN` para los scores de hito,
+   y usarlo como semilla en vez de partir de cero.
+3. **Con dos cautelas medidas, no supuestas.** (a) El fichero **se copia del caso anterior**:
+   en W-02USSI el bloque `DATOS OPERACIÓN` traía fechas de **2020-2022** sobre una operación
+   íntegramente de 2025, y las cifras económicas leían 0 frente a 75.020 € reclamados. La
+   cabecera era fiable; el bloque de hitos, no. Así que **sembrar no es creer**: cada score
+   heredado tiene que cruzarse contra el ramo, y una fecha que no cabe en la cronología es una
+   bandera a `AVISOS LLM`, no un dato. (b) La hoja `PREGUNTAS` puede estar **en blanco** sin
+   que eso signifique que no hubo entrevista: en este caso la call se hizo (actuación CRM
+   15306) y no se grabó, y el relato llegó meses después por correo.
+
+**Disparador de promoción.** El próximo pre-relleno de viabilidad. El punto 1 se puede hacer
+ya y no depende del 2.
+
+---
+
+## 201. Un `.rtf` con surrogates deja el espejo a 0 bytes, y `empty` no distingue «no tiene texto» de «no pude leerlo»
+
+**Medido el 2026-09-08 en la sala de máquina de W-02USSI.** El mismo documento —la petición
+inicial de monitorio, un `.rtf` de 1,7 MB— entró al caso por tres vías (el gestor documental
+del CRM y dos adjuntos de correo). La copia del CRM se procesó bien: espejo de **26.318
+bytes**. Las dos del correo salieron a **0 bytes** con esta nota en `_cobertura.json`:
+
+```
+fallo al procesar: 'utf-8' codec can't encode characters in position 10925-10930:
+surrogates not allowed
+```
+
+Dos defectos, y el segundo es el que importa.
+
+**(1) El extractor de `.rtf` muere ante surrogates sueltos.** Un par subrogado mal formado
+—típico de emoji o de caracteres pegados desde Word/Outlook— revienta el `encode` al escribir
+el espejo. LibreOffice headless convierte **el mismo fichero** a `.txt` sin protestar
+(comprobado a mano en este caso), así que no es un `.rtf` corrupto: es el camino de escritura
+del espejo, que necesita `errors="replace"` o `surrogatepass` — el mismo gotcha de encoding
+que `CLAUDE.md` ya recoge para `subprocess.run` en Windows, aplicado al sitio equivocado.
+
+**(2) Y el grave: `estado: "empty"` mezcla dos cosas que no son la misma.** En este caso el
+recuento fue `ok 365 / sin_soporte 73 / empty 28 / low 5`, y dentro de esos 28 `empty`
+convivían:
+
+- una foto de WhatsApp, un sticker, un `_firma_image001.png` → **no tienen texto**, y `empty`
+  es la respuesta correcta;
+- y la demanda del caso → **sí tiene texto y no se pudo leer**.
+
+Son estados distintos con consecuencias distintas: el primero no hay que arreglarlo nunca, el
+segundo hay que re-correrlo. Hoy solo los separa leer la prosa del campo `nota`, y quien mira
+el resumen ve un número que no distingue. **Hace falta un estado propio** —`fallo` o
+`error_extraccion`— que salga en el recuento y en el pendiente de la apertura, al lado de
+`ocr_documentos_agotados`, que ya existe justamente para «su texto NO está en el corpus».
+
+**Por qué esta vez no dolió, y por qué no cuenta como que el sistema aguantó.** Aguantó **la
+redundancia del intake, no el pipeline**: la copia del CRM sí extrajo, así que el corpus tiene
+la demanda. Lo mismo pasó con otros dos documentos nucleares del caso, y por eso se ve el
+patrón: `doc_09_carta_desistimiento.pdf` salió con **3 bytes** de texto pero el
+`DESISTIMIENTO VENDEDOR.jpg` de la carpeta `_RECLAMACION` de E&V se OCR-izó a **3.335 bytes**;
+y `doc_02_encargo_de_venta_firmado.pdf` salió `low` (1 de 2 páginas ciegas) mientras la copia
+del encargo que venía **en el export de WhatsApp** extrajo **9.151 caracteres**. Tres
+documentos críticos, tres rescates por una vía distinta de la esperada. **Si el caso hubiera
+llegado por una sola fuente, los tres estarían mudos y el resumen habría dicho `empty`.**
+
+**Qué hacer.** (a) `errors="replace"` (o `surrogatepass`) en la escritura del espejo de la
+ruta `.rtf`, con un test que le dé de comer un `.rtf` con un surrogate suelto y compruebe que
+el espejo **no** sale a 0 bytes; (b) estado propio para el fallo de extracción, contado
+aparte de `empty` y elevado a pendiente de la apertura; (c) el aviso correlativo en
+`_cobertura`: un documento cuyo espejo mide 0 bytes **y** cuya nota empieza por «fallo al
+procesar» no puede presentarse con el mismo rótulo que un sticker.
+
+**Disparador de promoción.** Cualquier caso cuyo documento nuclear llegue por una sola vía
+—es decir, uno abierto solo desde el CRM, sin Drive de E&V ni WhatsApp—. Ahí el defecto (2)
+deja de ser cosmético.
+
+---
+
+## 202. `verificacion-anclada-fuente/SKILL.md` lleva 359 bytes NUL commiteados, y ninguna verja lo mira
+
+**Medido el 2026-09-08.** El fichero tiene **31.888 bytes**: 480 líneas de contenido legítimo
+y, después de la última —«…Verifíquense los outputs contra la jurisdicción aplicable antes de
+actuar.»—, **359 bytes `\x00` de relleno**. Está trackeado (blob `64f730f`), sin
+`.gitattributes` que lo marque como binario.
+
+El texto **decodifica bien como UTF-8** (31.304 caracteres), así que la skill no está
+mutilada: lo que hay es una cola de basura, probablemente de una escritura truncada y
+rellenada.
+
+**El daño no es estético.** `file` lo clasifica como `data` y **`grep` lo trata como binario**,
+así que la skill es **invisible a cualquier búsqueda por contenido** sobre `.claude/skills/`.
+Medido en la misma sesión: el comando que leyó el `SKILL.md` de las otras veinte skills
+devolvió `Binary file … matches` sobre esta, y hubo que rodearlo decodificando en Python y
+quitando los NUL a mano. Una skill que no se puede `grep` es una skill que no se audita: no
+sale en los barridos de cobertura, ni en los cruces de encadenamiento entre skills, ni en un
+`grep` de un término que se quiera retirar del despacho.
+
+**Y el hueco de fondo, que es el que hay que cerrar:** **ninguna verja comprueba hoy que un
+`SKILL.md` sea legible como texto.** `scripts/check_skills.py` compara mtimes contra
+`dist/skills/*.skill` (caducidad del empaquetado), no la sanidad del fuente. Así que este
+fichero pudo entrar, commitearse y sobrevivir sin que nada protestara.
+
+**Qué hacer.** (a) Reescribir el fichero sin la cola: leer, `.replace("\x00", "")`, escribir
+en UTF-8 sin BOM con `[System.IO.File]::WriteAllText` (regla de encoding de `CLAUDE.md`);
+verificar después con `file` y con un `grep` de un término del cuerpo. (b) El guard, que es lo
+que impide la reincidencia: un test que recorra `.claude/skills/**/SKILL.md` y afirme, por
+cada uno, que **no contiene `\x00`**, que decodifica como UTF-8 y que su frontmatter parsea.
+Es barato y cubre de golpe una familia —caracteres de control, BOM, truncamiento— que hoy no
+mira nadie. (c) Comprobar de paso si el empaquetado (`scripts/package_skill.py`) y el
+importador del servidor toleran el NUL o lo estaban tolerando por suerte.
+
+**Disparador de promoción.** Cualquier trabajo que toque `verificacion-anclada-fuente`, o el
+próximo barrido de las skills — momento en que este fichero volverá a no aparecer.
+
+---
+
+## 203. `id_carpeta 304` sin mapear: los documentos del gestor documental judicial caen en `99_Sin categoria`
+
+**Medido el 2026-09-08 abriendo W-02USSI.** `core/config.py::CARPETA_ID_TO_PATH` tiene
+**cuatro** entradas:
+
+```python
+"1":   "General",
+"307": "Civil/1ª Instancia/Declarativo/Demanda",
+"308": "Civil/1ª Instancia/Declarativo/Oposicion",
+"380": "Civil/Preliminares/Demanda",
+```
+
+La carpeta del gestor documental donde vive **toda la documental de la demanda** del
+expediente judicial de este caso es `id_carpeta = 304`, etiqueta `DEMANDA` — leído del CRM
+sobre el documento 38103: `carpeta value='304'`, `id_carpeta value='304' label='DEMANDA'`.
+**No está mapeada.**
+
+Consecuencia medida: de los 32 documentos del caso, los **23 del judicial** cayeron en
+`00_Input/05_CRM/99_Sin categoria/622/` y los **9 del extrajudicial** en
+`00_Input/05_CRM/99_Otros/`. **Ninguno** en el árbol `CRM_TREE`. Con `documents_written`
+correcto y código de salida 0 en las dos corridas: el pull no falla, clasifica al cajón de
+sastre.
+
+**Por qué importa más de lo que parece.** No es cosmético ni es «un caso»: `304` es la carpeta
+DEMANDA de los expedientes **judiciales**, o sea la de todos los casos que llegan a
+contenciosa. Y cualquier consumidor que resuelva un documento por su ruta canónica —una skill
+que busque el encargo en `Civil/1ª Instancia/…/Demanda`— no lo encuentra. Es la razón por la
+que el diseño de `demanda-honorarios-ev` resuelve **por censo y por rol, nunca por ruta**
+(spec del 2026-09-08, §6).
+
+**Qué hacer, y qué NO hacer.** **No añadirlo unilateralmente.** El propio comentario de
+`config.py` fija la **regla de doble verificación** («usuario en CRM UI + Claude vía REST»)
+porque la etiqueta-hoja es ambigua entre ramas: `CRM_TREE` tiene
+`Civil/1ª Instancia/Declarativo/Demanda` —ya ocupada por `307`— y
+`Civil/1ª Instancia/Monitorio/Demanda`, y `DEMANDA` casa con las dos. El endpoint de árbol
+`/api/folders/gdocu/{parent}` no devuelve la jerarquía (dead end §13.3), así que la rama solo
+se cierra mirándolo en la UI. **Pendiente: que Nikolai confirme en el CRM a qué rama
+corresponde `304`.** Con eso, una línea.
+
+**Y el aviso que sí falta:** el evento `category_unknown` de `_intake_log.jsonl` existe
+justamente para descubrir estos IDs, pero **nadie lo lee**. Los 32 documentos de este caso lo
+emitieron y el operador no vio nada: la salida del pull dice `by_carpeta:
+{"99_Sin categoria/622": 23}` sin señalar que eso **es** el síntoma. Merece un aviso explícito
+en la salida del CLI: «N documento(s) sin categoría — `id_carpeta` no mapeado: 304».
+
+**Disparador de promoción.** La próxima apertura de un caso con expediente judicial, que es
+casi cualquiera que venga de una reclamación extrajudicial previa.
+
+---
+
+## 204. `cendoj-descarga`: un ECLI «normalizado» hace que la cita parezca inexistente
+
+**Medido el 2026-09-09 verificando las siete citas de la demanda de W-02USSI.** CENDOJ
+publica algunos ECLI de Audiencia Provincial **con un espacio dentro del código de órgano**:
+
+```
+ECLI:ES:AP B:2002:12928        <- así lo publica el CGPJ (SAP Barcelona, 18-12-2002)
+ECLI:ES:APB:2002:12928         <- la forma «normalizada», que NO encuentra nada
+```
+
+Busqué por la segunda porque el escrito traía la primera y la tomé por errata. La búsqueda
+devolvió **cero resultados y ningún error**, que es lo peligroso: se lee como «esta cita no
+existe». Por **ROJ** (`SAP B 12928/2002`) salió a la primera, con el ECLI oficial confirmando
+el espacio.
+
+**El fallo no es de CENDOJ, es del método.** El Paso 3 de la skill pone la búsqueda por ECLI
+como «Caso A — búsqueda directa. Devuelve siempre 1 resultado», y el ROJ como Caso B
+alternativo. Con eso, un vacío por ECLI no tiene salida prevista, y la conclusión natural —la
+equivocada— es la ausencia.
+
+**Qué hacer.** (a) En el Paso 3, regla explícita: **un resultado vacío por ECLI nunca es
+ausencia hasta haber reintentado por ROJ**; y no reescribir el ECLI que aporta la fuente —se
+pega tal cual. (b) Una línea en la tabla de «Errores frecuentes»: `Búsqueda por ECLI sin
+resultados` → `ECLI con espacio en el código de órgano (frecuente en AP antiguas)` →
+`reintentar por ROJ; no normalizar el ECLI`. (c) Y el corolario general, que vale más que el
+caso: **antes de declarar que una cita no existe, agotar la segunda llave.** Familia de
+`feedback-no-lo-se-no-es-no-hay`.
+
+**Disparador de promoción.** La próxima verificación de citas que incluya una AP anterior a
+~2005, donde esta forma del ECLI es frecuente.
+## 205. Ruta `audio` en la sala de máquina: 67 de los 73 `sin_soporte` son notas de voz
+
+**Medido el 2026-09-09 sobre W-02USSI.** El censo tiene **471 documentos** y **73 en
+`sin_soporte` (15,5%)**. De esos 73, **67 son audio o vídeo** — 65 `.opus` y 2 `.mp4`,
+44,2 MB, ≈5,4 h de habla —, o sea el **92% del sin-soporte y 14,2 de los 15,5 puntos**.
+Los 6 restantes son 5 `.zip` y 1 `.vcf`. Sus filas salen todas con `tipo: ''`,
+`estado: 'sin_soporte'`, `chars: 0` y la nota genérica `sin soporte para esta extensión`.
+
+`clasificar_ruta` (`core/sala_maquina.py:47`) enruta por extensión a `pdf` | `imagen` |
+`nativo` | `ofimatica` | `sin_soporte`. Las extensiones de audio no están en ninguna lista,
+así que caen al `else` del despacho (`core/sala_maquina.py:1406`) y **nunca se intenta nada**.
+
+**Por qué importa más que un porcentaje.** El habla no es un formato secundario en este
+dominio: en W-02USSI las notas de voz son de los chats con la parte compradora y con la
+agente colaboradora, y la primera que se transcribió —25-07-2025, dos días después del
+desistimiento— ya trae material del fondo del asunto que **no está en ningún documento
+escrito del ramo**. Mientras la ruta no exista, la sala de lectura clasifica esos 67 «a
+ciegas por nombre» y el `CRONOLOGIA.md` no los ve. Es el mismo agujero que `MEJORAS #61`
+cerró para los `.doc`, en un formato donde el contenido pesa más.
+
+**Es feasible hoy, y está medido.** Con `faster-whisper` 1.2.1 (CTranslate2 4.8.2 + PyAV
+18.1.0) en un venv aislado: **no necesita el binario `ffmpeg`** —PyAV trae sus propias libs y
+abre el `.opus` directo— **ni `torch`**. Modelo `small`, `device="cpu"`, `compute_type="int8"`,
+`language="es"`, `vad_filter=True`: 137,9 s de audio → 2.096 caracteres en **79,7 s (×1,7
+tiempo real)**, `language_probability` 1,00, carga del modelo 25 s. Extrapolado a las 5,4 h:
+≈3,2 h de CPU. La calidad en castellano es utilizable tal cual; los nombres propios y los
+tecnicismos salen mal («GuruFax» por «burofax»), que es exactamente el perfil que hay que
+declarar y no maquillar.
+
+**Forma correcta de la pieza — y esto es la decisión de diseño, no un detalle.** Se modela
+sobre `ofimatica`, **no** sobre `--vision`. Son dos patrones distintos y confundirlos cuesta
+un seam inútil:
+
+- `--vision` necesita **la sesión Claude**, que el CLI no puede invocar por sí mismo. De ahí
+  el stub `_transcribir_vision` con `_es_stub`, `vision_cableada()` y el preflight
+  `_exigir_vision_cableada` que **aborta en alto** (`scripts/sala_maquina.py:283`).
+- El ASR corre **entero en local, dentro del proceso**. No hay nada que inyectar. Es una
+  **dependencia externa opcional**, igual que `soffice`: presente → se usa; ausente → el
+  documento sale `sin_soporte` **con la causa real en la nota**, y el CLI avisa antes de
+  procesar (patrón `_avisar_si_falta_soffice`, `scripts/sala_maquina.py:270`).
+
+Piezas: (a) `core/audio_a_texto.py` espejo de `core/ofimatica_a_pdf.py` — `EXTS_AUDIO`,
+`ENV_MODELO` (`FEESDEFENDER_ASR_MODELO`), `asr_disponible()`, `transcribir(src) -> str`;
+(b) `_EXTS_AUDIO` y el `return "audio"` en `clasificar_ruta`; (c) la rama `elif d.ruta ==
+"audio"` con `_audio_y_extraer`, que escribe el MD y su fila de cobertura como las demás;
+(d) el aviso de preflight; (e) `faster-whisper` como **extra opcional**, nunca dependencia
+dura de la suite.
+
+**Dos cosas que la implementación no puede perder.** Primera: el MD debe llevar los
+**segmentos sellados en tiempo** (`[mm:ss–mm:ss]`), porque en un escrito una nota de voz se
+cita por minuto y segundo, no por página; y en cabecera el modelo, la duración y el
+`language_probability`, para que se sepa **con qué instrumento** se leyó. Segunda: la
+transcripción **no da la fecha de envío**. Esa vive en el cuerpo del chat (`<adjunto: …>`), y
+la fecha incrustada en el nombre (`AUDIO-2025-07-25-11-54-55`) es la de **captura**, que la
+skill `organizar-sala-lectura` ya obliga a no confundir con la de envío. La ruta de audio
+resuelve el *texto*; el *cuándo* sigue siendo del chat.
+
+**Y una honestidad de alcance:** `estado` para una transcripción no puede reusar
+`ocr_quality` sin pensarlo. Un audio de 3 minutos con 2.000 caracteres es normal; un PDF de
+una página con 2.000 caracteres también, pero los umbrales no son los mismos y un audio de
+silencio devolvería `empty` cuando lo correcto es «no había habla». Hay que decidir el
+criterio explícitamente, no heredarlo.
+
+**Y una regla que hereda de MEJORAS #207, descubierta en la misma sesión:** un audio que **no
+se pudo leer** no es un audio sin habla. La ruta debe comprobar que el origen sigue montado
+antes de dar por fallido un fichero, y no debe producir un espejo vacío en un fallo de lectura
+— si no, una caída del Drive a mitad de tanda deja 38 documentos con veredicto de un problema
+que no era suyo.
+
+**Disparador de promoción.** Ya está disparado: W-02USSI tiene 67 documentos ilegibles y la
+demanda está sin presentar. Lo urgente del caso se cubre fuera del pipeline (transcripción en
+scratchpad, fuera del repo, que es donde debe estar el dato real); lo que esta entrada pide es
+que la **próxima** apertura no repita el trabajo a mano.
+
+---
+## 206. `emparejar_exports_whatsapp` solo conoce el nombrado de UN canal: 0 de 5 exports apartados
+
+**Medido el 2026-09-09 sobre W-02USSI.** El Paso 1-bis.a0 de `organizar-sala-lectura` llamó a
+`emparejar_exports_whatsapp` sobre las 441 rutas del intake y devolvió
+**`exports_crudos_whatsapp: 0`**. En el corpus hay **5 `.zip` de export de WhatsApp, 152,3 MB**,
+y los cinco se quedaron con **fila propia** entre los 410 únicos:
+
+| bytes | ruta bajo `00_Input/` |
+|---|---|
+| 130.391.552 | `01_Drive EV/_RECLAMACION/WHATSAPP/WhatsApp Chat - Sofia Mata CB.zip` |
+| 10.564.096 | `01_Drive EV/_RECLAMACION/WHATSAPP/WhatsApp Chat - Oferta Soria 32-34.zip` |
+| 10.564.089 | `2026-09-08_email_01/…_oferta_soria_32_34/WhatsApp Chat - Oferta Soria 32-34.zip` |
+| 871.424 | `01_Drive EV/_RECLAMACION/WHATSAPP/WhatsApp Chat - Joan C_ Soria.zip` |
+| 871.402 | `2026-09-08_email_01/…_joan_c_soria/WhatsApp Chat - Joan C_ Soria.zip` |
+
+**Por qué no salta, y las dos condiciones fallan por separado** (`preclasificar.py:106`). El
+helper marca un `.zip` como crudo solo si **(1)** su basename es exactamente
+`_export_original.zip` **y (2)** hay un `_chat.txt` en su mismo directorio. Aquí:
+
+1. Los zips se llaman `WhatsApp Chat - <nombre>.zip` — el nombrado de **E&V** (espejo
+   `01_Drive EV/`) y el del **lote de correo**, no el que deja `whatsapp_intake.deposit_export`.
+2. Los chats extraídos son **`_chat.docx`**, no `_chat.txt`: E&V exportó a Word. Así que
+   aunque el zip se llamara bien, el hermano no se encontraría.
+
+**Esto no es un bug del helper: es su supuesto, y el supuesto es de un solo canal.** El
+docstring lo dice a propósito — «un `.zip` con OTRO nombre (documentación aportada) se conserva
+aunque comparta carpeta con un chat» — y esa conservadurismo es correcta. El hueco es que la
+detección se ancló al nombrado de `whatsapp_intake`, y **el mismo export llega por tres vías**:
+el intake propio, el espejo del Drive de E&V y el lote de correo. Dos de las tres no pasan por
+`whatsapp_intake` y por tanto nunca llevan ese nombre.
+
+**La frontera de la que esto es ejemplo** (y es la que hay que cerrar, no el caso): *un detector
+de «crudo ya extraído» que identifica el crudo por el nombre que le pone UN productor*. El mismo
+error, con otra cara, produjo el `casi-duplicado` que sí saltó: los pares de 871.424/871.402 y
+10.564.096/10.564.089 bytes son **el mismo chat re-comprimido**, llegado por dos canales, con
+`sha256` distinto — así que `dedup_por_sha` tampoco los une.
+
+**Coste real medido.** Los 5 quedan `sin_soporte` en el censo (`chars: 0`), son 5 de las 73
+filas sin soporte, y sin apartar entran al plan de copia con `0000-00-00` — que es exactamente
+la basura de cronología que el helper existe para evitar. Y el de Sofia Mata son **130 MB** que
+se copiarían a la sala para nada: su contenido ya está extraído, fichero a fichero, en el
+directorio hermano.
+
+**Qué hacer.** Reconocer el crudo por **lo que es, no por cómo se llama**: un `.zip` es export
+crudo de WhatsApp si en su mismo directorio —o en un subdirectorio con su mismo nombre sin
+extensión, que es la forma del espejo de E&V— existe un chat extraído (`_chat.txt` **o**
+`_chat.docx`). Con eso los 5 se apartan y se anotan `duplicado_de` su chat, sin borrar nada.
+Y hay que **verificarlo con un control positivo**: un test cuyo fixture use el nombrado de E&V
+y `_chat.docx`, porque el fixture actual usa el del intake y por eso el hueco pasó verde.
+Ampliar de paso `dedup_por_sha` no sirve aquí: el re-comprimido cambia los bytes; lo que une a
+esos pares es el chat del que son crudo, no su hash.
+
+**Segundo caso, medido por otra sesión el mismo día, y el defecto ahí quedó ENMASCARADO.** En
+W-02VEKE el helper devolvió **0 de 3**: los exports se llaman `Chat de WhatsApp con
+<nombre>.zip` y `WhatsApp Chat - <nombre> EV <localidad>.zip`, ninguno `_export_original.zip`.
+Lo relevante es cómo acabó pareciendo correcto: los tres **sí** salieron excluidos con su
+`duplicado_de` porque **quien montaba la sala los excluyó a mano** en el script de la corrida.
+El helper estaba inerte, su inercia **no dejó rastro**, y el resultado correcto tapó el
+defecto — alguien hizo su trabajo sin notar que él no lo hacía.
+
+Así que el recuento no es «0 de 5 en un caso» sino **0 de 8 en dos casos y dos sesiones, cero
+emparejamientos automáticos**, y en uno de los dos el fallo era invisible desde el resultado.
+Eso sube la entrada de categoría: no es un hueco de cobertura de nombres, es un helper cuya
+única señal de que no funciona es que **no hay señal**. Un contador de «N exports apartados»
+en el informe del paso 1-bis lo habría delatado el primer día — el informe dice hoy
+`exports_crudos_whatsapp: 0` y eso se lee igual que «no había ninguno».
+
+**La misma frontera, en otro campo: el formato de FECHA que documenta el `SKILL.md` es más
+estrecho que el real.** `organizar-sala-lectura/SKILL.md:279` dice que la línea del adjunto
+lleva `[DD/MM/AAAA, HH:MM]`. Medido sobre el export de W-02USSI, lleva **`[26/6/25,
+12:07:45]`**: día de 1-2 dígitos, mes de **1**, año de **2**, y segundos que el contrato no
+menciona.
+
+**Hoy no rompe nada, y conviene decirlo así:** ningún regex de `core/`, `scripts/` ni de las
+skills se ancla a `\d{2}/\d{2}/\d{4}`; las dos implementaciones que se escribieron contra
+esto —en dos sesiones distintas y sin coordinarse— usaron `\d{1,2}/\d{1,2}/\d{2,4}`, que
+admite las dos formas. El defecto es del **contrato documentado**: quien escriba el matcher
+leyendo el `SKILL.md` en vez de mirar un export produce un regex que no casa **ni una** línea,
+y el modo de fallo es el mismo de esta entrada — silencio, no error. Remedio de una línea:
+que el `SKILL.md` documente `[D/M/AA, HH:MM(:SS)]` y diga que **el ancho varía por export**.
+
+**Y el método SÍ funciona, con control positivo en dos casos.** Recuperar la fecha de envío
+desde el cuerpo del chat en vez de del nombre del fichero dio **67 de 67** en W-02USSI y
+**118 de 118** en W-02VEKE (117 `.opus` + 1 `.m4a`), en otro export y otro volumen:
+**185 de 185**.
+
+**La población, que hay que decirla o el número engaña:** son los adjuntos de **audio y
+vídeo**, no todos los adjuntos del chat — de los PDF, imágenes y ofimática de esos mismos
+exports no se ha medido nada. En W-02USSI está además cerrado **en los dos sentidos** (los
+chats citan exactamente 11 y 56 adjuntos de audio/vídeo, todos inventariados: ni uno citado
+sin fichero ni un fichero sin cita) y con control positivo sobre la comparación de fechas —
+desplazando artificialmente la del nombre un día, el comparador responde `false` en 67/67, así
+que el «cero discrepancias» no es una guarda inerte. Lo que falla es el formato documentado,
+no la regla.
+
+*(Las dos cifras se afinaron entre sesiones: la de W-02VEKE nació de un `grep -c opus` que
+contaba 118 porque la línea 118 era **la propia nota** que decía que los `.opus` no estaban
+fechados. El total sale igual por casualidad —117 `.opus` más un `.m4a`—, y esa casualidad es
+justo la que convierte un recuento mal hecho en un número que nadie revisa.)*
+
+**Disparador de promoción.** Cualquier caso cuyo WhatsApp llegue por el espejo del Drive de E&V
+o por lote de correo, que son la mayoría — W-02USSI ya lo hizo por las dos, y W-02VEKE por una
+tercera vía de nombrado.
+
+---
+## 207. El presupuesto de reintentos se gasta en una causa que no es del documento
+
+**Medido el 2026-09-09, en vivo, sobre W-02USSI.** Una tanda larga de transcripción que leía
+`.opus` desde `G:` iba por el fichero 18 de 56 cuando **`G:` (Drive Stream) se colgó**. Los 38
+restantes fallaron uno a uno con `FileNotFoundError`. Al comprobarlo después: el directorio
+respondía `Permission denied`, `Test-Path "G:\"` daba **`Access to the path 'G:\' is denied`**,
+la raíz de `CASOS` listaba **0 entradas**, había **cuatro procesos `GoogleDriveFS`** y hasta
+`Get-PSDrive -PSProvider FileSystem` **se colgaba 120 s**. No era el fichero: era el volumen.
+
+**El síntoma miente sobre la causa.** Un `FileNotFoundError` por fichero se lee como ruta mala
+o fichero ausente. Lo que había pasado es global, y la prueba es que **los 18 que sí se
+procesaron tampoco eran visibles después** — ni los que fallaron ni los que no.
+
+**Qué hace hoy la sala de máquina en esa situación** (verificado en el código, no supuesto):
+
+1. `core/sala_maquina.py:1408` captura **cualquier** excepción por documento y escribe la fila
+   `tipo: "error"`, `estado: "empty"`, `chars: 0`, `nota: "fallo al procesar: …"`. El
+   comentario —«cualquier fallo del documento: no tumbar el lote»— es correcto para un PDF
+   corrupto y es justo lo que no conviene cuando la causa es del volumen.
+2. **Nada distingue una causa global de una del documento.** No hay comprobación de que el
+   origen siga montado; el único `except OSError` cercano (`:1479`) trata la desaparición de un
+   fichero como carrera entre el `rglob` y el `stat`, no como caída del montaje.
+3. **Lo que sí está bien y hay que decirlo:** `_exitosos_por_bundle`
+   (`scripts/sala_maquina.py:333`) marca hecho un documento **solo si salió `ok`/`low`**, así
+   que un fallo **no** se cachea como éxito y **se reintenta** en la corrida siguiente. El
+   censo no queda envenenado de forma inmediata.
+
+**El hueco, entonces, es estrecho y es este:** `scripts/sala_maquina.py:962` suma **`+1` al
+contador de intentos de cada documento que se procesó y no salió bien**, y con
+`MAX_INTENTOS = 3` (`core/sala_maquina.py:214`) el sha pasa a `agotados` y **se salta hasta que
+alguien use `--force`**. Es decir: **tres caídas del Drive gastan el presupuesto de reintentos
+de documentos que nunca fueron ilegibles.** El tope existe para que nada bucle, y su docstring
+ya advierte del riesgo —«saltarse algo en silencio es el defecto que este tope podría
+introducir si nadie lo cuenta»—; el CLI **cumple** esa parte y avisa (`:806`, `:907`). Lo que no
+está cubierto es que **el intento se cobre a quien no tiene la culpa**. Hoy, en W-02USSI, 38
+documentos van con 1 de 3.
+
+**La frontera de la que esto es ejemplo:** *aislar el fallo por unidad de trabajo supone que la
+causa es de esa unidad.* Cuando la causa es del entorno compartido —el volumen, la red, el
+binario externo—, el aislamiento convierte un fallo en N veredictos. Mismo patrón que el aviso
+de `soffice` (`:270`), que precisamente se resolvió al revés y bien: **se comprueba la
+dependencia ANTES de procesar**, y se avisa una vez en vez de N notas por documento.
+
+**Qué hacer.** (a) Un centinela de salud del origen —`00_Input` existe y no está vacío— que se
+consulte **antes de cobrar un intento**; si el origen no responde, la corrida **para y lo
+declara**, en vez de recorrer el resto marcando fallos. (b) Que el contador solo suba cuando el
+origen esté vivo. (c) Que la nota del censo diga **cuál de las dos causas** fue, porque hoy
+`fallo al procesar: [Errno 2]…` no permite distinguirlas al leer el `_cobertura.json` después.
+(d) Heredarlo en la ruta `audio` de **MEJORAS #205**: un audio que no se pudo leer no es un
+audio sin habla. Ya está implementado y probado fuera del repo, en el script de reanudación de
+esta sesión, con las tres reglas: comprobar el volumen antes de rendirse, no producir salida
+en un fallo de lectura, e idempotencia por existencia de la salida.
+
+**Disparador de promoción.** La próxima corrida de `sala_maquina apply` sobre un caso grande en
+`G:` — que es el caso normal, no el excepcional.
+
+---

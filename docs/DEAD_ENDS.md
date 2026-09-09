@@ -828,6 +828,27 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 
 ---
 
+## `python -c "..."` en Git Bash: las comillas invertidas del CONTENIDO se ejecutan, y el script dice que fue bien
+
+- **Intentado:** añadir un párrafo a `docs/MEJORAS_FUTURAS.md` con
+  `python -c "..."` entre comillas dobles, donde el texto llevaba cinco fragmentos entre
+  comillas invertidas (nombres de fichero y de campo, como es normal en Markdown técnico).
+- **Resultado:** Git Bash expandió cada `` `...` `` como **sustitución de comandos** antes de
+  que Python viera la cadena. Los cinco fragmentos desaparecieron del fichero y en su lugar
+  quedaron espacios; se ejecutaron como órdenes, dejando en el log basura del tipo
+  `bash: Chat: command not found`. **El script imprimió su mensaje de éxito igual**, porque
+  desde Python la escritura fue perfecta: lo que estaba mal era la cadena que recibió.
+- **Confirmado:** 2026-09-09.
+- **Conclusión:** para pasar contenido con comillas invertidas a Python, **heredoc
+  entrecomillado** (`python - <<'PYEOF'`), que no expande nada, o —mejor si el contenido es
+  largo— escribir el script a un fichero y ejecutarlo. Y **verificar por resultado**: leer el
+  fragmento escrito, no el mensaje del script. Aquí el control que lo cerró fue contar las
+  comillas invertidas del fichero antes y después (subieron exactamente +10 = los 5 pares
+  nuevos) y comprobar que el `git diff` tocaba un solo hunk.
+- **Familia:** misma que el `git show <rev>:<ruta>` de más arriba — **Git Bash corrompe lo que
+  se le pasa y el fallo es silencioso**, con el agravante de que aquí el comando que corrompe
+  y el que informa del éxito son el mismo.
+
 ## Plantilla para nuevas entradas
 
 ```markdown

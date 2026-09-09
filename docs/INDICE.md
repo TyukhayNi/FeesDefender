@@ -52,7 +52,7 @@ fecha: 2026-07-05
 | `DESPLIEGUE_MCP_DRIVE_DISCO.md` | Checklist ejecutable de despliegue del MCP "Drive como disco" V1 (spec §8); código V1 construido y mergeado (PR #52), despliegue manual pendiente. |
 | `DEVTOOLS_CAPTURA_CREATE.md` | Captura DevTools para el alta en el CRM. |
 | `INSTALACION_ANONIMIZADOR.md` | Instalación del anonimizador (`core/anon`). |
-| `INSTALACION_ASR.md` | Instalación del reconocimiento de voz (`scripts/transcribir_audio.py`): receta del venv dedicado, modelos, y las cifras que eligen modelo y grada. Cableado a la sala de máquina pendiente (`MEJORAS #182`). |
+| `INSTALACION_ASR.md` | Instalación del reconocimiento de voz (`scripts/transcribir_audio.py`): receta del venv dedicado, modelos, y las cifras que eligen modelo y grada. Cableado a la sala de máquina pendiente (`MEJORAS #205`). |
 | `MANUAL_DESPACHO.md` | Manual operativo del despacho. |
 | `MEJORAS_FUTURAS.md` | Backlog técnico (todo el repo). |
 | `MEJORA_CONTINUA_SKILLS.md` | Ciclo de mejora de las skills. |
