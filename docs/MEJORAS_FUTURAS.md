@@ -7827,7 +7827,7 @@ tocar la línea de lanzamiento de cualquier wrapper por otro motivo.
 
 ---
 
-## 183. El intake judicial no modela la fase procesal: ni bucket ni rol para la prueba y el juicio
+## 191. El intake judicial no modela la fase procesal: ni bucket ni rol para la prueba y el juicio
 
 > Medido el 2026-09-08 montando `W-02VEKE` (expediente judicial CRM #540, 76 documentos;
 > autos de 2025, audiencia previa ya celebrada, testigos citados, juicio pendiente).
@@ -7879,7 +7879,7 @@ indiferenciada. Va contra `PLAN.md` fila #9, no como entrada independiente.
 
 ---
 
-## 184. `abrir_caso` INVENTA `referencia_crm` copiando el `case_id`, y el invento dispara después la alarma de desalineación
+## 192. `abrir_caso` INVENTA `referencia_crm` copiando el `case_id`, y el invento dispara después la alarma de desalineación
 
 > Medido el 2026-09-08 en `W-02VEKE`, un caso que ya existía en el CRM antes de abrirse en Drive.
 
@@ -7917,7 +7917,7 @@ que `ensure_case` acepte reponerlo cuando el llamador lo pasa explícito.
 
 ---
 
-## 185. La plantilla del `case_id` no puede reproducir la referencia del CRM, y eso deja ciego el dedup exacto
+## 193. La plantilla del `case_id` no puede reproducir la referencia del CRM, y eso deja ciego el dedup exacto
 
 > Medido el 2026-09-08 en `W-02VEKE`.
 
@@ -7940,7 +7940,7 @@ canónico es `NEGATIVA_ARRAS` -> sufijo `Negativa arras`, y el CRM dice `Negativ
 aceptada`. Esa regla está escrita suponiendo que **el alta local es la primera**; cuando el CRM va
 delante hay dos fuentes y una tiene que ceder, y ceder por el lado del CRM significa renombrar la
 referencia de un expediente judicial vivo. Se resolvió usando el sufijo canónico y dejando la
-referencia real en `referencia_crm` (ver `#184`), pero la regla no tiene caso escrito para esto.
+referencia real en `referencia_crm` (ver `#192`), pero la regla no tiene caso escrito para esto.
 
 **Remedio candidato.** Que el dedup «antes de crear» use el **W-code** y no la referencia completa
 —es la clave estable, y ya existe la función—, dejando el match exacto para lo que de verdad
@@ -7948,7 +7948,7 @@ necesite igualdad textual. Y escribir en `config.py` qué manda cuando el CRM va
 
 ---
 
-## 186. Un `/` en el nombre del documento del CRM parte el slug y el fichero pierde su identidad
+## 194. Un `/` en el nombre del documento del CRM parte el slug y el fichero pierde su identidad
 
 > Medido el 2026-09-08 en `W-02VEKE` (expediente judicial CRM #540).
 
@@ -7986,12 +7986,12 @@ de arreglarlo.
 
 **Disparador de promoción.** Bajo: los ficheros están en el expediente y su contenido es
 correcto; solo el nombre es ilegible. Sube si alguna vez hay que localizar un señalamiento por
-nombre en un caso con muchas resoluciones, o si se construye la vista procesal (`MEJORAS #183`),
+nombre en un caso con muchas resoluciones, o si se construye la vista procesal (`MEJORAS #191`),
 que ordena por lote y presentaría estos dos sin identidad.
 
 ---
 
-## 187. `node_modules` no está en `.gitignore`, y dos skills lo necesitan para funcionar
+## 195. `node_modules` no está en `.gitignore`, y dos skills lo necesitan para funcionar
 
 > Medido el 2026-09-08 al generar los entregables de `preparacion-juicio-oral`.
 
@@ -8023,7 +8023,7 @@ no haya que descubrirlo — y para que nadie cierre el hueco con un `npm install
 
 ---
 
-## 188. El pipeline deja `empty` un PDF que `ocrmypdf --skip-text` lee con 12.246 caracteres
+## 196. El pipeline deja `empty` un PDF que `ocrmypdf --skip-text` lee con 12.246 caracteres
 
 > Medido el 2026-09-09 en `W-02VEKE`, montando su sala de lectura. Tres documentos, mismo
 > motor (OCRmyPDF), resultados muy distintos según quién lo invoque.
@@ -8082,10 +8082,20 @@ aquí con el dato de las tres filas.
 
 ---
 
-## 189. `senales_gate` marca el audio y el vídeo como «binario opaco sin espejo MD», y eso inutiliza el gate en cualquier caso con WhatsApp
+## 197. `senales_gate` marca el audio y el vídeo como «binario opaco sin espejo MD», y eso inutiliza el gate en cualquier caso con WhatsApp
 
 > Medido el 2026-09-09 montando la sala de lectura de `W-02VEKE`: **132 señales, de las que
-> 129 eran audio, vídeo, imagen o zip**.
+> 129 eran audio, vídeo, imagen o zip**. Razón señal/ruido **2:132**.
+>
+> **Segunda población, en otro caso y por otra sesión** (aportada el 2026-09-09 por la sesión
+> «Inventario de demanda Sergio», sobre `W-02USSI`): **292 señales — 170 «bundle sin parte», 89
+> «binario opaco sin espejo» y solo 12 útiles** (W-codes ajenos). De esas 89, **67 son audio**.
+> Razón señal/ruido **12:292**.
+>
+> Dos casos distintos, dos sesiones distintas, el mismo defecto: el gate no es ruidoso *en este
+> expediente*, es ruidoso **por construcción**. Y la segunda medición añade un ángulo que la
+> primera no tenía — la señal «bundle sin parte» aporta 170 de las 292, así que **agregar por
+> tipo antes de presentar no basta**: hay al menos dos señales que hay que acotar, no una.
 
 **El defecto.** `senales_gate` (`scripts/preclasificar.py`, señal (c)) marca toda fila cuya
 extensión esté en `_EXT_OPACAS` y no tenga espejo MD en `_cobertura.json` con estado
@@ -8098,7 +8108,7 @@ para todos ellas, y no dice «esto es ambiguo» sino «esto es un audio».
 **El efecto medido en W-02VEKE**: 291 filas activas, de las que 120 son `.opus` de tres
 exports de WhatsApp más 4 `.mp4`, 1 `.m4a`, 1 `.mkv` y 6 `.jpg`. Resultado: **132 señales**
 en un caso donde lo genuinamente ambiguo eran **dos** (un expose de otro W-code adjuntado
-en un chat, y el documento de `MEJORAS #188`). Con la razón señal/ruido a 2:132, el gate
+en un chat, y el documento de `MEJORAS #196`). Con la razón señal/ruido a 2:132, el gate
 deja de ser un filtro: o se lee entero —y son 132 líneas por revisar a mano— o se ignora,
 que es lo que hará cualquiera a la segunda vez.
 
@@ -8123,11 +8133,35 @@ sueltas no.
 verlo **rojo** contra el código actual antes de arreglarlo. Un test con solo el `.pdf` pasa
 hoy y pasaría después: no prueba nada.
 
+**Un tercer dato, del mismo montaje y sobre otro helper del mismo paso** (medido el
+2026-09-09 sobre el plan persistido de `W-02VEKE`): `emparejar_exports_whatsapp` devolvió
+**0 de 3**. Exige que el basename sea exactamente `_export_original.zip` —el que deja
+`whatsapp_intake.deposit_export`— y los tres exports del caso se llaman
+`Chat de WhatsApp con <nombre>.zip` y `WhatsApp Chat - <nombre>.zip`, que es como los
+nombra la exportación de E&V. **La sesión «Inventario de demanda Sergio» midió 0 de 5 en
+`W-02USSI`**, con el agravante de que allí los chats son `_chat.docx` y falla también la
+segunda condición.
+
+Lo que hace este dato incómodo es cómo apareció: en `W-02VEKE` los tres exports **sí**
+quedaron excluidos y con su `duplicado_de`, así que el resultado final fue correcto — porque
+**los excluí a mano** en el script de la corrida. El helper estaba inerte y su inercia no
+dejó rastro: hice su trabajo sin notar que no lo hacía él. Dos casos, dos sesiones, cero
+emparejamientos automáticos, y en uno de los dos el defecto quedó tapado por trabajo manual.
+Ver [[feedback-guarda-inerte-comprobar-el-otro-valor]].
+
+**Entrada hermana, y por qué NO se fusionan.** La sesión «Inventario de demanda Sergio»
+trae una entrada sobre la **causa** en el censo: `clasificar_ruta` (`core/sala_maquina.py:47`)
+no conoce el audio, así que un `.opus` cae al `else` del despacho y sale `sin_soporte` — 67 de
+los 73 `sin_soporte` de `W-02USSI` son audio, el 92%. Esta entrada describe el **síntoma en el
+gate**, y **sigue siendo necesaria aunque esa se construya**: las imágenes y los zips no van a
+tener espejo nunca, así que la señal seguiría disparando. Cablear el audio reduce el ruido; no
+lo cierra. Cuando esa entrada tenga número, cítese aquí.
+
 **Disparador de promoción.** Medio. No corrompe datos ni bloquea: degrada el gate a ruido.
 Sube en cuanto haya un segundo caso con export de WhatsApp, que es el flujo normal de los
 expedientes de E&V.
 
-## 190. `drive_accesible` está definida dos veces, con la misma condición y en dos sitios
+## 198. `drive_accesible` está definida dos veces, con la misma condición y en dos sitios
 
 **Qué pasa.** La decisión «¿se puede confiar hoy en el estado compartido del canon?» —que es
 lo que el resolver del workspace recibe como `drive_accesible`— está escrita dos veces:
