@@ -30,7 +30,7 @@ Pilar arquitectónico que no se rompe en ninguna fase: los documentos no anonimi
 | D1 | Cliente correcto: **ENGEL & VÖLKERS SPAIN, S.L.U.** (ID 27), no EV MMC SPAIN (ID 2). Rectificación pendiente en `_caso.md` local (hilo 1). | Mensaje usuario 2026-05-12 |
 | D2 | Posición procesal: **DEMANDADO**. CRM ya rectificado manualmente. En `CaseMeta` no se persiste posición; se anota en body del `_caso.md` como observación. | Mensaje usuario 2026-05-12 |
 | D3 | Pull del expediente 659 desde CRM **no se ejecuta** (bug `presigned_download_url` + intake manual ya completo). | STATUS §`[CRITICO-PRESIGNED-DOWNLOAD-BUG]` + usuario |
-| D4 | Subida al CRM tras procesamiento: **manual** vía UI sudespacho.net (drag-and-drop en gdocu). No hay endpoint REST de upload. Construirlo sería proyecto aparte. | Auditoría 2026-05-12 |
+| D4 | Subida al CRM tras procesamiento: **manual** vía UI sudespacho.net (drag-and-drop en gdocu). ⚠️ El «no hay endpoint REST de upload» de esta decisión quedó **desmentido el 2026-09-09**: el flujo existe y está documentado en `INTEGRACION_SUDESPACHO.md` §17. La decisión de hacer aquella entrega a mano sigue siendo válida como hecho histórico; para trabajo nuevo, usar el §17. | Auditoría 2026-05-12; corregido 2026-09-09 |
 | D5 | Política de anonimización primera pasada: `SALTAR` (idempotente). Si la verificación detecta sistemáticos, relanzar afectados con `REPROCESAR`. | Plan 2026-05-12 |
 | D6 | Adaptación de `core/anon/deanonimizar.py` para que lea `_mapa_caso.json` además del legacy `<doc>_mapa.json`. Sesión técnica dedicada (hilo 3). | Auditoría 2026-05-12 |
 | D7 | Este caso inaugura `tests/fixtures/anon/SaRS1/` como primer fixture gold-standard del proyecto. | Plan 2026-05-12 |

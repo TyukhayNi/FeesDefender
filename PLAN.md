@@ -38,6 +38,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 21 | [Las doce acciones del informe de Codex sobre el alta](#siguiente-alta-codex-las-doce-acciones-del-informe-de-codex-sobre-el-alta-de-expedientes) | **9 de 12 cerradas** (1, 2, 3, 4, 5, 7, 10, 11 y **6 salvo su checklist** — PR #299); 8 encargada a la sesión hermana; **9 y 12 sin empezar**, las dos dimensionadas el 2026-09-06 | **disparador: encargo expreso de Nikolai del 2026-09-05.** Siguiente: la **12** es la más barata de las dos — `_apertura_v1.json` ya tiene `ronda_id`/`iniciada`/`terminada` y solo falta llevarlos al evento durable de `registrar_cierre_v1` | medio |
 | 22 | [El arnés de tests: paralelismo, doctrina anti-trampa y las dos técnicas que faltaban](docs/superpowers/plans/2026-09-06-arnes-de-tests-paralelismo-y-propiedades.md) | **Fases 0-3 ✅** (paralelismo + doctrina + `hypothesis`); **R1 de Codex sobre el diff adjudicada: `NO-SHIP`, 8 hallazgos, 8 confirmados, 0 refutados, remediados en `691f5e4`** (acta: `docs/superpowers/specs/2026-09-06-arnes-de-tests-r1-adversarial-review.md`; adjudicación en el §4 del plan). **Las cinco fases ✅ CERRADAS, y DOS rondas adversariales adjudicadas** (R1: 8 hallazgos, 8 confirmados, `691f5e4`; **R2 sobre el diff completo, escalada autorizada por Nikolai**: 10 hallazgos, 10 confirmados, `4875c53`). Actas en `docs/superpowers/specs/2026-09-06-arnes-de-tests-r{1,2}-adversarial-review.md`; adjudicaciones en los §4 y §8 del plan. Suite **4.698 / 0 fallos / 0 errores / 88 skip**; verja 203 s con dos semillas; cobertura del diff **96%**; arnés **13/13 mutantes muertos**. **R2 declaró INCOMPLETAS 3 de las 8 remediaciones de R1**, las tres por remediar el caso y no la clase — y su H-01 acabó **retirando** código (marca `xdist_group`, `--dist loadgroup` y su guard): la regla pasó a «ningún test escribe en el árbol de producción», sin escotilla | **disparador: decisión expresa de Nikolai del 2026-09-06.** Medido ese día: la suite tardaba **371 s** y la regla de las dos semillas **743 s (12,4 min)** — un precio que la hacía saltable bajo presión, y ya costó ocho rojos que tres merges no vieron. Con `-n auto`: **94 s** y **243 s**, con el conteo **idéntico** (4.656 / 0 / 0 / 88 `skip` / 6 `xfail`) y **cero tests serializados**. `--runslow` en paralelo: 136 s, también verde. **Nada de esto estaba en `MEJORAS_FUTURAS.md`**: es entrada nueva, no promoción | bajo |
 | 23 | El test del renovador del mutex daba rojos que no significaban nada (`MEJORAS #145` mitad de test, y **`MEJORAS #171` completa**) | ✅ **CERRADA el 2026-09-07 (PR #302, `3420d4d`)** — la propiedad se **reparte en dos**, porque un plazo de pared no puede probar las dos: el **mecanismo** en `test_RENUEVA_mientras_el_cuerpo_corre` (la señal la da el propio `renovar`, la única lectura del `.lock` va bajo el guard, el reloj falso avanza en micras y el presupuesto son 20 latidos **derivados** de `_FRACCION_LATIDO`) y la **puntualidad** en `test_el_renovador_DESPIERTA_dos_veces_por_lease`, nuevo, que lee el plazo con el que el renovador se va a dormir y exige `<= lease / 2` **sin reloj**. `tests/_espera_mutex.py` deriva el presupuesto y nombra la causa cuando el renovador muere; migrados los dos hermanos que tenían el mismo bucle a mano (r11, r12). **6/6 mutantes muertos por su frontera** (`python -m tests._mutantes_renovacion_mutex`) | **disparador: rojo real en la suite completa de la rama del PR #301, 2026-09-07.** Medido ese día: con 6x de sobresuscripción el latido llega a **1,00-1,03 s** de su periodo de 1 s —nunca tarde— y el presupuesto del bucle **crece** con la carga (3,05 s → 4,09 s), o sea que «el hilo no llega a tiempo» **no** lo explica: el margen mejora cuando la máquina sufre. Lo explica que el renovador **muera**, y el test se lo provocaba abriendo el `.lock` ~50 veces por segundo justo mientras el renovador lo reemplaza. Y `MEJORAS #171` —la entrada propia de este flaky, abierta el 06 con el disparador «que vuelva a salir en un cierre»— **consumió su disparador al día siguiente** y queda cerrada: su diagnóstico («la carga de los 12 workers se come la ventana de renovación») quedó **desmentido por la medición**, y la causa verdadera llevaba escrita en `#145` desde el 03. Dos entradas del mismo fichero explicaban el mismo rojo con causas incompatibles. **La mitad de PRODUCCIÓN de `#145` sigue ABIERTA**, con su presupuesto de dos rondas y su disparador propio — y ya no la levantará un rojo de la suite, que es deliberado y está declarado en la entrada | bajo |
+| 24 | [Alta canónica de un poder en el CRM desde el PDF](#siguiente-alta-poder-alta-canónica-de-un-poder-en-el-crm-desde-el-pdf-con-su-procurador-enganchado) | **pendiente — diseño escrito, sin construir** | disparador: decisión expresa de Nikolai el 2026-09-08, al cerrar el saneado del fichero de poderes. Contrato medido y escrito **entero**: el elemento en `docs/INTEGRACION_SUDESPACHO.md` §16 y la **subida al gestor en §17** (cerrada el 2026-09-09). Queda **integrar, no descubrir**. Gates duros: dos endpoints devuelven **201 sin hacer nada** (`relation_element` con el lado equivocado §16.3, `documents/multiple` §17.2), y el listado filtrado **tarda en indexar**, así que un censo negativo no prueba ausencia (§17.4) — por confiar en él se subió un certificado duplicado el 2026-09-09 | medio |
 
 > **Fila 23 añadida el 2026-09-07, al final y sin reordenar, igual que las anteriores.** Es la mitad
 > de test de `MEJORAS #145`, no una promoción de la entrada: la de producción se queda donde está
@@ -1871,6 +1872,14 @@ Tres reglas que gobiernan TODO pipeline de procesado (aplican a `[SIGUIENTE-MOTO
 > El diseño queda de referencia para retomarlo. Estudio de mercado 2026 + opciones de motor (OSS local
 > Docling(MIT)>MinerU(AGPL) / **Mistral OCR cloud+ZDR+DPA como opción de fase de construcción** / Azure
 > contenedor para manuscrito, post-anonimización) en §F del doc.
+>
+> ⚠️ **La opción «Mistral OCR cloud» tiene MEDICIÓN EN CONTRA para el corpus de procuradores
+> (2026-09-08).** Sobre 10 adjuntos reales de `procesal@`: **8 no necesitan OCR** (los PDFs de LexNET
+> traen capa de texto limpia), el único escaneado íntegro lo **recuperó la escalera local** en 28 s
+> (0 → 3.003 chars) y el traslado de 91 páginas pasó de 7 páginas ciegas a 2 —siendo una de esas dos
+> una **fotografía**, donde no hay texto que leer—. Detalle y las dos hipótesis falsas que se
+> descartaron por el camino, en `MEJORAS #90`. **No generaliza a otros corpus** (las cuentas anuales
+> de W-02VND1 son otra población), pero sí retira el argumento «el local flaquea con LexNET».
 
 > **Plano completo y memoria de diagnóstico: [`docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md`](docs/superpowers/plans/PLAN_MOTOR_DOCUMENTAL.md).**
 > Consolida `MEJORAS #21/#24/#39/#42/#43/#41`. **Solo diseño escrito; sin código todavía.**
@@ -2257,7 +2266,50 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   revisar** (§5). **`expedientes_judiciales` MEDIDO** (2026-09-07, judicial de prueba 683): mismo slug pelado,
   mismas carpetas, sin contaminación cruzada — y las relaciones son **multi-elemento**, así que la
   idempotencia va por PAR `(elemento, id)`, no por «¿tiene alguna relación?».
-  **[SIGUIENTE]:** el paso del webmail dentro de la app. ⚠️ Residuos de prueba en el 636, sin borrar (borrado en CRM = decisión de Nikolai).
+  **Rev. 5 (2026-09-07, tarde) — medido CON ESCRITURAS contra el 636 y el 683.** Se cerraron las
+  tres incógnitas del §8 que estaban sin probar: `cookies`/`dataHash` vacíos **escriben** sobre un
+  correo indexado; re-postear el relate **sí** devuelve el manifiesto de un correo ya relacionado
+  (el mecanismo del §5.5 funciona — y ojo, `relacionar()` NO sirve, corta con `ya_estaba`);
+  y **`relate/attachments` DUPLICA**: mismo `att_id`, mismo nombre, mismo `mail_id`, dos POST →
+  dos documentos (censo 3→4→5). Eso hace **portante** la guarda por censo del cliente.
+  **Y un hallazgo que ninguna ronda había mirado:** `findRelations` es una vista **POR COPIA** —un
+  Message-ID tiene N filas `mail`, una por cuenta (3 copias medidas, ctas 11/13/15)— mientras la
+  relación que escribe el relate es **global**. Así que la verificación del §4 daba **falso
+  negativo** sobre una escritura buena. Corregido en el spec §4.1: se verifica por
+  `related_register/{elemento}/{id}`, que **ya estaba cableado** en
+  `core.sudespacho_relations.get_relaciones`.
+  **`R1/H-05` REVERTIDO de «refutado» a «confirmado»** (spec §12): el «medido 0/12» de la rev. 4 se
+  hizo sobre 12 correos todos de copia única, así que la muestra no podía mostrar el fenómeno.
+  Backlog abierto: `MEJORAS #176-#179`.
+  **Estado al 2026-09-09: R1 CONSUMIDA y dos rebanadas de tres CONSTRUIDAS.**
+  Spec **rev. 2** (`docs/superpowers/specs/2026-09-07-f3-cableado-bandeja-y-verificacion-design.md`),
+  con la **R1 adversarial de Codex adjudicada en su §15: NO-SHIP, 14 hallazgos, 14 confirmados,
+  0 refutados** (acta hermana `…-r1-adversarial-review.md`, informe literal y digest verificado).
+  Tres de los catorce cambiaron el ALCANCE, no la redacción: H-01 hizo crecer la pieza hacia la
+  ingesta, H-02 la encogió —**§5 retirado**: la copia sobre la que se escribe **la elige el
+  servidor**, medido— y H-06 cambió el contrato de `procurador_relate`.
+  - ✅ **Rebanada 1 — el inventario de adjuntos** (H-01, el crítico): de Gmail a la cola, con los
+    tres estados `None`/`()`/con-nombres. 10 tests, 9 mutantes muertos.
+  - ✅ **Rebanada 2 — los tres hechos del archivado** (H-06): `ArchivoResult` con `relacion` y
+    `documentos` por separado, `verificado` plano eliminado. 8 tests, 6 mutantes muertos.
+  - ⬜ **Rebanada 3 — el orquestador, y la ÚNICA que escribe en el CRM.**
+  Backlog abierto: `MEJORAS #176`–`#184`.
+  **Estado anterior (2026-09-07, noche): el diseño escrito esperaba dos cosas de Nikolai.**
+  Spec: `docs/superpowers/specs/2026-09-07-f3-cableado-bandeja-y-verificacion-design.md` (PR #306,
+  commits `f4eb7ac` + `904cff4`). Decisiones D1-D7 tomadas. **Pendiente: (1) que Nikolai revise el
+  spec —puerta del proceso, no se escribe el plan antes—, y (2) si se mide el §11.4 (que las N
+  copias de un Message-ID lleven los mismos adjuntos: asumido, no cotejado, ~30 min).** Después:
+  ronda 1 adversarial **sobre el diseño**, y solo entonces construir. Son 2 rondas por radio de daño.
+  **[SIGUIENTE]:** dos piezas, en este orden. **(a) el cableado** — `archivar()` **no tiene
+  ningún llamador de producción** (`git grep procurador_relate` solo da su test; la bandeja sigue
+  diciendo «NO escribe en el CRM (eso es F3)» en `streamlit_app.py:2699`), y antes de cablearlo hay
+  que mover la verificación al lado del expediente (`MEJORAS #176`). **(b) el paso del webmail**,
+  que sigue siendo el paso 0 real: medido el 2026-09-07, **indexado ⟺ Ana lo relacionó** (las 23
+  filas de `cuenta 20` las creó `id_creador=23` = Ana, y `fecha_creacion` sigue su jornada, no la
+  llegada del correo). Sin ese primer relate, `archivar()` no puede empezar nada — solo completar.
+  ⚠️ Residuos de prueba sin borrar en el **636** (5 docs, dos de ellos las copias de
+  `ZZ BORRAR test idempotencia adjuntar 2026-09-07.docx`) y en el **683** (relación con un correo
+  de marketing). Borrado en CRM = decisión de Nikolai.
 - **F4 — Renombrado + OCR + aprendizaje.** ⬜ Contenido del adjunto → nombre; store
   de correcciones few-shot (§10).
 - **F5 — Grabaciones.** ⬜ Descarga de enlaces (WeTransfer caduca) + fallback manual.
@@ -3012,6 +3064,8 @@ trabajo para que no contamine).
 > Lista plana, reciente primero. Promover a agrupación por área cuando supere ~30
 > entradas (lo avisa `session_close`).
 
+- ✅ **[PODERES-CRM-SANEADO]** El fichero `poderes` del CRM, de 85 registros sucios a un contrato escrito entero. **Saneado por API con verificación por lectura en cada bloque**: 431 campos contra la hoja de cambios (0 discrepancias), 86 documentos renombrados conservando `nombreoriginal`, **0 alteraciones no pedidas** contra un snapshot previo de los 85, 22 vínculos añadidos y 0 perdidos. El hallazgo que lo justificó: **la vigencia no vive en ningún campo del CRM, la lleva el certificado de apoderamiento**, y al leerlos salieron **16 de 85 caducados** que el CRM presentaba igual que los vivos (diez apud-acta de la cascada de 2021, seis notariales rusos con plazo expreso, más uno que vencía a cinco días). El cruce contra el registro judicial de la sede encontró **cinco apoderamientos que faltaban**, cuatro vivos de E&V: bajados sus certificados, dados de alta con el PDF en el gestor (`#72` completado, `#87`-`#90` nuevos; el fichero pasa a **89**). **Contrato documentado de punta a punta** en `docs/INTEGRACION_SUDESPACHO.md` **§16** (el elemento, ocho apartados) y **§17** (la subida al gestor en tres pasos, descubierta **leyendo los bundles JS del front** en vez de capturando un HAR — más barato, no exige ejecutar la operación en la UI, y da los nombres de clave literales). Dos endpoints que devuelven **201 sin hacer nada** quedan en `DEAD_ENDS.md`. **Dos rondas adversariales de Codex, las dos `NO-SHIP`: 13 hallazgos, 13 confirmados, 0 refutados**, y **nueve eran la misma clase** —el sitio viejo que quedaba mintiendo—, incluida una en un plan ajeno con `estado: vigente`. Actas: [R1](docs/superpowers/specs/2026-09-08-poderes-crm-contrato-r1-adversarial-review.md) y [R2](docs/superpowers/specs/2026-09-09-poderes-crm-subida-r2-adversarial-review.md). Backlog: `MEJORAS #185` (el atlas oculta ≥28 elementos), `#186` y `#187`. **PR [#307](https://github.com/TyukhayNi/FeesDefender/pull/307)** (2026-09-09). **Deuda viva, y es de Nikolai: está en el bloque `[SIGUIENTE-ALTA-PODER]`** — `#79` y `#86` sin apoderamiento detrás en el registro, 7 poderes cuyo compareciente no es Nikolai y quedan **sin verificar**, el duplicado `#54`/`#56`, el par `#17`/`#18` con el mismo PDF, `#1` y `#13` con fechas a 794 y 218 días del documento, y `#35`, que no es un poder y para el que el enum `Formato` no tiene valor
+
 - ✅ **[SIGUIENTE-DOC-LIBREOFFICE]** Los `.doc` dejan de ser ilegibles en la sala de máquina: ruta `ofimatica` (`.doc`/`.dot`/`.odt`/`.ott`/`.ppt`/`.pps`/`.pptx`/`.odp`) → LibreOffice headless con perfil efímero, verificado por resultado → PDF buscable en `01_OCR/` → camino PDF; sin conversor, `sin_soporte` con la causa en la nota y aviso en `plan`/`apply`. Era la fila 10 de la cola y la acción 10 de la fila 21 (el mismo ítem, dos filas): cerrado como **PR #294** (`63c8aa2`), R1 de Codex 5/5 confirmados y adjudicados en `docs/superpowers/plans/2026-09-05-accion-10-ofimatica-en-la-sala-de-maquina.md` §4. `MEJORAS #61` punto `.doc` `[RESUELTO]` (2026-09-05)
 
 - ✅ **[GITIGNORE-REGLAS-INERTES]** `.claude/settings.local.json` estaba trackeado pese a figurar en el `.gitignore` — y `.gitignore` **no aplica a lo que ya está en el índice**, así que esa línea era una **regla inerte**: escrita, visible y sin morder. Síntoma: no se podía crear una rama desde la UI («Haz commit o stash de los cambios»), porque Claude Code le añade permisos al conceder autorizaciones. Sale del índice (queda en disco), plantilla `.example`, y un **guard que cierra la clase**: ningún fichero trackeado puede estar ignorado por un `.gitignore` versionado. **Correr el guard fue la mitad del trabajo**: dio cinco positivos, uno **falso del propio guard** (decidía desde `check-ignore -v`, que reporta también las negaciones, así que `.env.example` salía acusado por su propio rescate) y **cuatro verdaderos** — los `.claude/skills/**/logs/README.md`, ignorados de verdad por `logs/` y sin ninguna negación que los rescatase, contra lo que el encargo afirmaba. Tres afirmaciones del encargo se cayeron al medirlas, entre ellas que un `!ruta` a secas sirva de remedio: **no rescata un fichero cuyo padre está excluido por un patrón de directorio**, hacen falta tres líneas. **R1 de Codex (`LISTA-CON-CAMBIOS`, 4 hallazgos, 4 confirmados)**; el caro solo se ve ejecutando: con el `git init` del laboratorio roto **los cinco tests quedaban verdes** mientras las sondas se añadían con `-f` al índice del repositorio **padre** — el guard escrito para detectar contaminación del índice contaminaba uno de verdad, callado. **10 mutantes, 9 matados y uno superviviente declarado**: la anulación de `core.excludesFile` no sostiene la corrección, y dejé de atribuirle la garantía en vez de enviar una línea inerte dentro del propio guard. Acta: [`2026-09-04-gitignore-reglas-inertes-r1-adversarial-review.md`](docs/superpowers/specs/2026-09-04-gitignore-reglas-inertes-r1-adversarial-review.md). **PR [#273](https://github.com/TyukhayNi/FeesDefender/pull/273)** (`501db93`) (2026-09-04)
@@ -3053,3 +3107,106 @@ trabajo para que no contamine).
 - ✅ **[ESTILO-DE-LA-CASA]** Infraestructura de escritura del despacho (claridad + persuasión + no-IA) — 2026-06-17, sin hash registrado · plano `PLANO_Code_skill_estilo_casa.md`
 - ✅ **[CRITICO-PRESIGNED-DOWNLOAD-BUG]** Descarga del Gestor Documental (bug presigned URL) — RESUELTO 2026-06-10, sin hash registrado · detalle `docs/DEAD_ENDS.md`
 - ✅ **[IDEA-GOBERNANZA-DOCS]** Malla de referencias cruzadas + regla de promoción backlog→`PLAN.md` — RESUELTO 2026-06-10, sin hash registrado
+
+## [SIGUIENTE-ALTA-PODER] Alta canónica de un poder en el CRM desde el PDF, con su procurador enganchado
+
+**Disparador: decisión expresa de Nikolai el 2026-09-08**, al cerrar el saneado del fichero de
+poderes: *«quiero que a la próxima, cuando haga un poder y te lo dé, FD pueda crear la ficha de poder
+canónica y relacionarla con la ficha del procurador ya creada antes por Ana»*.
+
+**Qué es.** Dado un PDF de poder (el certificado apud-acta del Archivo Electrónico, o la escritura
+notarial con su traducción), dar de alta el registro en el elemento `poderes` **ya canónico** —los
+tres Selects rellenos, el título con la plantilla, la referencia en su campo y la vigencia en
+`Notas`— y **vincularlo al poderdante y al procurador que ya existen** como fichas, sin crear
+duplicados.
+
+**Por qué es construible hoy y no antes.** El 2026-09-08 se hizo a mano sobre los 85 registros del
+fichero, así que el contrato entero está medido y escrito: `INTEGRACION_SUDESPACHO.md` **§16**
+(esquema, enums, relaciones, PUT parcial, direcciones `left.`/`right.`, encoding, renombrado de
+documentos y la convención de la casa). Lo que queda es cablearlo, no descubrirlo.
+
+**Las piezas, en el orden en que se pueden construir:**
+
+1. **Extractor del certificado apud-acta.** El PDF del Archivo Electrónico es **texto nativo con
+   formato fijo** y trae, ya estructurado: referencia del apoderamiento, compareciente y entidad
+   representada, general del 25.1 LEC y/o especial del 25.2 con sus facultades, `PARA INTERVENIR EN`,
+   el apoderado con **NIF y colegio**, y `VIGENCIA: DESDE … HASTA …`. Rinde el registro entero sin
+   intervención. ⚠️ Las etiquetas del PDF salen **desordenadas** respecto al contenido (el extractor
+   las emite en orden de caja): hay que anclar cada dato por su propio patrón, no partir por etiqueta
+   en secuencia. Prototipo funcionando de esta sesión, fuera del repo.
+2. **Resolución del procurador contra su ficha.** Es el corazón de lo que pide Nikolai: el
+   certificado da **NIF**, y `procuradores_propios` tiene `nif_cif` — así que el enganche debe ir
+   **por NIF**, que es unívoco, y no por nombre. Por nombre hay que apoyarse solo como respaldo, y
+   entonces con cuidado: `1apellido`/`2apellido` están **vacíos en los 79** procuradores y el nombre
+   completo vive en `nombre` en una sola cadena, con «DON/DOÑA» en 12 y con estado del tipo
+   «JUBILADO - NO USAR» metido dentro en 4. Si no hay ficha, **parar y preguntar**: dar de alta un
+   procurador es otra operación (y un apoderado que resulte ser **abogado** no va a
+   `procuradores_propios` en absoluto — de los 47 apoderados del fichero, 3 eran abogados).
+3. **Resolución del poderdante.** Igual: por NIF/CIF contra `clientes_propios`. Si no existe, **no
+   crearlo**: en esta sesión apareció un poder (`#85`) cuyo poderdante —una sociedad, con su CIF en
+   el certificado— no está entre los 230 clientes propios; y dar de alta un cliente es una decisión,
+   no un efecto colateral del alta de un poder.
+4. **El alta y los vínculos.** `POST /api/element_register/poderes` con los ocho campos, y luego
+   **`left.clientes_propios.{id}`** para el poderdante y **`right.procuradores_propios.{id}`** para
+   el procurador. Aquí el gate es duro: el POST de relación **devuelve 201 y puede no crear nada**
+   (`DEAD_ENDS.md`), y el borrado de un vínculo solo está validado para un caso estrecho (§17.5),
+   así que cada uno se verifica con
+   `related_register` y el alta **falla en alto** si la lectura desmiente al status.
+5. **El documento al gestor. ✅ CONTRATO CERRADO (2026-09-09, §17); falta integrarlo.** Los tres
+   pasos son `GET /api/files/presigned_upload_url` → `PUT` de los bytes a la URL S3 →
+   `POST /api/documents` con `origen:"fuploaders3"`, el identificador en **`origen_id`** (no en
+   `fileIdentifier`), `id_carpeta` como **int** y `relatedRegisters:["<elemento>:<id>:left"]`.
+   Nombrar según §16.8 y volcar el título a `asunto` (§16.7 — el renombrado preserva
+   `nombreoriginal`). **No usar `documents/multiple`**: 201 con id de evento y no crea nada (§17.2).
+
+**Gates y avisos que no se pueden saltar:**
+
+- **Verificar por resultado, nunca por status** — en este elemento hay un 201 que miente y un 200
+  que guarda mojibake.
+- **Comprobar que todo valor a escribir es representable en cp1252** antes del PUT/POST.
+- **Filtrar el N.I.G.** del ámbito que declara el certificado: el proyecto lo prohíbe en payloads, y
+  el documento oficial lo trae dentro.
+- **El alta rápida de la UI no pide los Selects** (solo `Fecha_Poder`, `Numero_Poder` y `Notas`), que
+  es de donde venían los 52 `Tipo = Ninguno`: el alta por API los rellena **siempre**.
+- **La `Fecha_Poder` es la del documento**, no la del día del alta. En el fichero viejo, 5 de 52 no
+  cuadraban y 2 con desvíos de 218 y 794 días.
+- **Los notariales rusos llevan plazo expreso** (`сроком на N лет`) y por tanto caducan; el extractor
+  del apud-acta no vale para ellos y su vigencia sale de la traducción jurada.
+
+**Alcance de la primera entrega, a decidir con Nikolai:** lo barato y de mayor rendimiento es el
+camino **apud-acta electrónico** (59 de los 85 del fichero, y el que se repite cada vez que Ana da de
+alta un procurador nuevo), dejando el notarial para una segunda pieza. Los notariales son pocos, muy
+heterogéneos y con OCR de por medio.
+
+**Radio de daño y rondas: DOS — una sobre el diseño y una sobre el diff.** La regla de `CLAUDE.md`
+dice «destruir **o corromper** datos de cliente», y esta pieza puede corromperlos sin borrar nada:
+un vínculo al poderdante equivocado deja un poder colgando de un cliente que no lo otorgó. No es
+hipotético — el saneado del 2026-09-08 encontró ese caso exacto (`#56`), y encima el `DELETE` de
+vínculo solo está validado para `right.gdocu` sobre un `poderes` (§17.5), no para el vínculo del
+poderdante, así que la reversión de lo que importa aquí **no está garantizada**.
+Revisión adversarial la ejecuta Codex, la adjudica Claude.
+
+> Esta línea decía «1 ronda» porque recortaba el predicado de la regla a «destruir». Lo levantó la
+> R1 sobre este mismo diff, y es el defecto de [[feedback-no-redefinir-mi-regla-de-parada]]: cuando
+> mi propia regla me obliga a parar, invento un matiz.
+
+**Deuda del saneado que este trabajo hereda** (no bloquea; actualizada el 2026-09-09 tras cruzar el
+fichero contra el registro judicial):
+
+- **cerrado:** los 5 apoderamientos que faltaban se localizaron en la sede y están dados de alta con
+  su certificado (`#72` completado, `#87`-`#90` nuevos). El fichero pasa de 85 a **89** registros.
+- **sin poderdante vinculado, y sigue pendiente** (verificado en el CRM el 2026-09-09): `#82`,
+  `#85` y `#86` continúan **sin cliente asociado**, así que entrar por la ficha del cliente no los
+  encuentra. El `#85` necesita una decisión previa: su otorgante **no existe** entre los clientes
+  propios, y dar de alta un cliente no se hace como efecto colateral (paso 3 de este bloque).
+- **abierto, y es decisión de Nikolai:** `#79` y `#86` **no tienen apoderamiento detrás** en el
+  registro judicial —siendo apud acta de E&V con él como compareciente, deberían aparecer—; el `#35`
+  no es un poder y el enum `Formato` no sabe describirlo; el duplicado demostrado `#54`/`#56` (mismo
+  poder, y el `#56` con el cliente equivocado vinculado); el par `#17`/`#18`, que comparte PDF byte a
+  byte; y `#1`/`#13`, con la fecha del CRM tan lejos de la del documento que probablemente sean dos
+  poderes en un registro, así que se revisan y no se corrigen.
+- **medido y sin resolver:** 7 poderes cuyo compareciente **no es Nikolai** (`#11`, `#52`, `#55`,
+  `#57`, `#58`, `#66`, `#85`) quedan fuera del filtro del portal, así que su estado en el registro
+  sigue **sin verificar** — no «vigente», sino sin mirar. Y el enum `Apoderado` no tiene valor para
+  **graduado social**: en `#89` y `#90` va `Abogado` con la salvedad escrita en `Notas`, por decisión
+  de Nikolai el 2026-09-09.

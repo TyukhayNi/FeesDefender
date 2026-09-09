@@ -3,7 +3,7 @@ estado: propuesto
 autor: Claude Code
 fecha: 2026-09-08
 revision: 2
-abre: MEJORAS #179, MEJORAS #180, MEJORAS #181
+abre: MEJORAS #191, MEJORAS #192, MEJORAS #193
 rondas_previstas: 1
 motivo_una_ronda: "no decide quien escribe sobre que copia ni puede destruir datos de cliente: lee el expediente y produce un escrito y un informe"
 ---
@@ -126,7 +126,7 @@ resoluciones, **todas leídas, ninguna inferida**:
 **Nunca del nombre de la carpeta.** El nombre del caso es una etiqueta legible, no una fuente
 de identidad — y `core/casos/case_locator.py` demuestra por qué: su `buscar()` resuelve solo
 por nombre de carpeta y eso ya produjo una carpeta sombra en el Drive del cliente el
-2026-09-08 (`MEJORAS #176`).
+2026-09-08 (`MEJORAS #188`).
 
 ## 5. El fondo genérico: la cadena de devengo
 
@@ -234,7 +234,7 @@ reclamación de E&V, con 3.335), y el encargo de venta sale **`low` con la pági
 siendo el documento que contiene la estipulación octava. Los dos son eslabones nucleares.
 
 **Cautela obligatoria en el uso del censo:** `estado: empty` mezcla hoy «no tiene texto» y
-«sí lo tiene y no se pudo leer» (`MEJORAS #178`). Mientras eso no se separe, la skill lee
+«sí lo tiene y no se pudo leer» (`MEJORAS #190`). Mientras eso no se separe, la skill lee
 también el campo `nota`: un espejo de 0 bytes cuya nota empieza por «fallo al procesar» es un
 **fallo**, no un documento vacío, y se re-procesa antes de decidir nada.
 
@@ -291,7 +291,7 @@ escribir la rev. 1 de este spec. Las dos merecen su sitio por lo que costó desc
 **con un espacio** (`ECLI:ES:AP B:2002:12928`). «Normalizarlo» a `ES:APB` hace que la búsqueda
 por ECLI **no devuelva nada**, y eso se lee como «la cita no existe». Buscar por **ROJ** ante
 cualquier resultado vacío antes de concluir ausencia. Va a `cendoj-descarga`, no aquí
-(`MEJORAS #181`).
+(`MEJORAS #193`).
 
 **La meta-regla, prestada de `CLAUDE.md`:** ante cada hallazgo, **«¿de qué frontera es esto un
 ejemplo?»** antes de remediarlo. Remediar el caso que el informe describe, y no la propiedad
@@ -408,14 +408,14 @@ prepara**.
 
 ## 14. Backlog que abre
 
-- **`MEJORAS #179`** — `.claude/skills/verificacion-anclada-fuente/SKILL.md` tiene **359
+- **`MEJORAS #191`** — `.claude/skills/verificacion-anclada-fuente/SKILL.md` tiene **359
   bytes NUL** de relleno tras la última línea, commiteados (blob `64f730f`). El texto
   decodifica bien como UTF-8, pero `file` lo llama `data` y **`grep` lo trata como binario**:
   la skill es invisible a cualquier búsqueda por contenido sobre `.claude/skills/`. Coste
   real: en esta misma sesión el comando que leyó las otras veinte skills no pudo leer esta.
   Falta además el guard: **ninguna verja comprueba hoy que un `SKILL.md` sea legible como
   texto**.
-- **`MEJORAS #180`** — `id_carpeta 304` (carpeta DEMANDA del expediente judicial) no está en
+- **`MEJORAS #192`** — `id_carpeta 304` (carpeta DEMANDA del expediente judicial) no está en
   `CARPETA_ID_TO_PATH`, y por eso los 23 documentos del judicial de W-02USSI fueron a
   `99_Sin categoria/622`. **No se añade unilateralmente**: `config.py` fija la regla de doble
   verificación porque la etiqueta-hoja `DEMANDA` es ambigua entre `Declarativo/Demanda` (ya

@@ -535,7 +535,7 @@ class TestAnclajeVerificable:
         assert dudoso.estado == "ausente"
 
     def test_un_fallo_de_extraccion_no_se_confunde_con_un_documento_vacio(self, cd):
-        """MEJORAS #178: `empty` mezcla «no tiene texto» y «no pude leerlo». La
+        """MEJORAS #190: `empty` mezcla «no tiene texto» y «no pude leerlo». La
         nota es lo único que hoy los separa, así que se propaga."""
         censo = {"1": [{"rel_path": "demanda.rtf", "estado": "empty", "chars": 0,
                         "nota": "fallo al procesar: 'utf-8' codec can't encode characters"}]}
@@ -678,7 +678,7 @@ class TestDondeEstaCadaCosa:
         `99_Sin categoria`. Un reference que no lo advierta invita al defecto."""
         t = self._texto()
         assert "99_Sin categoria" in t
-        assert "MEJORAS #180" in t
+        assert "MEJORAS #192" in t
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -690,10 +690,10 @@ Expected: FAIL — `FileNotFoundError` sobre `donde-esta-cada-cosa.md`.
 
 Crear `.claude/skills/demanda-honorarios-ev/references/donde-esta-cada-cosa.md` con **el contenido del §6 del spec**, expandido así:
 
-1. **Cabecera con la regla en una frase:** «los documentos se resuelven por CENSO y por ROL, nunca por ruta canónica», y la medición que la sostiene (los 23 + 9 documentos de W-02USSI en `99_Sin categoria` y `99_Otros` por el `id_carpeta 304` sin mapear, `MEJORAS #180`).
+1. **Cabecera con la regla en una frase:** «los documentos se resuelven por CENSO y por ROL, nunca por ruta canónica», y la medición que la sostiene (los 23 + 9 documentos de W-02USSI en `99_Sin categoria` y `99_Otros` por el `id_carpeta 304` sin mapear, `MEJORAS #192`).
 2. **Tabla del orden de preferencia** con las cuatro filas del §6 del spec: `_caso.md` → `sudespacho_expedientes[].doc_ids` y el rol `demanda_doc_id`; `_cobertura.json`; `indice_documental.yaml`; y el fallback «**no se adivinan rutas**: se dice qué falta correr (`scripts.sala_maquina apply`, `organizar-sala-lectura`) y se sigue con lo que haya, declarando qué eslabones quedan sin resolver».
 3. **Sección «El anclaje deja de ser un juicio»** con la regla del §6.1 y el puntero a `scripts/cruzar_documental.py::anclajes_sin_texto`.
-4. **Sección «Cautelas medidas»**: `estado: empty` mezcla «no tiene texto» y «no pude leerlo» (`MEJORAS #178`), así que se lee también `nota`; y basta una copia con `estado: ok` para sostener el anclaje.
+4. **Sección «Cautelas medidas»**: `estado: empty` mezcla «no tiene texto» y «no pude leerlo» (`MEJORAS #190`), así que se lee también `nota`; y basta una copia con `estado: ok` para sostener el anclaje.
 5. **Tabla «el eslabón y su documento»**: por cada uno de los cinco eslabones del §5, qué rol o qué patrón de nombre lo resuelve.
 
 - [ ] **Step 4: Run tests to verify they pass**
