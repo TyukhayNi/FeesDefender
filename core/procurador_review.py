@@ -54,6 +54,11 @@ class RobotProposal:
     # `None` significa «no consta», nunca «judicial por defecto» (R1/H-06).
     element: str | None = None
     attachment_names: dict[str, str] = field(default_factory=dict)
+    # ¿Se inventariaron los adjuntos del correo? `False` significa **no lo sabemos**
+    # —un item persistido antes de que la ingesta lo trajera—, y NUNCA «no había
+    # adjuntos». Sin esta distinción, `archivar` lee «sin pedidos» como «nada que
+    # subir» y confirma sin archivar el documento (R1/H-01, CRÍTICO).
+    adjuntos_inventariados: bool = False
     signals: dict[str, Any] = field(default_factory=dict)
     datos_expediente: dict[str, Any] = field(default_factory=dict)
     coincidencias: list[str] = field(default_factory=list)
@@ -75,11 +80,19 @@ _FIELD_COINCIDENCIAS = frozenset({
 })
 
 
-def from_intake_proposal(email_id: str, proposal: IntakeProposal) -> RobotProposal:
+def from_intake_proposal(email_id: str, proposal: IntakeProposal, *,
+                         adjuntos=None) -> RobotProposal:
     """Construye la pata *propuesta-del-robot* desde el ``IntakeProposal`` de F1.
 
     Es el contrato F1→F2: lo que el matcher propone se congela como snapshot para
     la terna, antes de que el humano actúe en la bandeja.
+
+    Args:
+        adjuntos: inventario de la fuente (``EmailMessage.adjuntos``). ``None``
+            significa **no inventariado** y deja `adjuntos_inventariados=False`;
+            una secuencia —aunque esté vacía— significa que se miró. Los nombres se
+            prerellenan con el ORIGINAL: renombrar es de la persona (D3), y
+            proponerlo desde el contenido es F4.
     """
     signals_dict = {
         k: getattr(proposal.signals, k, None) for k in _SIGNAL_FIELDS
@@ -94,9 +107,11 @@ def from_intake_proposal(email_id: str, proposal: IntakeProposal) -> RobotPropos
         confianza=proposal.match.confianza,
         carpeta_id=proposal.carpeta_id,
         carpeta=proposal.carpeta_sugerida,
-        attachment_names={
-            a.original_filename: a.proposed_name for a in proposal.attachments
-        },
+        attachment_names=(
+            {a.nombre: a.nombre for a in adjuntos} if adjuntos is not None
+            else {a.original_filename: a.proposed_name for a in proposal.attachments}
+        ),
+        adjuntos_inventariados=adjuntos is not None,
         signals=signals_dict,
         datos_expediente=dict(proposal.match.datos_expediente),
         coincidencias=coincidencias,
@@ -390,6 +405,9 @@ def _item_from_dict(d: dict[str, Any]) -> ReviewItem:
         carpeta_id=prop.get("carpeta_id"),
         carpeta=prop.get("carpeta"),
         attachment_names=prop.get("attachment_names") or {},
+        # Ausente en las líneas escritas antes de esta pieza: se lee `False`, o sea
+        # «no lo sabemos». Nunca se infiere «no había adjuntos» de un dict vacío.
+        adjuntos_inventariados=bool(prop.get("adjuntos_inventariados", False)),
         signals=prop.get("signals") or {},
         datos_expediente=prop.get("datos_expediente") or {},
         coincidencias=prop.get("coincidencias") or [],

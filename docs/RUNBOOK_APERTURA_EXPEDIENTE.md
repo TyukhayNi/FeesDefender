@@ -53,6 +53,8 @@ fecha: 2026-07-22
   `docs/DEAD_ENDS.md` (entrada "En un worktree, el `cd` de Bash al repo raíz apunta al
   PRINCIPAL, no al worktree") + memoria `feedback-worktree-vs-raiz-compartida` (recoge el
   facet de sobrescritura silenciosa de ediciones, sin conflicto de git).
+- **`[APER-64]` `_caso.md` vive en `00_Input/_caso.md`, NO en la raíz del caso.** Buscarlo
+  en la raíz devuelve «no existe» y parece que el alta no lo escribió. Comprobado el 2026-09-09.
 - **`[APER-40]` / W-02VUDR — Comandos de shell: PowerShell, no Bash.** Rutas con
   backslash (`.venv\Scripts\python.exe`) ejecutadas por un tool Bash (POSIX sh) pierden
   los backslashes (`exit 127`). Y **nunca** `Glob`/`grep` recursivo sobre `G:\` sin
@@ -410,6 +412,25 @@ python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> 
 (re-pull) basta `--folder-id`: `--team-id` se auto-deriva del `driveId` (la identidad sale de
 `_caso.md`; `--codigo-caso`/`--sufijo` no se pasan con `--case-id`).
 
+- **`[APER-59]` / W-04A6LI — El intake de correo termina en «OK Caso abierto» y deja el
+  material SIN OCR. Relanza `sala_maquina apply` SIEMPRE después de `--fuente email`.**
+  Medido el 2026-09-09: la corrida imprimió `Email: etiqueta '…' exportada a …` +
+  `OK Caso abierto: <case_id>`, código 0, con **43 `.eml` y 18 adjuntos en crudo** sin
+  atomizar y sin espejo. No encadena, no lo sugiere y **no deja pendiente durable**.
+  `MEJORAS #188`.
+  - **El OCR del correo SÍ está cableado**, no lo dudes: dentro de `apply` el orden lo
+    garantiza el código (`_atomizar_correo` → `_procesar_adjuntos` → `_construir_plan` →
+    OCR) y lo vigila `test_atomiza_antes_de_construir_el_plan_de_ocr`. Lo que falta es la
+    **segunda llamada**, que es tuya.
+  - **Lo que mete el adjunto en el OCR real es `--extraer-adjuntos`** (default desde el
+    PR #299): deja cada adjunto como fichero suelto en `00_Input/<lote>/`, y de ahí lo
+    coge el inventario. La copia del árbol atomizado (`01_Procesado/…/adjuntos/`) solo
+    recibe **extracción de texto** (`.contenido.md`): un PDF escaneado ahí sale
+    `pendientes_vision`, sin OCR. Con `--no-extraer-adjuntos` ese adjunto se queda sin
+    texto y nadie te lo dice.
+  - La segunda pasada es **incremental**, no un re-OCR: el plan compara el inventario de
+    `00_Input` contra `_estado_previo` y salta por sha lo ya hecho. Medido: 60 s para
+    101 mensajes atómicos y 18 ficheros nuevos, contra los 1.979 s de la primera.
 - **Export de WhatsApp:** el nombre del `.zip` suele decir el chat
   (`"...Cliente Vendedor.zip"`) → mapear directo a los 4 roles de
   `config.WHATSAPP_SUBDIRS` (`00_Consultor propietario`, `01_Consultor buscador`,
@@ -571,6 +592,40 @@ cerrado TODO el intake + atomización + sala de máquina (§3-§5) — este es e
 donde empieza la lectura real; no intercalar análisis a mitad de la mecánica de arriba.
 
 **Usa la skill canónica `organizar-sala-lectura` (v1.3, estructura PLANA).**
+
+- **`[APER-60]` / W-04A6LI — La sala de lectura filtra por EXTENSIÓN y la de máquina
+  identifica por BYTES: los ficheros sin extensión desaparecen del catálogo en silencio.**
+  `core/inventory.py:95` descarta lo que no casa `_RELEVANT_EXTS`, y `core/sala_lectura.py:851`
+  solo cuenta los omitidos **si el catálogo queda vacío** — con catálogo lleno no se dicen.
+  Medido el 2026-09-09: **4 documentos reales** del Drive E&V (un certificado municipal de
+  tributos y tres de suministros), todos con espejo MD y texto útil, fuera de la sala.
+  E&V sube fotos de móvil sin extensión con normalidad. `MEJORAS #190`.
+  - **Contraste barato que lo caza:** cuadra el nº de entradas del `indice_documental.yaml`
+    contra el nº de filas del `_cobertura.json` de la sala de máquina. La diferencia, si no
+    son duplicados por sha, son documentos que nadie catalogó.
+
+- **`[APER-61]` / W-04A6LI — La identidad y el PBC se enrutan POR PARTE, y esto se falla
+  por defecto.** `references/taxonomia_ev.md`: identidad/KYC del **comprador** →
+  `03. OFERTAS`; del **vendedor** → `01. ACTIVACIÓN`; y **solo** los Anexos 1 y 2 **del
+  vendedor** → `06. PBC`. Lo fallaron a la vez el CLI y yo el 2026-09-09, y el síntoma es
+  legible de un vistazo: **`03. OFERTAS` con 1 documento y `06. PBC` con 28**. Tras
+  corregir: 8 y 16. Si ves `03. OFERTAS` casi vacío en un caso con oferta aceptada,
+  la identidad del comprador está mal enrutada.
+  - El filo del canon: el `Anexo 2` **de los compradores** NO es la excepción — la
+    excepción es party-specific y solo cubre los Anexos del vendedor.
+
+- **`[APER-62]` / W-04A6LI — `layout_bundle_hilo` aborta con `ValueError` y el bundle por
+  hilo no se puede montar: `email_export` desambigua la CARPETA, no el nombre del `.eml`.**
+  Un mensaje con adjuntos va a su propia subcarpeta (`…`, `…_2`, `…_3`) y el `.eml` conserva
+  el nombre pelado, así que **dentro de un mismo lote** hay basenames repetidos — hasta 4.
+  Medido el 2026-09-09: 5 de los 9 hilos del caso, el del requerimiento entre ellos. La
+  docstring de la función supone lo contrario. `MEJORAS #189`.
+  - **No desambigües tú y sigas**: la propia skill dice que se aborta y no se silencia.
+    La salida practicada: `.eml` **planos** con `sha256[:6]` como discriminante, declarando
+    la desviación en el `_plan/`. `plano_existente=True` permite montar los bundles después
+    sin re-montar la sala.
+  - `senales_gate` los reporta como «casi-duplicado: mismo nombre de origen con N sha256
+    distintos». **La detección es correcta y el diagnóstico no**: son mensajes distintos.
 
 **`[APER-55]` `organizar` ya converge — arreglado el 2026-09-04, `MEJORAS #151`.** Este punto
 decía «NO uses `organizar`» y eso dejó de ser cierto el mismo día: `core.sala_lectura.organizar`
@@ -759,6 +814,18 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
   refleja cambios de apellidos (solo `nombre`) — solo la API es fuente fiable (W-046G2R).
   Mitigación práctica: mete el nombre completo en el propio campo `nombre`, redundante con
   los apellidos separados pero es el único campo que el listado renderiza.
+- **`[APER-63]` / W-04A6LI — Tres cosas del `_ficha_crm.yaml` que cuestan una corrida cada una**
+  (medidas el 2026-09-09):
+  - **`cliente_propio` lleva la CLAVE, no el id:** `EV_MMC_SPAIN`, no `"2"`. Con el id
+    aborta con `[ERROR] cliente_propio desconocido: '2'` — y hace bien: no linkea la
+    entidad equivocada en silencio.
+  - **`crm_ficha` lee exactamente UN `contrario`.** Una reclamación formulada por dos
+    firmantes necesita una segunda llamada a mano,
+    `ensure_contrario_vinculado(exp_id, NuevoClienteContrario(...))`, y comprobarla con
+    `get_relaciones("extrajudiciales", exp_id)` — que devuelve la lista acumulada.
+  - **Contrario extranjero: el móvil no se puede guardar.** `movil` solo acepta 9 dígitos
+    españoles (`[APER-14]`); un `+40 …` rumano no entra. Déjalo **vacío y dilo** en el
+    comentario del YAML: es un dato que el CRM no puede almacenar, no un dato que falte.
 - **`[APER-15]` La doc puede ir por detrás del código** → verificar contra
   `core/sudespacho_relations.py` (`ensure_*`, `link_*`); **grep del código > doc**.
 - **`[APER-16]` / `[APER-33]` Estado de PR/merge por `gh`, no por la rama local.**

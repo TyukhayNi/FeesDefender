@@ -6,6 +6,37 @@
 
 ---
 
+## `POST relation_element` con el lado equivocado: HTTP 201 «Created!» y el vínculo no existe
+
+- **Intentado:** vincular el poderdante a un poder con el patrón del §10.6/§15.3, que funciona para
+  `clientes_propios`/`colaboradores`/`actuaciones` sobre un expediente:
+  `POST /api/relation_element/poderes/43` con body `["right.clientes_propios.2"]`.
+- **Resultado:** **HTTP 201 con cuerpo `"Created!"`** y **ninguna relación creada**. Verificado con
+  `GET /api/related_register/poderes/43` inmediatamente después: los vínculos seguían siendo los de
+  antes (`procuradores_propios`, `gdocu`). Ni error, ni warning, ni pista en la respuesta.
+- **Confirmado:** 2026-09-08, tenant `tnm`, sobre el fichero de poderes.
+- **Causa raíz:** el lado del prefijo no es libre, depende de si el elemento relacionado es `parent`
+  o `children` del elemento sobre el que se hace el POST.
+  `GET /api/view/config/poderes/relations` devuelve
+  `{"parent": ["clientes_propios"], "children": ["clientes_propios","gdocu","procuradores_propios"]}`,
+  y la forma que **sí** crea el vínculo es `["left.clientes_propios.2"]` — `left.` para el padre.
+  Para el hijo (`procuradores_propios`) el bueno es `right.`, verificado también en vivo.
+- **Lo que NO sirve:** fiarse del status. Tampoco `POST relation_element/clientes_propios/{id}` con
+  `["right.poderes.{id}"]` ni las otras tres variantes probadas antes de dar con la buena: todas
+  devuelven 2xx sin efecto o no llegan a probarse porque la primera correcta cortó el barrido.
+- **Conclusión:** **antes de escribir una relación en un elemento nuevo, leer
+  `view/config/{element}/relations`**, y **verificar con `related_register` (§15.5)**, no con el
+  status. El lado se deriva de ahí (`parent` → `left.`, `children` → `right.`) **solo cuando el
+  elemento relacionado aparece en UN lado**; si aparece en los dos —como `clientes_propios` aquí—,
+  la pertenencia no dice cuál expresa el papel y hace falta evidencia, no una prueba a ver qué pasa.
+  Y hacerlo sobre un registro cuyo vínculo sea el que de verdad se quiere: el
+  `DELETE /api/relation_element/{element}/{id}` con cuerpo está validado **solo** para
+  `["right.gdocu.<doc_id>"]` sobre un `poderes` (§17.5, 2026-09-09). Para cualquier otro lado o
+  elemento **no hay red probada** bajo un vínculo mal creado.
+- **Dónde vive el contrato:** `docs/INTEGRACION_SUDESPACHO.md` §16.3.
+
+---
+
 ## El force-push está DENEGADO por política: una rama ya pusheada no se sanea reescribiéndola en su sitio
 
 - **Intentado:** quitar de la historia de una rama **ya publicada** un término de PII que se
@@ -796,6 +827,27 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 - **Conclusión:** la disponibilidad de Drive se declara, no se deduce del sistema de ficheros. `_drive_accesible()` lee **solo** `FEESDEFENDER_OFFLINE=1`, que es el control explícito del operador que el §7.1.5 de la spec dual prevé. Y no hace falta más: si la raíz no se puede leer, `catalogo.localizar` ya lanza `LocalWorkspaceMissing` unas líneas antes. Lo que se decide aquí es otra cosa —si el estado compartido es **de fiar**—, y de eso el único que sabe es quien está delante. **Regla general:** no introducir una segunda fuente de verdad sobre dónde está el canon; ya hay una y es `case_locator`.
 
 ---
+
+## `python -c "..."` en Git Bash: las comillas invertidas del CONTENIDO se ejecutan, y el script dice que fue bien
+
+- **Intentado:** añadir un párrafo a `docs/MEJORAS_FUTURAS.md` con
+  `python -c "..."` entre comillas dobles, donde el texto llevaba cinco fragmentos entre
+  comillas invertidas (nombres de fichero y de campo, como es normal en Markdown técnico).
+- **Resultado:** Git Bash expandió cada `` `...` `` como **sustitución de comandos** antes de
+  que Python viera la cadena. Los cinco fragmentos desaparecieron del fichero y en su lugar
+  quedaron espacios; se ejecutaron como órdenes, dejando en el log basura del tipo
+  `bash: Chat: command not found`. **El script imprimió su mensaje de éxito igual**, porque
+  desde Python la escritura fue perfecta: lo que estaba mal era la cadena que recibió.
+- **Confirmado:** 2026-09-09.
+- **Conclusión:** para pasar contenido con comillas invertidas a Python, **heredoc
+  entrecomillado** (`python - <<'PYEOF'`), que no expande nada, o —mejor si el contenido es
+  largo— escribir el script a un fichero y ejecutarlo. Y **verificar por resultado**: leer el
+  fragmento escrito, no el mensaje del script. Aquí el control que lo cerró fue contar las
+  comillas invertidas del fichero antes y después (subieron exactamente +10 = los 5 pares
+  nuevos) y comprobar que el `git diff` tocaba un solo hunk.
+- **Familia:** misma que el `git show <rev>:<ruta>` de más arriba — **Git Bash corrompe lo que
+  se le pasa y el fallo es silencioso**, con el agravante de que aquí el comando que corrompe
+  y el que informa del éxito son el mismo.
 
 ## Plantilla para nuevas entradas
 

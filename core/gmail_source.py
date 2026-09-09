@@ -24,7 +24,7 @@ from typing import Any
 
 from .intake_utils import decode_base64url
 from .procurador_intake import extract_signals, match_expediente
-from .procurador_runner import EmailMessage, ReviewItem, run_intake
+from .procurador_runner import AdjuntoEntrante, EmailMessage, ReviewItem, run_intake
 
 # Tokens del MCP gmail-ro (reutilizados; formato google-auth).
 GMAIL_TOKENS_DIR = Path.home() / ".gmail-mcp" / "tokens"
@@ -69,6 +69,35 @@ def _extract_text_plain(payload: dict[str, Any]) -> str:
     return ""
 
 
+def _inventario_adjuntos(payload: dict[str, Any]) -> tuple[AdjuntoEntrante, ...]:
+    """Metadatos de cada parte con `filename`, en orden de documento.
+
+    **Solo nombres e ids: NO baja bytes** (eso es `MEJORAS #181`). Devolver una tupla
+    vacía es una respuesta —«se miró y no hay adjuntos»—, distinta de que nadie
+    inventariara, que es `EmailMessage.adjuntos = None` (H-01).
+
+    Se recorre en pre-orden para conservar el orden en que el correo los trae, que es
+    el que verá la persona en la tarjeta.
+    """
+    fuera: list[AdjuntoEntrante] = []
+
+    def recorrer(parte: dict[str, Any]) -> None:
+        nombre = parte.get("filename") or ""
+        if nombre:
+            cabs = _headers_dict(parte)
+            disp = cabs.get("content-disposition", "")
+            fuera.append(AdjuntoEntrante(
+                nombre=nombre,
+                attachment_id=str((parte.get("body") or {}).get("attachmentId") or ""),
+                inline="inline" in disp.lower() or bool(cabs.get("content-id")),
+            ))
+        for hija in parte.get("parts") or []:
+            recorrer(hija)
+
+    recorrer(payload)
+    return tuple(fuera)
+
+
 def gmail_message_to_email(raw: dict[str, Any], *, mailbox: str | None = None) -> EmailMessage:
     """Convierte un mensaje ``format='full'`` de la Gmail API en ``EmailMessage``."""
     payload = raw.get("payload") or {}
@@ -81,6 +110,7 @@ def gmail_message_to_email(raw: dict[str, Any], *, mailbox: str | None = None) -
         body=_extract_text_plain(payload).strip(),
         date=headers.get("date") or None,
         mailbox=mailbox,
+        adjuntos=_inventario_adjuntos(payload),
     )
 
 

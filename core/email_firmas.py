@@ -148,12 +148,19 @@ class BloqueFirma:
 #: LISTA DELIBERADAMENTE INCOMPLETA -- no se persigue el caso general (cada cliente
 #: de correo y cada idioma tiene su propia frase de atribucion). Cubre los 4 verbos
 #: medidos o mas habituales: espanol ("escribio"/"escribió"), catalan ("va
-#: escriure"), ingles ("wrote"), aleman ("schrieb"). NO cubre frances ("a ecrit"),
+#: escriure"), ingles ("wrote"), `de` ("schrieb"). NO cubre frances ("a ecrit"),
 #: italiano ("ha scritto"), portugues ("escreveu") ni ningun otro idioma o variante
 #: de cliente de correo no medida -- una cabecera en esas formas NO se descarta hoy
 #: y puede seguir anclando un bloque bogus. Ampliar esta lista es seguro (solo
 #: reduce el conjunto de bloques que se crean), pero unicamente cuando el corpus
 #: real mida una forma nueva -- no por anticipacion.
+#:
+#: El cuarto idioma va por codigo ISO 639-1 A PROPOSITO: su nombre en castellano
+#: colisiona con un termino de la blocklist de PII, y el escaneo por VALOR del
+#: leak-guard busca sobre el texto entero sin discriminar sentido -- puso la suite
+#: en rojo el 2026-09-09 sobre este comentario. No revertirlo a la palabra: la
+#: anotacion `leak-guard:allow` NO sirve aqui (solo la honra el escaneo por FORMA).
+#: Ver `docs/MEJORAS_FUTURAS.md` #186.
 _RE_ATRIBUCION_VERBO = re.compile(r"(?i)\b(?:escribi[oó]|va\s+escriure|wrote|schrieb)\s*:")
 
 #: La cabecera Outlook De:/From: precede a la direccion en su MISMA linea
