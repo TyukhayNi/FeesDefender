@@ -68,6 +68,11 @@ class GrupoBundle:
     parent_slug: str
     peor_estado: str
     n_segmentos: int
+    #: El método del PADRE, compartido por todos los segmentos (`metodo_base` en
+    #: `sala_maquina._split_o_md`). Decide si el grupo tiene artefacto o si su
+    #: representante es el crudo: un bundle **digital** se parte sobre el propio PDF
+    #: (`_split_o_md(..., "pypdf", False, ...)`) y **no genera** `01_OCR/<padre>.pdf`.
+    metodo: str = ""
 
 
 @dataclass(frozen=True)
@@ -112,7 +117,14 @@ def cargar(raiz: Path) -> Cobertura:
     for f in filas:
         if f.slug:
             por_slug[f.slug] = f
-        if f.parent_sha256:
+        # **Un segmento se reconoce por `parent_slug`, NO por `parent_sha256`.** El
+        # segundo es «sha del fichero FÍSICO de origen; clave del estado idempotente por
+        # bundle» (`sala_maquina.py:196`) y el productor lo rellena **también en el camino
+        # passthrough**, con `parent_slug` vacío (`:937-938`). Agrupar por él trataba un
+        # documento suelto real como bundle sin padre y lo bloqueaba. El marcador de
+        # segmento es `parent_slug` —«slug del bundle si es un segmento; vacío si
+        # documento suelto»— y `doc_id`, que el mismo comentario define igual.
+        if f.parent_slug:
             segmentos.setdefault(f.parent_sha256, []).append(f)
             continue
         if f.metodo == METODO_DUPLICADO and getattr(f, "alias_de", ""):
@@ -126,11 +138,15 @@ def cargar(raiz: Path) -> Cobertura:
         # depender del orden de las filas en el JSON.
         peor = min((s.estado for s in segs), key=_rango)
         padres = {s.parent_slug for s in segs if s.parent_slug}
+        metodos = {s.metodo for s in segs if s.metodo}
         grupos[sha] = GrupoBundle(
             parent_sha256=sha,
             parent_slug=sorted(padres)[0] if padres else "",
             peor_estado=peor,
-            n_segmentos=len(segs))
+            n_segmentos=len(segs),
+            # Los segmentos comparten `metodo_base`; si no lo hicieran, la cadena está
+            # roja y se prefiere el orden estable a una elección arbitraria.
+            metodo=sorted(metodos)[0] if metodos else "")
     return Cobertura(por_sha=por_sha, grupos=grupos, titulares=titulares,
                      por_slug=por_slug)
 
@@ -154,19 +170,32 @@ def elegir(raiz: Path, cob: Cobertura, *, raw_rel: str, raw_sha256: str,
     # (1) ¿es un bundle? El grupo manda sobre la fila individual.
     grupo = cob.grupos.get(raw_sha256)
     if grupo is not None:
-        if not grupo.parent_slug:
-            return Eleccion(bloqueo=(
-                f"{raw_rel}: la cobertura tiene {grupo.n_segmentos} segmentos sin "
-                f"`parent_slug`, así que no se puede localizar el artefacto del padre"))
-        rel, existe = _artefacto_de(raiz, grupo.parent_slug)
-        if not existe:
-            return Eleccion(bloqueo=(
-                f"{raw_rel}: es un bundle de {grupo.n_segmentos} segmentos y su artefacto "
-                f"{rel} no está. Vuelve a correr la sala de máquina"))
         avisos.append(f"bundle de {grupo.n_segmentos} segmentos: la calidad es la peor de "
                       f"ellos ({grupo.peor_estado})")
-        return Eleccion(clase=Clase.CONVERTIDO, rel=rel, ext="pdf",
-                        calidad=grupo.peor_estado, avisos=tuple(avisos))
+        # **Un bundle DIGITAL no tiene artefacto y no hay que exigírselo.** El productor
+        # parte el propio PDF (`_split_o_md(..., "pypdf", False, ...)`, `:1381`) y no
+        # genera `01_OCR/<padre>.pdf`: su representante es el crudo. Solo los métodos con
+        # artefacto lo tienen, y a esos sí se les exige.
+        if grupo.metodo in METODOS_CON_ARTEFACTO:
+            if not grupo.parent_slug:
+                return Eleccion(bloqueo=(
+                    f"{raw_rel}: {grupo.n_segmentos} segmentos con `metodo: "
+                    f"{grupo.metodo}` y sin `parent_slug`: no se puede localizar el "
+                    f"artefacto del padre"))
+            rel, existe = _artefacto_de(raiz, grupo.parent_slug)
+            if not existe:
+                return Eleccion(bloqueo=(
+                    f"{raw_rel}: es un bundle de {grupo.n_segmentos} segmentos con "
+                    f"`metodo: {grupo.metodo}` y su artefacto {rel} no está. Vuelve a "
+                    f"correr la sala de máquina"))
+            return Eleccion(clase=Clase.CONVERTIDO, rel=rel, ext="pdf",
+                            calidad=grupo.peor_estado, avisos=tuple(avisos))
+        if grupo.metodo in METODOS_CRUDO:
+            return Eleccion(clase=Clase.CRUDO, rel=raw_rel, ext=ext,
+                            calidad=grupo.peor_estado, avisos=tuple(avisos))
+        return Eleccion(bloqueo=(
+            f"{raw_rel}: bundle de {grupo.n_segmentos} segmentos con `metodo: "
+            f"{grupo.metodo!r}`, que el selector no cubre. No se adivina"))
 
     fila = cob.por_sha.get(raw_sha256)
     if fila is None:

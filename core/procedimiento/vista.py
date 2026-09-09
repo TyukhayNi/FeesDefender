@@ -58,11 +58,19 @@ class Informe:
 
     @property
     def completo(self) -> bool:
-        """Todo lo que el CRM enumera está asignado y nada bloquea.
+        """Todo lo asignado, nada bloqueando, **y el universo coherente**.
+
+        Las incoherencias cuentan, y esto es una corrección de la R1 (su H-12): sin
+        ellas, un informe podía imprimir «el `pull_state` dice 99 documentos y el registro
+        enumera 1» **y a la vez** «completo: sí», con el CLI saliendo con 0. Una
+        automatización habría tomado eso por completitud sin conocer los otros 98.
+
+        «Todas las filas que conozco tienen carpeta» no es «conozco todo lo que el CRM
+        tiene». Lo primero es lo que se sabía; lo segundo es lo que se afirmaba.
 
         **No** dice que la vista esté publicada: esta mitad no publica.
         """
-        return not self.sin_asignar and not self.bloqueos
+        return not self.sin_asignar and not self.bloqueos and not self.incoherencias
 
 
 def _sha(p: Path) -> str:

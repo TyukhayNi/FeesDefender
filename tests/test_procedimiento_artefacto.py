@@ -248,3 +248,58 @@ def test_el_grupo_de_bundle_NO_depende_del_orden_de_las_filas(tmp_path):
     b = artefacto.cargar(_arbol(tmp_path, list(reversed(filas)), ocr=["b"])).grupos[sha]
     assert a == b
     assert a.peor_estado == "low"
+
+
+# ---------------------------------------------------------------- R1/H-03
+# `parent_sha256` NO es el marcador de segmento: es la clave del estado idempotente
+# (`sala_maquina.py:196`), y el productor la rellena tambien en el camino passthrough con
+# `parent_slug` vacio (`:937-938`). Agrupar por ella bloqueaba documentos sueltos reales.
+# Mis fixtures no podian verlo porque ponian `parent_slug` siempre que ponian
+# `parent_sha256`: fabricaban un mundo en el que el error no existe.
+
+def test_un_suelto_de_PASSTHROUGH_no_es_un_bundle(tmp_path):
+    """La fila que `_split_o_md` devuelve cuando el bundle resulta ser un documento:
+    `parent_sha256 == sha256` y `parent_slug` VACIO. Es un suelto y se representa solo."""
+    sha = _crudo(tmp_path, "00_Input/05_CRM/01_Demanda/d.pdf")
+    raiz = _arbol(tmp_path, [{"slug": "d", "rel_path": "05_CRM/01_Demanda/d.pdf",
+                              "metodo": "pypdf", "estado": "ok", "sha256": sha,
+                              "parent_sha256": sha, "parent_slug": "", "tipo": "demanda"}])
+    cob = artefacto.cargar(raiz)
+    assert cob.grupos == {}, "un passthrough se agrupo como bundle"
+    assert sha in cob.por_sha
+    e = artefacto.elegir(raiz, cob, raw_rel="00_Input/05_CRM/01_Demanda/d.pdf",
+                         raw_sha256=sha, sin_cobertura_ok=False)
+    assert e.bloqueo == "", f"un documento suelto real se bloqueo: {e.bloqueo}"
+    assert e.clase is artefacto.Clase.CRUDO
+
+
+def test_un_bundle_DIGITAL_se_representa_por_el_crudo_y_no_exige_OCR(tmp_path):
+    """El productor parte el propio PDF cuando ya es buscable (`:1381`) y **no** genera
+    `01_OCR/<padre>.pdf`. Exigirselo bloqueaba el bundle entero."""
+    sha = _crudo(tmp_path, "00_Input/05_CRM/99_Otros/digital.pdf")
+    raiz = _arbol(tmp_path, [
+        {"slug": "dig__a", "rel_path": "05_CRM/99_Otros/digital.pdf", "metodo": "pypdf",
+         "estado": "ok", "sha256": "S1", "parent_slug": "dig", "parent_sha256": sha,
+         "doc_id": "1"},
+        {"slug": "dig__b", "rel_path": "05_CRM/99_Otros/digital.pdf", "metodo": "pypdf",
+         "estado": "low", "sha256": "S2", "parent_slug": "dig", "parent_sha256": sha,
+         "doc_id": "2"},
+    ])                                              # sin fichero en 01_OCR, a proposito
+    e = artefacto.elegir(raiz, artefacto.cargar(raiz),
+                         raw_rel="00_Input/05_CRM/99_Otros/digital.pdf", raw_sha256=sha,
+                         sin_cobertura_ok=False)
+    assert e.bloqueo == "", f"exigio OCR a un bundle digital: {e.bloqueo}"
+    assert e.clase is artefacto.Clase.CRUDO
+    assert e.calidad == "low", "la calidad sigue siendo la peor de los segmentos"
+    assert any("2 segmento" in a for a in e.avisos)
+
+
+def test_un_bundle_con_metodo_desconocido_bloquea_en_vez_de_adivinar(tmp_path):
+    sha = _crudo(tmp_path, "00_Input/05_CRM/99_Otros/raro.pdf")
+    raiz = _arbol(tmp_path, [
+        {"slug": "r__a", "rel_path": "05_CRM/99_Otros/raro.pdf", "metodo": "teletransporte",
+         "estado": "ok", "sha256": "S1", "parent_slug": "r", "parent_sha256": sha}])
+    e = artefacto.elegir(raiz, artefacto.cargar(raiz),
+                         raw_rel="00_Input/05_CRM/99_Otros/raro.pdf", raw_sha256=sha,
+                         sin_cobertura_ok=False)
+    assert "teletransporte" in e.bloqueo

@@ -208,3 +208,27 @@ def test_proponer_NO_escribe_nada(caso):
     antes = {str(p.relative_to(raiz)) for p in raiz.rglob("*") if p.is_file()}
     borrador.proponer(_conjuntos(sha))
     assert {str(p.relative_to(raiz)) for p in raiz.rglob("*") if p.is_file()} == antes
+
+
+# ---------------------------------------------------------------- R1/H-12
+def test_completo_es_FALSO_si_el_universo_es_incoherente(caso):
+    """El CLI podia imprimir «el pull_state dice 99 documentos y el registro enumera 1» y
+    a la vez «completo: si», saliendo con 0. Una automatizacion lo habria tomado por
+    completitud sin conocer los otros 98."""
+    raiz, sha = caso
+    c = _conjuntos(sha)
+    inc = ("el `pull_state` dice 99 documentos en el CRM y el registro enumera 1",)
+    inf = vista.construir(raiz, "CASO", "540", m=mapa.cargar(raiz), c=c,
+                          cob=artefacto.cargar(raiz), incoherencias=inc)
+    assert inf.sin_asignar == () and inf.bloqueos == ()
+    assert inf.incoherencias == inc
+    assert inf.completo is False, (
+        "«todas las filas que conozco tienen carpeta» no es «conozco todo lo que hay»")
+
+
+def test_completo_sigue_siendo_cierto_sin_incoherencias(caso):
+    """El otro valor: la puerta nueva no puede dejar `completo` siempre en falso."""
+    raiz, sha = caso
+    inf = vista.construir(raiz, "CASO", "540", m=mapa.cargar(raiz), c=_conjuntos(sha),
+                          cob=artefacto.cargar(raiz), incoherencias=())
+    assert inf.completo is True
