@@ -8130,55 +8130,75 @@ la bitácora, o antes de que alguien que no sea su autor los use para decidir al
 
 ---
 
-## 186. La blocklist de PII tiene un término que es una palabra común, y el guard grita en falso
+## 186. El veredicto del guard de PII depende de un fichero mutable que no está en git
 
-> Medido el 2026-09-09 al correr la suite completa antes de abrir el PR #308 (ASR local).
-> Verificado en un **checkout limpio de `main`**: falla igual sin el commit de esa rama.
+> Medido el 2026-09-09. **Y la primera redacción de esta entrada era falsa**, lo que resultó
+> ser el hallazgo bueno: se corrigió el mismo día, media hora después.
 
-`tests/test_no_pii_en_tests.py::test_no_pii_real_en_tests_ni_core` está **ROJO en `main`**,
-con dos detecciones `PII EN CONTENIDO` sobre `core/email_firmas.py` y
-`tests/test_email_firmas.py`.
+**Lo que se midió, en orden y con la hora, porque el orden ES el hallazgo:**
 
-**Es un falso positivo.** El término que engancha es un **gentilicio**: el del idioma en que
-se escribe «schrieb», y aparece en un comentario de `core/email_firmas.py:151` que enumera los verbos de citación de
-correo por idioma, junto a los de catalán e inglés. No es el apellido de ningún tercero. La
-blocklist (gitignored, republicada con 70 términos) contiene un término que **coincide con
-una palabra común del castellano**, y `escanear` normaliza tildes, así que engancha las dos
-grafías.
+1. **~17:00** — la suite completa dejó `tests/test_no_pii_en_tests.py::test_no_pii_real_en_tests_ni_core`
+   en **ROJO**, con dos detecciones `PII EN CONTENIDO` sobre `core/email_firmas.py` y
+   `tests/test_email_firmas.py`. Verificado en un **checkout limpio de `main`**: fallaba
+   igual sin el commit de la rama de ese momento, así que era preexistente y ajeno.
+2. Diagnosticado como **falso positivo**: el término que enganchaba es un **gentilicio** —el
+   del idioma en que se escribe «schrieb»—, en un comentario de `core/email_firmas.py:151`
+   que enumera los verbos de citación de correo por idioma, junto a los de catalán e inglés.
+   No es el apellido de nadie.
+3. **~17:30** — el mismo test **PASA**, y no por un `skip`: `1 passed`, con la blocklist
+   accesible (82 términos). `escanear()` sobre esos dos mismos ficheros devuelve **0
+   hallazgos** donde media hora antes devolvía 2.
+4. Y sin embargo **nada de lo obvio cambió**: el gentilicio sigue en `core/email_firmas.py`
+   (1 ocurrencia), el término sigue en la blocklist y es **exactamente** esa palabra (una
+   sola, 6 caracteres), y el código del escáner en ese worktree no se tocó.
 
-**El término no se transcribe aquí, y no es celo: es que no se puede.** El primer intento de
-escribir esta entrada citaba literal la salida del test, y el hook `leak-guard` **bloqueó el
-commit de la propia entrada que documenta su falso positivo**. Ese detalle vale más que el
-defecto: el guard es tan amplio que impide describir su propio fallo sin saltárselo con
-`--no-verify`. Quien necesite el valor exacto lo tiene en la blocklist y en un `pytest` de
-diez segundos.
+**El hallazgo, entonces, no es el falso positivo: es que el mismo commit da verde o rojo
+según el momento.** La blocklist es un fichero **gitignored** y, desde `MEJORAS #161`
+(PR #289), en un worktree se lee del **checkout principal** — un fichero compartido, mutable
+y fuera del control de versiones, que cualquier sesión concurrente puede editar mientras
+otra corre la suite. El guard más importante del repo, el que protege de commitear el nombre
+de un cliente, **no es reproducible**: su resultado no es función del árbol que se está
+juzgando.
 
-**Por qué esto es peor que un rojo cualquiera, y es el fondo del asunto.** El daño no es la
-fuga —no hay fuga—: es que **un guard que grita en falso enseña a ignorarlo**. Este test es
-la barrera que protege de commitear el nombre de un cliente. Un rojo permanente y sabido
-falso lo convierte en ruido, y el día que enganche una fuga real nadie lo va a mirar. Mismo
-mecanismo que `MEJORAS #161` (PR #289) por el otro lado: allí el guard **callaba** sin su
-blocklist, aquí **grita** de más.
+**Por qué eso es peor que un falso positivo.** Un falso positivo enseña a ignorar el guard.
+Un guard **no determinista** hace algo peor: destruye la posibilidad de razonar sobre él. No
+se puede bisecar, no se puede afirmar «esto estaba verde cuando se mergeó», y una fuga real
+que aparezca y desaparezca según quién tenga la lista en qué estado es indistinguible del
+ruido. Aquí lo pagó esta propia entrada, que nació describiendo un rojo que dejó de existir
+antes de que se pudiera commitear.
 
-**Mejora propuesta.** No quitar el término de la blocklist sin más: si además es el apellido
-real de alguien en algún caso, tiene que seguir vigilado. Dos vías, y la primera es la
-barata:
+**Qué no se sabe, y se declara en vez de rellenarlo.** No está determinado **por qué**
+cambió el veredicto. La hipótesis viva es que otra de las cinco sesiones concurrentes editó
+`replacements.txt` en el checkout principal —pasó a 82 términos— de forma que el gentilicio
+dejó de ser un término *a buscar* aunque siga apareciendo en la lista que `cargar_blocklist`
+devuelve. No se ha volcado el fichero para comprobarlo, porque volcar la lista completa está
+prohibido (`docs/SEGURIDAD_DATOS.md`, y el precedente de `rclone config show`).
 
-1. **Excepciones por par (término, fichero)**, gitignored igual que la blocklist. Coste: un
-   fichero más y una comprobación en `escanear`.
-2. **Marcar en la blocklist los términos ambiguos**, de modo que un término que es palabra
-   común solo enganche cuando aparece como nombre propio con otro indicio al lado
-   (mayúscula inicial junto a un apellido, o pegado a un email). Más fino y más caro.
+**Mejora propuesta**, y ahora el orden importa:
 
-Cualquiera de las dos exige **tocar el guard con sus propios tests**, y de esos hay: el
-patrón está en `tests/test_no_pii_en_tests.py` y en el hook `leak-guard`.
+1. **Determinismo primero.** El guard debe poder decir **con qué versión de la lista** juzgó:
+   registrar en la salida el `sha256` y el número de términos de la blocklist efectiva, y su
+   procedencia (worktree propio o checkout principal). Sin eso ningún verde de este guard
+   significa nada, y el resto de mejoras son cosmética.
+2. **Después**, el falso positivo: excepciones por par (término, fichero) en un fichero
+   gitignored hermano, o marcar en la blocklist los términos que son palabras comunes para
+   que solo enganchen junto a otro indicio (mayúscula inicial con apellido, o pegado a un
+   email). No quitar el término sin más: si además es el apellido real de alguien en algún
+   caso, tiene que seguir vigilado.
 
 **Lo que NO se debe hacer**, y por eso queda escrito: no añadir un `skip`, no relajar el
 aserto y no reescribir el comentario de `email_firmas.py` para que el rojo se vaya. La
 tercera es la tentadora —cambiar el gentilicio por una perífrasis pone la suite verde en
-diez segundos— y es exactamente debilitar la evidencia en vez de arreglar el instrumento: el
-término seguiría en la blocklist y volvería a enganchar en el siguiente fichero que hable de
-idiomas.
+diez segundos— y es debilitar la evidencia en vez de arreglar el instrumento: el término
+seguiría en la lista y volvería a enganchar en el siguiente fichero que hable de idiomas.
 
-**Disparador de promoción.** El siguiente rojo de este guard, sea falso positivo o no; o que
-alguien se salte el hook con `--no-verify` alegando que «ese guard siempre está rojo».
+**Nota de método que vale por sí sola.** El primer intento de escribir esta entrada citaba
+literal la salida del test, y el hook `leak-guard` **bloqueó el commit de la entrada que
+documenta su propio falso positivo**. El guard es tan amplio que impide describir su fallo
+sin saltárselo con `--no-verify`. Se reescribió sin el término, que es lo que manda la casa
+(referenciar, no reproducir). Y el hook **no** escanea mensajes de commit: el término sí
+quedó en el del commit que introdujo esta entrada. Sin consecuencia —es un gentilicio—, pero
+es un hueco de cobertura del guard.
+
+**Disparador de promoción.** El siguiente rojo o verde inexplicado de este guard; o que
+alguien se salte el hook con `--no-verify` alegando que «ese guard va y viene».
