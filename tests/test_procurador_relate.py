@@ -414,7 +414,10 @@ def test_archivar_encadena_relate_y_adjuntar_con_los_ids_del_relate():
     res = archivar(MSG, "extrajudiciales", 636,
                    adjuntos=[("auto.pdf", nombre)], folder_id="1", transport=t)
 
-    assert res.ok and res.verificado
+    # MIGRADO con el reshape de H-06: donde había un `verificado` plano —que en
+    # realidad era el del ADJUNTAR— ahora se exigen LOS DOS. Es una aserción más
+    # ESTRICTA, no relajada: antes un fallo de la relación quedaba tapado.
+    assert res.ok and res.relacion.verificado and res.documentos.verificado
     assert res.mail_id == "464001"
     cuerpo = t.cuerpos("relate/attachments")[0]
     assert cuerpo["datosAdjuntos"]["seleccionado_adjunto"]["464001"] == ["183615"], \
@@ -480,7 +483,11 @@ def test_h01_reanudacion_correo_ya_relacionado_pero_con_documentos_sin_subir():
                    adjuntos=[("auto.pdf", nombre)], folder_id="1", transport=t)
 
     assert res.ya_estaba, "la relación previa se reconoce"
-    assert res.ok and res.verificado
+    # MIGRADO con el reshape de H-06, y aquí gana precisión de verdad: este es el
+    # test de la REANUDACIÓN —relación ya hecha, documentos pendientes—, así que
+    # poder afirmar los dos hechos por separado es justo lo que el caso quería
+    # decir y un booleano único no podía.
+    assert res.ok and res.relacion.verificado and res.documentos.verificado
     assert res.subidos == [nombre], "y aun así se completan los documentos que faltaban"
 
 
@@ -620,3 +627,144 @@ def test_el_censo_del_gestor_filtra_por_el_elemento_correcto():
     assert params["filterGroup[filterGroups][0][filters][0][property]"] == \
         "left.expedientes_judiciales.id"
     assert params["filterGroup[filterGroups][0][filters][0][value]"] == "683"
+
+
+# --------------------------------------------------------------------------
+# H-06 (R1 adversarial) — los TRES hechos del archivado, por separado
+#
+# `archivar` componía su resultado así:
+#
+#     ArchivoResult(ok=res.ok, verificado=res.verificado, ...)   # res = el ADJUNTAR
+#
+# así que el `verificado` de la relación quedaba **sobrescrito** por el de los
+# documentos. Consecuencias medidas en el código: relación verificada + adjunto que
+# falla ⇒ `verificado=False`, y el positivo de la relación **se borra**; y un fallo de
+# emparejamiento ⇒ `verificado=True` **con cero documentos**. Es decir, `verificado`
+# no significaba nada estable.
+#
+# F6 —el control de calidad— consume esta traza y tiene que poder distinguir
+# «no escribí» / «escribí y no lo confirmé» / «escribí y lo confirmé», y hacerlo
+# **por separado** para la relación y para los documentos. Ninguno de los tests de
+# `archivar` de arriba ejercitaba el caso mixto: este bloque tapa ese agujero.
+# --------------------------------------------------------------------------
+
+def _archivar_con(relate_ok=True, adjuntar_status=200, censo_final=None, nombre="x.pdf"):
+    """Escenario de `archivar` con el relate verificable y el adjuntar parametrizado."""
+    censos = iter([_gdocu([]), _gdocu(censo_final if censo_final is not None else [])])
+    t = FakeTransport(**{
+        "element_registries/mail": _mail_registry(cuenta="20"),
+        "element_registries/gdocu": lambda _: _Resp(next(censos)),
+        "findRelations": secuencia(SIN_RELACION, CON_636 if relate_ok else SIN_RELACION),
+        "relate/selected": _relate_ok(adjuntos=(("183615", "auto.pdf"),)),
+        "relate/attachments": (lambda _c: _Resp({"status": "success", "errors": []},
+                                                adjuntar_status)),
+    })
+    res = archivar(MSG, "extrajudiciales", 636,
+                   adjuntos=[("auto.pdf", nombre)], folder_id="1", transport=t)
+    return res, t
+
+
+def test_h06_la_relacion_verificada_SOBREVIVE_a_un_adjuntar_fallido():
+    """EL caso de H-06, y el que no tenía test.
+
+    El relate escribió y se confirmó por relectura; el adjuntar murió con HTTP 500.
+    El archivado, como un todo, ha fallado —falta el documento— pero **la relación
+    existe en el CRM** y eso no puede perderse: quien reconcilie después necesita
+    saber que no tiene que volver a relacionar.
+    """
+    res, _ = _archivar_con(adjuntar_status=500)
+
+    assert res.ok is False, "falta el documento: el archivado no está completo"
+    assert res.relacion.ok is True and res.relacion.verificado is True, \
+        "la relación se escribió y se verificó: ese hecho no se borra"
+    assert res.documentos.intentado is True and res.documentos.ok is False
+
+
+def test_h06_un_fallo_de_emparejamiento_no_afirma_que_se_intentaran_los_documentos():
+    """Antes daba `verificado=True` con cero documentos, que es peor que un False:
+    afirmaba una verificación que nadie hizo."""
+    t = FakeTransport(**{
+        "element_registries/mail": _mail_registry(cuenta="20"),
+        "findRelations": secuencia(SIN_RELACION, CON_636),
+        "relate/selected": _relate_ok(adjuntos=(("183615", "auto.pdf"),)),
+    })
+    res = archivar(MSG, "extrajudiciales", 636,
+                   adjuntos=[("NO-ESTA-EN-EL-MANIFIESTO.pdf", "y.pdf")],
+                   folder_id="1", transport=t)
+
+    assert res.a_revision is True
+    assert res.relacion.verificado is True, "la relación sí se hizo y se verificó"
+    assert res.documentos.intentado is False, \
+        "no se intentó subir nada: no se puede afirmar ni éxito ni fallo"
+
+
+def test_h06_ya_presentes_llega_al_resultado_del_archivado():
+    """`AdjuntarResult.ya_presentes` se descartaba al componer, aunque el §7 del spec
+    diga que se registra. Un documento que ya estaba cuenta como archivado y hay que
+    poder distinguirlo de uno que subimos nosotros.
+
+    Ojo al montaje: el nombre tiene que estar en el censo **PREVIO**. Una primera
+    versión de este test lo puso solo en el posterior y falló por eso — que es el
+    montaje de «lo subimos nosotros», justo el caso contrario.
+    """
+    nombre = "ya-estaba.pdf"
+    t = FakeTransport(**{
+        "element_registries/mail": _mail_registry(cuenta="20"),
+        "element_registries/gdocu": _gdocu([nombre]),
+        "findRelations": secuencia(SIN_RELACION, CON_636),
+        "relate/selected": _relate_ok(adjuntos=(("183615", "auto.pdf"),)),
+        "relate/attachments": {"status": "success", "errors": []},
+    })
+    res = archivar(MSG, "extrajudiciales", 636,
+                   adjuntos=[("auto.pdf", nombre)], folder_id="1", transport=t)
+
+    assert res.ya_presentes == [nombre]
+    assert res.subidos == [], "no lo subimos nosotros"
+    assert t.cuerpos("relate/attachments") == [], "y no se re-postea"
+
+
+def test_h06_sin_cuenta_resoluble_no_se_intenta_ni_relacion_ni_documentos():
+    """«No escribí» tiene que ser distinguible de «escribí y falló»: un intento que
+    falla puede haber dejado efecto (escritura incierta), y uno que no ocurrió, no."""
+    t = FakeTransport(**{"element_registries/mail": {"totalItems": 0.0, "items": []}})
+
+    res = archivar(MSG, "extrajudiciales", 636, adjuntos=[], folder_id="1", transport=t)
+
+    assert res.a_revision is True
+    assert res.relacion.intentado is False
+    assert res.documentos.intentado is False
+
+
+def test_h06_el_verificado_PLANO_ya_no_existe():
+    """Guard de forma: mientras exista un `verificado` de nivel superior, alguien lo
+    leerá y volverá a colapsar los dos hechos. La ambigüedad se quita del tipo."""
+    res, _ = _archivar_con()
+
+    assert not hasattr(res, "verificado"), \
+        "el `verificado` plano no significaba nada estable: no debe volver"
+
+
+def test_h06_un_relate_que_NO_se_verifica_no_declara_la_relacion_escrita():
+    """Hueco encontrado por el arnés de mutación, no por lectura.
+
+    Ningún test exigía que un relate fallido dejara `relacion.ok=False`. Con el
+    mutante que lo pone en `True`, la suite seguía verde — y eso es peor que el
+    colapso que H-06 denunciaba: F6 leería que la relación existe cuando el CRM
+    devolvió 200 y la relectura no la encontró (un miembro inexistente hace
+    exactamente eso, y está medido).
+    """
+    t = FakeTransport(**{
+        "element_registries/mail": _mail_registry(cuenta="20"),
+        # la relectura NO confirma: el 200 del CRM no escribió nada
+        "findRelations": secuencia(SIN_RELACION, SIN_RELACION),
+        "relate/selected": _relate_ok(adjuntos=(("183615", "auto.pdf"),)),
+    })
+
+    res = archivar(MSG, "extrajudiciales", 636,
+                   adjuntos=[("auto.pdf", "x.pdf")], folder_id="1", transport=t)
+
+    assert res.ok is False
+    assert res.relacion.intentado is True, "se posteó: el efecto es desconocido"
+    assert res.relacion.ok is False, "sin relectura que lo confirme, NO se declara escrita"
+    assert res.documentos.intentado is False, "no se llegó a los documentos"
+    assert t.cuerpos("relate/attachments") == []

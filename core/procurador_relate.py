@@ -83,11 +83,51 @@ class AdjuntarResult:
 
 
 @dataclass(frozen=True)
-class ArchivoResult:
-    ok: bool
+class ResultadoParcial:
+    """El desenlace de UNA de las dos escrituras del archivado, con sus tres hechos.
+
+    Los tres estados son distintos y ninguno se deduce de los otros dos (R1/H-06):
+
+    - ``intentado=False`` — **no se escribió.** Si además trae ``error``, es que no se
+      llegó a intentar y ahí está el motivo.
+    - ``intentado=True, ok=False`` — **se intentó y falló**, y el efecto es
+      **desconocido**: un timeout puede haber escrito. No es lo mismo que no intentarlo,
+      y por eso son campos separados y no un booleano.
+    - ``ok=True`` — se escribió. ``verificado`` dice si se **confirmó por relectura**,
+      que es lo único que acredita el efecto: ningún `ok` sale de un código de estado.
+    """
+
+    intentado: bool = False
+    ok: bool = False
     verificado: bool = False
+    error: str | None = None
+
+
+NO_INTENTADO = ResultadoParcial()
+
+
+@dataclass(frozen=True)
+class ArchivoResult:
+    """Resultado del archivado, con la relación y los documentos POR SEPARADO.
+
+    **No hay un `verificado` plano, y su ausencia es deliberada** (R1/H-06). Lo había, y
+    se componía con el del adjuntar —``verificado=res.verificado``—, así que el positivo
+    de la relación quedaba sobrescrito: una relación escrita y confirmada cuyo adjunto
+    fallaba salía como `verificado=False`, y un fallo de emparejamiento salía como
+    `verificado=True` **con cero documentos**. No significaba nada estable, y F6 consume
+    esta traza para distinguir exactamente eso.
+
+    ``ok`` es el archivado **como un todo**: relación escrita y documentos resueltos.
+    """
+
+    ok: bool
+    relacion: ResultadoParcial = NO_INTENTADO
+    documentos: ResultadoParcial = NO_INTENTADO
     mail_id: str | None = None
     subidos: list[str] = field(default_factory=list)
+    #: Ya estaban en el gestor documental. Cuentan como archivados, no como subidos, y
+    #: se conservan porque el §7 del spec los exige en la traza (antes se descartaban).
+    ya_presentes: list[str] = field(default_factory=list)
     ya_estaba: bool = False
     a_revision: bool = False
     motivo: str | None = None
@@ -448,16 +488,26 @@ def archivar(message_id: str, element: str, miembro: int, *,
         if not cuenta:
             return ArchivoResult(
                 ok=False, a_revision=True,
+                relacion=ResultadoParcial(error="cuenta sin resolver"),
+                documentos=ResultadoParcial(error="cuenta sin resolver"),
                 motivo="no se pudo resolver la cuenta del correo en el CRM "
                        "(¿no indexado todavía?); no se archiva a ciegas")
 
         rel = relacionar(message_id, element, [miembro], account=cuenta, transport=t)
         if not rel.ok:
-            return ArchivoResult(ok=False, verificado=rel.verificado, mail_id=rel.mail_id,
-                                 error=rel.error)
+            return ArchivoResult(
+                ok=False, mail_id=rel.mail_id, error=rel.error,
+                relacion=ResultadoParcial(intentado=True, ok=False,
+                                          verificado=rel.verificado, error=rel.error))
         if not pedidos:
-            return ArchivoResult(ok=True, verificado=True, mail_id=rel.mail_id,
-                                 ya_estaba=rel.ya_estaba)
+            # Nada que subir **porque no se pidió nada**. Que eso sea legítimo o sea el
+            # inventario ausente lo decide el llamante: `archivar` no puede saberlo, y
+            # tratarlo como «nada que subir» es el camino silencioso de H-01. La guarda
+            # vive en el orquestador (spec §9.1).
+            return ArchivoResult(
+                ok=True, mail_id=rel.mail_id, ya_estaba=rel.ya_estaba,
+                relacion=ResultadoParcial(intentado=True, ok=True, verificado=True),
+                documentos=ResultadoParcial(error="no se pidió ningún adjunto"))
 
         mail_id, disponibles = rel.mail_id, rel.adjuntos
         if rel.ya_estaba:
@@ -467,18 +517,29 @@ def archivar(message_id: str, element: str, miembro: int, *,
             # censo, qué falta de verdad.
             mail_id, disponibles, error = _post_relate(t, message_id, element, [miembro])
             if error:
-                return ArchivoResult(ok=False, ya_estaba=True, mail_id=None, error=error)
+                return ArchivoResult(
+                    ok=False, ya_estaba=True, mail_id=None, error=error,
+                    relacion=ResultadoParcial(intentado=True, ok=True, verificado=True),
+                    documentos=ResultadoParcial(
+                        error=f"sin manifiesto, no se intentó subir nada: {error}"))
 
         seleccion, problema = _emparejar(disponibles, pedidos)
         if problema:
-            return ArchivoResult(ok=False, verificado=True, mail_id=mail_id,
-                                 ya_estaba=rel.ya_estaba, a_revision=True, motivo=problema)
+            return ArchivoResult(
+                ok=False, mail_id=mail_id, ya_estaba=rel.ya_estaba,
+                a_revision=True, motivo=problema,
+                relacion=ResultadoParcial(intentado=True, ok=True, verificado=True),
+                documentos=ResultadoParcial(error=problema))
 
         res = adjuntar(element, miembro, mail_id or "", seleccion,
                        folder_id=folder_id, message_id=message_id, transport=t)
 
-    return ArchivoResult(ok=res.ok, verificado=res.verificado, mail_id=mail_id,
-                         subidos=res.subidos, ya_estaba=rel.ya_estaba, error=res.error)
+    return ArchivoResult(
+        ok=res.ok, mail_id=mail_id, subidos=res.subidos,
+        ya_presentes=res.ya_presentes, ya_estaba=rel.ya_estaba, error=res.error,
+        relacion=ResultadoParcial(intentado=True, ok=True, verificado=True),
+        documentos=ResultadoParcial(intentado=True, ok=res.ok,
+                                    verificado=res.verificado, error=res.error))
 
 
 def _emparejar(disponibles: Sequence[Adjunto],
