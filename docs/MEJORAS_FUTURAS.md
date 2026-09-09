@@ -8057,3 +8057,41 @@ nombre, no en un enum.
 
 **Disparador de promoción.** Cuando se aborde F4. Antes no: sin el propuesto no hay nada que
 evaluar.
+
+---
+
+## 183. En un worktree el intake de procuradores descarta TODOS los correos, en silencio
+
+> Medido el 2026-09-09, al escribir los tests de la rebanada 1 del cableado de F3.
+
+`core.procurador_intake.cargar_procuradores_conocidos` lee `data/_config/procuradores_conocidos.yaml`
+—**gitignored**— y su docstring lo dice: *«Ausente o ilegible → (set(), set())»*.
+
+**Medido en este worktree: 0 dominios, 0 emails.** La raíz principal sí tiene el YAML; el worktree
+solo tiene el `.example`, que **no se lee**. Consecuencia: `is_procurador_email()` devuelve `False`
+para todo, y `procurador_runner.process_email` descarta **cada** correo con
+`motivo="remitente_no_procurador"`.
+
+**Por qué es peor que el caso hermano de la blocklist (`#161`):** allí el vacío producía un **verde
+falso** en un guard. Aquí produce un **descarte falso con un motivo que parece una clasificación
+legítima** — «este remitente no es un procurador» se lee como una decisión, no como «no tenía
+catálogo con el que decidir». Nadie audita un descarte razonado.
+
+**Es la misma frontera que `#180`** (el `.env` que no viaja a los worktrees): un artefacto
+gitignored del que depende el comportamiento, y cuyo estado vacío es indistinguible de una
+respuesta.
+
+**Remedio, dos piezas y la primera es la que importa:**
+
+1. **Que el vacío se OIGA.** Igual que el `leak-guard` cuenta sus términos: exponer cuántas entradas
+   cargó y de dónde, y que `run_intake` lo diga al arrancar. Un contador es lo que separa «miré y no
+   es procurador» de «no tenía con qué mirar».
+2. **Buscar también en el checkout principal**, como hace `scripts/_sondeo_crm.resolver_env` con el
+   `.env` (`git worktree list`). Cuesta poco y quita la asimetría worktree/raíz.
+
+**Lo que NO se hace:** leer el `.example` como respaldo. Un catálogo de ejemplo respondiendo
+preguntas de producción es peor que no tener catálogo.
+
+**Disparador de promoción.** La primera vez que alguien corra el intake desde un worktree y lea
+«remitente_no_procurador» como un hecho, o cuando se cablee `archivar_confirmado` (rebanada 2),
+porque entonces el silencio afecta a una escritura.
