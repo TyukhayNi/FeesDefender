@@ -8934,6 +8934,26 @@ Eso sube la entrada de categoría: no es un hueco de cobertura de nombres, es un
 en el informe del paso 1-bis lo habría delatado el primer día — el informe dice hoy
 `exports_crudos_whatsapp: 0` y eso se lee igual que «no había ninguno».
 
+**La misma frontera, en otro campo: el formato de FECHA que documenta el `SKILL.md` es más
+estrecho que el real.** `organizar-sala-lectura/SKILL.md:279` dice que la línea del adjunto
+lleva `[DD/MM/AAAA, HH:MM]`. Medido sobre el export de W-02USSI, lleva **`[26/6/25,
+12:07:45]`**: día de 1-2 dígitos, mes de **1**, año de **2**, y segundos que el contrato no
+menciona.
+
+**Hoy no rompe nada, y conviene decirlo así:** ningún regex de `core/`, `scripts/` ni de las
+skills se ancla a `\d{2}/\d{2}/\d{4}`; las dos implementaciones que se escribieron contra
+esto —en dos sesiones distintas y sin coordinarse— usaron `\d{1,2}/\d{1,2}/\d{2,4}`, que
+admite las dos formas. El defecto es del **contrato documentado**: quien escriba el matcher
+leyendo el `SKILL.md` en vez de mirar un export produce un regex que no casa **ni una** línea,
+y el modo de fallo es el mismo de esta entrada — silencio, no error. Remedio de una línea:
+que el `SKILL.md` documente `[D/M/AA, HH:MM(:SS)]` y diga que **el ancho varía por export**.
+
+**Y el método SÍ funciona, con control positivo en dos casos.** Recuperar la fecha de envío
+desde el cuerpo del chat en vez de del nombre del fichero dio **67 de 67** en W-02USSI
+(cerrado en los dos sentidos: ni un audio citado sin fichero, ni un fichero sin cita) y **118
+de 118** en W-02VEKE, en otro export y otro volumen. **185 de 185.** Lo que falla es el
+formato documentado, no la regla.
+
 **Disparador de promoción.** Cualquier caso cuyo WhatsApp llegue por el espejo del Drive de E&V
 o por lote de correo, que son la mayoría — W-02USSI ya lo hizo por las dos, y W-02VEKE por una
 tercera vía de nombrado.
