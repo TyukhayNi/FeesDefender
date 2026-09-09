@@ -2108,3 +2108,133 @@ negativo a 0). Mezclar en ese bloque prosa como «solo apelaciones» produce fal
 Nombre del PDF en el gestor: `AAAA-MM-DD_<CLIENTE> - <OBJETO> - <APODERADO>.pdf`, con el cliente
 abreviado y estable (`EV MMC`, `EV SPAIN`, apellidos del particular) — la razón social entera alarga
 la ruta y ya nos costó un dead end con Office a 260 caracteres.
+
+---
+
+## 17. Subir un documento al gestor documental — el flujo de tres pasos (confirmado 2026-09-09)
+
+Cierra el único hueco que el §16.7 dejaba abierto: allí está cómo **renombrar** y cómo **bajar** un
+documento; aquí cómo **meterlo**. Verificado de punta a punta sobre cinco certificados reales: el
+documento aparece colgado de su elemento y los **bytes vuelven idénticos** al original.
+
+### 17.1 Los tres pasos
+
+```
+1. GET  /api/files/presigned_upload_url        → {action:"upload", fileIdentifier:<uuid>, url:<S3>}
+2. PUT  <url>   body = los bytes               → 200 + ETag     (a S3, SIN la clave del CRM)
+3. POST /api/documents                         → 201 {message:"Resource has been created", id:<doc_id>}
+```
+
+Cuerpo del paso 3, con los nombres exactos:
+
+```json
+{
+  "origen": "fuploaders3",
+  "origen_id": "<el fileIdentifier del paso 1>",
+  "nombreoriginal": "como se llamaba el fichero",
+  "nombrefinal": "como se llamara en el gestor",
+  "mime": "application/pdf",
+  "tamano": 196069,
+  "id_carpeta": 1,
+  "estado": "-1", "categoria": "-1", "tipo": "-1",
+  "relatedRegisters": ["poderes:87:left"]
+}
+```
+
+- **El identificador va en `origen_id`, NO en una clave `fileIdentifier`.** Es lo que costó seis
+  intentos a ciegas: el payload con `fileIdentifier` da `500 Missing mandatory properties`, un error
+  que no dice qué falta. La forma se confirma leyendo `origen`/`origen_id` de **cualquier documento
+  que ya exista** (`GET /api/element_register/gdocu/{id}?properties=origen,origen_id`).
+- **`id_carpeta` es `int`.** Como string: `400 The type of the "id_carpeta" attribute must be "int"`.
+  `1` es la raíz del árbol de `gdocu` (§16.2).
+- La URL S3 caduca a los **600 s**: pedirla justo antes de subir.
+- El `PUT` a S3 va **sin** la cabecera de auth del CRM; con `Content-Type` del fichero basta.
+
+### 17.2 ⚠️ `POST /api/documents/multiple` devuelve 201 y NO crea nada
+
+```
+POST /api/documents/multiple   {"files": [ …el mismo objeto… ]}
+→ HTTP 201  {"events": ["af014af3-96a5-4a8d-b696-70d3f740cb1c"]}     ← y no existe ningún documento
+```
+
+Probado con **seis** payloads distintos (con y sin `origen`, con `relatedElement`/`relatedId`, con
+`elemento_relacionado`/`miembro_relacionado`, con el contrato completo del §17.1): los seis
+devolvieron 201 con un id de evento y **ninguno creó el documento**, comprobado por lectura filtrando
+por `origen_id`. Con la clave `documents` en lugar de `files` sí protesta
+(`Undefined array key "files"`), lo que engaña: parece que `files` es lo que quería.
+
+**Usar el singular `POST /api/documents`.** Es el que usa el front para un fichero
+(`createDocumentRegister`), y es el único verificado.
+
+### 17.3 Dos gramáticas distintas para la misma relación
+
+| Para | Endpoint | Forma |
+|---|---|---|
+| relacionar dos registros ya existentes | `POST /api/relation_element/{element}/{id}` | `["left.clientes_propios.2"]` |
+| relacionar **al crear** un documento | `POST /api/documents` | `["poderes:87:left"]` |
+
+Misma operación conceptual, sintaxis incompatible: `elemento.punto.id` con el lado **delante** en una,
+`elemento:id:lado` con el lado **detrás** en la otra. No hay forma de deducir una de la otra; la
+segunda sale del front (`relatedRegisters:['${elemento}:${id}:left']`).
+
+El lado sigue la regla del §16.3: `left` cuando el relacionado es *parent* del elemento sobre el que
+se escribe. Desde el documento hacia el poder es `left`, y se verificó que crea el vínculo.
+
+### 17.4 ⚠️ El listado filtrado tiene LATENCIA; `related_register` no
+
+Para comprobar que un documento quedó colgado hay dos vías, y **no responden a la vez**:
+
+| Vía | Latencia | Fantasmas |
+|---|---|---|
+| `GET /api/element_registries/gdocu?…associated&property=left.poderes.id&value={id}` | **segundos** (índice) | no los muestra |
+| `GET /api/related_register/poderes/{id}` | **inmediata** | **sí**: sigue listando documentos ya borrados |
+
+**Regla operativa: lo que acabas de escribir se comprueba con `related_register`; el censo de lo que
+hay de verdad se hace con el listado filtrado.** Usar la vía equivocada tiene un coste medido, y las
+dos veces fue el mismo día:
+
+- verificar un vínculo 2 s después de crearlo por el **listado** dio «no existe» y detuvo el trabajo
+  por una causa falsa. Lo destapó un control positivo: el mismo filtro sobre un poder que sí tenía
+  documento devolvía 1, así que el instrumento funcionaba y lo que fallaba era el momento;
+- y una guarda anti-duplicado que consultaba el **listado** dio «este poder aún no tiene su
+  certificado» sobre uno que ya lo tenía, y **lo subió dos veces**. El duplicado se detectó por
+  `sha256` idéntico de los dos binarios.
+
+### 17.5 Borrar: qué se lleva cada `DELETE`
+
+- **`DELETE /api/documents/{id}`** → 200. El documento desaparece del listado filtrado, pero
+  **`related_register` sigue devolviéndolo**: queda una **relación huérfana** apuntando a un
+  documento que ya no existe. Es inocua, pero ensucia el censo de cualquiera que use esa vía.
+- **`DELETE /api/relation_element/{element}/{id}`** con cuerpo `["right.gdocu.42922"]` → 200
+  `"Deleted!"`. **Queda validado** (el §16.3 lo daba por declarado y sin probar): quita **solo** la
+  relación del cuerpo y deja intactas las demás — verificado con el poderdante y el otro documento
+  del mismo registro.
+  ⚠️ **Sin cuerpo no se ha probado, y no conviene**: lo previsible es que borre todas las relaciones
+  del registro.
+
+Para retirar un documento del todo hacen falta **los dos** borrados, y en este orden: primero la
+relación, después el documento.
+
+### 17.6 De dónde salió este contrato: se lee el front, no se captura
+
+El §14.6 dice que el HAR es inevitable «cuando el flujo son varias llamadas encadenadas con ids
+intermedios (subida de PDF en 3 pasos)». **Esta vez no hizo falta**, y la vía es reutilizable: la SPA
+sirve sus módulos en abierto y ahí está el contrato, con nombres de clave y todo.
+
+1. Abrir el CRM y leer las peticiones de red: los `assets/*.js` que carga llevan **nombres
+   parlantes** — `useDocumentUploader-*.js`, `useS3-*.js`.
+2. `GET https://tnm.sudespacho.net/assets/useS3-<hash>.js` — 1.929 caracteres, y dentro está
+   `uploadMultipleFilesToS3` construyendo el objeto: `{origen_id: fileIdentifier, nombreoriginal,
+   tamano, mime, …{id_carpeta, descripcion, estado, categoria, tipo}}`.
+3. El bundle grande (`index-<hash>.js`) tiene el cliente HTTP: `createDocumentRegister` → `post("documents", …)`,
+   `createMultipleDocumentRegisters` → `post("documents/multiple", …)`, `getPreSignedUrl` →
+   `get("files/presigned_upload_url")`. Y la forma de `relatedRegisters`, en el ejemplo de
+   `public-holidays`: `` `${elemento}:${id}:left` ``.
+
+Es más barato que un HAR, no requiere ejecutar la operación en la UI, y **da los nombres de clave
+literales** en vez de dejarlos deducir de un cuerpo observado. El hash del nombre cambia con cada
+despliegue: localizarlos por la traza de red, no guardar la URL.
+
+> **Y el contraste con el §14.5 merece anotarse.** Allí la lección fue que *un HAR prueba la UI, no la
+> API*, y descartar por HAR costó semanas. Aquí es la simétrica: **el código de la UI sí prueba qué
+> pide la API**, porque es quien la llama. Leer el cliente no es leer la interfaz.

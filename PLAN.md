@@ -3133,9 +3133,19 @@ Revisión adversarial la ejecuta Codex, la adjudica Claude.
 > R1 sobre este mismo diff, y es el defecto de [[feedback-no-redefinir-mi-regla-de-parada]]: cuando
 > mi propia regla me obliga a parar, invento un matiz.
 
-**Deuda del saneado que este trabajo hereda** (no bloquea, pero está sin resolver): 7 registros
-bloqueados —6 sin PDF, que esperan el portal de apud-acta de Nikolai, y el `#35`, que **no es un
-poder** y para el que el enum `Formato` no tiene valor—; 3 sin poderdante (`#82`, `#85`, `#86`); el
-duplicado demostrado `#54`/`#56` (mismo poder, y el `#56` con el cliente equivocado vinculado); el
-par `#17`/`#18` que comparte PDF byte a byte; y `#1`/`#13`, con la fecha del CRM tan lejos de la del
-documento que probablemente sean dos poderes en un registro.
+**Deuda del saneado que este trabajo hereda** (no bloquea; actualizada el 2026-09-09 tras cruzar el
+fichero contra el registro judicial):
+
+- **cerrado:** los 5 apoderamientos que faltaban se localizaron en la sede y están dados de alta con
+  su certificado (`#72` completado, `#87`-`#90` nuevos). El fichero pasa de 85 a **89** registros.
+- **abierto, y es decisión de Nikolai:** `#79` y `#86` **no tienen apoderamiento detrás** en el
+  registro judicial —siendo apud acta de E&V con él como compareciente, deberían aparecer—; el `#35`
+  no es un poder y el enum `Formato` no sabe describirlo; el duplicado demostrado `#54`/`#56` (mismo
+  poder, y el `#56` con el cliente equivocado vinculado); el par `#17`/`#18`, que comparte PDF byte a
+  byte; y `#1`/`#13`, con la fecha del CRM tan lejos de la del documento que probablemente sean dos
+  poderes en un registro, así que se revisan y no se corrigen.
+- **medido y sin resolver:** 7 poderes cuyo compareciente **no es Nikolai** (`#11`, `#52`, `#55`,
+  `#57`, `#58`, `#66`, `#85`) quedan fuera del filtro del portal, así que su estado en el registro
+  sigue **sin verificar** — no «vigente», sino sin mirar. Y el enum `Apoderado` no tiene valor para
+  **graduado social**: en `#89` y `#90` va `Abogado` con la salvedad escrita en `Notas`, por decisión
+  de Nikolai el 2026-09-09.
