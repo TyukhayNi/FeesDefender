@@ -8149,13 +8149,17 @@ dejó rastro: hice su trabajo sin notar que no lo hacía él. Dos casos, dos ses
 emparejamientos automáticos, y en uno de los dos el defecto quedó tapado por trabajo manual.
 Ver [[feedback-guarda-inerte-comprobar-el-otro-valor]].
 
-**Entrada hermana, y por qué NO se fusionan.** La sesión «Inventario de demanda Sergio»
-trae una entrada sobre la **causa** en el censo: `clasificar_ruta` (`core/sala_maquina.py:47`)
-no conoce el audio, así que un `.opus` cae al `else` del despacho y sale `sin_soporte` — 67 de
-los 73 `sin_soporte` de `W-02USSI` son audio, el 92%. Esta entrada describe el **síntoma en el
-gate**, y **sigue siendo necesaria aunque esa se construya**: las imágenes y los zips no van a
-tener espejo nunca, así que la señal seguiría disparando. Cablear el audio reduce el ruido; no
-lo cierra. Cuando esa entrada tenga número, cítese aquí.
+**Entrada hermana, y por qué NO se fusionan.** La causa en el censo es **`MEJORAS #205`**
+(«Ruta `audio` en la sala de máquina», PR #311): `clasificar_ruta`
+(`core/sala_maquina.py:47`) no conoce el audio, así que un `.opus` cae al `else` del despacho
+y sale `sin_soporte` — 67 de los 73 `sin_soporte` de `W-02USSI` son audio, el 92%. Esta
+entrada describe el **síntoma en el gate**, y **sigue siendo necesaria aunque la #205 se
+construya**: las imágenes y los zips no van a tener espejo nunca, así que la señal seguiría
+disparando. Cablear el audio reduce el ruido; no lo cierra.
+
+El tercer dato de arriba, sobre `emparejar_exports_whatsapp`, vive en **`MEJORAS #206`** del
+mismo PR, con el modo de fallo que aporta este caso: un helper cuya única señal de que no
+funciona es que **no hay señal**.
 
 **Disparador de promoción.** Medio. No corrompe datos ni bloquea: degrada el gate a ruido.
 Sube en cuanto haya un segundo caso con export de WhatsApp, que es el flujo normal de los
