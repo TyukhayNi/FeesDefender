@@ -552,7 +552,7 @@ class TestLaCabeceraDeCitaNoAnclaBloque:
         # Ingles, una sola linea.
         "ENGEL&VÖLKERS\n\nOn Wed, 12 Aug 2026 at 14:32, Name Surname "
         "<x@engelvoelkers.com> wrote:\n",
-        # Aleman, una sola linea.
+        # `de` (ISO 639-1; ver la nota junto a `_RE_ATRIBUCION_VERBO`), una sola linea.
         "ENGEL&VÖLKERS\n\nAm Mi., 12 ag. 2026 um 14:32 Uhr Name Surname "
         "<x@engelvoelkers.com> schrieb:\n",
         # El verbo cae en la linea ANTERIOR a la de la direccion -- el otro sentido
