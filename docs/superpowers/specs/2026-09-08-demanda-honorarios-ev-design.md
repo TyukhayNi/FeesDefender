@@ -23,7 +23,7 @@ motivo_una_ronda: "no decide quien escribe sobre que copia ni puede destruir dat
 
 De revisar el borrador de petición inicial de W-02USSI (75.020 €, redactado por el abogado
 junior en febrero de 2026, autorizado como monitorio, aún sin presentar). Esa lectura produjo
-seis defectos reutilizables y, más útil todavía, la comprobación de que **tres de las skills
+ocho familias de defecto reutilizables y, más útil todavía, la comprobación de que **tres de las skills
 del despacho ya poseían la mitad de lo que esta iba a construir**. El diseño que sigue es
 más pequeño que el primero que se propuso, y a propósito.
 
@@ -107,7 +107,10 @@ engel-volkers ..................... contexto de cliente, terminologia propietari
   honorarios)». El borrador de W-02USSI es de febrero y esa regla es posterior: **es un
   escrito anterior a la regla, no un hueco de cobertura.** Fuera del catálogo.
 - **El defecto «cita normativa que no dice lo que se le atribuye» pertenece a
-  `verificacion-anclada-fuente`** (Reglas 8 y 11). Fuera del catálogo. Quedan **seis**.
+  `verificacion-anclada-fuente`** (Reglas 8 y 11). Fuera del catálogo.
+
+Con esas dos fuera y las dos que añadió la rev. 2, el catálogo del §8 queda en **ocho**
+familias.
 
 ## 4. Modos, y cómo se detectan
 
@@ -383,7 +386,7 @@ prepara**.
 
 ## 12. Pruebas
 
-- **`evals/evals.json`**, caso 1: W-02USSI en modo revisión. ¿Salen las seis familias?
+- **`evals/evals.json`**, caso 1: W-02USSI en modo revisión. ¿Salen las ocho familias?
 - **Golden de `cruzar_documental.py`** sobre un escrito y un censo **sintéticos** (nunca el
   árbol de producción, regla de `CLAUDE.md`): documento citado que no está, documento presente
   que no se cita, y un Hecho 🟢 apoyado en un documento con 3 caracteres.
