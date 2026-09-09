@@ -8254,6 +8254,40 @@ la suite; las cuatro vías siguen abiertas.
 
 **Disparador para promoverla:** el segundo término homógrafo, o el primer rojo sin commits nuevos que
 vuelva a costar más de diez minutos de diagnóstico.
+### Y oscila en los DOS sentidos: rojo a las 17:00, verde a las 17:30 (medido aparte)
+
+Confirmación independiente desde otra sesión el mismo 2026-09-09, que añade la mitad que
+faltaba: la de arriba documenta **verde → rojo** (12:00 → 16:00); esto es **rojo → verde**.
+
+- **~17:00** — la suite completa deja el guard en rojo con las dos detecciones de siempre.
+  Verificado en un **checkout limpio de `main`**: fallaba igual sin el commit de la rama, o
+  sea preexistente y ajeno al PR que lo encontró (#308).
+- **~17:30** — `1 passed`, y **no por un `skip`**: la lista se resuelve (82 términos) y
+  `escanear()` devuelve **0 hallazgos** sobre esos dos mismos ficheros.
+- Y **nada de lo obvio había cambiado**: el gentilicio sigue en `core/email_firmas.py` (1
+  ocurrencia), el término sigue apareciendo en lo que devuelve `cargar_blocklist()` y es
+  **exactamente** esa palabra (una sola, 6 caracteres), y el código del escáner en ese
+  worktree no se tocó.
+
+**Lo que ese último punto destapa, y es nuevo:** si el término sigue en lo que
+`cargar_blocklist()` devuelve y aun así `escanear()` ya no lo caza, entonces **la lista que
+el test carga y la que el escáner usa efectivamente no son la misma cosa** — coherente con
+que la blocklist viva en dos artefactos (`replacements.txt` y `pii_blocklist.txt`) y con que
+uno se ampliara ese día. No se ha determinado cuál de los dos cambió entre las 17:00 y las
+17:30, y **no se volcó ninguno para averiguarlo**, porque volcar la lista completa está
+prohibido (`SEGURIDAD_DATOS.md`, precedente de `rclone config show`). Queda como *no lo sé*,
+que no es *no hay*.
+
+**Refuerza la vía 1** de las cuatro de arriba, y le añade un requisito: que el sello del
+cierre declare el `sha256` **de los dos** ficheros, no solo de uno — con uno solo, este
+episodio habría seguido siendo inexplicable.
+
+**Nota de método, del otro lado.** El primer intento de documentar esto citaba literal la
+salida del test, y el hook **bloqueó el commit de la entrada que describía su propio falso
+positivo**: hay que escribirla sin nombrar el término. Y el hook **no** escanea mensajes de
+commit, así que el término sí llegó al mensaje del commit que la introdujo. Sin consecuencia
+—es un gentilicio—, pero es un hueco de cobertura.
+
 ## 187. El aviso de «cabecera de la bitácora rancia» se declaró promovido el 2026-08-26 y nunca se construyó — sexta reincidencia
 
 **Medido el 2026-09-09.** La bitácora tiene una nota, escrita al cerrar el 72º, que dice
