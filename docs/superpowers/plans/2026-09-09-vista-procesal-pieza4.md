@@ -3076,3 +3076,121 @@ Las dos las ejecuta Codex en solo lectura, volcando a un fichero fuera del repo,
 Claude contra la fuente. El informe literal va a un acta hermana
 `2026-09-09-vista-procesal-pieza4-r<N>-adversarial-review.md` con su digest; la adjudicación va
 embebida en este plan.
+
+---
+
+## 10. Adjudicación de la revisión adversarial (Codex, 2026-09-09) — NO-SHIP, parcial
+
+- **Objeto revisado:** este plan en el commit `25c07bc` (`sha256 aaaf72e7…955050`), copia externa sin `.git`
+- **Ronda:** 1 de 2 — la del diseño; la del diff queda pendiente
+- **Revisor:** Codex (`codex-cli 0.153.4`, `model_reasoning_effort=high`), en solo lectura sobre copia congelada
+- **Informe recibido:** `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4-r1-adversarial-review.md` (`sha256 b39f7bce…e037f8`)
+- **Hallazgos:** 23 — 6 CRÍTICO, 14 ALTO, 3 MEDIO. **23 confirmados, 0 refutados.** Dos acotados en su alcance, ninguno rebajado de severidad
+- **Remediado en:** H-23 en `8f9ad84`; los 22 restantes exigen reescribir el plan (v2), no parchearlo
+
+**Acepto el NO-SHIP y retiro este plan como ejecutable.** No se escribe una línea de producción
+sobre él. Lo que sigue no es una lista de 23 arreglos: son **siete fronteras**, porque casi todos
+los hallazgos son ejemplos de una de ellas, y remediar el ejemplo en vez de la frontera es el
+error que ya me costó una regresión peor.
+
+### Las siete fronteras
+
+**F1 — La propiedad se comprueba en la ruta que se lee, no en todas las que se escriben o
+borran.** (H-01, H-04, H-05, y la mitad de H-02.) Mi puerta miraba el fichero *anterior* de un
+`mover`/`reemplazar` y nunca el destino *nuevo*; y solo miraba si había SHA, porque escribí
+`if asiento.destination_sha256`, de modo que **un asiento sin SHA ampliaba el permiso en vez de
+bloquearlo**. La frontera: *toda* ruta que esta transacción vaya a escribir o borrar pasa la
+misma puerta, la ausencia de hash bloquea, y ninguna comprobación vale más allá del instante en
+que se hizo — entre `plan` y `apply` hay un hueco que el mutex no cierra, porque el mutex no
+gobierna a Word ni a Drive.
+
+**F2 — Igualdad de bytes no es prueba de autoría, y `adoptar` la usaba como si lo fuera.**
+(H-02, y el test de PLAN:1814, que *bendecía* el defecto en vez de cazarlo.) Esto lo inventé yo
+en el self-review para cerrar un agujero, y abrí uno peor. El caso que lo mata no necesita
+coincidencia improbable: si el ledger ya posee `00_f.pdf` para el `doc_id` 2 y el mapa lo pide
+para el 1 con idéntico contenido, se emiten `adoptar(1)` y `borrar(2)`, y **el borrado final
+elimina el fichero que la misma corrida acaba de adoptar**, dejando un asiento que afirma poseer
+algo que ya no existe. Y hay un daño colateral que no vi: `core/config.py:436-441` justifica
+desacoplar los PDF del grupo de merge **precisamente porque** «un fichero sin línea en el ledger
+se reporta como ajeno». Mi adopción convertía eso en propiedad, así que debilitaba en silencio
+la garantía de una pieza **ya mergeada**. La frontera: *la recuperación se acredita, no se
+infiere*. O hay un journal de intención escrito **antes** de publicar, o la recuperación es
+manual y explícita. Lo que no cabe es deducir la propiedad del contenido.
+
+Y una lección sobre mí, no sobre el código: declaré el journal fuera de alcance y justifiqué la
+omisión con este mecanismo. Cuando mi propia regla me obligaba a construir el journal, inventé
+un atajo. Es el patrón exacto que ya tengo anotado y no me disparó.
+
+**F3 — Contención: resolver la raíz permite que la propia ruta legitime su desvío.** (H-03,
+H-16.) Comprobaba `destino.resolve().relative_to((case_dir / "05_Procedimiento").resolve())`, y
+si `05_Procedimiento` es una *junction* al crudo, **las dos partes resuelven al mismo sitio y la
+comprobación se aprueba a sí misma**: el revisor creó la junction de verdad y apply borró un
+fichero de `00_Input/05_CRM` y escribió el ledger dentro del crudo. `is_symlink()` sobre el
+fichero no ve un reparse point en un directorio padre. Y por el otro lado, `orden: ../00` entra
+sin gramática y sale de la carpeta de fase. La frontera: la raíz autorizada se identifica
+**primero** y jamás se re-deriva de la ruta que se está juzgando; ninguna cadena que venga del
+mapa se convierte en componente de ruta sin gramática propia.
+
+**F4 — `pull_state.doc_ids` es el subconjunto DESCARGADO; el universo es `listadas`.** (H-08.)
+Verificado por mí: `core/case_manager.py:1638` lo dice literalmente y
+`core/sync_sudespacho.py:1669` solo hace `append` dentro del bucle de descarga, después de
+filtrar `only_doc_ids`. Los conflaté, y el efecto es doble y grave: en el **régimen acotado**
+—el que usó este mismo caso, 2 documentos de 76— mi puerta habría bloqueado los otros 74; y con
+`doc_ids` vacío el cruce se salta entero y las `solo_listadas` **no bloquean ni aparecen en
+`sin_asignar`**, porque calculaba `sin_asignar` sobre `materializadas`. O sea: la pieza habría
+sido inservible en el expediente para el que la diseñé, y a la vez habría ocultado en silencio
+lo que el CRM tiene y el caso no bajó. La frontera: universo enumerado, materialización y
+decisión del letrado son **tres** conjuntos distintos y ninguna puerta puede usar uno por otro.
+
+**F5 — La cobertura tiene más clases de las que enumeré, y el bundle no es una fila.** (H-10,
+H-11, H-12.) Verificado: `duplicado` (`METODO_DUPLICADO`, `MEJORAS #147`) y `error`
+(`sala_maquina.py:1409`) son métodos reales que mi selector mandaba a «desconocido → bloqueo», y
+`alias_de` no se resolvía. El OCR de un bundle se escribe en `01_OCR/<parent_slug>.pdf`
+(`:1023`) mientras las filas de segmento llevan el slug del **segmento** (`:975`), así que mi
+grupo —que conservaba la fila de peor calidad— derivaba una ruta inexistente y bloqueaba teniendo
+el PDF íntegro al lado. Además nunca cruzaba el **SHA actual** del crudo con el de la ocurrencia
+y la cobertura: bastaba que el fichero existiera. La frontera: *clase* y *estado* son ejes
+distintos; el bundle es un grupo de primera clase que resuelve al artefacto del padre; y la
+cadena ocurrencia → cobertura → bytes se verifica, no se presume.
+
+**F6 — Los tests compraban garantías que no ejercitaban.** (H-21 y la tabla de 70 filas.) Tres
+mutantes **ejecutados** pasan con el defecto puesto: el de «despacho no destructivo» solo corría
+`desregistrar`, el de atomicidad solo miraba que no quedaran temporales, y el de reejecución le
+pasaba a mano un plan vacío. Cuatro tests de fachada **ya estaban rojos** por un fixture que no
+redirige a todos los lectores, y uno más por H-16. Y los tres del corpus pasarían con todo
+bloqueado o con todos los crudos ausentes. La frontera: un test se acepta cuando se le ha visto
+**ponerse rojo** con su defecto puesto; el nombre y el docstring no acreditan nada.
+
+**F7 — Lo que declaré fuera de alcance con una justificación que no se sostiene.** (H-07, H-09,
+H-13, H-14, H-15, H-18, H-19, H-20, H-22.) El journal (F2). La puerta de registro ausente, que
+delegué a un `load()` cuyo contrato legítimo es devolver vacío. La procedencia doble, que en
+`converted` guardaba `raw_path`/`raw_sha256` **vacíos** — justo en el único caso donde la cadena
+importaba. `eco_crm` sin puerta ni persistencia. El override de cobertura sin evento ni actor, y
+autorizado por un `'false'` que `bool()` hace `True`. El flujo que hace usable la pieza
+—proponer `orden` y `descripción`, emitir el borrador del mapa— que el spec §2.5 cierra y yo
+dejé fuera sin declararlo. El punto de commit de los índices, que consolida un estado incompleto
+como «sin cambios». Un marcador de índice roto que se come el trabajo manual del letrado. Y la
+atribución errónea a la pieza 1.
+
+### Los dos que acoto, sin rebajarlos
+
+- **H-17 (MEDIO).** El defecto real es la **promesa incumplida**: presupuesté la ruta final y no
+  el temporal, que sale 11 caracteres más largo. Lo que *no* está demostrado —y el propio
+  revisor lo dice— es que este host falle por MAX_PATH. Se remedia el presupuesto; no se afirma
+  el fallo.
+- **H-18 (MEDIO).** El revisor **corrige el marco de mi propio mandato**, que pintaba la puerta
+  de `sin_asignar` como incumplible: con 76 materializados y nombres únicos, vaciarla a mano es
+  posible. Lo que sí falta es el flujo que lo hace razonable. Lo apunto porque es la clase de
+  precisión que distingue una revisión de una queja.
+
+### Qué pasa ahora
+
+El plan se reescribe (**v2**) sobre las siete fronteras, y **hasta entonces no hay código**. El
+orden de tareas cambia: la autorización por workspace y el journal de intención dejan de ser
+detalles de la Tarea 8 y pasan a ser la Tarea 1, porque son la frontera de la que dependen las
+puertas. `adoptar` desaparece. Los tests se rescriben con su mutante delante.
+
+**Cobertura ausente que no se disimula:** el corpus real y el reparto del piloto siguen
+**SIN VERIFICAR** — el revisor no abrió los expedientes ni generó los fixtures, así que los tres
+tests de regresión no corrieron. Trece declaraciones SIN VERIFICAR en su informe, y ninguna es
+un «está bien».
