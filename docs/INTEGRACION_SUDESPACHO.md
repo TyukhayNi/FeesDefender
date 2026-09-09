@@ -79,7 +79,7 @@ mejor inventario que hay y a menudo evita el descubrimiento a mano.
 > Fase B recorre `/api/elements`, que devuelve 89 nombres y **oculta al menos 28 elementos que el
 > propio atlas cita como relaciones** — `poderes` entre ellos, con 85 registros vivos. **«No está en
 > el atlas» no significa «no existe»**: significa que la Fase B no pudo mirarlo. Detalle y lista:
-> §16.1 y `MEJORAS_FUTURAS.md` #176.
+> §16.1 y `MEJORAS_FUTURAS.md` #185.
 
 Regenerar y ver la deriva del tenant:
 
@@ -980,16 +980,74 @@ endpoint de borrado documentado.
 - **`uid` del elemento `mail` ES el Message-ID RFC** (39/40 en muestra; `filter uid=<id>`
   discrimina 1 de 462.414). → El `mail_id` se recupera **releyendo**, sin re-relacionar, y el
   `account` se resuelve por lectura en vez de por configuración.
+  ⚠️ **Pero `uid` NO es ÚNICO, y ese 1/40 tiene dos formas** (medido el 2026-09-07):
+  1. **Un mismo Message-ID puede tener N filas `mail`, una por CUENTA.** Tres correos probados
+     dieron **tres copias** cada uno (cuentas 11, 13 y 15). Es un buzón de distribución
+     (`procesal@` reenvía a cuatro personas) con una cuenta de correo del CRM por persona.
+     Consecuencia directa: **`filter uid=<id>` puede devolver varias filas**, y un
+     `resolver_cuenta()` que exija unicidad devuelve `None` — que **no** significa «no indexado».
+  2. **Hay filas cuyo `uid` no es un Message-ID en absoluto**: visto `uid=1908692`, con `cuenta`
+     vacía.
+- ⚠️ **`findRelations` da una vista POR COPIA, y la relación NO es global: se pega a UNA copia
+  que ELIGE EL SERVIDOR.** *(Corregido el 2026-09-09. El 2026-09-07 esta línea decía «la relación
+  que escribe el relate es GLOBAL»: **era falso**, y salió de una medición que no podía
+  discriminar — se mandó el relate con `account=15` y con `account=2`, se obtuvo el mismo
+  `mail_id`, y se leyó como «es global» cuando **`account` no viaja en el cuerpo del POST**, así
+  que las dos peticiones eran idénticas y el mismo resultado era inevitable.)*
+  **Medido el 2026-09-09 con un experimento que sí discrimina:** relate de un correo con copias en
+  las cuentas 2 y 15 hacia `extrajudiciales:636`, **pasando `account=2`**. Después: la copia de la
+  **15** ve la relación nueva; la de la **2** sigue viendo `[]`. O sea:
+  1. **La relación se pega a una sola copia.**
+  2. **`account` NO dirige la escritura** — no está en el cuerpo `{messageIds, relatedMembers,
+     relatedElement, cookies, dataHash}`, así que el servidor no puede saber qué copia elegiste.
+  3. **La elige él.** Escogió la 15 en las dos observaciones; **la regla no está medida**, y con
+     dos datos no se establece.
+  4. → **Qué copia lleva la relación no lo controla el cliente.** Si la visibilidad en Roundcube va
+     por buzón, el correo aparece en el webmail de quien el servidor decida.
+  **Control positivo hecho:** `findRelations(account=2)` **sí** devuelve relaciones para otros
+  correos de esa cuenta (5 de 5 con `estarelacionado=1`), así que su `[]` es una respuesta y no un
+  instrumento mudo.
+  → **La verificación por `findRelations` es INCORRECTA, no imprecisa**: sobre una copia que no es
+  la elegida responde «no relacionado» cuando sí lo está. La única verificación válida es por el
+  lado del expediente: `GET /api/related_register/{elemento}/{id}` → bloque `mail` (§15.5), que
+  **sí lo ve sea cual sea la copia** (comprobado: el `mail_id` aparece en el 636 y en el 683).
+  ℹ️ El bloque de relaciones puede traer elementos que no son expedientes — visto `mailcarpetas` y
+  `tracking`, éste con varios ids por correo.
+- ⚠️ **`relate/attachments` NO es idempotente: DUPLICA.** El mismo `att_id`, el mismo nombre
+  final y el mismo `mail_id`, posteados dos veces, dejan **dos documentos** en el gestor
+  documental (medido el 2026-09-07 sobre el 636: censo 3 → 4 → 5, los dos POST con
+  `{"status":"success","errors":[]}`). → Quien llame a este endpoint **debe** filtrar antes por
+  censo lo que ya está; y filtrar solo por **nombre** deja el hueco de dos nombres distintos para
+  el mismo adjunto.
+- **`relate/selected` re-posteado sobre un correo YA relacionado sí devuelve el manifiesto**
+  (`mail_id` + `att_id`), que es la única vía conocida de recuperarlos. Medido el 2026-09-07.
+- 🔁 **Estos hechos son RE-EJECUTABLES, no folklore.** Dos sondeos de solo lectura los reproducen:
+  `python -m scripts.sondeo_copias_mail` (censo de copias por Message-ID; `--uid` para el detalle
+  de uno con sus relaciones por copia) y `python -m scripts.sondeo_join_gmail_crm` (qué correos de
+  un buzón de Gmail conoce el CRM y con qué están relacionados). Los dos imprimen un **CONTROL**:
+  si no han visto ni un caso positivo, su cero **no acredita nada** y lo dicen — con dos páginas el
+  censo devuelve 0 % y con ocho, 6,3 %.
 - **`hasAttachments` cuenta también los inline** (logo de firma): puede dar `true` con
   `mailadjunto` vacío. Son dos preguntas distintas; para decidir qué subir vale la segunda.
   (Sí devuelve `false` cuando toca — comprobado; no es inerte.)
+- ⚠️ **El campo `adjuntos` del elemento `mail` NO es el número de adjuntos del correo.** Es estado
+  **por copia** y **no sigue a `hasAttachments`**: medido el 2026-09-08, hay correos con
+  `hasAttachments=False` en todas sus copias y a la vez una copia con `adjuntos=1`. Qué significa
+  exactamente **no está medido**. Lo que sí está: leerlo como un contador de adjuntos hace concluir
+  que el 31,2 % de los Message-ID multicopia «difieren en adjuntos», y es **falso** — con
+  `hasAttachments`, que sí es propiedad del mensaje, las copias **coinciden 10 de 10**. Para saber
+  si un correo trae adjuntos, `hasAttachments`; para saber cuáles, el manifiesto del relate.
 - **El relate devuelve JSON**, no HTML, y trae ya el `mail_id` + los `att_id` que consume el
   adjuntar: **encadenar es obligatorio y suficiente**.
 - **`POST /api/mail/autoassign` es un falso amigo:** exige `{messages, cookies, dataHash}` y su
   `GET /api/mail/autoassign/config` declara 17 elementos válidos que son **fichas de personas**
   (abogados, clientes, procuradores, juzgados, proveedores…), **ni `expedientes_judiciales` ni
   `extrajudiciales`**. Asigna correo a interviniente por dirección, no a expediente. No sirve para esto.
-- **Probado sobre `extrajudiciales`; `expedientes_judiciales` NO está medido** — no asumir por simetría.
+- ~~**Probado sobre `extrajudiciales`; `expedientes_judiciales` NO está medido**~~ — **MEDIDO el
+  2026-09-07** sobre el judicial de prueba **683**: mismo slug pelado, mismas carpetas, sin
+  contaminación cruzada con el extrajudicial. El slug del extrajudicial es `extrajudiciales`
+  (`expedientes_extrajudiciales` da censo ilegible). Esta línea dijo lo contrario hasta que se
+  corrigió: la medición estaba en el spec de F3 §2.10 y no se había propagado al SSOT.
 
 **Plan B — el plugin de Roundcube (lo que hace la interfaz).** `POST
 https://roundcube.sudespacho.net/?_task=mail&_action=plugin.sudespacho_asignaa_<acción>`,
@@ -1922,7 +1980,7 @@ Cruzando los elementos que el propio atlas cita como relaciones (`parent`/`child
 salen **28 elementos citados sin ficha**. De esos 28, el único que se ha comprobado que responde de
 verdad es `poderes` (esta sección entera); **de los otros 27 solo se sabe que el CRM los declara como
 relaciones válidas de otros elementos**, no que sus endpoints contesten. La lista literal y las vías
-de arreglo viven en `MEJORAS_FUTURAS.md` **#176** — un hecho, un hogar.
+de arreglo viven en `MEJORAS_FUTURAS.md` **#185** — un hecho, un hogar.
 
 **Consecuencia práctica:** que un elemento no esté en el atlas **no significa que no exista**. Para
 descubrir su esquema, el atajo del §15.1 (`GET /api/view/config/{element}/fields`) funciona igual, y

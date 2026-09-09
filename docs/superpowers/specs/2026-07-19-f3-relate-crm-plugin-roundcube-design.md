@@ -2,7 +2,7 @@
 estado: vigente
 dueño: Nikolai Tyukhay
 fecha: 2026-07-19
-revision: v4 (2026-09-07 — el reparto medido: el webmail abre la puerta, el REST hace el resto)
+revision: v5 (2026-09-07 — medido con escrituras: el adjuntar duplica, y la verificación va por el lado del expediente)
 topic: Intake procuradores F3 — escritura en el CRM (relate + adjuntar)
 relacionado:
   - docs/superpowers/plans/PLAN_INTAKE_PROCURADORES_EMAIL.md (§7, §15 F3)
@@ -17,7 +17,7 @@ relacionado:
 > Fase F3 del intake de correos de procuradores. F1 (matcher) y F2 (bandeja) están
 > MERGEADAS y corren en dry-run. Esta fase añade la escritura real.
 
-## 0. Cómo llegó este documento a la rev. 4, en dos correcciones
+## 0. Cómo llegó este documento a la rev. 5, en tres correcciones y una lección de método
 
 **Rev. 1 y 2 (julio):** un HAR mostró que el «Asignar a elemento» del webmail lo ejecuta un
 plugin de Roundcube, y de ahí se concluyó que **la API REST no permitía escribir**.
@@ -36,8 +36,24 @@ opera sobre correos que el CRM ya tiene en su tabla `mail`**, y un correo entra 
 devuelve `200` y **no escribe nada**. El resultado no es «REST sí» ni «REST no», sino un
 reparto (§1).
 
+**Rev. 5 (2026-09-07, noche) — lo que dijeron las ESCRITURAS.** Las tres incógnitas que el §8
+declaraba sin probar se midieron contra los expedientes de prueba 636 y 683: el relate REST
+escribe y verifica sobre un correo indexado; **el adjuntar DUPLICA** si se le repite el POST; y
+re-postear el relate sí devuelve el manifiesto de un correo ya relacionado. Y apareció lo que
+ninguna ronda había mirado: **`findRelations` da una vista POR COPIA** mientras la relación que
+escribe es **global**, así que el contrato de verificación del §4 daba **falso negativo sobre una
+escritura buena**. La rev. 5 lo corrige (§4.1) y **revierte la adjudicación de H-05** (§12).
+
 La lección que queda, y que ya está en `DEAD_ENDS`: **medir sobre una población y concluir
 sobre otra** es el mismo error las tres veces, cambiando la población.
+
+**Y una cuarta, sobre el instrumento en vez de la población.** El hallazgo del §4.1 salió de que
+la primera medición de esa sesión —escrita contra un atributo que no existe,
+`Relaciones.relacionados`, cuando el campo es `pares`— **solo podía devolver «cero relaciones»**, y
+su salida se publicó como refutación del §2.8. Un instrumento que no puede dar el otro valor no
+mide nada. La regla que faltaba, y que ahora está escrita: **si una medición propia refuta algo
+que ya se midió en campo, el sospechoso por defecto es el instrumento**, y no se publica sin un
+control positivo que le haya visto dar el otro valor.
 
 ## 1. El reparto (lo que este diseño construye)
 
@@ -103,6 +119,22 @@ Y la transición, medida sobre el mismo Message-ID: **antes** del relate del web
 Dos hipótesis se descartaron por el camino y conviene dejarlas escritas para que nadie las
 repita: no era el **auto-envío** (un correo entrante puro tampoco entra), ni un **retardo de
 indexación** (no entra por esperar). Entra **al relacionarlo desde el webmail**.
+
+**CONFIRMADO por censo el 2026-09-07 (rev. 5), y con nombre y apellidos.** Sobre 32 correos de
+`procesal@` de cuatro días: **23 indexados, los 23 con relación** a su `expedientes_judiciales`;
+**0 indexados sin relación**; 0 errores de lectura; 9 sin fila `mail` (comprobado `filas=0`, no
+multicuenta). Y `id_creador` lo cierra: **las 23 filas de la cuenta 20 las creó el usuario 23 =
+ANA VELASTEGUI**, y su `fecha_creacion` sigue una jornada de trabajo —filas del 09-07 entre 08:36
+y 16:43 para correos **enviados el 09-04**—, no la llegada del correo. O sea: **indexado ⟺ una
+persona lo relacionó**, y los 9 que faltan son su cola pendiente (uno de ellos en la carpeta de
+SPAM, que probablemente no vio).
+
+⚠️ **Y una advertencia para quien vuelva a medir esto.** En esa misma sesión se «refutó» este §2.8
+con un script cuya línea de conteo leía un atributo inexistente (`Relaciones.relacionados`, cuando
+el campo es `pares`) y por tanto **solo podía imprimir «cero relaciones»**. De esos ceros salieron
+además dos conclusiones falsas —un «retardo de indexado de 5-7 h» y una «minoría misteriosa»—, y
+las dos se disolvieron al medir bien. **Ninguna refutación de este párrafo vale sin un control
+positivo** que haya visto al instrumento devolver el otro valor.
 
 ### 2.9 Lo que el webmail expone, en su propio origen (verificado 2026-09-07)
 
@@ -186,6 +218,36 @@ instrumentos que no pueden dar el otro valor. De ahí, y no de una preferencia d
 Esto no es teórico: en la primera prueba de campo el relate devolvió 200 sin escribir y la
 guarda lo cazó.
 
+### 4.1 La relectura va por el lado del EXPEDIENTE, no del correo (medido, rev. 5)
+
+`GET /api/mail/findRelations/{base64}?account={n}` devuelve las relaciones de **esa COPIA** del
+correo, no las del correo. Y un mismo Message-ID vive como **N filas `mail`, una por cuenta**:
+medido el 2026-09-07 sobre tres correos, **tres copias cada uno** en las cuentas 11, 13 y 15, con
+el `expedientes_judiciales` colgando de **una sola** de las tres. Es `procesal@` como lista de
+distribución: una cuenta de correo del CRM por persona, una fila por cuenta, y quien archiva lo
+hace sobre su propia copia.
+
+La relación que el relate escribe, en cambio, es **global**. Medido sobre el 683: relacionar la
+copia de la cuenta 15 la hace visible desde el expediente, y relacionar después la copia de la
+cuenta **2** con el **mismo** miembro **no añade nada** — el CRM devolvió el **mismo `mail_id`
+(439232)** desde las dos cuentas y el expediente se quedó en dos correos. De ahí dos conclusiones
+de signo opuesto:
+
+- **NO hay riesgo de duplicar la relación.** El CRM la clava a la identidad del correo, no a la
+  copia. La idempotencia por par `(elemento, id)` no necesita además cruzar las copias.
+- **SÍ hay falso negativo.** La relectura desde la cuenta 2 seguía devolviendo `pares=[]`, así que
+  `relacionar()` respondió `ok=False` con el motivo *«el CRM respondió 200 pero la relectura no lo
+  verifica; ¿existe el miembro?»* — y el miembro existía, y la relación estaba escrita. Un
+  reintento guiado por ese diagnóstico **no converge nunca**, y el motivo señala a la causa
+  equivocada.
+
+**Corolario de diseño, que esta revisión cambia:** el relate se verifica leyendo el
+**expediente** —`GET /api/related_register/{elemento}/{id}` → bloque `mail`, que es la vista
+global— y no el correo por cuenta. Esa ruta **ya estaba cableada en el repo**
+(`core.sudespacho_relations.get_relaciones`, `INTEGRACION_SUDESPACHO §15.5`, lo consume
+`scripts/crm_ficha.py`): F3 se construyó con la lectura por correo sin que nadie comparase las
+dos superficies.
+
 ## 5. Flujo end-to-end
 
 1. **Anti-duplicado en lote**: `filtrar_ya_asignados([...], account)`.
@@ -196,6 +258,12 @@ guarda lo cazó.
    manifiesto —el relate es idempotente— y se sigue al adjuntar, que decide por censo qué
    falta de verdad. *Este caso ocurrió en la primera prueba de campo: el correo constaba
    relacionado y el documento no estaba subido.*
+   **MEDIDO el 2026-09-07 (rev. 5):** el mecanismo funciona. `_post_relate` sobre un correo ya
+   relacionado devolvió `mail_id=464006` y el manifiesto `[('183918', 'PREUBA - ADJUNBTAR -
+   BORRAR.docx')]`. Ojo al nivel: **`relacionar()` NO sirve para esto** —corta en seco con
+   `ya_estaba=True` y manifiesto vacío—, y por eso `archivar()` llama a `_post_relate`
+   directamente. Quien llame al nivel de arriba esperando el manifiesto se lleva una lista vacía
+   y puede leerlo como «no hay adjuntos».
 6. F4 (fuera) decide `subir` y `nombre_final`.
 7. Resolver `folder_id`.
 8. `adjuntar(...)` solo con lo seleccionado y lo que no esté ya presente.
@@ -233,16 +301,34 @@ un navegador, pero solo para este paso.
 
 ## 8. Lo que NO está probado, dicho por delante
 
-1. Que `cookies`/`dataHash` **vacíos** sigan valiendo sobre correos indexados. Observado, no
-   prometido. Mitigación: test de integración `slow` contra el expediente de prueba.
-2. **La idempotencia del adjuntar.** No se ha re-posteado el mismo adjunto. Hasta probarlo, el
-   cliente no reintenta solo: filtra por censo lo que ya está.
+1. ~~Que `cookies`/`dataHash` **vacíos** sigan valiendo sobre correos indexados~~ — **MEDIDO
+   el 2026-09-07 (rev. 5)**: escriben, y la relectura lo confirma (`ok=True verificado=True` al
+   relacionar contra el judicial de prueba 683). Se retira de esta lista.
+2. ~~**La idempotencia del adjuntar**~~ — **MEDIDA el 2026-09-07 (rev. 5): el CRM DUPLICA.** El
+   mismo `att_id`, el mismo nombre final y el mismo `mail_id`, posteados dos veces a
+   `relate/attachments`, dejan **dos documentos** en el gestor documental: censo del 636 3 → 4 →
+   5, con el nombre repetido. Los dos POST contestaron `{"status":"success","errors":[]}`.
+   **Consecuencia de diseño:** la guarda por censo de `adjuntar`
+   (`pendientes = [… if n not in antes]`) es **PORTANTE**, no cinturón de seguridad — quitarla
+   duplica un documento en el expediente de un cliente. Y su punto débil queda declarado:
+   **filtra por NOMBRE FINAL**, así que dos nombres distintos para el mismo adjunto la esquivan y
+   el documento entra dos veces. Con la idempotencia del CRM ya medida, la vía limpia para cerrar
+   ese hueco es filtrar además por `att_id` ya subido, no solo por nombre.
 3. ~~`expedientes_judiciales` sin medir~~ — **MEDIDO el 2026-09-07** (§2.10). Se retira de esta
    lista.
 4. **Pasar `cookies`+`dataHash` reales al endpoint REST** (§7): no probado.
 5. **Escritura incierta** (timeout tras escribir): no hay protocolo de reconciliación. R1-H-03.
 6. **Dos escritores a la vez**: no hay exclusión ni clave de idempotencia remota. R1-H-04.
 7. **Contenido binario del adjunto**: se verificó nombre y carpeta, no los bytes.
+8. **Por qué el corpus tiene dos regímenes.** Los correos históricos son de **copia múltiple**
+   (ctas 11/13/15) **y traen relación de ficha** (`procuradores_propios`, en las tres copias, que
+   es lo que hace `autoassign`); los de esta semana son de **copia única** en la cuenta 20 y **sin**
+   relación de ficha. Las dos cosas cambiaron a la vez. **La causa no está medida** y no se supone:
+   importa porque F3 tiene que ser correcto sobre el corpus que existe, no solo sobre el de esta
+   semana.
+9. **Hay filas `mail` cuyo `uid` NO es un Message-ID.** Medido: `uid=1908692`, con `cuenta`
+   vacía. Todo el direccionamiento de F3 asume `uid = Message-ID` («39/40 en muestra»); ese 1/40
+   tiene ahora una forma concreta, y `resolver_cuenta()` no puede encontrarlo nunca.
 
 **Ya no está aquí, porque se midió:** la visibilidad (§8.4 de la rev. 3). El CRM **deriva los
 permisos solo** — grupo «Oficina del Despacho Principal» (id 2) y usuario = **el titular del
@@ -250,6 +336,14 @@ buzón desde el que se archiva** (cuenta 20 → `ana.velastegui`, cuenta 15 → 
 Es una propiedad del diseño, no un detalle: **el correo hereda la visibilidad del buzón**, así
 que la cuenta desde la que se archiva decide quién lo ve. Falta fijar el criterio de aceptación
 (R1-H-10).
+
+⚠️ **MATIZADO el 2026-09-07: esta frase habla de UNA de las dos superficies, y leída sola
+engaña.** Explicado por Nikolai: en **Roundcube** la visibilidad va por el buzón —un correo que
+llegó a la cuenta de Ana no lo ven los otros tres, nadie entra al webmail de otro—; pero **a
+través del expediente** lo ve **todo el equipo con acceso a ese expediente** en cuanto el correo
+está relacionado. Las dos cosas son ciertas a la vez. Corolario que no estaba escrito:
+**relacionar es el acto que hace el correo visible al equipo**, no solo el que lo archiva. Detalle
+en `2026-09-07-f3-cableado-bandeja-y-verificacion-design.md` §5.1.
 
 ## 9. Testing
 
@@ -273,10 +367,26 @@ resultado para todos los mutantes está roto, y el primero lo estaba.
 
 ## 11. Higiene
 
-Los HAR no se commitean. Este spec usa placeholders salvo el expediente de prueba **636**, que
-es del propio despacho. **Residuos deliberados del 2026-09-07 en el 636, no borrados** (en el
-CRM no se borra sin autorización expresa de Nikolai): cinco correos relacionados y los `gdocu`
-`42865`, `42870` y `42871`, los tres marcados como borrables en su nombre.
+Los HAR no se commitean. Este spec usa placeholders salvo los expedientes de prueba **636**
+(extrajudicial) y **683** (judicial), que son del propio despacho. **Residuos deliberados, no
+borrados** (en el CRM no se borra sin autorización expresa de Nikolai):
+
+- **636** — de la mañana del 2026-09-07: cinco correos relacionados y los `gdocu` `42865`,
+  `42870` y `42871`. De la tarde (rev. 5, prueba de idempotencia del §8.2): **dos copias** de
+  `ZZ BORRAR test idempotencia adjuntar 2026-09-07.docx`, que son justamente el resultado que se
+  quería medir. Censo del 636 al cerrar: 5 documentos.
+- **683** — la relación con un correo de marketing ajeno a cualquier caso (`mail_id` 439232,
+  asunto «INMATIC, empieza tu periodo de Prueba»), elegido a propósito por no contener dato de
+  cliente. Censo al cerrar: 1 documento, 2 correos relacionados.
+
+El slug del extrajudicial es **`extrajudiciales`**; `expedientes_extrajudiciales` devuelve censo
+ilegible (`None`), que con la guarda del §4 se traduce en «indeterminado» y no en un falso cero.
+
+**Decisión de Nikolai (2026-09-07): los residuos SE QUEDAN.** El 636 y el 683 siguen siendo banco
+de pruebas y habrá más escrituras; los borrará él **al terminar**, de una vez. Así que **nadie los
+limpia por iniciativa propia** —ni por celo de higiene ni al pasar por aquí—, y el censo de esos
+dos expedientes **no es un indicador de nada** mientras esta línea siga en pie: cualquier medición
+que los use tiene que tomar su propia foto previa, como hizo la rev. 5.
 
 ## 12. Adjudicación de la revisión adversarial R1 (Codex, 2026-09-07) — NO-SHIP, parcial
 
@@ -284,8 +394,8 @@ CRM no se borra sin autorización expresa de Nikolai): cinco correos relacionado
 - **Ronda:** 1
 - **Revisor:** Codex (solo lectura)
 - **Informe recibido:** `2026-07-19-f3-relate-crm-r1-adversarial-review.md`
-- **Hallazgos:** 9 confirmados · 1 rebajado · 1 refutado · 0 escalados · 0 sin verificar
-- **Remediado en:** rev. 4 de este documento
+- **Hallazgos:** 10 confirmados · 1 rebajado · 0 refutados · 0 escalados · 0 sin verificar *(H-05 revertido de «refutado» a «confirmado» el 2026-09-07 con medición; ver más abajo)*
+- **Remediado en:** rev. 4 y rev. 5 de este documento
 
 Ronda sobre el **diseño**, antes de construir. El revisor corrió sin red sobre una copia
 congelada; el `sha256` del objeto coincide al abrir y al cerrar. Adjudicado contra la fuente:
@@ -297,7 +407,7 @@ tres hallazgos se midieron en vivo, cosa que él no podía hacer.
 | H-02 · el censo no identifica la escritura | CRÍTICO | **confirmado** | §4: censo por nombre, y censo ilegible ⇒ indeterminado |
 | H-03 · sin protocolo para escritura incierta | ALTO | confirmado | declarado en §8.5; no se cierra en esta fase |
 | H-04 · comprobar antes no excluye dos escritores | ALTO | confirmado | declarado en §8.6 |
-| H-05 · multicuenta del mismo Message-ID | ALTO | **refutado en su premisa** | medido 0/12; queda el guardarraíl de unicidad (§3.2) |
+| H-05 · multicuenta del mismo Message-ID | ALTO | **CONFIRMADO** — *revertido el 2026-09-07* | §4.1: tres copias medidas (ctas 11/13/15). No duplica la relación; **rompe la verificación** |
 | H-06 · el destino no era inequívoco | CRÍTICO | **confirmado** | §6 y el código: `element` en la terna + `destino_efectivo` |
 | H-07 · la traza colapsa adjuntos homónimos | ALTO | confirmado | declarado; F3 no adivina (`_emparejar` → revisión) |
 | H-08 · el join por orden | ALTO | confirmado | §10: solo identidad, nunca orden |
@@ -310,6 +420,19 @@ la rev. 3 saltaba de la observación a la propiedad del sistema «repitiendo en 
 salto criticado en §0». No tenía red para probarlo. Cuatro horas después, la prueba de campo
 demostró que **el salto era exactamente ese**: `cookies`/`dataHash` vacíos valían sobre lo
 indexado y se escribió como si valieran siempre.
+
+**H-05 se REVIRTIÓ, y el motivo importa más que el hallazgo.** La rev. 4 lo cerró como
+«refutado en su premisa» con la nota *«medido 0/12»*. El 2026-09-07 se midió otra vez y salió
+**3 de 3**: tres Message-ID con tres filas `mail` cada uno, en las cuentas 11, 13 y 15. Los 12
+de la primera medición eran todos de copia única —correos de esta semana, cuenta 20—, así que la
+muestra **no podía** mostrar el fenómeno: es el mismo error de método que el §0 denuncia dos
+párrafos más arriba, cometido dentro de la propia adjudicación que lo denunciaba.
+
+Lo que sí cambia respecto de lo que el revisor temía: la consecuencia. Él apuntaba al riesgo de
+**elegir el buzón a ciegas**; el guardarraíl de unicidad del §3.2 cubre eso y se mantiene. El
+daño real, que ninguno de los dos vio, es que **la verificación por relectura queda acotada a una
+copia** mientras la escritura es global (§4.1). O sea: el hallazgo era correcto, mi refutación era
+falsa, y la razón por la que era importante no era la que él dio ni la que yo negué.
 
 **Divergencia declarada:** se acepta el veredicto —el diseño rev. 3 no era apto para
 construirse tal cual—. No se acepta el encuadre de que la vía REST quede en entredicho; el

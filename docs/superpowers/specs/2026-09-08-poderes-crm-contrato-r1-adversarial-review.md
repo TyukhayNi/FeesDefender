@@ -595,7 +595,7 @@ El revisor declaró en su primera línea que su workdir solo contenía el mandat
 
 ## 3. Adjudicación de la revisión adversarial del contrato de `poderes` (Codex, 2026-09-08) — NO-SHIP, remediado
 
-- **Objeto revisado:** `docs/INTEGRACION_SUDESPACHO.md` §16 nueva, más la entrada de `DEAD_ENDS.md`, `MEJORAS_FUTURAS.md` #176, la fila 24 y el bloque `[SIGUIENTE-ALTA-PODER]` de `PLAN.md`, y la fila del atlas en `docs/INDICE.md` — commit `0ce01a8`
+- **Objeto revisado:** `docs/INTEGRACION_SUDESPACHO.md` §16 nueva, más la entrada de `DEAD_ENDS.md`, `MEJORAS_FUTURAS.md` #176 —renumerada a **#185** al mergear: otra sesión ya había usado el 176—, la fila 24 y el bloque `[SIGUIENTE-ALTA-PODER]` de `PLAN.md`, y la fila del atlas en `docs/INDICE.md` — commit `0ce01a8`
 - **Ronda:** 1 de 1 (radio de daño «todo lo demás»: documentación, sin código)
 - **Revisor:** Codex (`codex-cli 0.153.4`, esfuerzo alto, sandbox de solo lectura sobre dos copias externas)
 - **Informe recibido:** §1 de esta acta, literal, `sha256` `9429775e07dfbfecc47ee74199d4335a1171265449a2b698be0a4b7de2ba4364`
@@ -632,7 +632,7 @@ registros distintos cumpliendo el texto.
 
 **H7 es exacto y es el más pequeño**: el cruce demuestra 28 **nombres citados sin ficha**; que el
 endpoint responda solo lo comprobé en `poderes`. Llamarlos «28 operativos» era estirar el dato
-27 veces. Corregido a «citados sin ficha», con la lista en un solo hogar (#176) y el aviso con
+27 veces. Corregido a «citados sin ficha», con la lista en un solo hogar (#176, hoy **#185**) y el aviso con
 puntero en §16.1.
 
 **Lo que el revisor NO pidió y conviene registrar:** no pidió una segunda ronda sobre este diff, ni

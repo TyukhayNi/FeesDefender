@@ -33,8 +33,30 @@ from .procurador_review import (
 
 
 @dataclass
+class AdjuntoEntrante:
+    """Un adjunto tal como lo declara la fuente del correo. Solo METADATOS.
+
+    No lleva bytes: bajarlos es `MEJORAS #181` y no entra en esta pieza. El
+    `attachment_id` se recoge porque sale de la misma pasada y sin él no se podrán
+    bajar después.
+
+    `inline` distingue el logo de una firma de un documento archivable. Es lo
+    **observado** en las cabeceras, no una decisión: qué se sube lo decide F4.
+    """
+    nombre: str
+    attachment_id: str = ""
+    inline: bool = False
+
+
+@dataclass
 class EmailMessage:
-    """Correo entrante mínimo para el runner."""
+    """Correo entrante mínimo para el runner.
+
+    `adjuntos` distingue TRES estados, y esa distinción es el remedio del hallazgo
+    crítico H-01 de la R1: `None` = **nadie lo inventarió**; `()` = **se miró y no
+    hay**; con elementos = el inventario. Sin el primero, `archivar` lee «sin
+    pedidos» como «nada que subir» y confirma un correo sin archivar su documento.
+    """
     email_id: str
     from_addr: str
     subject: str
@@ -42,6 +64,7 @@ class EmailMessage:
     date: str | None = None
     mailbox: str | None = None
     attachment_texts: list[str] = field(default_factory=list)
+    adjuntos: tuple[AdjuntoEntrante, ...] | None = None
 
 
 def _descartado(email: EmailMessage, motivo: str) -> ReviewItem:
@@ -106,7 +129,8 @@ def process_email(
     )
     return ReviewItem(
         email_id=email.email_id,
-        proposal=from_intake_proposal(email.email_id, proposal),
+        proposal=from_intake_proposal(email.email_id, proposal,
+                                      adjuntos=email.adjuntos),
         estado="pendiente",
         motivo_descarte=None,
         remitente=email.from_addr,

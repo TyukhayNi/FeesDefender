@@ -43,7 +43,7 @@ fecha: 2026-07-05
 | `FLUJO_GIT.md` | Flujo de trabajo git + protocolo de cierre (SSOT); manual llano del modelo git. |
 | `SEGURIDAD_DATOS.md` | Prevención de fugas de PII y secretos — doctrina, controles y runbook. |
 | `INTEGRACION_SUDESPACHO.md` | API sudespacho (§14 fusiona la referencia común externa). |
-| `CRM_SUDESPACHO_ATLAS.md` | **el inventario más amplio de la superficie del CRM** (⚠️ **no exhaustivo**: su Fase B recorre `/api/elements`, que oculta ≥28 elementos — `INTEGRACION_SUDESPACHO.md` §16.1 y `MEJORAS_FUTURAS.md` #176) — inventario generado y re-ejecutable (endpoints Fase A + campos/relaciones/enums por elemento, Fase B). Consultar ANTES de descubrir un endpoint a mano. **Generado**: regenerar con `python -m scripts.crm_atlas discover --phase all` (nunca `--phase a`: no trae Fase B). |
+| `CRM_SUDESPACHO_ATLAS.md` | **el inventario más amplio de la superficie del CRM** (⚠️ **no exhaustivo**: su Fase B recorre `/api/elements`, que oculta ≥28 elementos — `INTEGRACION_SUDESPACHO.md` §16.1 y `MEJORAS_FUTURAS.md` #185) — inventario generado y re-ejecutable (endpoints Fase A + campos/relaciones/enums por elemento, Fase B). Consultar ANTES de descubrir un endpoint a mano. **Generado**: regenerar con `python -m scripts.crm_atlas discover --phase all` (nunca `--phase a`: no trae Fase B). |
 | `INGESTA_SUDESPACHO.md` | Flujo de ingesta desde el CRM. |
 | `RUNBOOK_APERTURA_EXPEDIENTE.md` | Runbook operativo de apertura E2E de expediente (alta→intake→sala→viabilidad→CRM→archivo→cierre); gotchas embebidos. |
 | `CONVENCIONES_DESPACHO.md` | Convenciones del despacho. |
