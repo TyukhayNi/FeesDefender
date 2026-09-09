@@ -1,5 +1,20 @@
 # Changelog — organizar-sala-lectura
 
+## 1.16 — 2026-09-09
+- **La marca temporal del `_chat.txt` deja de estar documentada más estrecha que la
+  realidad (Paso 2, anexo de WhatsApp).** El Paso 2 decía que la línea del adjunto lleva
+  un `[DD/MM/AAAA, HH:MM]`. Un export real trae `[26/6/25, 12:07:45]`: día y mes de **uno**
+  o dos dígitos, año de **dos** o cuatro, y segundos, que el documento no mencionaba. El
+  modo de fallo es silencioso —un regex anclado a la forma documentada no casa **ni un
+  mensaje**, y «cero adjuntos fechados» se lee igual que «el chat no los referencia»—, y
+  el aviso vino de la sesión hermana sobre `W-02USSI`, no de un rojo. Ahora el paso lleva
+  el patrón tolerante literal (con su gemelo de Android y la resolución `2000 + yy`) y la
+  medición que lo respalda: **118 de 118 audios** fechados en `W-02VEKE`. En `W-02USSI` no
+  se ha medido cuántos fecha, y así queda dicho.
+- **Ningún matcher de chat vive en el repo:** el que funciona estaba solo en un script de
+  corrida (`scratch/`), así que este SKILL.md era la **única** fuente escrita del formato.
+  Por eso el remedio es documental y no un cambio de código.
+
 ## 1.15 — 2026-09-05
 - **El centinela «sin fecha» deja de ser una trampa (MEJORAS #131, `PLAN.md` fila #18).**
   `fecha_de_nombre` devuelve `0000-00-00` cuando no hay fecha, y esa cadena es *truthy*:

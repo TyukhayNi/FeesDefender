@@ -21,7 +21,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.15"
+  version: "1.16"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -275,9 +275,25 @@ tal diálogo.
      `CRONOLOGIA.md` y `_MANIFIESTO.md`.
    - **Anexo de WhatsApp — fecha de ENVÍO (no de la carpeta madre):** cada adjunto del
      chat lleva la fecha del **mensaje del `_chat.txt` que lo referencia** — la línea
-     `‎<adjunto: <fichero>>` (iOS) o `<fichero> (archivo adjunto)` (Android), cuyo
-     `[DD/MM/AAAA, HH:MM]` es la fecha de envío. Esta regla **prevalece** sobre (a)–(c)
+     `‎<adjunto: <fichero>>` (iOS) o `<fichero> (archivo adjunto)` (Android), cuya marca
+     temporal inicial es la fecha de envío. Esta regla **prevalece** sobre (a)–(c)
      para los anexos de WhatsApp: NUNCA heredan la fecha del chat ni la del principal.
+
+     **El formato de esa marca VARÍA: no lo escribas de memoria, cópialo de aquí.**
+     `[26/6/25, 12:07:45]` es un export real — día y mes de **uno** o dos dígitos, año de
+     **dos** o cuatro, y **segundos**. Un regex anclado a `DD/MM/AAAA` **no casa ni un
+     mensaje** y falla en silencio: cero adjuntos fechados se lee igual que «el chat no
+     los referencia». El patrón tolerante en los tres campos:
+
+     ```
+     \[?(\d{1,2})/(\d{1,2})/(\d{2,4})[,\]]?[^\n]*?<adjunto:\s*([^>]+?)\s*>
+     ```
+
+     con su gemelo terminado en `([\w\-.]+\.\w{2,4})\s*\(archivo adjunto\)` para Android;
+     los años de dos dígitos se resuelven `2000 + yy`. **Medido:** en `W-02VEKE` fechó
+     **118 de 118 audios** (2026-09-09, sobre el plan persistido). El export de `W-02USSI`
+     es también `D/M/AA`, pero allí **no se ha medido** cuántos fecha.
+
      ⚠️ No confundir con la fecha **incrustada en el nombre** del adjunto (`PHOTO-2024-10-30…`,
      `VIDEO-2024-11-29…`): esa es la de **captura** del medio, no la de envío. Fallback
      solo si el adjunto **no** aparece referenciado en el `_chat.txt`: (i) fecha incrustada
