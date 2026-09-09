@@ -38,7 +38,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 21 | [Las doce acciones del informe de Codex sobre el alta](#siguiente-alta-codex-las-doce-acciones-del-informe-de-codex-sobre-el-alta-de-expedientes) | **9 de 12 cerradas** (1, 2, 3, 4, 5, 7, 10, 11 y **6 salvo su checklist** — PR #299); 8 encargada a la sesión hermana; **9 y 12 sin empezar**, las dos dimensionadas el 2026-09-06 | **disparador: encargo expreso de Nikolai del 2026-09-05.** Siguiente: la **12** es la más barata de las dos — `_apertura_v1.json` ya tiene `ronda_id`/`iniciada`/`terminada` y solo falta llevarlos al evento durable de `registrar_cierre_v1` | medio |
 | 22 | [El arnés de tests: paralelismo, doctrina anti-trampa y las dos técnicas que faltaban](docs/superpowers/plans/2026-09-06-arnes-de-tests-paralelismo-y-propiedades.md) | **Fases 0-3 ✅** (paralelismo + doctrina + `hypothesis`); **R1 de Codex sobre el diff adjudicada: `NO-SHIP`, 8 hallazgos, 8 confirmados, 0 refutados, remediados en `691f5e4`** (acta: `docs/superpowers/specs/2026-09-06-arnes-de-tests-r1-adversarial-review.md`; adjudicación en el §4 del plan). **Las cinco fases ✅ CERRADAS, y DOS rondas adversariales adjudicadas** (R1: 8 hallazgos, 8 confirmados, `691f5e4`; **R2 sobre el diff completo, escalada autorizada por Nikolai**: 10 hallazgos, 10 confirmados, `4875c53`). Actas en `docs/superpowers/specs/2026-09-06-arnes-de-tests-r{1,2}-adversarial-review.md`; adjudicaciones en los §4 y §8 del plan. Suite **4.698 / 0 fallos / 0 errores / 88 skip**; verja 203 s con dos semillas; cobertura del diff **96%**; arnés **13/13 mutantes muertos**. **R2 declaró INCOMPLETAS 3 de las 8 remediaciones de R1**, las tres por remediar el caso y no la clase — y su H-01 acabó **retirando** código (marca `xdist_group`, `--dist loadgroup` y su guard): la regla pasó a «ningún test escribe en el árbol de producción», sin escotilla | **disparador: decisión expresa de Nikolai del 2026-09-06.** Medido ese día: la suite tardaba **371 s** y la regla de las dos semillas **743 s (12,4 min)** — un precio que la hacía saltable bajo presión, y ya costó ocho rojos que tres merges no vieron. Con `-n auto`: **94 s** y **243 s**, con el conteo **idéntico** (4.656 / 0 / 0 / 88 `skip` / 6 `xfail`) y **cero tests serializados**. `--runslow` en paralelo: 136 s, también verde. **Nada de esto estaba en `MEJORAS_FUTURAS.md`**: es entrada nueva, no promoción | bajo |
 | 23 | El test del renovador del mutex daba rojos que no significaban nada (`MEJORAS #145` mitad de test, y **`MEJORAS #171` completa**) | ✅ **CERRADA el 2026-09-07 (PR #302, `3420d4d`)** — la propiedad se **reparte en dos**, porque un plazo de pared no puede probar las dos: el **mecanismo** en `test_RENUEVA_mientras_el_cuerpo_corre` (la señal la da el propio `renovar`, la única lectura del `.lock` va bajo el guard, el reloj falso avanza en micras y el presupuesto son 20 latidos **derivados** de `_FRACCION_LATIDO`) y la **puntualidad** en `test_el_renovador_DESPIERTA_dos_veces_por_lease`, nuevo, que lee el plazo con el que el renovador se va a dormir y exige `<= lease / 2` **sin reloj**. `tests/_espera_mutex.py` deriva el presupuesto y nombra la causa cuando el renovador muere; migrados los dos hermanos que tenían el mismo bucle a mano (r11, r12). **6/6 mutantes muertos por su frontera** (`python -m tests._mutantes_renovacion_mutex`) | **disparador: rojo real en la suite completa de la rama del PR #301, 2026-09-07.** Medido ese día: con 6x de sobresuscripción el latido llega a **1,00-1,03 s** de su periodo de 1 s —nunca tarde— y el presupuesto del bucle **crece** con la carga (3,05 s → 4,09 s), o sea que «el hilo no llega a tiempo» **no** lo explica: el margen mejora cuando la máquina sufre. Lo explica que el renovador **muera**, y el test se lo provocaba abriendo el `.lock` ~50 veces por segundo justo mientras el renovador lo reemplaza. Y `MEJORAS #171` —la entrada propia de este flaky, abierta el 06 con el disparador «que vuelva a salir en un cierre»— **consumió su disparador al día siguiente** y queda cerrada: su diagnóstico («la carga de los 12 workers se come la ventana de renovación») quedó **desmentido por la medición**, y la causa verdadera llevaba escrita en `#145` desde el 03. Dos entradas del mismo fichero explicaban el mismo rojo con causas incompatibles. **La mitad de PRODUCCIÓN de `#145` sigue ABIERTA**, con su presupuesto de dos rondas y su disparador propio — y ya no la levantará un rojo de la suite, que es deliberado y está declarado en la entrada | bajo |
-| 24 | [Alta canónica de un poder en el CRM desde el PDF](#siguiente-alta-poder-alta-canónica-de-un-poder-en-el-crm-desde-el-pdf-con-su-procurador-enganchado) | **pendiente — sin diseño escrito** | disparador: decisión expresa de Nikolai el 2026-09-08, al cerrar el saneado del fichero de poderes. El contrato del elemento está medido y escrito (`docs/INTEGRACION_SUDESPACHO.md` §16), así que queda **cablear, no descubrir**. Único hueco sin contrato: la **subida** del PDF al gestor documental (3 pasos). Gate duro: el POST de relación devuelve 201 sin crear nada y **no hay endpoint para borrar un vínculo** | medio |
+| 24 | [Alta canónica de un poder en el CRM desde el PDF](#siguiente-alta-poder-alta-canónica-de-un-poder-en-el-crm-desde-el-pdf-con-su-procurador-enganchado) | **pendiente — sin diseño escrito** | disparador: decisión expresa de Nikolai el 2026-09-08, al cerrar el saneado del fichero de poderes. Contrato medido y escrito **entero**: el elemento en `docs/INTEGRACION_SUDESPACHO.md` §16 y la **subida al gestor en §17** (cerrada el 2026-09-09). Queda **integrar, no descubrir**. Gates duros: dos endpoints devuelven **201 sin hacer nada** (`relation_element` con el lado equivocado §16.3, `documents/multiple` §17.2), y el listado filtrado **tarda en indexar**, así que un censo negativo no prueba ausencia (§17.4) — por confiar en él se subió un certificado duplicado el 2026-09-09 | medio |
 
 > **Fila 23 añadida el 2026-09-07, al final y sin reordenar, igual que las anteriores.** Es la mitad
 > de test de `MEJORAS #145`, no una promoción de la entrada: la de producción se queda donde está
@@ -3096,12 +3096,15 @@ documentos y la convención de la casa). Lo que queda es cablearlo, no descubrir
 4. **El alta y los vínculos.** `POST /api/element_register/poderes` con los ocho campos, y luego
    **`left.clientes_propios.{id}`** para el poderdante y **`right.procuradores_propios.{id}`** para
    el procurador. Aquí el gate es duro: el POST de relación **devuelve 201 y puede no crear nada**
-   (`DEAD_ENDS.md`), y **no hay endpoint para borrar un vínculo**, así que cada uno se verifica con
+   (`DEAD_ENDS.md`), y el borrado de un vínculo solo está validado para un caso estrecho (§17.5),
+   así que cada uno se verifica con
    `related_register` y el alta **falla en alto** si la lectura desmiente al status.
-5. **El documento al gestor.** Subir el PDF y renombrarlo a
-   `AAAA-MM-DD_<CLIENTE> - <OBJETO> - <APODERADO>.pdf` con `asunto` = el título del registro
-   (§16.7 — el renombrado preserva `nombreoriginal`). La subida en 3 pasos es la única parte del
-   flujo **sin contrato medido todavía**: hay que capturarla o sondearla antes.
+5. **El documento al gestor. ✅ CONTRATO CERRADO (2026-09-09, §17); falta integrarlo.** Los tres
+   pasos son `GET /api/files/presigned_upload_url` → `PUT` de los bytes a la URL S3 →
+   `POST /api/documents` con `origen:"fuploaders3"`, el identificador en **`origen_id`** (no en
+   `fileIdentifier`), `id_carpeta` como **int** y `relatedRegisters:["<elemento>:<id>:left"]`.
+   Nombrar según §16.8 y volcar el título a `asunto` (§16.7 — el renombrado preserva
+   `nombreoriginal`). **No usar `documents/multiple`**: 201 con id de evento y no crea nada (§17.2).
 
 **Gates y avisos que no se pueden saltar:**
 
@@ -3126,7 +3129,8 @@ heterogéneos y con OCR de por medio.
 dice «destruir **o corromper** datos de cliente», y esta pieza puede corromperlos sin borrar nada:
 un vínculo al poderdante equivocado deja un poder colgando de un cliente que no lo otorgó. No es
 hipotético — el saneado del 2026-09-08 encontró ese caso exacto (`#56`), y encima el `DELETE` de
-vínculo está declarado pero **sin validar** (ver más abajo), así que la reversión no está garantizada.
+vínculo solo está validado para `right.gdocu` sobre un `poderes` (§17.5), no para el vínculo del
+poderdante, así que la reversión de lo que importa aquí **no está garantizada**.
 Revisión adversarial la ejecuta Codex, la adjudica Claude.
 
 > Esta línea decía «1 ronda» porque recortaba el predicado de la regla a «destruir». Lo levantó la
@@ -3138,6 +3142,10 @@ fichero contra el registro judicial):
 
 - **cerrado:** los 5 apoderamientos que faltaban se localizaron en la sede y están dados de alta con
   su certificado (`#72` completado, `#87`-`#90` nuevos). El fichero pasa de 85 a **89** registros.
+- **sin poderdante vinculado, y sigue pendiente** (verificado en el CRM el 2026-09-09): `#82`,
+  `#85` y `#86` continúan **sin cliente asociado**, así que entrar por la ficha del cliente no los
+  encuentra. El `#85` necesita una decisión previa: su otorgante **no existe** entre los clientes
+  propios, y dar de alta un cliente no se hace como efecto colateral (paso 3 de este bloque).
 - **abierto, y es decisión de Nikolai:** `#79` y `#86` **no tienen apoderamiento detrás** en el
   registro judicial —siendo apud acta de E&V con él como compareciente, deberían aparecer—; el `#35`
   no es un poder y el enum `Formato` no sabe describirlo; el duplicado demostrado `#54`/`#56` (mismo

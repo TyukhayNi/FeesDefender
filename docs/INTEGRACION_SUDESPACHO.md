@@ -1882,9 +1882,17 @@ verificable · **formas candidatas de una en una, cada una derivada del error de
 verificación por `GET` tras cada intento · abortar ante cualquier cambio no pedido. Implementación de
 referencia: `scripts/permisos_crm.py` de El Contable (resolvió su caso en dos iteraciones).
 
-**El HAR sigue siendo inevitable** cuando el error es opaco, cuando el flujo son varias llamadas
-encadenadas con ids intermedios (subida de PDF en 3 pasos, §8.x) o cuando el endpoint no está en el spec
-(los 62 paths huérfanos que el propio atlas lista).
+**Antes del HAR, leer el CÓDIGO del front (nuevo paso, 2026-09-09).** La SPA sirve sus módulos en
+abierto y ahí está el cliente HTTP con los **nombres de clave literales**: así se resolvió la subida
+en tres pasos —el caso que este párrafo daba por inevitable— sin capturar nada. Método en **§17.6**.
+Es más barato que un HAR y no exige ejecutar la operación en la UI. ⚠️ Pero **da candidatos, no
+aceptación**: que el cliente llame a algo no prueba que el servidor lo acepte hoy, así que la
+verificación por resultado sigue siendo obligatoria (§17.2 documenta una ruta que el propio front usa
+y que devuelve 201 sin crear nada).
+
+**El HAR sigue siendo inevitable** cuando el error es opaco, cuando el flujo encadena ids intermedios
+**y la lectura del cliente no lo resuelve**, o cuando el endpoint no está en el spec (los 62 paths
+huérfanos que el propio atlas lista).
 
 **Dónde NO se sondea a ciegas:** `Cron`, `Patch`, `Data Migration`, `Restore Registers`,
 `RecalculateAllConcepts`, `Taxes (massive creation)`, `MassiveDelivery`, `Exporter/Importer`, y los dos
@@ -1989,12 +1997,13 @@ La forma que **sí** funciona depende de si el elemento relacionado es `parent` 
 Las dos verificadas en vivo (poderes 43 y 1, y luego 20 vínculos más, todos confirmados por lectura).
 Con `right.` sobre el parent: 201 y nada.
 
-⚠️ **Y la reversión no está garantizada.** `DELETE /api/relation_element/{element}/{id}` **sí está
-declarado** —en la tabla del §15.5 y en el atlas— pero **nadie lo ha validado** en este tenant, y con
-un endpoint hermano que responde 201 sin hacer nada, «declarado» no es «funciona». Así que **no se
-cuenta con el borrado como red**: probar siempre sobre un registro cuyo vínculo sea el que de verdad
-se quiere, no sobre uno cualquiera. Si alguien valida el DELETE, que lo mida por lectura y lo escriba
-aquí.
+⚠️ **Y la reversión está validada SOLO para un caso.** `DELETE /api/relation_element/{element}/{id}`
+con cuerpo funciona —medido el 2026-09-09— pero **el alcance probado es estrecho y su hogar es el
+§17.5**: se probó `["right.gdocu.<doc_id>"]` sobre un `poderes`, y ahí quita solo esa relación. **No
+se ha probado** con `left.`, ni sobre el vínculo de poderdante o procurador, ni sin cuerpo (esto
+último es previsible que borre todas). Así que **no se cuenta con el borrado como red** para lo que
+no está en el §17.5: probar siempre sobre un registro cuyo vínculo sea el que de verdad se quiere, no
+sobre uno cualquiera.
 
 > **Regla que generaliza, y su límite.** Antes de escribir una relación en un elemento nuevo, leer
 > `GET /api/view/config/{element}/relations`. Si el relacionado aparece en **un solo lado**, el lado
@@ -2062,9 +2071,9 @@ que el nombre con el que el fichero entró no se pierde. Importa porque los cert
 descargan todos como `CertificadoRegistro (N).pdf` — 24 de los 87 se llamaban así, cuatro de ellos
 idénticos, y sin abrirlos no se distinguían.
 
-Para bajar el binario, `GET /api/documents/{id}/downloadUri` → `presignedDownloadUrl`. Es lo que
-implementa `core/sync_sudespacho.get_presigned_download_url` y lo que se usó aquí para los 87
-documentos. ⚠️ **No seguir el §5.1**: describe el flujo por `/api/files/presigned_download_url/{doc_id}`,
+Para **subir** un documento nuevo, §17. Para bajar el binario,
+`GET /api/documents/{id}/downloadUri` → `presignedDownloadUrl`: es lo que implementa
+`core/sync_sudespacho.get_presigned_download_url` y lo que se usó aquí para los 87 documentos. ⚠️ **No seguir el §5.1**: describe el flujo por `/api/files/presigned_download_url/{doc_id}`,
 que el CRM rompió en mayo de 2026 y el propio `DEAD_ENDS.md` da por muerto (con su hermano
 `/api/documents/presigned_urls/s3/download/{id}`).
 
@@ -2146,9 +2155,16 @@ Cuerpo del paso 3, con los nombres exactos:
   que no dice qué falta. La forma se confirma leyendo `origen`/`origen_id` de **cualquier documento
   que ya exista** (`GET /api/element_register/gdocu/{id}?properties=origen,origen_id`).
 - **`id_carpeta` es `int`.** Como string: `400 The type of the "id_carpeta" attribute must be "int"`.
-  `1` es la raíz del árbol de `gdocu` (§16.2).
+  `1` es la raíz del gestor documental (§13.5, confirmada el 2026-05-08; el §16.2 solo la usa como
+  control positivo, no la define).
 - La URL S3 caduca a los **600 s**: pedirla justo antes de subir.
 - El `PUT` a S3 va **sin** la cabecera de auth del CRM; con `Content-Type` del fichero basta.
+- El `POST` del paso 3 lleva la auth del §2.1 (`x-api-key`), `Content-Type: application/json` y
+  conviene el `Accept: application/json` del §14.2. `tamano` es el número real de bytes y el `mime`
+  ha de corresponder a esos bytes.
+- **Que el `POST` devuelva 201 no acredita que el binario esté bien**: para eso hay que bajarlo con
+  `downloadUri` (§16.7) y comparar los bytes con el original. Es lo que se hizo con los cinco
+  certificados; ni el 201 ni el ETag de S3 sustituyen esa comparación.
 
 ### 17.2 ⚠️ `POST /api/documents/multiple` devuelve 201 y NO crea nada
 
@@ -2186,12 +2202,23 @@ Para comprobar que un documento quedó colgado hay dos vías, y **no responden a
 
 | Vía | Latencia | Fantasmas |
 |---|---|---|
-| `GET /api/element_registries/gdocu?…associated&property=left.poderes.id&value={id}` | **segundos** (índice) | no los muestra |
+| `GET /api/element_registries/gdocu?…associated…` (abreviado; gramática completa en §14.2) | **segundos** (índice) | no los muestra |
 | `GET /api/related_register/poderes/{id}` | **inmediata** | **sí**: sigue listando documentos ya borrados |
 
-**Regla operativa: lo que acabas de escribir se comprueba con `related_register`; el censo de lo que
-hay de verdad se hace con el listado filtrado.** Usar la vía equivocada tiene un coste medido, y las
-dos veces fue el mismo día:
+**Regla operativa, en tres partes — y la tercera es la que evita el duplicado:**
+
+1. **Lo que acabas de escribir se comprueba con `related_register` y por el `doc_id` que devolvió el
+   POST**, no por el listado ni por el status.
+2. **El censo de qué documentos hay** se hace con el listado filtrado, que no arrastra borrados.
+3. ⚠️ **Un censo negativo NO prueba ausencia, así que no autoriza a escribir.** Es la parte que
+   faltaba: la latencia hace que el listado diga «no hay» sobre algo que sí hay, y eso es exactamente
+   lo que duplicó un certificado. Antes de dar un alta que deba ser única, el «no existe» hay que
+   sostenerlo sobre algo inmediato —`related_register`, o una clave propia del contenido como el
+   `origen_id` o la referencia del apoderamiento— y **si no se puede, el flujo se detiene y se declara
+   SIN VERIFICAR**; nunca se interpreta el vacío como permiso. Agotar unos reintentos tampoco
+   convierte el vacío en «no existe».
+
+Usar la vía equivocada tiene un coste medido, y las dos veces fue el mismo día:
 
 - verificar un vínculo 2 s después de crearlo por el **listado** dio «no existe» y detuvo el trabajo
   por una causa falsa. Lo destapó un control positivo: el mismo filtro sobre un poder que sí tenía
@@ -2212,8 +2239,12 @@ dos veces fue el mismo día:
   ⚠️ **Sin cuerpo no se ha probado, y no conviene**: lo previsible es que borre todas las relaciones
   del registro.
 
-Para retirar un documento del todo hacen falta **los dos** borrados, y en este orden: primero la
-relación, después el documento.
+Para retirar un documento del todo hacen falta **los dos** borrados, y el **orden recomendado** es
+relación primero y documento después: así no queda el huérfano descrito. No está probado que sea el
+único orden que funciona —el huérfano de arriba salió justamente del inverso—, y cada paso se
+verifica por lectura. ⚠️ Y **no confundir las dos operaciones**: quitar la relación desvincula el
+documento de **un** registro; borrar el documento lo elimina para **todos**, así que antes hay que
+saber de qué otros registros cuelga.
 
 ### 17.6 De dónde salió este contrato: se lee el front, no se captura
 

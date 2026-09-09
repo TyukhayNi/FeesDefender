@@ -29,9 +29,10 @@
   status. El lado se deriva de ahí (`parent` → `left.`, `children` → `right.`) **solo cuando el
   elemento relacionado aparece en UN lado**; si aparece en los dos —como `clientes_propios` aquí—,
   la pertenencia no dice cuál expresa el papel y hace falta evidencia, no una prueba a ver qué pasa.
-  Y hacerlo sobre un registro cuyo vínculo sea el que de verdad se quiere: hay un
-  `DELETE /api/relation_element/{element}/{id}` **declarado** (§15.5 y el atlas) pero **sin validar**
-  en este tenant, así que no hay red probada bajo un vínculo mal creado.
+  Y hacerlo sobre un registro cuyo vínculo sea el que de verdad se quiere: el
+  `DELETE /api/relation_element/{element}/{id}` con cuerpo está validado **solo** para
+  `["right.gdocu.<doc_id>"]` sobre un `poderes` (§17.5, 2026-09-09). Para cualquier otro lado o
+  elemento **no hay red probada** bajo un vínculo mal creado.
 - **Dónde vive el contrato:** `docs/INTEGRACION_SUDESPACHO.md` §16.3.
 
 ---
