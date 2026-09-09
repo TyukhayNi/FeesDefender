@@ -306,7 +306,7 @@ python -m scripts.abrir_caso --case-id W-XXXXXX --fuente email --cuenta <gmail> 
   Medido el 2026-09-09: la corrida imprimió `Email: etiqueta '…' exportada a …` +
   `OK Caso abierto: <case_id>`, código 0, con **43 `.eml` y 18 adjuntos en crudo** sin
   atomizar y sin espejo. No encadena, no lo sugiere y **no deja pendiente durable**.
-  `MEJORAS #185`.
+  `MEJORAS #188`.
   - **El OCR del correo SÍ está cableado**, no lo dudes: dentro de `apply` el orden lo
     garantiza el código (`_atomizar_correo` → `_procesar_adjuntos` → `_construir_plan` →
     OCR) y lo vigila `test_atomiza_antes_de_construir_el_plan_de_ocr`. Lo que falta es la
@@ -488,7 +488,7 @@ donde empieza la lectura real; no intercalar análisis a mitad de la mecánica d
   solo cuenta los omitidos **si el catálogo queda vacío** — con catálogo lleno no se dicen.
   Medido el 2026-09-09: **4 documentos reales** del Drive E&V (un certificado municipal de
   tributos y tres de suministros), todos con espejo MD y texto útil, fuera de la sala.
-  E&V sube fotos de móvil sin extensión con normalidad. `MEJORAS #187`.
+  E&V sube fotos de móvil sin extensión con normalidad. `MEJORAS #190`.
   - **Contraste barato que lo caza:** cuadra el nº de entradas del `indice_documental.yaml`
     contra el nº de filas del `_cobertura.json` de la sala de máquina. La diferencia, si no
     son duplicados por sha, son documentos que nadie catalogó.
@@ -508,7 +508,7 @@ donde empieza la lectura real; no intercalar análisis a mitad de la mecánica d
   Un mensaje con adjuntos va a su propia subcarpeta (`…`, `…_2`, `…_3`) y el `.eml` conserva
   el nombre pelado, así que **dentro de un mismo lote** hay basenames repetidos — hasta 4.
   Medido el 2026-09-09: 5 de los 9 hilos del caso, el del requerimiento entre ellos. La
-  docstring de la función supone lo contrario. `MEJORAS #186`.
+  docstring de la función supone lo contrario. `MEJORAS #189`.
   - **No desambigües tú y sigas**: la propia skill dice que se aborta y no se silencia.
     La salida practicada: `.eml` **planos** con `sha256[:6]` como discriminante, declarando
     la desviación en el `_plan/`. `plano_existente=True` permite montar los bundles después

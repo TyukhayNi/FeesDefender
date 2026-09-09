@@ -15,7 +15,7 @@ Hasta ese día no había ASR en el repo: `core/intake_lotes.py` clasificaba audi
 `core/whatsapp_intake.py` contaba los audios de un export, pero `core/sala_maquina.py`
 (`clasificar_ruta`) solo conocía `pdf | imagen | nativo | ofimatica`, así que **un `.opus`
 caía en `sin_soporte`**. La spec de intake de WhatsApp lo difería expresamente (§5.5 «Audio
-diferido»). En W-02USSI eso eran **67 ficheros y 5,21 h de audio que nadie había oído** — el
+diferido»). En W-02USSI eso eran **67 ficheros y 1,61 h de audio que nadie había oído** — el
 92 % de todo lo ilegible de ese caso.
 
 ---
@@ -110,8 +110,14 @@ los conservaron (37.500 €, 21 %, 6 de marzo, 14 de octubre, «No es cierto que
 
 **Dos gradas, no un modelo único.** `small` para **triaje** (decidir si una nota habla del
 inmueble del caso; sirve incluso en catalán aunque cambie un tiempo verbal) y `turbo` para
-**evidencia**, lo que se va a citar. Así las 5,21 h de W-02USSI son ≈4 h de CPU en vez de
-las 8-10 h que costaría pasar `turbo` por todo.
+**evidencia**, lo que se va a citar.
+
+**Y al dar un coste, decir sobre qué población se calculó.** Los 67 ficheros de W-02USSI
+costaron **1,70 h de CPU** en dos gradas, y pasarles `turbo` a todos serían **~2,3 h**. Antes
+de medirlo circularon tres cifras del mismo coste —8-10 h, luego ~4 h— y las dos eran falsas:
+la primera por aplicar `turbo` a todo, la segunda por una tasa de segundos por MB calibrada
+sobre las notas **largas** del chat del caso y generalizada al corpus, que tiene 56 notas
+cortas. Una tasa medida en la parte densa no vale para el conjunto.
 
 **El rendimiento sostenido no es el de la ráfaga.** Esta CPU se throttlea: medido en corpus
 real, `small` cayó de ×2,02 (10 ficheros) a **×1,05** (29 ficheros, 47,2 min de audio), y
@@ -194,3 +200,25 @@ cuerpo vacío, indistinguibles de un fallo.
   `scripts/transcribir_audio.py`**; la copia se borra cuando esa sesión termine.
 - **Sin explicar**: había 2,9 GB de `models--openai--whisper-large-v3` en la caché de
   HuggingFace **desde el 2026-07-30** y nada en el repo ni en la bitácora lo menciona.
+
+## 9. Revisión adversarial: NO se ejecutó (declarado)
+
+**Esta herramienta entró en `main` sin ronda adversarial.** El PR
+[#308](https://github.com/TyukhayNi/FeesDefender/pull/308) se mergeó el 2026-09-09 por
+**decisión expresa de Nikolai**, después de que se le dijera que la ronda faltaba y de
+ofrecerle lanzarla.
+
+Se declara aquí porque la regla de la casa es que **un revisor que no corre no refuta: deja
+sin verificar**, y eso no se da por bueno en silencio. Concretamente:
+
+- **Sin revisar: 835 líneas** — `scripts/transcribir_audio.py` (364), este documento (196) y
+  `tests/test_transcribir_audio.py` (275).
+- **Le correspondía UNA ronda**, sobre el diff: por radio de daño la pieza no decide quién
+  escribe sobre qué copia ni puede destruir datos de cliente (escribe `.md` nuevos junto al
+  origen o en la carpeta de salida; no borra ni sobrescribe material del expediente).
+- **Lo que SÍ tiene**, y no sustituye a la ronda: 44 tests, **9 mutantes inyectados y 9
+  muertos**, y verificación por resultado sobre `.opus`, `.mp4` y un fichero sin pista de
+  audio como control negativo.
+
+Si alguien retoma esto —y sobre todo antes de cablearlo a la sala de máquina
+(`MEJORAS #182`)—, **la ronda sigue debiéndose**. No tratar este código como revisado.

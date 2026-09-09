@@ -8290,6 +8290,12 @@ commit, así que el término sí llegó al mensaje del commit que la introdujo. 
 
 ## 187. El aviso de «cabecera de la bitácora rancia» se declaró promovido el 2026-08-26 y nunca se construyó — sexta reincidencia
 
+> **Séptima reincidencia, medida el 2026-09-09.** El bloque del **93º cierre** entró en `main`
+> (`35e5ea5`) con la cabecera todavía en el **92º**: la resolución del conflicto tomó la bitácora
+> de `main` e insertó el bloque nuevo encima, sin tocar la cabecera — el mismo modo de fallo, ahora
+> por la vía del merge. **No lo cazó el autor: lo cazó la sesión hermana** que había escrito el 92º.
+> **El disparador que esta entrada declara —«la séptima vez»— queda por tanto cumplido.**
+
 **Medido el 2026-09-09.** La bitácora tiene una nota, escrita al cerrar el 72º, que dice
 literalmente: *«**Promovido: aviso en `session_close`** — comparar la fecha y el ordinal de esta
 línea con el **primer bloque `## AAAA-MM-DD`** del fichero, y avisar si no coinciden. Es una
