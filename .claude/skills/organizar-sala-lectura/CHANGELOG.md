@@ -4,16 +4,24 @@
 - **La marca temporal del `_chat.txt` deja de estar documentada más estrecha que la
   realidad (Paso 2, anexo de WhatsApp).** El Paso 2 decía que la línea del adjunto lleva
   un `[DD/MM/AAAA, HH:MM]`. Un export real trae `[26/6/25, 12:07:45]`: día y mes de **uno**
-  o dos dígitos, año de **dos** o cuatro, y segundos, que el documento no mencionaba. El
-  modo de fallo es silencioso —un regex anclado a la forma documentada no casa **ni un
-  mensaje**, y «cero adjuntos fechados» se lee igual que «el chat no los referencia»—, y
-  el aviso vino de la sesión hermana sobre `W-02USSI`, no de un rojo. Ahora el paso lleva
-  el patrón tolerante literal (con su gemelo de Android y la resolución `2000 + yy`) y la
-  medición que lo respalda: **118 de 118 audios** fechados en `W-02VEKE`. En `W-02USSI` no
-  se ha medido cuántos fecha, y así queda dicho.
-- **Ningún matcher de chat vive en el repo:** el que funciona estaba solo en un script de
-  corrida (`scratch/`), así que este SKILL.md era la **única** fuente escrita del formato.
-  Por eso el remedio es documental y no un cambio de código.
+  o dos dígitos, año de **dos** o cuatro, segundos, a veces `am`/`pm` y un `U+200E`
+  delante — nada de lo cual mencionaba el documento. El modo de fallo es silencioso: un
+  regex anclado a la forma documentada no casa **ni un mensaje**, y «cero adjuntos
+  fechados» se lee igual que «el chat no los referencia». El aviso vino de la sesión
+  hermana sobre `W-02USSI`, no de un rojo.
+- **El paso apunta ahora a `core/whatsapp_export.py:27-38` como implementación de
+  referencia**, que ya trae los dos dialectos con todas esas tolerancias. El patrón
+  literal se conserva porque la skill corre **también en Cowork**, donde no puede importar
+  el módulo. Medición que lo respalda: **118 de 118 en `W-02VEKE` y 67 de 67 en
+  `W-02USSI`** (audio y vídeo; los segundos, medidos por la sesión hermana).
+- **Corrección de esta misma entrada, el mismo día.** Su primera redacción —y el mensaje
+  del commit `b02e85a`— afirmaban que **no existía ningún matcher de chat en el repo** y
+  que este SKILL.md era la única fuente escrita del formato. **Es falso**: el módulo
+  llevaba ahí desde la Fase A del intake de WhatsApp. Era una afirmación de **ausencia**
+  sacada de un barrido que no la agotó, y sostenía la conclusión entera («no baja la
+  gravedad, la sube»). Lo correcto es lo contrario: había una referencia buena a mano, y
+  el defecto era del contrato documentado. Lo levantó la sesión hermana citando el
+  fichero y las líneas.
 
 ## 1.15 — 2026-09-05
 - **El centinela «sin fecha» deja de ser una trampa (MEJORAS #131, `PLAN.md` fila #18).**
