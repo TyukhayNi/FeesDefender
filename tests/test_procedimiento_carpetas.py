@@ -45,11 +45,14 @@ def test_rechaza_lo_que_no_es_carpeta_de_fase(nombre):
     assert carpetas.es_carpeta_fase(nombre) is False
 
 
-def test_registrar_outputs_admite_las_cinco_sin_drift():
-    """Las dos listas viven en sitios distintos por una razón —el `.skill` empaquetado no
-    tiene `core/`, así que importarlo rompería la skill en el servidor— y este test las
-    ata: si alguien añade una carpeta de fase y no toca el helper, el escrito se
-    registraría fuera de su fase.
+def test_las_cinco_carpetas_NO_estan_todavia_en_registrar_outputs():
+    """**El estado de hoy, escrito como test y no como ausencia.**
+
+    Ampliar `SUBDESTINOS_EXTRA` amplía dónde puede escribir un helper que escribe, y eso
+    contradecía la restricción de 4a de no escribir nada — lo destapó la R1 (su H-01) y
+    Nikolai decidió el 2026-09-09 sacarlo a su propia pieza. Este test fija el estado
+    intermedio para que nadie lo lea como un olvido, y **se pondrá rojo** cuando esa pieza
+    entre: ese rojo es la señal de que hay que retirarlo y poner el de no-drift.
     """
     ruta = (pathlib.Path(__file__).resolve().parents[1]
             / ".claude" / "skills" / "_shared" / "registrar_outputs.py")
@@ -57,8 +60,9 @@ def test_registrar_outputs_admite_las_cinco_sin_drift():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    esperadas = {f"05_Procedimiento/{c}" for c in carpetas.CARPETAS_FASE}
-    assert esperadas <= set(mod.SUBDESTINOS_EXTRA), (
-        "faltan carpetas de fase en SUBDESTINOS_EXTRA: "
-        f"{sorted(esperadas - set(mod.SUBDESTINOS_EXTRA))}")
-    assert esperadas <= mod.DESTINOS_VALIDOS
+    de_fase = {f"05_Procedimiento/{c}" for c in carpetas.CARPETAS_FASE}
+    assert not (de_fase & set(mod.SUBDESTINOS_EXTRA)), (
+        "las carpetas de fase ya están en el helper: retira este test y restaura el de "
+        "no-drift, que vive en la pieza de `destinos-de-fase`")
+    assert "05_Procedimiento/Jurisprudencia" in mod.SUBDESTINOS_EXTRA, (
+        "y Jurisprudencia sigue ahí: esto no es una limpieza del helper")

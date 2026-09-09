@@ -37,8 +37,14 @@ construcción**, y por eso le corresponde **1** ronda de revisión, sobre su dif
 
 Aplican a **todas** las tareas.
 
-- **Cero escrituras en el expediente. Ninguna. Ni un fichero de estado, ni un log, ni un
-  `mkdir`.** Si una tarea de este plan necesita escribir en el caso, la tarea está mal: es de 4b.
+- **Ninguno de los módulos de esta pieza escribe en el expediente. Ni un fichero de estado,
+  ni un log, ni un `mkdir`.** Si una tarea de este plan necesita escribir en el caso, la tarea
+  está mal: es de 4b, o de una pieza propia.
+  - **Redacción exacta a propósito.** La versión anterior decía «cero escrituras» a secas, y la
+    revisión adversarial demostró que era falsa por dos vías: la propia Tarea 2 ampliaba los
+    destinos de un escritor (H-01, ya retirado a su pieza), y la cadena que la fachada invoca
+    puede escribir **fuera** del expediente — `WorkspaceRegistry` renombra un registro corrupto
+    al leerlo (H-05, pendiente). Lo que se sostiene es lo que dice esta línea.
 - **La única capacidad que se exige es `READ_CASE`** (`core/casos/workspace_model.Capability`).
   No se pide `WRITE_CASE` ni `GENERATE_DERIVATIVES` en ningún sitio.
 - **La autoridad viene del *resolver*, no del catálogo** (I0). Nada usa
@@ -433,10 +439,20 @@ git commit -m "vista procesal 4a: la sede — autorizacion por workspace y conte
 
 ---
 
-## Task 2: las cinco carpetas, y las skills pueden registrar en ellas
+## Task 2: las cinco carpetas de fase, como set cerrado
 
-La tarea más pequeña del plan y va segunda a propósito: desbloquea a `escritos-judiciales` y a
-`preparacion-audiencia-previa` sin depender de nada más (spec §7).
+La tarea más pequeña del plan. Es la **fuente** de la lista que valida el mapa del letrado:
+`mapa.es_carpeta_fase` y `vista.por_carpeta` la consumen, y no escribe nada.
+
+> **Lo que esta tarea YA NO hace, y por qué.** Su primera versión ampliaba además
+> `SUBDESTINOS_EXTRA` de `registrar_outputs`, para que un escrito generado se registrara en su
+> fase (spec §7). **La revisión adversarial lo sacó de aquí** (su H-01): ampliar esa tupla
+> amplía dónde puede escribir un helper que escribe, y contradecía la restricción global de
+> esta pieza. Nikolai decidió el 2026-09-09 darle su propia pieza, con su propia revisión:
+> `docs/superpowers/plans/2026-09-09-destinos-de-fase-registrar-outputs.md`.
+>
+> Con ello 4a vuelve a tener radio de daño **cero por construcción** y su ronda única queda
+> bien fundada, que es el punto de la decisión.
 
 **Files:**
 - Create: `core/procedimiento/carpetas.py`
@@ -3032,7 +3048,7 @@ El encargo al revisor debe pedirle expresamente:
 - **Revisor:** Codex (`codex-cli 0.153.4`, `model_reasoning_effort=high`), en solo lectura sobre copia congelada
 - **Informe recibido:** `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4a-r1-adversarial-review.md` (`sha256 4d32d8b3…3dc003`)
 - **Hallazgos:** 17 — 2 CRÍTICO, 10 ALTO, 5 MEDIO. **17 confirmados, 0 refutados.** Dos ya remediados en `16c646a`, anterior al informe y posterior al objeto
-- **Remediado en:** pendiente — H-02 y el `drive_accesible` en `16c646a`; los 15 restantes exigen una segunda pasada sobre 4a antes de mergear
+- **Remediado en:** H-02 y el `drive_accesible` en `16c646a`; H-03, H-04 y H-12 en `a9630aa`; **H-01 por decisión de alcance de Nikolai** (la ampliación del helper sale a su propia pieza); los 11 restantes exigen una segunda pasada antes de mergear
 
 **Acepto el NO-SHIP.** No se mergea 4a como está. Y acepto lo primero que dice el informe, que
 es lo que más me importa: **el presupuesto de una sola ronda estaba mal fundado.**
@@ -3049,8 +3065,19 @@ ese destino y la `head` escribe el fichero. Las dos cosas no pueden ser verdad a
 Lo correcto es lo que el informe propone y no lo que yo escribí: la afirmación exacta es
 **«los nueve módulos nuevos no escriben en el expediente»**, y esa sí se sostiene — el revisor
 la comprobó módulo a módulo y con un *audit hook* durante el import. Lo que no se sostiene es
-la versión plana. Que el radio de daño de 4a sea *menor* que el de 4b sigue siendo cierto; que
-sea **cero** no lo es.
+la versión plana.
+
+**Resuelto el 2026-09-09: Nikolai decidió sacar la ampliación del helper a su propia pieza**
+(`2026-09-09-destinos-de-fase-registrar-outputs.md`), que es una de las dos salidas que el
+informe dejaba abiertas. Con ella fuera, 4a **sí** tiene radio de daño cero en lo que a este
+hallazgo respecta y su ronda única queda bien fundada. La restricción global se reescribió con
+la redacción exacta, y 4a lleva ahora un test que fija el estado intermedio —el helper todavía
+**no** tiene las carpetas— para que el hueco no se lea como un olvido: se pondrá rojo cuando la
+pieza nueva entre, y ese rojo es la señal de retirarlo.
+
+**Lo que esta decisión NO cierra:** H-05. La cadena que la fachada invoca puede escribir fuera
+del expediente, porque `WorkspaceRegistry` renombra un registro corrupto al leerlo. Eso no es
+«cero escrituras» y no se arregla moviendo una tupla.
 
 **Y el guard que sostenía la afirmación tiene un agujero ejecutado** (H-04). Mi analizador
 busca el modo de `open` en `nodo.args[1:2]`, y en `Path(x).open("w")` el modo va en `args[0]`.

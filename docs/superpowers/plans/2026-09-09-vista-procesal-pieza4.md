@@ -84,10 +84,16 @@ Copiado del alcance del spec §7, más lo que la R1 añadió:
 - La reescritura de `intake_manifest` al modelo de ocurrencias (opción A).
 - La preparación de la documental numerada, la subida carpeta → CRM y la resolución de
   `.eml`: tres proyectos propios, cada uno con su decisión.
+- **La ampliación de `DESTINOS_VALIDOS`** —lo único que §7 mete en alcance de la vista— tiene
+  desde el 2026-09-09 **su propia pieza**:
+  `docs/superpowers/plans/2026-09-09-destinos-de-fase-registrar-outputs.md`. Estaba dentro de
+  4a y su revisión adversarial la sacó (H-01): ampliar esa tupla amplía dónde puede escribir un
+  helper que escribe, y contradecía la restricción de 4a de no escribir nada. Decisión de
+  alcance de Nikolai; con ella fuera, 4a recupera su radio de daño cero y su ronda única.
 - **El cambio de comportamiento de las seis skills del spec §8.1**, el handoff de §8.2 y la
-  documentación de §8.4. 4a amplía `DESTINOS_VALIDOS` —lo único que §7 mete en alcance— y con
-  ella la **capacidad**; el consumo es una pieza 5, porque cada skill hay que re-empaquetarla
-  e importarla en el servidor.
+  documentación de §8.4: pieza 5. Abrir el destino (la pieza de arriba) da la **capacidad**;
+  que `escritos-judiciales` pregunte la fase y escriba ahí es el **consumo**, y toca el cuerpo
+  de seis skills que hay que re-empaquetar e importar en el servidor.
 - **Retirar los procesales de `01_Procesado/Sala lectura`**: necesita el mapa primero.
 - **Y lo que la R1 corrigió de mí:** los tests de biblioteca del spec §6 **no** están
   cubiertos por la pieza 1 en su mitad de los PDF. `core/config.py:436-441` dice

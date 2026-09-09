@@ -53,19 +53,14 @@ CASO_SUBDIRS: tuple[str, ...] = (
 )
 
 # Subcarpeta dedicada a jurisprudencia descargada (decisión #2 del plan v3).
-# Y las cinco carpetas de fase de la vista procesal (spec 2026-07-27 §7): un escrito
-# generado se registra en la fase donde `escritos-judiciales` lo escribió. Se repiten
-# aquí como literales, y NO se importan de `core.procedimiento.carpetas`, porque este
-# helper viaja dentro del `.skill` empaquetado y ahí `core/` no existe: importarlo
-# rompería la skill en el servidor. El test de no-drift de
-# `tests/test_procedimiento_carpetas.py` es lo que mantiene las dos listas alineadas.
+#
+# Las cinco carpetas de fase de la vista procesal (spec 2026-07-27 §7) **no están aquí
+# todavía, y es una decisión de alcance de Nikolai (2026-09-09)**: ampliar esta tupla
+# amplía dónde puede escribir este helper, y meterlo en la pieza 4a contradecía su
+# restricción de no escribir nada. Va en su propia pieza, con su propia revisión:
+# `docs/superpowers/plans/2026-09-09-destinos-de-fase-registrar-outputs.md`.
 SUBDESTINOS_EXTRA: tuple[str, ...] = (
     "05_Procedimiento/Jurisprudencia",
-    "05_Procedimiento/01_Monitorio - Demanda y documentos",
-    "05_Procedimiento/02_Monitorio - Oposicion y documentos",
-    "05_Procedimiento/03_Ordinario - Demanda y documentos",
-    "05_Procedimiento/04_Ordinario - Contestacion y documentos",
-    "05_Procedimiento/05_Otros escritos",
 )
 
 # Subcarpeta de notas personales: nunca registramos work-product aquí.

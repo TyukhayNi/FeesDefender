@@ -1034,14 +1034,24 @@ dependencias aguas arriba que no son suyas:
       —si es la calidad declarada de la cobertura, dígase eso y no «la fila #1»— y que Nikolai
       decida. **El atajo a evitar, que ya está señalado en memoria:** leer «el OCR está arreglado»
       y concluir «desbloqueada».
+- [ ] **4a-bis. Los destinos de fase de `registrar_outputs`** — plan escrito el 2026-09-09,
+      sin construir: `docs/superpowers/plans/2026-09-09-destinos-de-fase-registrar-outputs.md`.
+      Estaba dentro de 4a y su R1 la sacó (H-01); decisión de alcance de Nikolai. Amplía
+      `SUBDESTINOS_EXTRA` con las cinco carpetas + sync a las siete skills + no-drift. **1
+      ronda** sobre el diff: es aditivo y no destruye. Y su Tarea 2 es la que siempre se
+      olvida — re-empaquetar e importar los siete `.skill` en el servidor.
 - [x] **4a. La vista procesal que SOLO LEE** — construida el 2026-09-09. Autorización por
       workspace, raíz autorizada con veto de reparse points, los tres conjuntos del CRM, gramática
       del mapa, selector de representante, informe y borrador de mapa. `core/procedimiento/` +
-      `scripts/procedimiento.py`. **120 tests, 25 mutantes muertos, suite verde con las semillas
-      777 y 31337** (4961 tests, 92 skip: los 88 de antes más los 4 de la regresión, que se salta
-      porque el Drive no estaba montado y por tanto queda declarada SIN VERIFICAR). **No existe
-      ruta de escritura en el paquete** y lo vigila un guard por AST: es lo que hace que le
-      corresponda 1 ronda y no 2. Commits `f89526a`..`9c4d5c1`.
+      `scripts/procedimiento.py`. **~150 tests propios, suite verde con las semillas 777 y 31337**
+      (92 skip: los 88 de antes más los 4 de la regresión, que se salta porque el Drive no
+      estaba montado y queda declarada SIN VERIFICAR). **Su R1 sobre el diff volvió NO-SHIP
+      con 17 hallazgos, 17 confirmados** (acta y adjudicación en el §8 del plan 4a):
+      remediados los dos críticos y H-12 en `a9630aa`, H-02 en `16c646a`, H-01 por la decisión
+      de alcance de arriba. **Quedan 11 y 4a NO se mergea hasta cerrarlos** — los gordos: la
+      raíz autorizada no llega a `universo.leer` (H-06), el SHA de la ocurrencia no se cruza
+      (H-10), y `WorkspaceRegistry` escribe al leer un registro corrupto (H-05). Commits
+      `f89526a`..`a9630aa`.
 - [ ] **4b. La vista procesal que ESCRIBE** — journal de intención, ledger de propiedad, la
       transacción y el índice. **Sin planificar.** Le corresponden **2 rondas** (decide quién
       escribe sobre qué copia y puede destruir datos de cliente). Se planifica cuando 4a esté
