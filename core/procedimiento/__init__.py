@@ -34,7 +34,7 @@ def _resolver(case_id: str | None, case_dir: str | None):
     from core.casos.case_catalog import CaseCatalog
     from core.casos.case_locator import resolve_ref
     from core.casos.workspace_model import CaseRef
-    from core.casos.workspace_registry import WorkspaceRegistry
+    from core.casos.workspace_registry import WorkspaceRegistry, raiz_por_defecto
     from core.casos.workspace_resolver import CaseWorkspaceResolver
     from core.utils import now_iso
 
@@ -42,14 +42,19 @@ def _resolver(case_id: str | None, case_dir: str | None):
         raise ValueError(
             "hay que dar exactamente uno: la identidad del caso o `case_dir`")
 
+    ahora = now_iso()
+    # `WorkspaceRegistry` exige su raíz y el instante: los dos son parte de su contrato,
+    # no valores por defecto. Y `drive_accesible` NO se pasa a `True` a pelo — eso es lo
+    # que dejó muerta la rama offline entera en `sala_maquina` hasta su Task 10.
     resolver = CaseWorkspaceResolver(
-        CaseCatalog(), WorkspaceRegistry(), usuario=getpass.getuser(),
-        maquina=socket.gethostname(), ahora=now_iso())
+        CaseCatalog(), WorkspaceRegistry(raiz_por_defecto(), ahora=ahora),
+        usuario=getpass.getuser(), maquina=socket.gethostname(), ahora=ahora)
+    drive_ok = sede.drive_accesible()
     if case_dir:
-        ws = resolver.resolver_por_ruta(Path(case_dir), drive_accesible=True)
+        ws = resolver.resolver_por_ruta(Path(case_dir), drive_accesible=drive_ok)
         return (ws.case_ref.case_id or Path(case_dir).name), ws
     cid = resolve_ref(str(case_id))
-    ws = resolver.resolver_por_identidad(CaseRef(case_id=cid), drive_accesible=True)
+    ws = resolver.resolver_por_identidad(CaseRef(case_id=cid), drive_accesible=drive_ok)
     return cid, ws
 
 

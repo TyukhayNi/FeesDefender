@@ -8126,3 +8126,35 @@ hoy y pasaría después: no prueba nada.
 **Disparador de promoción.** Medio. No corrompe datos ni bloquea: degrada el gate a ruido.
 Sube en cuanto haya un segundo caso con export de WhatsApp, que es el flujo normal de los
 expedientes de E&V.
+
+## 190. `drive_accesible` está definida dos veces, con la misma condición y en dos sitios
+
+**Qué pasa.** La decisión «¿se puede confiar hoy en el estado compartido del canon?» —que es
+lo que el resolver del workspace recibe como `drive_accesible`— está escrita dos veces:
+
+- `scripts/sala_maquina.py::_drive_accesible` (desde su Task 10)
+- `core/procedimiento/sede.py::drive_accesible` (desde la pieza 4a, 2026-09-09)
+
+Las dos leen `FEESDEFENDER_OFFLINE` y las dos devuelven lo mismo. La segunda se escribió a
+sabiendas, porque la primera vive en un módulo de `scripts/` y un paquete de `core/` no puede
+importar de ahí; y se **fijó con un test de no-drift**
+(`tests/test_procedimiento_fachada.py::test_drive_accesible_no_DIVERGE_de_la_de_sala_de_maquina`)
+en vez de dejarlas divergir en silencio.
+
+**Por qué importa aunque hoy estén de acuerdo.** Dos definiciones de la misma decisión es
+exactamente cómo nacen las divergencias, y el docstring de `WorkspaceRegistry` lo dice de otra
+igual («dos definiciones de "bajo el catálogo" es como nacen las divergencias, y ésta ya había
+nacido»). El test de no-drift avisa, pero no impide que alguien cambie una y actualice el test.
+
+**Remedio.** Promoverla a un sitio común del que puedan tirar los dos —el candidato natural es
+`core/casos/` , junto al resolver que la consume— y dejar en `sala_maquina` un alias. Es un
+cambio de una línea en cada lado, pero toca un módulo ya revisado y mergeado, así que no entra
+de rebote en el diff de otra pieza.
+
+**Lo que NO hay que hacer, y está medido en el docstring de `sala_maquina`:** añadirle una
+segunda condición del tipo «…o la raíz del catálogo no está montada». Se intentó, y produce
+divergencia de fuente de verdad con `case_locator._root()` más un falso negativo en cualquier
+clon o worktree sin `CASOS_ROOT` — donde **toda** invocación se iría a offline en silencio.
+
+**Disparador de promoción.** Bajo. Hoy las dos coinciden y el drift está atado por un test. Sube
+si aparece un tercer consumidor, porque entonces la duplicación deja de ser de dos.

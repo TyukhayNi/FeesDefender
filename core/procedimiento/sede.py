@@ -42,6 +42,31 @@ class SedeError(Exception):
     """No hay sede utilizable, o la ruta pedida no es legítima. Falla CERRADO."""
 
 
+def drive_accesible() -> bool:
+    """¿Se puede confiar HOY en el estado compartido del canon? (spec dual §7.2.9-10)
+
+    **Una sola condición y explícita:** ``FEESDEFENDER_OFFLINE=1``, el control del
+    operador — «estoy sin la unidad del despacho, trabaja contra mi checkout». Es la
+    declaración que el §7.1.5 pide para retirar las capacidades de canon.
+
+    **Lo que NO se hace, porque `sala_maquina` ya lo midió y hubo que retirarlo:** añadir
+    «…o la raíz del catálogo no está montada». Suena más listo y es peor — divergencia de
+    fuente de verdad con `case_locator._root()`, y falso negativo en cualquier clon o
+    worktree sin `CASOS_ROOT`, donde **toda** invocación se iría a offline en silencio.
+
+    **Duplicación declarada:** `scripts/sala_maquina.py::_drive_accesible` decide lo mismo
+    con la misma condición. Unificarlas exige tocar un módulo ya revisado y mergeado, así
+    que aquí se **fija con un test de no-drift** (`test_procedimiento_sede.py`) en vez de
+    dejarlas divergir en silencio. Promoverla a un sitio común es tarea aparte
+    (`MEJORAS #190`).
+
+    Pasar `True` a pelo al resolver es exactamente lo que dejó muerta la rama offline
+    entera en `sala_maquina` hasta su Task 10: el modo existía, tenía tests unitarios y
+    ningún entrypoint podía llegar a él.
+    """
+    return (os.getenv("FEESDEFENDER_OFFLINE") or "").strip() != "1"
+
+
 def raiz_autorizada(ws) -> Path:
     """Raíz de trabajo del caso, **resuelta una vez**, tras exigir ``READ_CASE``.
 
