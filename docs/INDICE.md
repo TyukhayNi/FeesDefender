@@ -43,7 +43,7 @@ fecha: 2026-07-05
 | `FLUJO_GIT.md` | Flujo de trabajo git + protocolo de cierre (SSOT); manual llano del modelo git. |
 | `SEGURIDAD_DATOS.md` | Prevención de fugas de PII y secretos — doctrina, controles y runbook. |
 | `INTEGRACION_SUDESPACHO.md` | API sudespacho (§14 fusiona la referencia común externa). |
-| `CRM_SUDESPACHO_ATLAS.md` | **SSOT de la superficie del CRM** — inventario generado y re-ejecutable (endpoints Fase A + campos/relaciones/enums por elemento, Fase B). Consultar ANTES de descubrir un endpoint a mano. **Generado**: regenerar con `python -m scripts.crm_atlas discover --phase all` (nunca `--phase a`: no trae Fase B). |
+| `CRM_SUDESPACHO_ATLAS.md` | **el inventario más amplio de la superficie del CRM** (⚠️ **no exhaustivo**: su Fase B recorre `/api/elements`, que oculta ≥28 elementos — `INTEGRACION_SUDESPACHO.md` §16.1 y `MEJORAS_FUTURAS.md` #185) — inventario generado y re-ejecutable (endpoints Fase A + campos/relaciones/enums por elemento, Fase B). Consultar ANTES de descubrir un endpoint a mano. **Generado**: regenerar con `python -m scripts.crm_atlas discover --phase all` (nunca `--phase a`: no trae Fase B). |
 | `INGESTA_SUDESPACHO.md` | Flujo de ingesta desde el CRM. |
 | `RUNBOOK_APERTURA_EXPEDIENTE.md` | Runbook operativo de apertura E2E de expediente (alta→intake→sala→viabilidad→CRM→archivo→cierre); gotchas embebidos. |
 | `CONVENCIONES_DESPACHO.md` | Convenciones del despacho. |
@@ -52,6 +52,7 @@ fecha: 2026-07-05
 | `DESPLIEGUE_MCP_DRIVE_DISCO.md` | Checklist ejecutable de despliegue del MCP "Drive como disco" V1 (spec §8); código V1 construido y mergeado (PR #52), despliegue manual pendiente. |
 | `DEVTOOLS_CAPTURA_CREATE.md` | Captura DevTools para el alta en el CRM. |
 | `INSTALACION_ANONIMIZADOR.md` | Instalación del anonimizador (`core/anon`). |
+| `INSTALACION_ASR.md` | Instalación del reconocimiento de voz (`scripts/transcribir_audio.py`): receta del venv dedicado, modelos, y las cifras que eligen modelo y grada. Cableado a la sala de máquina pendiente (`MEJORAS #182`). |
 | `MANUAL_DESPACHO.md` | Manual operativo del despacho. |
 | `MEJORAS_FUTURAS.md` | Backlog técnico (todo el repo). |
 | `MEJORA_CONTINUA_SKILLS.md` | Ciclo de mejora de las skills. |
