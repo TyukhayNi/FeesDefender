@@ -8127,3 +8127,58 @@ decisión, que son puras.
 
 **Disparador de promoción.** La próxima vez que se cite una cifra de estos sondeos en un spec o en
 la bitácora, o antes de que alguien que no sea su autor los use para decidir algo.
+
+---
+
+## 186. La blocklist de PII tiene un término que es una palabra común, y el guard grita en falso
+
+> Medido el 2026-09-09 al correr la suite completa antes de abrir el PR #308 (ASR local).
+> Verificado en un **checkout limpio de `main`**: falla igual sin el commit de esa rama.
+
+`tests/test_no_pii_en_tests.py::test_no_pii_real_en_tests_ni_core` está **ROJO en `main`**,
+con dos detecciones `PII EN CONTENIDO` sobre `core/email_firmas.py` y
+`tests/test_email_firmas.py`.
+
+**Es un falso positivo.** El término que engancha es un **gentilicio**: el del idioma en que
+se escribe «schrieb», y aparece en un comentario de `core/email_firmas.py:151` que enumera los verbos de citación de
+correo por idioma, junto a los de catalán e inglés. No es el apellido de ningún tercero. La
+blocklist (gitignored, republicada con 70 términos) contiene un término que **coincide con
+una palabra común del castellano**, y `escanear` normaliza tildes, así que engancha las dos
+grafías.
+
+**El término no se transcribe aquí, y no es celo: es que no se puede.** El primer intento de
+escribir esta entrada citaba literal la salida del test, y el hook `leak-guard` **bloqueó el
+commit de la propia entrada que documenta su falso positivo**. Ese detalle vale más que el
+defecto: el guard es tan amplio que impide describir su propio fallo sin saltárselo con
+`--no-verify`. Quien necesite el valor exacto lo tiene en la blocklist y en un `pytest` de
+diez segundos.
+
+**Por qué esto es peor que un rojo cualquiera, y es el fondo del asunto.** El daño no es la
+fuga —no hay fuga—: es que **un guard que grita en falso enseña a ignorarlo**. Este test es
+la barrera que protege de commitear el nombre de un cliente. Un rojo permanente y sabido
+falso lo convierte en ruido, y el día que enganche una fuga real nadie lo va a mirar. Mismo
+mecanismo que `MEJORAS #161` (PR #289) por el otro lado: allí el guard **callaba** sin su
+blocklist, aquí **grita** de más.
+
+**Mejora propuesta.** No quitar el término de la blocklist sin más: si además es el apellido
+real de alguien en algún caso, tiene que seguir vigilado. Dos vías, y la primera es la
+barata:
+
+1. **Excepciones por par (término, fichero)**, gitignored igual que la blocklist. Coste: un
+   fichero más y una comprobación en `escanear`.
+2. **Marcar en la blocklist los términos ambiguos**, de modo que un término que es palabra
+   común solo enganche cuando aparece como nombre propio con otro indicio al lado
+   (mayúscula inicial junto a un apellido, o pegado a un email). Más fino y más caro.
+
+Cualquiera de las dos exige **tocar el guard con sus propios tests**, y de esos hay: el
+patrón está en `tests/test_no_pii_en_tests.py` y en el hook `leak-guard`.
+
+**Lo que NO se debe hacer**, y por eso queda escrito: no añadir un `skip`, no relajar el
+aserto y no reescribir el comentario de `email_firmas.py` para que el rojo se vaya. La
+tercera es la tentadora —cambiar el gentilicio por una perífrasis pone la suite verde en
+diez segundos— y es exactamente debilitar la evidencia en vez de arreglar el instrumento: el
+término seguiría en la blocklist y volvería a enganchar en el siguiente fichero que hable de
+idiomas.
+
+**Disparador de promoción.** El siguiente rojo de este guard, sea falso positivo o no; o que
+alguien se salte el hook con `--no-verify` alegando que «ese guard siempre está rojo».
