@@ -8117,3 +8117,36 @@ en la salida del CLI: «N documento(s) sin categoría — `id_carpeta` no mapead
 
 **Disparador de promoción.** La próxima apertura de un caso con expediente judicial, que es
 casi cualquiera que venga de una reclamación extrajudicial previa.
+
+---
+
+## 181. `cendoj-descarga`: un ECLI «normalizado» hace que la cita parezca inexistente
+
+**Medido el 2026-09-09 verificando las siete citas de la demanda de W-02USSI.** CENDOJ
+publica algunos ECLI de Audiencia Provincial **con un espacio dentro del código de órgano**:
+
+```
+ECLI:ES:AP B:2002:12928        <- así lo publica el CGPJ (SAP Barcelona, 18-12-2002)
+ECLI:ES:APB:2002:12928         <- la forma «normalizada», que NO encuentra nada
+```
+
+Busqué por la segunda porque el escrito traía la primera y la tomé por errata. La búsqueda
+devolvió **cero resultados y ningún error**, que es lo peligroso: se lee como «esta cita no
+existe». Por **ROJ** (`SAP B 12928/2002`) salió a la primera, con el ECLI oficial confirmando
+el espacio.
+
+**El fallo no es de CENDOJ, es del método.** El Paso 3 de la skill pone la búsqueda por ECLI
+como «Caso A — búsqueda directa. Devuelve siempre 1 resultado», y el ROJ como Caso B
+alternativo. Con eso, un vacío por ECLI no tiene salida prevista, y la conclusión natural —la
+equivocada— es la ausencia.
+
+**Qué hacer.** (a) En el Paso 3, regla explícita: **un resultado vacío por ECLI nunca es
+ausencia hasta haber reintentado por ROJ**; y no reescribir el ECLI que aporta la fuente —se
+pega tal cual. (b) Una línea en la tabla de «Errores frecuentes»: `Búsqueda por ECLI sin
+resultados` → `ECLI con espacio en el código de órgano (frecuente en AP antiguas)` →
+`reintentar por ROJ; no normalizar el ECLI`. (c) Y el corolario general, que vale más que el
+caso: **antes de declarar que una cita no existe, agotar la segunda llave.** Familia de
+`feedback-no-lo-se-no-es-no-hay`.
+
+**Disparador de promoción.** La próxima verificación de citas que incluya una AP anterior a
+~2005, donde esta forma del ECLI es frecuente.

@@ -2,8 +2,8 @@
 estado: propuesto
 autor: Claude Code
 fecha: 2026-09-08
-revision: 1
-abre: MEJORAS #179, MEJORAS #180
+revision: 2
+abre: MEJORAS #179, MEJORAS #180, MEJORAS #181
 rondas_previstas: 1
 motivo_una_ronda: "no decide quien escribe sobre que copia ni puede destruir datos de cliente: lee el expediente y produce un escrito y un informe"
 ---
@@ -40,6 +40,11 @@ revisión.
 **No es** un flujo paralelo. No monta el expediente, no fija las decisiones cerradas del
 despacho, no construye la cronología, no genera el `.docx`, no aplica el estilo, no verifica
 las citas y no valora la viabilidad. Todo eso tiene dueño, y el dueño no es esta skill.
+
+> **Rev. 2 (2026-09-09).** Terminada la revisión de la demanda de W-02USSI, el catálogo
+> pasa de seis a **ocho** familias (§8, las nuevas 7 y 8) y la cadena de devengo gana el
+> §5.1: **las condiciones del contrato privado son parte del eslabón 4**. Ese fue el
+> hallazgo de fondo del caso, y la rev. 1 no lo tenía.
 
 **Alcance material:** las siete `TIPOS_CASO_ACTORA` de `core/config.py` — `BAD_DEBT`,
 `NEGATIVA_OFERTA`, `NEGATIVA_ARRAS`, `NEGATIVA_ESCRITURA`,
@@ -137,6 +142,33 @@ El núcleo doctrinal —corretaje atípico, honorarios devengados a la perfecci�
 **salvo pacto**— es lo que convierte el eslabón 2 en la bisagra: **el pacto es la
 estipulación**. De ahí la regla de dominio que sale de leer el borrador:
 
+### 5.1 Las condiciones del contrato privado son parte del eslabón 4, no una nota al margen
+
+**Aprendido al terminar la revisión de W-02USSI (2026-09-09).** El campo de batalla real no
+fue ninguno de los defectos formales: fue que el contrato privado de arras llevaba una
+**condición suspensiva** —«el mismo no surtirá efectos hasta entonces»— con dos requisitos, y
+el escrito **no la mencionaba en ningún hecho**, mientras la contraria la había articulado por
+escrito desde el primer mes. Todo el argumento del devengo se apoya en que la compraventa se
+perfeccionó; una condición suspensiva incumplida ataca justo eso.
+
+Por tanto el eslabón 4 obliga a tres cosas, en este orden:
+
+1. **Inventariar TODAS las condiciones del contrato privado** —suspensivas, resolutorias, de
+   financiación del comprador, plazos de acreditación— leyendo la comparecencia y los pactos,
+   no el resumen. Y sus anexos, que pueden modificarlas (y contradecirse entre sí).
+2. **Decir a quién obliga cada una**, porque de ahí sale la imputabilidad. Que la agencia
+   obtenga por su cuenta lo que la cláusula manda acreditar **al vendedor** no cumple la
+   condición tal como está redactada.
+3. **Armar el art. 1119 CC** («se tendrá por cumplida la condición cuando el obligado
+   impidiese voluntariamente su cumplimiento») **contra la condición concreta**, y no citarlo
+   suelto en los fundamentos. Con el corolario que lo sostiene: la doctrina del devengo a la
+   perfección opera **salvo pacto**, y el pacto —la estipulación de devengo del eslabón 2— es
+   lo que desplaza al devengo por defecto.
+
+**La comprobación del modo revisión, en una línea:** si el escrito afirma que el contrato se
+perfeccionó y el contrato privado tiene una condición que el escrito no nombra, es un CRÍTICO,
+no una mejora de redacción.
+
 > **La estipulación de devengo se transcribe como texto, nunca solo pegada como imagen, y la
 > paráfrasis del escrito tiene que casar rama por rama con la cláusula.**
 
@@ -221,7 +253,7 @@ qué prueba la cierra.
 
 ## 8. El catálogo de defectos y el modo revisión
 
-`references/catalogo-de-defectos.md`. **Seis familias**, sembradas con defectos **medidos en
+`references/catalogo-de-defectos.md`. **Ocho familias**, sembradas con defectos **medidos en
 un escrito real**. Cada una con síntoma, detección, fuente y consecuencia.
 
 | # | Familia | Detección |
@@ -232,6 +264,31 @@ un escrito real**. Cada una con síntoma, detección, fuente y consecuencia.
 | 4 | Título documental débil | proforma donde el cauce exige factura |
 | 5 | Contradicción interna entre párrafos | lectura dirigida de los pares hecho/fundamento que se refieren al mismo evento |
 | 6 | Paráfrasis que no casa con la cláusula transcrita | comparar rama por rama contra el texto de la estipulación |
+| 7 | **Cita de apoyo cuya *ratio* contiene doctrina adversa** | por cada resolución citada, dos preguntas: ¿su supuesto de hecho es el nuestro?, ¿su *ratio* le da a la contraria algo que usar? |
+| 8 | **Parte contractual omitida en la identificación** | cotejar la comparecencia del contrato privado contra el hecho que identifica a las partes |
+
+**Las familias 7 y 8 salieron de terminar la revisión de W-02USSI el 2026-09-09**, después de
+escribir la rev. 1 de este spec. Las dos merecen su sitio por lo que costó descubrirlas:
+
+- **La 7.** El escrito cita una SAP como apoyo del IVA, y esa misma sentencia transcribe en su
+  *ratio* la doctrina del TS de que el corretaje «se halla sometido a la condición suspensiva
+  de la celebración del contrato pretendido» y que no se devenga si surge «cualquier diferencia
+  sustancial obstativa de la celebración de la venta, porque en tal caso no llegó al estado de
+  perfección». Es decir: **favorable para lo que se la usa, adversa para el núcleo del caso**,
+  y aportada en el propio ramo. Una verificación que solo comprueba identidad —ROJ, ECLI,
+  fecha, ponente— **no la detecta**: hay que leer el supuesto de hecho y la *ratio*. El
+  `cendoj-descarga` ya lo advierte («un resultado parece on-point y no lo es»); el catálogo lo
+  convierte en comprobación obligatoria del modo revisión.
+- **La 8.** El escrito identifica a la parte compradora como dos personas físicas y **omite la
+  sociedad** que figura en la comparecencia del contrato privado. En un escrito cuyo eje es
+  que la compraventa se perfeccionó entre partes determinadas, identificar mal a una de ellas
+  es un flanco gratuito.
+
+**Y un *gotcha* de verificación, medido:** CENDOJ publica algunos ECLI de Audiencia
+**con un espacio** (`ECLI:ES:AP B:2002:12928`). «Normalizarlo» a `ES:APB` hace que la búsqueda
+por ECLI **no devuelva nada**, y eso se lee como «la cita no existe». Buscar por **ROJ** ante
+cualquier resultado vacío antes de concluir ausencia. Va a `cendoj-descarga`, no aquí
+(`MEJORAS #181`).
 
 **La meta-regla, prestada de `CLAUDE.md`:** ante cada hallazgo, **«¿de qué frontera es esto un
 ejemplo?»** antes de remediarlo. Remediar el caso que el informe describe, y no la propiedad
