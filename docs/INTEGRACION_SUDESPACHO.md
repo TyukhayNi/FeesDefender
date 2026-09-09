@@ -973,13 +973,31 @@ endpoint de borrado documentado.
      `resolver_cuenta()` que exija unicidad devuelve `None` — que **no** significa «no indexado».
   2. **Hay filas cuyo `uid` no es un Message-ID en absoluto**: visto `uid=1908692`, con `cuenta`
      vacía.
-- ⚠️ **`findRelations` da una vista POR COPIA; la relación que escribe el relate es GLOBAL.**
-  Medido: relacionada la copia de la cuenta 15 con `expedientes_judiciales:683`, la relectura
-  desde la cuenta **2** del mismo Message-ID sigue devolviendo vacío, aunque el expediente ya lo
-  vea. Volver a relacionar desde la cuenta 2 devuelve el **mismo `mail_id`** y **no duplica**.
-  → **No hay riesgo de duplicar la relación**, pero **verificar releyendo `findRelations` da
-  falso negativo**. La verificación correcta es por el lado del expediente:
-  `GET /api/related_register/{elemento}/{id}` → bloque `mail` (§15.5), que es la vista global.
+- ⚠️ **`findRelations` da una vista POR COPIA, y la relación NO es global: se pega a UNA copia
+  que ELIGE EL SERVIDOR.** *(Corregido el 2026-09-09. El 2026-09-07 esta línea decía «la relación
+  que escribe el relate es GLOBAL»: **era falso**, y salió de una medición que no podía
+  discriminar — se mandó el relate con `account=15` y con `account=2`, se obtuvo el mismo
+  `mail_id`, y se leyó como «es global» cuando **`account` no viaja en el cuerpo del POST**, así
+  que las dos peticiones eran idénticas y el mismo resultado era inevitable.)*
+  **Medido el 2026-09-09 con un experimento que sí discrimina:** relate de un correo con copias en
+  las cuentas 2 y 15 hacia `extrajudiciales:636`, **pasando `account=2`**. Después: la copia de la
+  **15** ve la relación nueva; la de la **2** sigue viendo `[]`. O sea:
+  1. **La relación se pega a una sola copia.**
+  2. **`account` NO dirige la escritura** — no está en el cuerpo `{messageIds, relatedMembers,
+     relatedElement, cookies, dataHash}`, así que el servidor no puede saber qué copia elegiste.
+  3. **La elige él.** Escogió la 15 en las dos observaciones; **la regla no está medida**, y con
+     dos datos no se establece.
+  4. → **Qué copia lleva la relación no lo controla el cliente.** Si la visibilidad en Roundcube va
+     por buzón, el correo aparece en el webmail de quien el servidor decida.
+  **Control positivo hecho:** `findRelations(account=2)` **sí** devuelve relaciones para otros
+  correos de esa cuenta (5 de 5 con `estarelacionado=1`), así que su `[]` es una respuesta y no un
+  instrumento mudo.
+  → **La verificación por `findRelations` es INCORRECTA, no imprecisa**: sobre una copia que no es
+  la elegida responde «no relacionado» cuando sí lo está. La única verificación válida es por el
+  lado del expediente: `GET /api/related_register/{elemento}/{id}` → bloque `mail` (§15.5), que
+  **sí lo ve sea cual sea la copia** (comprobado: el `mail_id` aparece en el 636 y en el 683).
+  ℹ️ El bloque de relaciones puede traer elementos que no son expedientes — visto `mailcarpetas` y
+  `tracking`, éste con varios ids por correo.
 - ⚠️ **`relate/attachments` NO es idempotente: DUPLICA.** El mismo `att_id`, el mismo nombre
   final y el mismo `mail_id`, posteados dos veces, dejan **dos documentos** en el gestor
   documental (medido el 2026-09-07 sobre el 636: censo 3 → 4 → 5, los dos POST con

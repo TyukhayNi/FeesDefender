@@ -104,24 +104,42 @@ prueban distinto: el cliente con transporte falso, el orquestador con **cliente*
 fallo de dedo no puede activarlo y Paola y Sergio no lo ven. La bandeja **muestra el modo**, para
 que nadie crea que archivó cuando no.
 
-## 5. Qué copia se escribe (§2 + D6)
+## 5. Qué copia se escribe — RETIRADO: no lo decide el cliente
 
-`PROCURADOR_CUENTA_CRM` declara la cuenta del buzón de quien corre la app (20 en la de Ana). Es
-**configuración, no inferencia**: el endpoint que mapearía cuenta↔persona (`/api/accounts/{id}`)
-devuelve **credenciales IMAP en texto plano** (`INTEGRACION §10.9`) y no se llama.
+> **La versión v1 de este §5 especificaba un `elegir_cuenta` con preferencia por la copia propia,
+> más D6 y la variable `PROCURADOR_CUENTA_CRM`. Se retira entero.** No por ser ceremonia: porque
+> **engaña**. Le diría al operador —y a la traza— que eligió un destino que no puede elegir.
 
-```
-elegir_cuenta(message_id, cuenta_propia):
-    copias = cuentas con fila `mail` para este Message-ID
-    0 copias                     -> sin_registro      (falta el webmail; D2)
-    cuenta_propia ∈ copias       -> cuenta_propia     (por la TRAZA, no por visibilidad)
-    si no                        -> la copia de menor cuenta, anotada en la traza
-```
+**Medido el 2026-09-09** (a raíz de R1/H-02, que lo señaló leyendo el cuerpo del POST):
 
-**No se falla cerrado en ninguna rama con copia**, y descansa solo en hechos medidos: la relación
-es **global** y re-relacionar **no duplica**, así que escribir en cualquier copia consigue el
-objetivo. La preferencia por la copia propia es para que la traza sea limpia, no una precaución de
-permisos.
+1. **`account` NO viaja en el POST del relate.** El cuerpo es `{messageIds, relatedMembers,
+   relatedElement, cookies, dataHash}` (`core/procurador_relate.py`, `_post_relate`). El servidor
+   **no puede saber** qué copia eligió el cliente.
+2. **La relación se pega a UNA copia, no a todas.** Experimento: correo con copias en las cuentas
+   2 y 15, relate hacia `extrajudiciales:636` **pasando `account=2`**. Después, la copia de la
+   **15** ve la relación nueva y la de la **2** sigue viendo `[]`.
+3. **La elige el servidor**, y escogió la 15 en las dos observaciones. **La regla no está medida**;
+   dos datos no la establecen.
+4. **Control positivo hecho**, para no repetir el error de método: `findRelations(account=2)`
+   **sí** devuelve relaciones para otros correos de esa cuenta (5 de 5 con `estarelacionado=1`).
+   Su `[]` es una respuesta, no un instrumento mudo.
+
+**Consecuencias, y son de diseño:**
+
+- **Se borran `elegir_cuenta`, D6 y `PROCURADOR_CUENTA_CRM`.** El orquestador (§4) pasa el
+  `account` que resuelva la lectura y **no afirma nada sobre el destino**.
+- **`cuenta_usada` desaparece de la traza (§7).** Registrarlo sería inventar procedencia: un dato
+  con forma autoritativa sobre algo que el cliente no controla.
+- **Qué copia lleva la relación es una propiedad del sistema, no una decisión nuestra**, y así se
+  declara. Si la visibilidad en Roundcube va por buzón, el correo aparece en el webmail de quien el
+  servidor decida — no en el de quien archiva. Ver §11.6.
+
+**Y una corrección de la v1 que hay que dejar dicha:** su §5 justificaba «cualquier copia sirve»
+con que **la relación es global**. Eso era falso, y salió de una medición que no podía
+discriminar: se mandó el relate con dos `account` distintos, se obtuvo el mismo `mail_id`, y como
+`account` no viaja, el mismo resultado era **inevitable**. La afirmación llegó a
+`INTEGRACION_SUDESPACHO §10.10` —el SSOT del contrato— y a la memoria del proyecto; las tres
+quedaron corregidas el 2026-09-09.
 
 ### 5.1 La visibilidad tiene dos superficies, y relacionar es el puente
 
@@ -143,10 +161,12 @@ solo fallaba en no decir de cuál hablaba.
 pieza:** *relacionar no es solo archivar — es el acto que hace el correo visible al equipo.* Antes
 de relacionarlo vive en un solo buzón; después, lo lee cualquiera con acceso al expediente.
 
-**Consecuencia para el diseño: ninguna rama cuelga de esto.** Cualquier copia sirve, porque la
-visibilidad de equipo la da la relación con el expediente y la relación es global. Por eso el §5 no
-corta a revisión el 6,3 % multicopia: una versión anterior lo hacía «para no decidir a ciegas la
-visibilidad», y esa precaución no protegía nada.
+**Consecuencia para el diseño: ninguna rama cuelga de esto** — pero el argumento de la v1 era
+falso y se sustituye. La v1 decía «cualquier copia sirve **porque la relación es global**». **No es
+global** (§5). Lo que sostiene la conclusión es una medición distinta y mejor: **el expediente ve
+el correo sea cual sea la copia que lleve la relación** — el `mail_id` aparece en el bloque `mail`
+del 636 y del 683 aunque solo una copia lo vea desde `findRelations`. Así que la visibilidad de
+equipo por el expediente se sostiene; lo que **no** se sostiene es que el cliente elija la copia.
 
 ### 5.2 Por qué se sigue leyendo `procesal@`, y qué la sustituirá
 
@@ -401,3 +421,68 @@ Sin datos de cliente. Los expedientes citados son los de prueba del despacho (**
 extrajudicial, **683** judicial) y sus residuos **se quedan** por decisión de Nikolai del
 2026-09-07: habrá más escrituras y los borrará él al terminar. El `mail_id` 439232 corresponde a un
 correo de marketing ajeno a cualquier caso, elegido a propósito.
+
+## 15. Adjudicación de la revisión adversarial R1 (Codex, 2026-09-08) — NO-SHIP, parcial
+
+- **Objeto revisado:** `docs/superpowers/specs/2026-09-07-f3-cableado-bandeja-y-verificacion-design.md` rev. v1, commit `221b4d4`
+- **Ronda:** 1
+- **Revisor:** Codex CLI 0.153.4, solo lectura sobre copia congelada de 1.249 ficheros
+- **Informe recibido:** `2026-09-07-f3-cableado-bandeja-y-verificacion-r1-adversarial-review.md`
+- **Hallazgos:** 14 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** rev. 2 de este documento — H-02 ya remediado (§5 retirado); los trece restantes en curso
+
+Ronda sobre el **diseño**, antes de construir. El revisor corrió sin red sobre el commit congelado
+y **ejecutó** 104 pruebas del repo más 12 reproducciones adversariales. El `sha256` del objeto
+coincide al abrir y al cerrar. Adjudicado contra la fuente: **siete hallazgos se comprobaron línea
+a línea en el código** y los siete se sostienen.
+
+**Cero refutados, y no por no buscarlo.** Es el resultado honesto: el diseño **no era apto para
+construirse**.
+
+| Hallazgo | Sev. | Veredicto | Dónde se remedia |
+|---|---|---|---|
+| H-01 · el cableado no tiene inventario de adjuntos y puede confirmar sin subir ninguno | CRÍTICO | **confirmado** | rev. 2: la ingesta debe transportar los nombres (`gmail_source` los tira hoy) |
+| H-04 · el censo por nombre pierde carpeta y multiplicidad | CRÍTICO | **confirmado** | rev. 2; el §11.2 de la v1 era **falso** |
+| H-02 · `cuenta_usada` no identifica la copia escrita | ALTO | **confirmado y AGRAVADO** | **§5 retirado**; medición propia del 2026-09-09 |
+| H-03 · el arreglo dentro de `relacionar()` deja un POST fuera | ALTO | **confirmado** | rev. 2 |
+| H-05 · el censo solo mira los primeros 100 documentos | ALTO | **confirmado y AGRAVADO** | rev. 2 |
+| H-06 · la traza no tiene el tercer hecho y destruye evidencia parcial | ALTO | **confirmado** | rev. 2: cambia la forma de `ArchivoResult` |
+| H-07 · una excepción se lleva la escritura sin traza | ALTO | **confirmado** | rev. 2 |
+| H-08 · D4 no hace inalcanzable la carrera del censo | ALTO | **confirmado** | rev. 2; la frase del §11.3 era **falsa** |
+| H-09 · guardar el nombre en el log no es una mitigación | ALTO | **confirmado** | rev. 2 |
+| H-11 · la autoría local puede atribuir el clic a otra persona | ALTO | **confirmado y AGRAVADO** | rev. 2 |
+| H-12 · la tarjeta muestra un expediente y confirma otro | ALTO | **confirmado** | rev. 2; defecto preexistente que este cableado vuelve material |
+| H-10 · el protocolo invoca una transición inexistente | MEDIO | **confirmado** | rev. 2: `"revisar"` **lanza** `TransicionInvalida` |
+| H-13 · `hasAttachments` no verifica igualdad de contenido | MEDIO | **confirmado** | rev. 2: el §11.4 baja de «sostiene» a «consistente con, no establecido» |
+| H-14 · mandatos incompatibles entre secciones | MEDIO | **confirmado** | rev. 2 |
+
+### 15.1 Los tres que agravé al verificarlos
+
+- **H-02.** El revisor leyó que `account` no viaja en el POST y dejó SIN VERIFICAR qué fila elige el
+  servidor. Se midió: **la relación NO es global, la elige el servidor, y no es la copia que se le
+  pasa.** Eso retira el §5 entero y obligó a corregir la afirmación «la relación es global» en
+  **tres** documentos donde la escribí el 2026-09-07 — incluido `INTEGRACION_SUDESPACHO §10.10`,
+  que es el SSOT del contrato del CRM. Detalle en §5.
+- **H-05.** El censo no solo trunca a 100: **pide `return_totals=true` y tira el total**. El dato
+  para detectar su propio truncamiento viene en la respuesta.
+- **H-11.** El selector de autoría no solo tiene a Nikolai por defecto: **Sergio no está en la
+  lista**, aunque D4 y D6 lo contemplen como refuerzo.
+
+### 15.2 Lo que esta ronda dice de mi método, y es la parte que no conviene suavizar
+
+**H-01 debí cazarlo yo.** El 2026-09-08 encontré **dos** rutas declaradas de punta a punta que
+llegaban vacías —`attachment_texts` y `propose_attachment_name`—, las escribí en `MEJORAS #181`…
+y no miré la tercera, `IntakeProposal.attachments`, que era la que sostenía la D3 que acababa de
+cambiar. Encontré el patrón dos veces y falló justo donde tenía consecuencia.
+
+**H-02 y H-13 son el mismo defecto de método por tercera y cuarta vez en dos días:** publicar una
+conclusión sacada de un instrumento que no podía dar el otro valor. En H-02 fueron dos peticiones
+idénticas leídas como prueba de globalidad; en H-13, un booleano leído como prueba de igualdad de
+contenido. La regla que ya tengo escrita —*si una medición propia refuta o establece algo, exigir
+un control positivo antes de publicarla*— no se aplicó ninguna de las dos veces.
+
+**Divergencia declarada:** ninguna. Se acepta el veredicto y las catorce severidades. Lo único que
+se añade es alcance: **H-01, H-02 y H-06 no son enmiendas de redacción**, son cambios del tamaño de
+la pieza — hacia la ingesta, hacia menos, y hacia el contrato de `procurador_relate`
+respectivamente. La rev. 2 se escribe con el alcance rehecho, no como parche de catorce puntos.
+
