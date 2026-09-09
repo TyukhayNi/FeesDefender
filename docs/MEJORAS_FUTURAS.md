@@ -8127,3 +8127,167 @@ decisión, que son puras.
 
 **Disparador de promoción.** La próxima vez que se cite una cifra de estos sondeos en un spec o en
 la bitácora, o antes de que alguien que no sea su autor los use para decidir algo.
+
+## 185. El atlas del CRM mide su cobertura contra `/api/elements`, que oculta 28 elementos
+
+**Medido el 2026-09-08.** `GET /api/elements` devuelve **89 elementos**, y `poderes` **no está entre
+ellos** — pese a que el elemento responde con normalidad a `element_registries`, `element_register`,
+`view/config/{element}/fields`, `view/config/{element}/relations`, `view/enums/*` y
+`related_register`, y a que el fichero tiene 85 registros vivos en el tenant.
+
+`core/crm_atlas.fetch_elements` construye la lista de la Fase B llamando a `/api/elements`
+(`crm_atlas.py`, la llamada a `/api/elements` dentro de `fetch_elements`). Por tanto:
+
+- el atlas **no tiene ni tendrá** ficha de `poderes` por regenerarlo;
+- su cabecera dice **«Fase B (esquema por elemento) ⚠️ 87/89 (2 degradados)»**, que se lee como
+  cobertura casi total y **mide otra cosa**: la cobertura sobre la lista que el CRM confiesa.
+
+**Cuánto falta, medido sin llamadas nuevas** — cruzando los elementos que el propio atlas ya cita en
+sus líneas `Relaciones · parent: … · children: …` contra los 89 con ficha, salen **105 citados** y
+por tanto **28 sin ficha**:
+
+```
+poderes, mandatos, proyectos, rgpdlopd, plantillas, templates, usuarios, mail, conceptos,
+remesas, signatures_documents, tracking, lesionados, panels, reports, grupos, gruposcontables,
+pagos_proveedores, cron, gdoculogdescargas, conceptos_varios, conceptos_finance,
+conceptos_recibidas, conceptos_recibidas_gastos, conceptos_recibidas_honorarios,
+catalogo_conceptos_provision, cuentascontables_configuracion, tarifas_conceptos_honorario
+```
+
+O sea que el denominador real es **117 como mínimo**, y «89» no es la superficie: es lo que
+`/api/elements` admite.
+
+⚠️ **Precisión sobre lo que esto demuestra y lo que no:** son 28 **nombres citados sin ficha**. Que
+un elemento sin ficha *responda* solo está comprobado en **uno**, `poderes` (esquema, enums,
+relaciones, listado, detalle y escritura — §16 de `INTEGRACION_SUDESPACHO.md`). De los otros 27 se
+sabe que el CRM los declara como relaciones válidas de otros elementos, y nada más. No llamarlos
+«operativos verificados» hasta sondearlos: es justo la clase de salto que esta entrada denuncia.
+
+**Por qué importa más de lo que parece:** el atlas existe para no descubrir endpoints a mano
+(`CLAUDE.md`: «consultarlo ANTES de descubrir un endpoint a mano»). Un elemento ausente del atlas
+invita a concluir que no existe, que es exactamente el error contra el que avisa
+`feedback-no-lo-se-no-es-no-hay`: **«no está en el atlas» tiene que poder leerse como «no pude
+mirar», no como «no hay»**. En esta sesión el elemento ausente resultó tener 85 registros, 87
+documentos y 16 poderes caducados que nadie veía.
+
+**Vías posibles, sin decidir:**
+
+1. **Ampliar la semilla de la Fase B**: unir a `/api/elements` los nombres que aparecen en las
+   relaciones ya descubiertas (`parent`/`children`), que es un cierre transitivo barato y no
+   necesita ninguna llamada nueva para arrancar. Sondear cada uno con `view/config/{e}/fields`, que
+   es lo que la Fase B ya hace.
+2. **Corregir el rótulo de cobertura** para que declare su denominador: «87 de los 89 que
+   `/api/elements` lista; hay ≥28 elementos operativos fuera de esa lista».
+3. **Dejarlo y documentar el punto ciego** — que es lo que se ha hecho de momento, en
+   `INTEGRACION_SUDESPACHO.md` §16.1.
+
+La (2) es barata y quita el falso sentido de completitud; la (1) es la que de verdad cierra el hueco
+y necesita medir cuántos de los 28 responden.
+
+**Disparador para promoverla:** que haga falta el esquema de alguno de esos 28. Hoy solo hacía falta
+`poderes`, y ese ya está escrito a mano en el §16.
+
+## 186. Un término de blocklist homógrafo de palabra común pone la suite roja sin ningún commit, y no hay forma de declararlo
+
+**Medido el 2026-09-09**, cuando `test_no_pii_en_tests` se puso rojo en `main` sin que nadie hubiera
+tocado código.
+
+El matcher de `escanear()` es `(?<!\w) + re.escape(termino) + (?!\w@)` con `IGNORECASE`. La frontera
+de palabra está **bien** puesta —no es el defecto del `\bNIE\b` que cazaba «intervi**nie**ntes»—,
+pero un término de la lista cuya forma sin tilde coincide con una palabra común del castellano
+muerde cualquier prosa que la use. En este caso: un comentario de `core/email_firmas.py` que enumera los
+idiomas de las frases de atribución de correo, puesto por el **PR #282 el 2026-09-05**, y su gemelo
+en el test.
+
+**Y no hay exención posible, por diseño.** El propio guard lo dice al bloquear: *«`leak-guard:allow`
+en la línea exime SOLO las detecciones por FORMA (DNI/NIE/IBAN); un término de la blocklist no
+admite exención por anotación»*. Es deliberado y defendible —una escotilla por anotación sobre
+nombres reales es justo lo que no se quiere—, pero deja **una sola salida**: cambiar la prosa, o
+`--no-verify`. Para un falso positivo estructural, eso es poco.
+
+### Lo que de verdad no estaba escrito: el veredicto no es función del commit
+
+La blocklist vive en **dos artefactos gitignored** —`data/_saneado/replacements.txt` y
+`data/_config/pii_blocklist.txt`—, y el segundo se amplió el 2026-09-09 a las 13:34 con el término
+en cuestión. Por tanto:
+
+> **El mismo árbol daba verde a las 12:00 y rojo a las 16:00**, en `main` y en todo worktree, sin un
+> solo cambio versionado. Un verde medido antes de que alguien amplíe la lista **no acredita nada**
+> después, y un rojo no implica que el commit lo haya causado.
+
+Eso **no** es un fallo del diseño de `MEJORAS #161` (que hizo que la lista se resolviera desde el
+checkout principal, y por tanto que el guard por fin corriera en los worktrees): es su consecuencia
+buscada. Lo que falta es la contrapartida — **ampliar la blocklist es un cambio que puede romper la
+suite de todo el mundo, y hoy nada lo advierte ni lo deja trazado.**
+
+### La otra mitad del coste fue de método, y es mía
+
+Diagnosticarlo llevó veinte minutos de arqueología —historia del fichero, del matcher, copias
+externas de dos commits— **y el mensaje del propio guard lo explicaba en una línea**. No lo vi
+porque nunca corrí el guard: corrí `pytest`, leí el aserto del test, y me fui a la fuente. El test
+imprime *qué* término y *en qué* fichero; el **hook** imprime *por qué no puedes eximirlo*. Son
+dos instrumentos con salidas distintas sobre el mismo defecto, y elegí el que no contestaba mi
+pregunta. Lección reutilizable: **ante un guard en rojo, correr el guard**, no solo su test.
+
+### Vías posibles, sin decidir
+
+1. **Declarar la dependencia en el cierre**: que `session_close` imprima `sha256` y fecha de las dos
+   fuentes de la blocklist junto al conteo de la suite. No arregla nada, pero convierte veinte
+   minutos de arqueología en una línea, y hace comparables dos verdes de días distintos. Es la más
+   barata de las cuatro.
+2. **Marcar en la propia blocklist los términos ambiguos** (un sufijo tipo `#comun`) y exigirles
+   contexto —mayúscula inicial, vecindad de un nombre de pila— en vez de coincidencia desnuda. Es la
+   que ataca la causa; cuesta decidir quién mantiene esa marca.
+3. **Un aviso al añadir un término**: comprobarlo contra un diccionario y avisar si es palabra
+   común, en el momento en que alguien tiene el contexto para decidirlo.
+4. **Nada, y que el mensaje del guard baste** — que es lo que hay hoy, y hoy ha costado veinte
+   minutos a una sesión y ha bloqueado el cierre de todas las demás.
+
+**Un nit, de paso, que no justifica por sí solo una entrada:** el comentario junto a la constante
+(`_ALLOW = "leak-guard:allow"  # anotación de exención por línea`, `precommit_leak_guard.py:297`) no
+dice que la exención sea solo por forma. El mensaje de bloqueo y `docs/SEGURIDAD_DATOS.md` sí lo
+acotan bien; es solo esa línea la que se lee más amplia de lo que es.
+
+**Remediado de momento, sin cerrar nada:** los dos comentarios pasan a citar el idioma por su código
+ISO 639-1, con una nota en el módulo que explica por qué y advierte de no revertirlo. Eso desbloquea
+la suite; las cuatro vías siguen abiertas.
+
+**Disparador para promoverla:** el segundo término homógrafo, o el primer rojo sin commits nuevos que
+vuelva a costar más de diez minutos de diagnóstico.
+## 187. El aviso de «cabecera de la bitácora rancia» se declaró promovido el 2026-08-26 y nunca se construyó — sexta reincidencia
+
+**Medido el 2026-09-09.** La bitácora tiene una nota, escrita al cerrar el 72º, que dice
+literalmente: *«**Promovido: aviso en `session_close`** — comparar la fecha y el ordinal de esta
+línea con el **primer bloque `## AAAA-MM-DD`** del fichero, y avisar si no coinciden. Es una
+comparación de dos cadenas, y las dos están en el mismo fichero.»*
+
+**No existe.** `grep` de `session_close.py` no devuelve ninguna lectura de la línea de cabecera,
+ningún test la cubre, y no hay fila en `PLAN.md` ni entrada aquí. Un lector de esa nota concluye
+razonablemente que el control está puesto.
+
+**Y el defecto que iba a vigilar volvió a ocurrir el 2026-09-09**, sexta vez: la sesión que escribió
+el 90º cierre dejó su bloque y **no tocó la línea de cabecera**, que se quedó en el 89º. La repuso el
+91º al detectarla.
+
+**Lo que esto mide no es el descuido, es la nota.** La propia nota ya razonaba, con dos casos
+delante, que *«un aviso escrito para el humano que lo lea después no sustituye a un guard»* — y
+acto seguido el remedio se dejó **como prosa en el mismo fichero que denunciaba**. Tercera medida
+de la misma propiedad, y esta vez sobre el remedio en lugar de sobre el síntoma: **«promovido» en
+una nota no es promovido**; promover es tener número aquí o fila en `PLAN.md`, que es lo que
+`session_close` sabe leer.
+
+**Lo que hay que construir, que sigue siendo pequeño:** leer la primera línea `**Última
+actualización:**` y el primer encabezado `## AAAA-MM-DD` de `docs/bitacora/AAAA.md`, extraer fecha y
+ordinal de cada uno, y avisar si difieren. Va donde están los otros cinco avisos, no bloquea, y su
+test es un fichero sintético con las dos cadenas descuadradas — más un **control positivo**, o el
+verde no acreditará nada.
+
+**Ojo al alcance real:** el mismo fichero conserva **once** líneas de cabecera (`Última
+actualización` + diez `Línea del Nº, conservada`), así que el aviso debe comparar contra la primera,
+no contra cualquiera. Y las anomalías históricas de numeración de la cola del fichero —cuatro
+cabeceras que dicen «2º cierre» y ningún «3º»— están documentadas y **no se renumeran**: un aviso que
+verifique contigüidad de ordinales daría rojo permanente sobre ellas.
+
+**Disparador para promoverla:** la séptima vez, o cualquier sesión que ya esté tocando los avisos de
+`session_close`. Enlaza con `#186` (1), que también propone que el cierre declare lo que no puede
+deducirse del commit.

@@ -71,10 +71,17 @@ de otro elemento) no aparecen aquí; para esas, seguir usando el patrón confirm
 ### 0.4 Atajo previo: consultar el atlas ya generado
 
 **Antes de un HAR (§0.2) o un probe (§0.3), mirar el atlas** `docs/CRM_SUDESPACHO_ATLAS.md`:
-ya mapea toda la superficie del tenant `tnm` de forma generada y re-ejecutable — endpoints
-(Fase A: 548 ops / 486 paths / 125 módulos) **y** por elemento sus campos, relaciones y enums
-de tipo `Select` (Fase B: 89 elementos). Es el **SSOT de "qué existe"**; a menudo evita el
-descubrimiento a mano. Regenerar y ver la deriva del tenant:
+mapea de forma generada y re-ejecutable los endpoints (Fase A: 548 ops / 486 paths / 125 módulos)
+**y**, por elemento, sus campos, relaciones y enums de tipo `Select` (Fase B: 89 elementos). Es el
+mejor inventario que hay y a menudo evita el descubrimiento a mano.
+
+> ⚠️ **Pero no es exhaustivo, y su cobertura no se puede leer como total (medido 2026-09-08).** La
+> Fase B recorre `/api/elements`, que devuelve 89 nombres y **oculta al menos 28 elementos que el
+> propio atlas cita como relaciones** — `poderes` entre ellos, con 85 registros vivos. **«No está en
+> el atlas» no significa «no existe»**: significa que la Fase B no pudo mirarlo. Detalle y lista:
+> §16.1 y `MEJORAS_FUTURAS.md` #185.
+
+Regenerar y ver la deriva del tenant:
 
 ```
 python -m scripts.crm_atlas discover --phase all   # requiere SUDESPACHO_API_KEY en el entorno
@@ -175,8 +182,9 @@ document.cookie.split(';').map(c=>c.trim()).filter(c=>c.startsWith('PHPSESSID')|
 ### 3.1 API REST nueva (`api-crm-commons-pro.sudespacho.biz`)
 
 > Esta tabla lista **solo los endpoints confirmados con payload** (el "qué usamos y cómo",
-> hogar legítimamente distinto). El inventario **exhaustivo** de la superficie REST (toda la
-> superficie, aunque no la usemos) vive en el atlas `docs/CRM_SUDESPACHO_ATLAS.md`.
+> hogar legítimamente distinto). El inventario **amplio** de la superficie REST (lo que hay, aunque
+> no lo usemos) vive en el atlas `docs/CRM_SUDESPACHO_ATLAS.md` — con el límite de cobertura que
+> declara el §0.4: su Fase B no ve los elementos que `/api/elements` no lista (≥28, §16.1).
 
 | Método | Endpoint | Descripción | Estado |
 |---|---|---|---|
@@ -446,8 +454,15 @@ Para cada doc_id:
         → bytes → guardar en disco
 ```
 
-Este flujo no requiere PHPSESSID. Solo necesita `x-api-key`.  
-**Pendiente de implementar en `core/sync_sudespacho.py`** como reemplazo de los métodos legacy.
+Este flujo no requiere PHPSESSID. Solo necesita `x-api-key`.
+
+> ⚠️ **OBSOLETO desde 2026-05-11, y esta sección no se había actualizado.** El CRM rompió
+> `/api/files/presigned_download_url/{fileId}` server-side (400 «Unable to generate an IRI»), igual
+> que `/api/documents/presigned_urls/s3/download/{id}` (500). El flujo vivo es
+> **`GET /api/documents/{id}/downloadUri` → `presignedDownloadUrl`**, que es lo que
+> `core/sync_sudespacho.py` implementa desde entonces (`ENDPOINTS["document_download_uri"]`) — la
+> línea «pendiente de implementar» que había aquí llevaba **cuatro meses** desmentida por el código.
+> Diagnóstico: `DEAD_ENDS.md`. Uso reciente: §16.7.
 
 ### 5.2 Flujo legacy — válido pero requiere PHPSESSID + @token
 
@@ -1925,9 +1940,17 @@ verificable · **formas candidatas de una en una, cada una derivada del error de
 verificación por `GET` tras cada intento · abortar ante cualquier cambio no pedido. Implementación de
 referencia: `scripts/permisos_crm.py` de El Contable (resolvió su caso en dos iteraciones).
 
-**El HAR sigue siendo inevitable** cuando el error es opaco, cuando el flujo son varias llamadas
-encadenadas con ids intermedios (subida de PDF en 3 pasos, §8.x) o cuando el endpoint no está en el spec
-(los 62 paths huérfanos que el propio atlas lista).
+**Antes del HAR, leer el CÓDIGO del front (nuevo paso, 2026-09-09).** La SPA sirve sus módulos en
+abierto y ahí está el cliente HTTP con los **nombres de clave literales**: así se resolvió la subida
+en tres pasos —el caso que este párrafo daba por inevitable— sin capturar nada. Método en **§17.6**.
+Es más barato que un HAR y no exige ejecutar la operación en la UI. ⚠️ Pero **da candidatos, no
+aceptación**: que el cliente llame a algo no prueba que el servidor lo acepte hoy, así que la
+verificación por resultado sigue siendo obligatoria (§17.2 documenta una ruta que el propio front usa
+y que devuelve 201 sin crear nada).
+
+**El HAR sigue siendo inevitable** cuando el error es opaco, cuando el flujo encadena ids intermedios
+**y la lectura del cliente no lo resuelve**, o cuando el endpoint no está en el spec (los 62 paths
+huérfanos que el propio atlas lista).
 
 **Dónde NO se sondea a ciegas:** `Cron`, `Patch`, `Data Migration`, `Restore Registers`,
 `RecalculateAllConcepts`, `Taxes (massive creation)`, `MassiveDelivery`, `Exporter/Importer`, y los dos
@@ -1936,3 +1959,371 @@ huérfanos** caen justo ahí: lista acordada endpoint por endpoint, o nada.
 
 > ℹ️ **Contexto de permisos (2026-08-03):** `Delete` se retiró de los cuatro `api.key.*`, así que un
 > sondeo accidental ya no puede borrar. `facturas`-Create **sigue ON**. Detalle en la referencia común §3.
+
+---
+
+## 16. El elemento `poderes` — leer, escribir y relacionar (confirmado 2026-09-08)
+
+Salió de organizar el fichero entero (85 registros, 87 documentos) desde la API. Todo lo de esta
+sección está **verificado en vivo sobre el tenant `tnm`**, y la verificación fue siempre **por
+lectura**, nunca por status — con razón, porque aquí hay un `201` que no crea nada (§16.3).
+
+### 16.1 El elemento existe pero `/api/elements` no lo lista — punto ciego del atlas
+
+`GET /api/elements` devuelve **89 elementos y `poderes` no está entre ellos**, aunque el elemento
+responde con normalidad a `element_registries`, `element_register`, `view/config/*`, `view/enums/*`
+y `related_register`. Como `scripts/crm_atlas` construye la Fase B recorriendo `/api/elements`
+(`core/crm_atlas.fetch_elements`), **el atlas no tiene ni tendrá ficha de `poderes`**: su
+«87/89 resueltos» mide la cobertura contra la lista que el CRM confiesa, no contra la superficie real.
+
+Cruzando los elementos que el propio atlas cita como relaciones (`parent`/`children`) contra esos 89
+salen **28 elementos citados sin ficha**. De esos 28, el único que se ha comprobado que responde de
+verdad es `poderes` (esta sección entera); **de los otros 27 solo se sabe que el CRM los declara como
+relaciones válidas de otros elementos**, no que sus endpoints contesten. La lista literal y las vías
+de arreglo viven en `MEJORAS_FUTURAS.md` **#185** — un hecho, un hogar.
+
+**Consecuencia práctica:** que un elemento no esté en el atlas **no significa que no exista**. Para
+descubrir su esquema, el atajo del §15.1 (`GET /api/view/config/{element}/fields`) funciona igual, y
+la sonda de propiedad inválida (§0.3) enumera el contrato entero.
+
+### 16.2 Esquema, enums y relaciones de `poderes`
+
+Ocho campos editables — es un elemento **pobre**, y eso condiciona cualquier diseño encima:
+
+| Campo | Tipo | Enum |
+|---|---|---|
+| `Fecha_Poder` | `Date` · **required** | — |
+| `Tipo` | `Select` | `-1`=Ninguno · `General` · `Especial` |
+| `Formato` | `Select` | `Apud Acta` · `Notarial` |
+| `Apoderado` | `Select` | `Abogado` · `Procurador` |
+| `Numero_Poder` | `TextCorto` | libre |
+| `Numero_Protocolo` | `TextCorto` | libre |
+| `Notario` | `TextCorto` | libre |
+| `Notas` | `EditorHtmlSimple` | libre |
+
+Más los de sistema, que la sonda de propiedad inválida enumera: `id`, `grupo_contable_id`,
+`id_creador`, `id_ultimo_modificador`, `fecha_creacion`, `fecha_ultima_modificacion`.
+
+**Lo que NO hay, y descarta de entrada tres soluciones naturales:**
+
+- **sin `tags`** → no se puede etiquetar;
+- **sin `id_carpeta`** → no admite carpetas. `GET /api/folders/poderes/1` devuelve `[]`, y el
+  instrumento sí sabe devolver datos (control positivo: `folders/gdocu/1` → 4 carpetas,
+  `folders/actuaciones/1` → 2). El `POST /api/folders/poderes/{parent}` existiría, pero no hay campo
+  donde colgar la asignación;
+- **sin campo de vigencia ni de caducidad** — y los poderes **sí caducan** (§16.6);
+- **sin relación al expediente.** `GET /api/view/config/poderes/relations` devuelve exactamente
+  `{"parent": ["clientes_propios"], "children": ["clientes_propios","gdocu","procuradores_propios"]}`.
+  No hay `expedientes_judiciales` ni `extrajudiciales`: la conexión poder↔expediente pasa hoy por el
+  poderdante o por el procurador.
+
+**Properties de relación (lectura):** `right.procuradores_propios.{nombre,poblacion,provincia,notas}`
+funcionan y son filtrables. **`left.procuradores_propios.*` da 500** (`Base table or view not found:
+eplanv2_TNM.r_procuradores_propios_poderes`): el nombre de la tabla de relación revela la dirección.
+
+**Formulario de alta rápida** (`GET /api/view/quick_creation/poderes`): pide solo `Fecha_Poder`,
+`Numero_Poder` y `Notas`. No pide `Tipo`, `Formato`, `Apoderado` ni el cliente — de ahí que 52 de 85
+registros llevaran `Tipo = -1` (Ninguno). **Un alta por API debe rellenar los tres Selects
+explícitamente**, porque la UI no los va a pedir.
+
+**Buscador global** (`GET /api/view/global_quick_search/poderes`): busca en `Notario`,
+`Numero_Poder` y `left.clientes_propios.nombre`. Es la razón por la que conviene que `Numero_Poder`
+sea un título canónico y no un cajón de sastre.
+
+### 16.3 Relacionar un poder: `left.` para el padre, `right.` para el hijo — y un `201` que MIENTE
+
+**El fallo que esta sección existe para evitar:**
+
+```
+POST /api/relation_element/poderes/43
+Body: ["right.clientes_propios.2"]
+-> HTTP 201  "Created!"        <-- y el vinculo NO existe
+```
+
+Verificado con `GET /api/related_register/poderes/43` inmediatamente después: las relaciones seguían
+siendo las de antes. **Ni error, ni warning, ni pista.** Es el mismo patrón que el «200 con el listado
+completo» del §14.6, pero en escritura.
+
+La forma que **sí** funciona depende de si el elemento relacionado es `parent` o `children` en
+`view/config/{element}/relations`:
+
+| Relacionado | Es | Body correcto |
+|---|---|---|
+| `clientes_propios` (poderdante) | **parent** | `["left.clientes_propios.{id}"]` |
+| `procuradores_propios` (apoderado) | **children** | `["right.procuradores_propios.{id}"]` |
+
+Las dos verificadas en vivo (poderes 43 y 1, y luego 20 vínculos más, todos confirmados por lectura).
+Con `right.` sobre el parent: 201 y nada.
+
+⚠️ **Y la reversión está validada SOLO para un caso.** `DELETE /api/relation_element/{element}/{id}`
+con cuerpo funciona —medido el 2026-09-09— pero **el alcance probado es estrecho y su hogar es el
+§17.5**: se probó `["right.gdocu.<doc_id>"]` sobre un `poderes`, y ahí quita solo esa relación. **No
+se ha probado** con `left.`, ni sobre el vínculo de poderdante o procurador, ni sin cuerpo (esto
+último es previsible que borre todas). Así que **no se cuenta con el borrado como red** para lo que
+no está en el §17.5: probar siempre sobre un registro cuyo vínculo sea el que de verdad se quiere, no
+sobre uno cualquiera.
+
+> **Regla que generaliza, y su límite.** Antes de escribir una relación en un elemento nuevo, leer
+> `GET /api/view/config/{element}/relations`. Si el relacionado aparece en **un solo lado**, el lado
+> se deriva: `parent` → `left.`, `children` → `right.`. **Si aparece en los DOS —que es justo el caso
+> de `clientes_propios` aquí— la pertenencia no desambigua nada** y las dos formas son sintácticamente
+> admisibles: hay que resolver el papel con evidencia (una captura, o el contrato del proveedor), no
+> probando variantes sobre fichas reales. Y verificar siempre con `related_register` (§15.5), que
+> además viene **acumulado** — y comprobando **elemento e id esperados**, no que haya «algún» bloque.
+
+### 16.4 PUT parcial: confirmado también sobre `poderes`
+
+`PUT /api/element_register/poderes/{id}` con JSON plano de solo los campos que cambian **preserva los
+omitidos**, igual que en `extrajudiciales` (§10.7). Comprobado con el control explícito: leer los 8
+campos, escribir uno, releer y verificar que solo ese cambió. Repetido sobre 85 registros y 431
+campos, con **0 alteraciones no pedidas** contra un snapshot previo.
+
+El GET-detalle necesita `?properties=a,b,c` (forma coma); el plano da 500. La respuesta trae los
+campos en `values` como **lista** de `{property:{name},value}`, hay que aplanarla por `property.name`.
+
+### 16.5 El CRM corrompe lo que no cabe en cp1252
+
+```
+PUT poderes/12  {"Notas": "... [U+26A0] CADUCADO ..."}   -> HTTP 200
+GET poderes/12                                            -> "... â?\xa0 CADUCADO ..."
+```
+
+`U+26A0` se guarda como mojibake **con status 200**. Las tildes, la `ñ`, el punto medio `·` y el guion
+`-` van bien. **Regla: antes de un PUT, comprobar que todo el valor es representable en cp1252**
+(`valor.encode("cp1252")`), y si no, cambiar la notación. No usar emojis ni guiones tipográficos
+(`–`, `—`) en nada que se escriba al CRM.
+
+**Y una regla del proyecto que es fácil violar aquí:** el certificado del registro de apoderamientos
+declara el ámbito del poder **incluyendo el N.I.G. del procedimiento**. Volcarlo literal a `Notas`
+mete un NIG en un payload, que `CLAUDE.md` prohíbe. Hay que filtrarlo antes de escribir.
+
+### 16.6 Los poderes caducan, y el CRM no tiene dónde decirlo
+
+Dos fuentes de vigencia, ninguna de ellas un campo del elemento:
+
+- **Apud acta:** el PDF que se archiva es el *Certificado de inscripción de apoderamiento apud-acta*
+  del Archivo Electrónico de Apoderamientos Judiciales (`sedejudicial.justicia.es`). Es **texto
+  nativo, no escaneado**, con formato fijo, y trae: número de referencia, compareciente y entidad
+  representada, `PODER GENERAL PARA PLEITOS` del art. 25.1 LEC y/o `PODER ESPECIAL PARA` con la lista
+  de facultades del 25.2, `PARA INTERVENIR EN` (el ámbito), el apoderado con NIF y colegio,
+  y **`VIGENCIA: DESDE dd/mm/aaaa HASTA dd/mm/aaaa`**. El `ESTADO: VIGENTE` que imprime se refiere
+  **a la fecha de expedición del certificado**, no a hoy — el propio documento lo advierte; lo que
+  sirve es la fecha de fin.
+- **Notariales otorgados en Rusia:** llevan **plazo expreso** (`сроком на N лет` — uno, dos, tres,
+  cinco o diez años), al contrario que los españoles, indefinidos salvo pacto. Muchos traen
+  traducción jurada adjunta al mismo registro, que es donde leerlo sin OCR de cirílico.
+
+Medido el 2026-09-08 sobre los 85: **16 caducados** que el CRM presentaba igual que los vivos. Sin
+campo propio, la vigencia se escribe en `Notas` (que era el único campo libre sin uso: 0/85), con
+formato `VIGENCIA: dd/mm/aaaa - dd/mm/aaaa` y, cuando procede, `-- CADUCADO hace N dias`.
+
+### 16.7 Renombrar un documento del gestor y ponerle asunto
+
+```
+PUT /api/element_register/gdocu/{doc_id}
+Body: {"nombrefinal": "<nombre nuevo>", "asunto": "<titulo>"}
+```
+
+Verificado sobre 86 documentos: escribe `nombrefinal` y `asunto`, y **preserva `nombreoriginal`**, así
+que el nombre con el que el fichero entró no se pierde. Importa porque los certificados apud-acta se
+descargan todos como `CertificadoRegistro (N).pdf` — 24 de los 87 se llamaban así, cuatro de ellos
+idénticos, y sin abrirlos no se distinguían.
+
+Para **subir** un documento nuevo, §17. Para bajar el binario,
+`GET /api/documents/{id}/downloadUri` → `presignedDownloadUrl`: es lo que implementa
+`core/sync_sudespacho.get_presigned_download_url` y lo que se usó aquí para los 87 documentos. ⚠️ **No seguir el §5.1**: describe el flujo por `/api/files/presigned_download_url/{doc_id}`,
+que el CRM rompió en mayo de 2026 y el propio `DEAD_ENDS.md` da por muerto (con su hermano
+`/api/documents/presigned_urls/s3/download/{id}`).
+
+### 16.8 Convención del fichero de poderes (fijada por Nikolai el 2026-09-08)
+
+Con ocho campos y sin etiquetas ni carpetas, el orden se consigue devolviendo cada dato a su campo y
+dejando en el título **solo lo que no tiene campo propio**:
+
+| Campo | Qué lleva |
+|---|---|
+| `Numero_Poder` | **título canónico** `<OBJETO> · <APELLIDOS, NOMBRE>` — el apoderado solo si es procurador; si es abogado basta el Select. El poderdante **no** va: lo da la relación |
+| `Numero_Protocolo` | el **número** del poder: referencia del apoderamiento apud-acta, o protocolo notarial. Nada de nombres |
+| `Notas` | la **vigencia** y, cuando el poder acota su ámbito, `AMBITO:` |
+| `Tipo` · `Formato` · `Apoderado` | siempre rellenos; `Apoderado` casa con la relación (si hay procurador vinculado, `Procurador`) |
+| `Fecha_Poder` | la del **documento**, no la del día en que se dio de alta |
+
+Vocabulario cerrado de OBJETO, **y su correspondencia con el Select `Tipo`** — hace falta escribirla
+porque `Tipo` no tiene valor combinado y el vocabulario sí:
+
+| OBJETO en el título | `Tipo` |
+|---|---|
+| `Pleitos general` | `General` |
+| `Pleitos general + especial` | **`General`** — el general es el que fija la naturaleza; el «+ especial» queda en el título y sus facultades en `Notas` |
+| `Especial - herencia` · `- bancario` · `- donación` · `- permuta` · `- gestión inmobiliaria` · `- representación fiscal` · `- querellas` | `Especial` |
+
+⚠️ **Si el documento no encaja en ninguna de esas materias, PARAR y preguntar — no inventar una
+categoría ni dejar `Tipo` en `Ninguno`.** El vocabulario es cerrado a propósito: la alternativa es
+volver al cajón de sastre del que se viene. Ampliarlo es una decisión de la casa, y se escribe aquí.
+
+⚠️ **Y hay un caso que el enum `Formato` no sabe describir:** los documentos que acreditan un
+apoderamiento **administrativo** (autorización privada ante la AEAT o la CNMV, justificante de
+bastanteo) no son apud acta ni notariales. Tres registros del fichero son de esa clase. Hasta que se
+decida —enum nuevo, o sacarlos del elemento— **no se les asigna `Formato` a la fuerza**.
+
+El **partido judicial** no se guarda en el poder: es dato del procurador y cambia con él. Vive en
+`procuradores_propios.notas`, en un bloque con encabezado fijo `PARTIDOS JUDICIALES: A; B; C` y nada
+más dentro. Desde el listado de poderes se filtra con
+`right.procuradores_propios.notas like "<PARTIDO>"` (verificado: filtra de verdad, con control
+negativo a 0). Mezclar en ese bloque prosa como «solo apelaciones» produce falsos positivos.
+
+Nombre del PDF en el gestor: `AAAA-MM-DD_<CLIENTE> - <OBJETO> - <APODERADO>.pdf`, con el cliente
+abreviado y estable (`EV MMC`, `EV SPAIN`, apellidos del particular) — la razón social entera alarga
+la ruta y ya nos costó un dead end con Office a 260 caracteres.
+
+---
+
+## 17. Subir un documento al gestor documental — el flujo de tres pasos (confirmado 2026-09-09)
+
+Cierra el único hueco que el §16.7 dejaba abierto: allí está cómo **renombrar** y cómo **bajar** un
+documento; aquí cómo **meterlo**. Verificado de punta a punta sobre cinco certificados reales: el
+documento aparece colgado de su elemento y los **bytes vuelven idénticos** al original.
+
+### 17.1 Los tres pasos
+
+```
+1. GET  /api/files/presigned_upload_url        → {action:"upload", fileIdentifier:<uuid>, url:<S3>}
+2. PUT  <url>   body = los bytes               → 200 + ETag     (a S3, SIN la clave del CRM)
+3. POST /api/documents                         → 201 {message:"Resource has been created", id:<doc_id>}
+```
+
+Cuerpo del paso 3, con los nombres exactos:
+
+```json
+{
+  "origen": "fuploaders3",
+  "origen_id": "<el fileIdentifier del paso 1>",
+  "nombreoriginal": "como se llamaba el fichero",
+  "nombrefinal": "como se llamara en el gestor",
+  "mime": "application/pdf",
+  "tamano": 196069,
+  "id_carpeta": 1,
+  "estado": "-1", "categoria": "-1", "tipo": "-1",
+  "relatedRegisters": ["poderes:87:left"]
+}
+```
+
+- **El identificador va en `origen_id`, NO en una clave `fileIdentifier`.** Es lo que costó seis
+  intentos a ciegas: el payload con `fileIdentifier` da `500 Missing mandatory properties`, un error
+  que no dice qué falta. La forma se confirma leyendo `origen`/`origen_id` de **cualquier documento
+  que ya exista** (`GET /api/element_register/gdocu/{id}?properties=origen,origen_id`).
+- **`id_carpeta` es `int`.** Como string: `400 The type of the "id_carpeta" attribute must be "int"`.
+  `1` es la raíz del gestor documental (§13.5, confirmada el 2026-05-08; el §16.2 solo la usa como
+  control positivo, no la define).
+- La URL S3 caduca a los **600 s**: pedirla justo antes de subir.
+- El `PUT` a S3 va **sin** la cabecera de auth del CRM; con `Content-Type` del fichero basta.
+- El `POST` del paso 3 lleva la auth del §2.1 (`x-api-key`), `Content-Type: application/json` y
+  conviene el `Accept: application/json` del §14.2. `tamano` es el número real de bytes y el `mime`
+  ha de corresponder a esos bytes.
+- **Que el `POST` devuelva 201 no acredita que el binario esté bien**: para eso hay que bajarlo con
+  `downloadUri` (§16.7) y comparar los bytes con el original. Es lo que se hizo con los cinco
+  certificados; ni el 201 ni el ETag de S3 sustituyen esa comparación.
+
+### 17.2 ⚠️ `POST /api/documents/multiple` devuelve 201 y NO crea nada
+
+```
+POST /api/documents/multiple   {"files": [ …el mismo objeto… ]}
+→ HTTP 201  {"events": ["af014af3-96a5-4a8d-b696-70d3f740cb1c"]}     ← y no existe ningún documento
+```
+
+Probado con **seis** payloads distintos (con y sin `origen`, con `relatedElement`/`relatedId`, con
+`elemento_relacionado`/`miembro_relacionado`, con el contrato completo del §17.1): los seis
+devolvieron 201 con un id de evento y **ninguno creó el documento**, comprobado por lectura filtrando
+por `origen_id`. Con la clave `documents` en lugar de `files` sí protesta
+(`Undefined array key "files"`), lo que engaña: parece que `files` es lo que quería.
+
+**Usar el singular `POST /api/documents`.** Es el que usa el front para un fichero
+(`createDocumentRegister`), y es el único verificado.
+
+### 17.3 Dos gramáticas distintas para la misma relación
+
+| Para | Endpoint | Forma |
+|---|---|---|
+| relacionar dos registros ya existentes | `POST /api/relation_element/{element}/{id}` | `["left.clientes_propios.2"]` |
+| relacionar **al crear** un documento | `POST /api/documents` | `["poderes:87:left"]` |
+
+Misma operación conceptual, sintaxis incompatible: `elemento.punto.id` con el lado **delante** en una,
+`elemento:id:lado` con el lado **detrás** en la otra. No hay forma de deducir una de la otra; la
+segunda sale del front (`relatedRegisters:['${elemento}:${id}:left']`).
+
+El lado sigue la regla del §16.3: `left` cuando el relacionado es *parent* del elemento sobre el que
+se escribe. Desde el documento hacia el poder es `left`, y se verificó que crea el vínculo.
+
+### 17.4 ⚠️ El listado filtrado tiene LATENCIA; `related_register` no
+
+Para comprobar que un documento quedó colgado hay dos vías, y **no responden a la vez**:
+
+| Vía | Latencia | Fantasmas |
+|---|---|---|
+| `GET /api/element_registries/gdocu?…associated…` (abreviado; gramática completa en §14.2) | **segundos** (índice) | no los muestra |
+| `GET /api/related_register/poderes/{id}` | **inmediata** | **sí**: sigue listando documentos ya borrados |
+
+**Regla operativa, en tres partes — y la tercera es la que evita el duplicado:**
+
+1. **Lo que acabas de escribir se comprueba con `related_register` y por el `doc_id` que devolvió el
+   POST**, no por el listado ni por el status.
+2. **El censo de qué documentos hay** se hace con el listado filtrado, que no arrastra borrados.
+3. ⚠️ **Un censo negativo NO prueba ausencia, así que no autoriza a escribir.** Es la parte que
+   faltaba: la latencia hace que el listado diga «no hay» sobre algo que sí hay, y eso es exactamente
+   lo que duplicó un certificado. Antes de dar un alta que deba ser única, el «no existe» hay que
+   sostenerlo sobre algo inmediato —`related_register`, o una clave propia del contenido como el
+   `origen_id` o la referencia del apoderamiento— y **si no se puede, el flujo se detiene y se declara
+   SIN VERIFICAR**; nunca se interpreta el vacío como permiso. Agotar unos reintentos tampoco
+   convierte el vacío en «no existe».
+
+Usar la vía equivocada tiene un coste medido, y las dos veces fue el mismo día:
+
+- verificar un vínculo 2 s después de crearlo por el **listado** dio «no existe» y detuvo el trabajo
+  por una causa falsa. Lo destapó un control positivo: el mismo filtro sobre un poder que sí tenía
+  documento devolvía 1, así que el instrumento funcionaba y lo que fallaba era el momento;
+- y una guarda anti-duplicado que consultaba el **listado** dio «este poder aún no tiene su
+  certificado» sobre uno que ya lo tenía, y **lo subió dos veces**. El duplicado se detectó por
+  `sha256` idéntico de los dos binarios.
+
+### 17.5 Borrar: qué se lleva cada `DELETE`
+
+- **`DELETE /api/documents/{id}`** → 200. El documento desaparece del listado filtrado, pero
+  **`related_register` sigue devolviéndolo**: queda una **relación huérfana** apuntando a un
+  documento que ya no existe. Es inocua, pero ensucia el censo de cualquiera que use esa vía.
+- **`DELETE /api/relation_element/{element}/{id}`** con cuerpo `["right.gdocu.42922"]` → 200
+  `"Deleted!"`. **Queda validado** (el §16.3 lo daba por declarado y sin probar): quita **solo** la
+  relación del cuerpo y deja intactas las demás — verificado con el poderdante y el otro documento
+  del mismo registro.
+  ⚠️ **Sin cuerpo no se ha probado, y no conviene**: lo previsible es que borre todas las relaciones
+  del registro.
+
+Para retirar un documento del todo hacen falta **los dos** borrados, y el **orden recomendado** es
+relación primero y documento después: así no queda el huérfano descrito. No está probado que sea el
+único orden que funciona —el huérfano de arriba salió justamente del inverso—, y cada paso se
+verifica por lectura. ⚠️ Y **no confundir las dos operaciones**: quitar la relación desvincula el
+documento de **un** registro; borrar el documento lo elimina para **todos**, así que antes hay que
+saber de qué otros registros cuelga.
+
+### 17.6 De dónde salió este contrato: se lee el front, no se captura
+
+El §14.6 dice que el HAR es inevitable «cuando el flujo son varias llamadas encadenadas con ids
+intermedios (subida de PDF en 3 pasos)». **Esta vez no hizo falta**, y la vía es reutilizable: la SPA
+sirve sus módulos en abierto y ahí está el contrato, con nombres de clave y todo.
+
+1. Abrir el CRM y leer las peticiones de red: los `assets/*.js` que carga llevan **nombres
+   parlantes** — `useDocumentUploader-*.js`, `useS3-*.js`.
+2. `GET https://tnm.sudespacho.net/assets/useS3-<hash>.js` — 1.929 caracteres, y dentro está
+   `uploadMultipleFilesToS3` construyendo el objeto: `{origen_id: fileIdentifier, nombreoriginal,
+   tamano, mime, …{id_carpeta, descripcion, estado, categoria, tipo}}`.
+3. El bundle grande (`index-<hash>.js`) tiene el cliente HTTP: `createDocumentRegister` → `post("documents", …)`,
+   `createMultipleDocumentRegisters` → `post("documents/multiple", …)`, `getPreSignedUrl` →
+   `get("files/presigned_upload_url")`. Y la forma de `relatedRegisters`, en el ejemplo de
+   `public-holidays`: `` `${elemento}:${id}:left` ``.
+
+Es más barato que un HAR, no requiere ejecutar la operación en la UI, y **da los nombres de clave
+literales** en vez de dejarlos deducir de un cuerpo observado. El hash del nombre cambia con cada
+despliegue: localizarlos por la traza de red, no guardar la URL.
+
+> **Y el contraste con el §14.5 merece anotarse.** Allí la lección fue que *un HAR prueba la UI, no la
+> API*, y descartar por HAR costó semanas. Aquí es la simétrica: **el código de la UI sí prueba qué
+> pide la API**, porque es quien la llama. Leer el cliente no es leer la interfaz.
