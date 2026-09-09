@@ -8949,10 +8949,23 @@ y el modo de fallo es el mismo de esta entrada — silencio, no error. Remedio d
 que el `SKILL.md` documente `[D/M/AA, HH:MM(:SS)]` y diga que **el ancho varía por export**.
 
 **Y el método SÍ funciona, con control positivo en dos casos.** Recuperar la fecha de envío
-desde el cuerpo del chat en vez de del nombre del fichero dio **67 de 67** en W-02USSI
-(cerrado en los dos sentidos: ni un audio citado sin fichero, ni un fichero sin cita) y **118
-de 118** en W-02VEKE, en otro export y otro volumen. **185 de 185.** Lo que falla es el
-formato documentado, no la regla.
+desde el cuerpo del chat en vez de del nombre del fichero dio **67 de 67** en W-02USSI y
+**118 de 118** en W-02VEKE (117 `.opus` + 1 `.m4a`), en otro export y otro volumen:
+**185 de 185**.
+
+**La población, que hay que decirla o el número engaña:** son los adjuntos de **audio y
+vídeo**, no todos los adjuntos del chat — de los PDF, imágenes y ofimática de esos mismos
+exports no se ha medido nada. En W-02USSI está además cerrado **en los dos sentidos** (los
+chats citan exactamente 11 y 56 adjuntos de audio/vídeo, todos inventariados: ni uno citado
+sin fichero ni un fichero sin cita) y con control positivo sobre la comparación de fechas —
+desplazando artificialmente la del nombre un día, el comparador responde `false` en 67/67, así
+que el «cero discrepancias» no es una guarda inerte. Lo que falla es el formato documentado,
+no la regla.
+
+*(Las dos cifras se afinaron entre sesiones: la de W-02VEKE nació de un `grep -c opus` que
+contaba 118 porque la línea 118 era **la propia nota** que decía que los `.opus` no estaban
+fechados. El total sale igual por casualidad —117 `.opus` más un `.m4a`—, y esa casualidad es
+justo la que convierte un recuento mal hecho en un número que nadie revisa.)*
 
 **Disparador de promoción.** Cualquier caso cuyo WhatsApp llegue por el espejo del Drive de E&V
 o por lote de correo, que son la mayoría — W-02USSI ya lo hizo por las dos, y W-02VEKE por una
