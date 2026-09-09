@@ -24,7 +24,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
-| 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); **pieza 4a construida el 2026-09-09** (120 tests, dos semillas verdes) | El plan de la pieza 4 fue a revisión y volvió **NO-SHIP (23 hallazgos, 23 confirmados)**; su rev. 2 parte la pieza en **4a — la que solo lee** (hecha, R1 sobre el diff en curso) y **4b — la que escribe** (journal, ledger, transacción, índice: **por planificar**, con sus 2 rondas). La pieza 3 sigue con su gate rancio sin reformular | medio |
+| 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); **4a ✅ (#315)** — 188 tests, dos semillas verdes | Las dos rondas volvieron **NO-SHIP: 40 hallazgos, 40 confirmados** (23 sobre el plan `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4.md`, acta en `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4-r1-adversarial-review.md`; 17 sobre el diff de 4a), los 40 cerrados. Queda **4b — la que escribe** (journal, ledger, transacción, índice: **sin planificar**, con sus 2 rondas), la **pieza de destinos de fase** (planificada, sin construir) y los **tests del CLI** (`scripts/procedimiento.py` al 0%). La pieza 3 sigue con su gate rancio sin reformular | medio |
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 **decidible, sin gates** (#98 cerrado, PR #155) | solo queda la decisión de Nikolai: `--extraer-adjuntos` a default `True` mueve la superficie de dedup de todo intake futuro | bajo |
 
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
@@ -1043,18 +1043,26 @@ dependencias aguas arriba que no son suyas:
       `SUBDESTINOS_EXTRA` con las cinco carpetas + sync a las siete skills + no-drift. **1
       ronda** sobre el diff: es aditivo y no destruye. Y su Tarea 2 es la que siempre se
       olvida — re-empaquetar e importar los siete `.skill` en el servidor.
-- [x] **4a. La vista procesal que SOLO LEE** — construida el 2026-09-09. Autorización por
-      workspace, raíz autorizada con veto de reparse points, los tres conjuntos del CRM, gramática
-      del mapa, selector de representante, informe y borrador de mapa. `core/procedimiento/` +
-      `scripts/procedimiento.py`. **~150 tests propios, suite verde con las semillas 777 y 31337**
-      (92 skip: los 88 de antes más los 4 de la regresión, que se salta porque el Drive no
-      estaba montado y queda declarada SIN VERIFICAR). **Su R1 sobre el diff volvió NO-SHIP
-      con 17 hallazgos, 17 confirmados** (acta y adjudicación en el §8 del plan 4a):
-      remediados los dos críticos y H-12 en `a9630aa`, H-02 en `16c646a`, H-01 por la decisión
-      de alcance de arriba. **Quedan 11 y 4a NO se mergea hasta cerrarlos** — los gordos: la
-      raíz autorizada no llega a `universo.leer` (H-06), el SHA de la ocurrencia no se cruza
-      (H-10), y `WorkspaceRegistry` escribe al leer un registro corrupto (H-05). Commits
-      `f89526a`..`a9630aa`.
+- [x] **4a. La vista procesal que SOLO LEE** — ✅ **PR [#315](https://github.com/TyukhayNi/FeesDefender/pull/315)**,
+      2026-09-09. Autorización por workspace, raíz autorizada con veto de reparse points por el
+      bit Name Surrogate, los tres conjuntos del CRM, gramática del mapa, selector de
+      representante, informe y borrador de mapa. `core/procedimiento/` + `scripts/procedimiento.py`,
+      **188 tests**, suite verde con las semillas 777 y 31337. **Su R1 sobre el diff volvió
+      NO-SHIP con 17 hallazgos, 17 confirmados; los 17 cerrados.** Plan y adjudicación (§8):
+      `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4a.md`; acta literal del revisor:
+      `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4a-r1-adversarial-review.md`. La **regresión del corpus real ya no está SIN VERIFICAR**: con el Drive
+      montado se corrió contra W-02VEKE, salió roja y los tres defectos eran del test — el token
+      de redacción con caracteres prohibidos en Windows, un control positivo que acreditaba una
+      población distinta de la que el test medía, y catorce llamadas al selector con un par
+      `(ruta, sha)` que no existe en disco porque un bundle partido no deja fila del padre.
+      **Deuda declarada, no oculta:** cobertura del diff al **85%** con `scripts/procedimiento.py`
+      al **0%**, y los fixtures del corpus **fuera del repo** (la redacción por denylist deja
+      pasar truncamientos: 0 supervivientes por término exacto, 1 por prefijo), así que la
+      regresión solo corre con el Drive montado.
+- [ ] **Tests del CLI de la vista** — `scripts/procedimiento.py` no lo ejecuta ningún test, y el
+      CLI **ya cazó dos bugs de la fachada** que los unitarios no vieron (`16c646a`). Es el
+      aviso de cobertura del 95º cierre, y la respuesta por defecto del despacho a un aviso de
+      cobertura es escribir el test, no bajar el umbral.
 - [ ] **4b. La vista procesal que ESCRIBE** — journal de intención, ledger de propiedad, la
       transacción y el índice. **Sin planificar.** Le corresponden **2 rondas** (decide quién
       escribe sobre qué copia y puede destruir datos de cliente). Se planifica cuando 4a esté
