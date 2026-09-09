@@ -8913,8 +8913,24 @@ y `_chat.docx`, porque el fixture actual usa el del intake y por eso el hueco pa
 Ampliar de paso `dedup_por_sha` no sirve aquí: el re-comprimido cambia los bytes; lo que une a
 esos pares es el chat del que son crudo, no su hash.
 
+**Segundo caso, medido por otra sesión el mismo día, y el defecto ahí quedó ENMASCARADO.** En
+W-02VEKE el helper devolvió **0 de 3**: los exports se llaman `Chat de WhatsApp con
+<nombre>.zip` y `WhatsApp Chat - <nombre> EV <localidad>.zip`, ninguno `_export_original.zip`.
+Lo relevante es cómo acabó pareciendo correcto: los tres **sí** salieron excluidos con su
+`duplicado_de` porque **quien montaba la sala los excluyó a mano** en el script de la corrida.
+El helper estaba inerte, su inercia **no dejó rastro**, y el resultado correcto tapó el
+defecto — alguien hizo su trabajo sin notar que él no lo hacía.
+
+Así que el recuento no es «0 de 5 en un caso» sino **0 de 8 en dos casos y dos sesiones, cero
+emparejamientos automáticos**, y en uno de los dos el fallo era invisible desde el resultado.
+Eso sube la entrada de categoría: no es un hueco de cobertura de nombres, es un helper cuya
+única señal de que no funciona es que **no hay señal**. Un contador de «N exports apartados»
+en el informe del paso 1-bis lo habría delatado el primer día — el informe dice hoy
+`exports_crudos_whatsapp: 0` y eso se lee igual que «no había ninguno».
+
 **Disparador de promoción.** Cualquier caso cuyo WhatsApp llegue por el espejo del Drive de E&V
-o por lote de correo, que son la mayoría — W-02USSI ya lo hizo por las dos.
+o por lote de correo, que son la mayoría — W-02USSI ya lo hizo por las dos, y W-02VEKE por una
+tercera vía de nombrado.
 
 ---
 ## 207. El presupuesto de reintentos se gasta en una causa que no es del documento
