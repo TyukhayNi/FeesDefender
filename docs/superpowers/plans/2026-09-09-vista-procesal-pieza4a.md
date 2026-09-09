@@ -3022,3 +3022,122 @@ El encargo al revisor debe pedirle expresamente:
 4. Que mida el **reparse tag** de un fichero real en `G:` si el Drive está montado: es el paso
    que quedó SIN MEDIR y decide si la pieza puede leer los casos reales.
 5. Y el veredicto, en una palabra del set cerrado.
+
+---
+
+## 8. Adjudicación de la revisión adversarial (Codex, 2026-09-09) — NO-SHIP, parcial
+
+- **Objeto revisado:** diff `e783464..9c4d5c1` (2.894 líneas, 26 ficheros), copias externas sin `.git`; parche `sha256 f4986a50…e080dd2`
+- **Ronda:** 1 de 1 según el presupuesto declarado — **y el propio revisor invalida ese presupuesto** (su H-01)
+- **Revisor:** Codex (`codex-cli 0.153.4`, `model_reasoning_effort=high`), en solo lectura sobre copia congelada
+- **Informe recibido:** `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4a-r1-adversarial-review.md` (`sha256 4d32d8b3…3dc003`)
+- **Hallazgos:** 17 — 2 CRÍTICO, 10 ALTO, 5 MEDIO. **17 confirmados, 0 refutados.** Dos ya remediados en `16c646a`, anterior al informe y posterior al objeto
+- **Remediado en:** pendiente — H-02 y el `drive_accesible` en `16c646a`; los 15 restantes exigen una segunda pasada sobre 4a antes de mergear
+
+**Acepto el NO-SHIP.** No se mergea 4a como está. Y acepto lo primero que dice el informe, que
+es lo que más me importa: **el presupuesto de una sola ronda estaba mal fundado.**
+
+### Lo que se cae, y es mío
+
+**El presupuesto de rondas descansaba en una afirmación que yo mismo contradije en el mismo
+plan** (H-01). La restricción global dice, literalmente, «Cero escrituras en el expediente.
+Ninguna. Ni un fichero de estado, ni un log, ni un `mkdir`» — y la **Tarea 2 de este plan**
+amplía `SUBDESTINOS_EXTRA` de una entrada a seis, con lo que `registrar_outputs` puede crear
+`05_Procedimiento/<fase>/` y su `_index.md`. El revisor lo ejecutó: la versión `base` rechaza
+ese destino y la `head` escribe el fichero. Las dos cosas no pueden ser verdad a la vez.
+
+Lo correcto es lo que el informe propone y no lo que yo escribí: la afirmación exacta es
+**«los nueve módulos nuevos no escriben en el expediente»**, y esa sí se sostiene — el revisor
+la comprobó módulo a módulo y con un *audit hook* durante el import. Lo que no se sostiene es
+la versión plana. Que el radio de daño de 4a sea *menor* que el de 4b sigue siendo cierto; que
+sea **cero** no lo es.
+
+**Y el guard que sostenía la afirmación tiene un agujero ejecutado** (H-04). Mi analizador
+busca el modo de `open` en `nodo.args[1:2]`, y en `Path(x).open("w")` el modo va en `args[0]`.
+El revisor añadió a la copia un `Path(...).open('w')` que **escribe al importar el paquete**, y
+los 120 tests siguieron verdes. El hueco no estaba en mi inventario de huecos declarados, que
+es lo que agrava el hallazgo: el test enumeraba tres excepciones y presentaba la lista como
+completa. Un segundo escritor añadido al **CLI** también sobrevive, porque el glob del guard
+solo mira `core/procedimiento/*.py` y `scripts/procedimiento.py` no cae ahí.
+
+### El defecto funcional más caro, y por qué mis tests no podían verlo
+
+**H-03: agrupé los bundles por la clave equivocada.** Usé `parent_sha256`, y ese campo es —lo
+dice su propio comentario en `core/sala_maquina.py:196`— «sha del fichero **FÍSICO** de origen;
+**clave del estado idempotente** por bundle». El marcador de segmento es `parent_slug`
+(«slug del bundle **si es un segmento**; vacío si documento suelto`) o `doc_id` («vacío =
+documento suelto»). Y `sala_maquina.py:937-938` rellena `parent_sha256` **también en el camino
+passthrough**, con `parent_slug` vacío. Resultado: un documento suelto real se trata como
+bundle sin padre y **se bloquea**.
+
+Lo que me deja peor no es el error, es **por qué era invisible para mí**: en todos mis fixtures
+puse `parent_slug` siempre que puse `parent_sha256`. Fabriqué un mundo en el que mi error no
+existe, y luego probé ese mundo. El revisor no leyó el productor: lo **llamó**, aisló sus
+dependencias y miró qué filas devuelve de verdad. Esa es la diferencia entre un fixture escrito
+por el autor y una fila producida por el sistema, y es exactamente lo que la R1 anterior me
+había dicho con otras palabras.
+
+**Y lo repetí una segunda vez en el mismo diff** (H-16): mi test del corpus llama al selector
+con `artefacto.Cobertura()` **vacía** y `sin_cobertura_ok=True`, así que solo recorre la rama de
+override. La «mayoría resuelta» que el test exige sale del *fallback*, no del selector. El
+revisor inutilizó los dos sets de métodos y el test siguió pasando. La R1 anterior había
+señalado ese mismo defecto en los tests de corpus de la rev. 1, y yo escribí el test nuevo
+—con su control positivo y su exigencia de mayoría— y aun así dejé el instrumento desconectado.
+
+### Los quince que quedan, agrupados
+
+**La sede no llega a todos los lectores.** H-06: `universo.leer` recibe el `case_id` y no la
+raíz autorizada, así que `RegistroOcurrencias` y `read_pull_state` vuelven a `CASOS_ROOT` por
+`case_locator`. Autorizo una raíz y leo otra: en un checkout con el mismo identificador, la
+vista mezcla mapa y bytes locales con ocurrencias y D8 del canon. H-07: el mapa, la cobertura y
+el artefacto derivado se abren por concatenación y no pasan por `contener`; y `contener` recibe
+la raíz **ya resuelta**, que es donde mi propia corrección de la junction del ancestro deja de
+aplicar en la secuencia de producción. H-05: `WorkspaceRegistry`, al leer un registro corrupto,
+lo **renombra** — una escritura real fuera del expediente, en la cadena que mi fachada invoca.
+
+**Puertas incompletas.** H-10: hasheo el crudo y lo busco en la cobertura, pero **nunca lo
+comparo con el `sha256` de la ocurrencia**, así que un fichero sustituido por bytes de otro
+documento con cobertura se acepta para el `doc_id` original. H-11: la comparación de destinos
+cruza el tronco sin extensión (CRM) con el basename completo (despacho), así que dos entradas
+pueden acabar en el mismo fichero y el informe dice «completo». H-12: `Informe.completo` ignora
+las incoherencias, y el CLI sale con 0 — puede imprimir «D8 dice 99 documentos» y «completo:
+sí» a la vez. H-15: valido que un `eco_crm` exista en el universo, pero no que ese `doc_id` no
+esté ya asignado como entrada CRM, que es la otra mitad de la puerta 7-bis. H-17: publico
+`materializadas` como «en disco» cuando es un **estado del registro** y no una comprobación de
+I/O, y el borrador escribe `en_disco: true` solo porque la ruta no está vacía.
+
+**Clasificación y validación.** H-09: el índice por SHA se queda la última fila, así que el
+orden decide si un titular `error` bloquea o su alias degrada a crudo; y una cadena de alias, un
+ciclo o un titular inexistente pasan a crudo sin bloqueo. H-08: «solo dos tags redirigen» no es
+una clasificación, es una lista — y convierto cualquier `OSError` de `lstat` en «no redirige».
+H-13: mi gramática usa `match` con `$`, que **acepta un salto de línea final**, y `COM¹.docx`
+pasa el filtro de reservados; varios tipos se coercionan antes de validarse. H-14: presupuesto
+puntos de código y no unidades UTF-16, y no presupuesto los nombres de despacho.
+
+### Los dos que ya estaban arreglados, con su fecha
+
+H-02 (el `TypeError` de `WorkspaceRegistry()`) y el `drive_accesible=True` a pelo salieron de
+**mi propio *smoke test* del CLI** y están corregidos en `16c646a`, con
+`tests/test_procedimiento_fachada.py`. El objeto revisado es `9c4d5c1`, anterior. **El revisor
+los reporta con razón** y no los cuento como pendientes; su verificación con `CliRunner` es
+mejor que la mía, y su observación de que `TypeError` tampoco estaba en `_ERRORES` del CLI es un
+defecto adicional que yo no había visto y que entra en la remediación.
+
+### Lo que no acredito
+
+Las tres contrapruebas que sobreviven las **ejecutó él**; yo confirmé la causa leyendo mi
+código, pero no reproduje sus corridas. H-07 a H-11, H-13 a H-15 y H-17 los acepté leyendo mi
+código y siguiendo su escenario. Y **la afirmación «25 mutantes muertos» de este plan queda SIN
+VERIFICAR para un tercero**: el arnés vive en `scratch/`, que está gitignored, así que no forma
+parte del objeto — el revisor solo pudo reconstruir 13, y los 13 murieron. Eso es un defecto de
+mi propia trazabilidad, no suyo: una afirmación cuantitativa cuyo instrumento no viaja con el
+diff no es auditable.
+
+### Qué pasa ahora
+
+**4a no se mergea.** Los quince pendientes se remedian sobre este mismo plan —no hace falta una
+rev. 2 del documento, porque el diseño no está mal: están mal la clave de agrupación, la
+propagación de la raíz, cuatro puertas y el instrumento que las medía—. Y **el presupuesto de
+rondas se corrige**: la ampliación del helper de la Tarea 2 sale de 4a y va donde le
+corresponde, o 4a asume que su radio de daño no es cero y lleva su segunda ronda. Esa decisión
+es de Nikolai, no mía: es alcance, no ingeniería.
