@@ -24,7 +24,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
-| 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | **disparador REAL desde el 2026-09-08** (W-02VEKE, juicio con la prueba en `99_Otros` — `MEJORAS #176`). El gate escrito («pieza 3 después de la fila #1») **está rancio**: la (e) de la fila #1 se cerró el 2026-08-01 y su pieza A está construida. Reformular la dependencia antes de retomar — no darla por levantada. Plan de la pieza 4 por reescribir | medio |
+| 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | **disparador REAL desde el 2026-09-08** (W-02VEKE, juicio con la prueba en `99_Otros` — `MEJORAS #183`). El gate escrito («pieza 3 después de la fila #1») **está rancio**: la (e) de la fila #1 se cerró el 2026-08-01 y su pieza A está construida. Reformular la dependencia antes de retomar — no darla por levantada. Plan de la pieza 4 por reescribir | medio |
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 **decidible, sin gates** (#98 cerrado, PR #155) | solo queda la decisión de Nikolai: `--extraer-adjuntos` a default `True` mueve la superficie de dedup de todo intake futuro | bajo |
 
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
@@ -1056,7 +1056,7 @@ judicial dejó **45 de 76 documentos en `99_Otros`** —las dos minutas de prueb
 previa, las dos citaciones de testigos, el señalamiento, la grabación de la vista, el decreto de
 admisión, la sentencia conexa y la apelación— con `02_Contestacion` **sin crear** aunque la
 contestación existe y el clasificador la reconoció en esa misma corrida. Medición y frontera en
-`MEJORAS #176`; el recorrido del intake, ahora escrito, en `RUNBOOK_APERTURA_EXPEDIENTE.md §3-bis`.
+`MEJORAS #183`; el recorrido del intake, ahora escrito, en `RUNBOOK_APERTURA_EXPEDIENTE.md §3-bis`.
 Dos cosas que este caso aporta al diseño y el piloto no tenía: **la fase de prueba y juicio
 existe de verdad en el corpus** (el modelo actual se acaba en la contestación), y **el rol que el
 clasificador ya resuelve no se usa para el destino** — dos señales que no se cruzan.

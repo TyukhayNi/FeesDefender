@@ -7827,7 +7827,7 @@ tocar la línea de lanzamiento de cualquier wrapper por otro motivo.
 
 ---
 
-## 176. El intake judicial no modela la fase procesal: ni bucket ni rol para la prueba y el juicio
+## 183. El intake judicial no modela la fase procesal: ni bucket ni rol para la prueba y el juicio
 
 > Medido el 2026-09-08 montando `W-02VEKE` (expediente judicial CRM #540, 76 documentos;
 > autos de 2025, audiencia previa ya celebrada, testigos citados, juicio pendiente).
@@ -7879,7 +7879,7 @@ indiferenciada. Va contra `PLAN.md` fila #9, no como entrada independiente.
 
 ---
 
-## 177. `abrir_caso` INVENTA `referencia_crm` copiando el `case_id`, y el invento dispara después la alarma de desalineación
+## 184. `abrir_caso` INVENTA `referencia_crm` copiando el `case_id`, y el invento dispara después la alarma de desalineación
 
 > Medido el 2026-09-08 en `W-02VEKE`, un caso que ya existía en el CRM antes de abrirse en Drive.
 
@@ -7917,7 +7917,7 @@ que `ensure_case` acepte reponerlo cuando el llamador lo pasa explícito.
 
 ---
 
-## 178. La plantilla del `case_id` no puede reproducir la referencia del CRM, y eso deja ciego el dedup exacto
+## 185. La plantilla del `case_id` no puede reproducir la referencia del CRM, y eso deja ciego el dedup exacto
 
 > Medido el 2026-09-08 en `W-02VEKE`.
 
@@ -7940,7 +7940,7 @@ canónico es `NEGATIVA_ARRAS` -> sufijo `Negativa arras`, y el CRM dice `Negativ
 aceptada`. Esa regla está escrita suponiendo que **el alta local es la primera**; cuando el CRM va
 delante hay dos fuentes y una tiene que ceder, y ceder por el lado del CRM significa renombrar la
 referencia de un expediente judicial vivo. Se resolvió usando el sufijo canónico y dejando la
-referencia real en `referencia_crm` (ver `#177`), pero la regla no tiene caso escrito para esto.
+referencia real en `referencia_crm` (ver `#184`), pero la regla no tiene caso escrito para esto.
 
 **Remedio candidato.** Que el dedup «antes de crear» use el **W-code** y no la referencia completa
 —es la clave estable, y ya existe la función—, dejando el match exacto para lo que de verdad
@@ -7948,7 +7948,7 @@ necesite igualdad textual. Y escribir en `config.py` qué manda cuando el CRM va
 
 ---
 
-## 179. Un `/` en el nombre del documento del CRM parte el slug y el fichero pierde su identidad
+## 186. Un `/` en el nombre del documento del CRM parte el slug y el fichero pierde su identidad
 
 > Medido el 2026-09-08 en `W-02VEKE` (expediente judicial CRM #540).
 
@@ -7986,12 +7986,12 @@ de arreglarlo.
 
 **Disparador de promoción.** Bajo: los ficheros están en el expediente y su contenido es
 correcto; solo el nombre es ilegible. Sube si alguna vez hay que localizar un señalamiento por
-nombre en un caso con muchas resoluciones, o si se construye la vista procesal (`MEJORAS #176`),
+nombre en un caso con muchas resoluciones, o si se construye la vista procesal (`MEJORAS #183`),
 que ordena por lote y presentaría estos dos sin identidad.
 
 ---
 
-## 180. `node_modules` no está en `.gitignore`, y dos skills lo necesitan para funcionar
+## 187. `node_modules` no está en `.gitignore`, y dos skills lo necesitan para funcionar
 
 > Medido el 2026-09-08 al generar los entregables de `preparacion-juicio-oral`.
 
@@ -8020,3 +8020,109 @@ justo la clase de cosa que se olvida.
 **Disparador de promoción.** Ya disparado en su forma leve: hizo falta para el juicio de
 `W-02VEKE` y se resolvió instalando fuera del árbol. La entrada existe para que la próxima vez
 no haya que descubrirlo — y para que nadie cierre el hueco con un `npm install` dentro del repo.
+
+---
+
+## 188. El pipeline deja `empty` un PDF que `ocrmypdf --skip-text` lee con 12.246 caracteres
+
+> Medido el 2026-09-09 en `W-02VEKE`, montando su sala de lectura. Tres documentos, mismo
+> motor (OCRmyPDF), resultados muy distintos según quién lo invoque.
+
+**La medición.** El informe de actividades del CRM (`D 05` de la demanda) pasó por
+`sala_maquina apply` y quedó en `_cobertura.json` como **`estado: empty`, 20 caracteres**,
+con la nota «sin texto o residual». El mismo fichero, copiado al scratchpad e invocado a
+mano con `ocrmypdf -l spa --skip-text --sidecar`, devuelve **12.246 caracteres** de texto
+correcto (el reporte de LeadHub: 42 exposiciones finalizadas, 3 visitas, la tabla de
+actividades con consultor, contacto y fecha).
+
+No es un caso aislado. Los otros dos informes del CRM del mismo expediente:
+
+| documento | pipeline (`_cobertura.json`) | `ocrmypdf` directo |
+|---|---|---|
+| `d_05_crm_informe_actividades_propiedad` | **20** (`empty`) | **12.246** |
+| `d_03_crm_ficha_propiedad_acacies` | 1.583 (`ok`) | 6.140 |
+| `d_07_crm_comprador_actividades` | 989 + 3.764 (`ok`, 2 segmentos) | 4.956 |
+
+Los tres son **capturas de pantalla del CRM impresas a PDF**: página larga, tipografía
+pequeña, mucha tabla. La invocación directa fue `-l spa --skip-text`, sin `--oversample`
+ni nada especial.
+
+**Por qué importa más de lo que parece.** `texto_espejo_md` devuelve `None` cuando el
+estado es `empty` —por diseño, «no hay texto útil que ofrecer»—, así que el documento
+queda invisible aguas abajo: la sala de lectura lo clasifica **a ciegas por el nombre** y
+sin fecha, y ningún análisis posterior ve su contenido. En este caso ese documento es la
+prueba de la gestión eficaz de la agencia (las 42 exposiciones), que es hecho no
+controvertido del pleito pero cuya acreditación documental es justo ese informe.
+
+**Lo que NO se sabe todavía, y hay que medirlo antes de tocar nada.** No sé qué hace
+distinto el pipeline. Hipótesis a discriminar, en orden de coste:
+
+1. **Los peldaños de la escalera** (`MEJORAS #90` (a)/(b)): el pipeline decide por página
+   entre `pypdf` y OCR, y puede estar dando por buena una capa de texto vacía sin llegar a
+   OCRizar. El indicio: la nota del `_cobertura` es «sin texto o residual», que es el
+   veredicto DESPUÉS de intentarlo.
+2. **Los flags**: si el pipeline usa `--force-ocr` o `--redo-ocr` en vez de `--skip-text`.
+   Ojo: `--force-ocr` es el que la sesión del 2026-07-14 midió que infla 3-10× y destruye
+   la capa de texto real.
+3. **El umbral de `empty`**: que el OCR sí produzca texto y el umbral lo descarte.
+
+El experimento que lo separa es baratísimo: correr `apply --solo` sobre ESE fichero con
+log de la orden `ocrmypdf` efectiva, y compararla carácter a carácter con la mía. Hasta
+tenerlo, cualquier arreglo sería a ciegas.
+
+**Cautela sobre el alcance.** Esto NO contradice la medición del 2026-09-08 («el OCR local
+lee todo lo legible»), que se hizo con **invocación directa**, igual que la mía aquí. Si la
+diferencia está en el pipeline, las dos mediciones son compatibles y lo que falla es la
+capa de arriba, no el motor.
+
+**Disparador de promoción.** Alto si se confirma la hipótesis 1 o 2: afecta a **todos** los
+documentos escaneados de todos los casos, y el modo de fallo es silencioso (`empty` se lee
+como «este documento no tiene texto», no como «no supe leerlo»). Mientras no se mida, queda
+aquí con el dato de las tres filas.
+
+---
+
+## 189. `senales_gate` marca el audio y el vídeo como «binario opaco sin espejo MD», y eso inutiliza el gate en cualquier caso con WhatsApp
+
+> Medido el 2026-09-09 montando la sala de lectura de `W-02VEKE`: **132 señales, de las que
+> 129 eran audio, vídeo, imagen o zip**.
+
+**El defecto.** `senales_gate` (`scripts/preclasificar.py`, señal (c)) marca toda fila cuya
+extensión esté en `_EXT_OPACAS` y no tenga espejo MD en `_cobertura.json` con estado
+`ok`/`low`. Y `_EXT_OPACAS` incluye `mp4`, `mov`, `avi`, `mkv`, `m4a`, `ogg` y `opus`.
+
+Esas extensiones **no pueden tener espejo MD**: la sala de máquina las marca `sin_soporte`
+por diseño (no hay transcripción de audio en el pipeline). Así que la señal dispara siempre
+para todos ellas, y no dice «esto es ambiguo» sino «esto es un audio».
+
+**El efecto medido en W-02VEKE**: 291 filas activas, de las que 120 son `.opus` de tres
+exports de WhatsApp más 4 `.mp4`, 1 `.m4a`, 1 `.mkv` y 6 `.jpg`. Resultado: **132 señales**
+en un caso donde lo genuinamente ambiguo eran **dos** (un expose de otro W-code adjuntado
+en un chat, y el documento de `MEJORAS #188`). Con la razón señal/ruido a 2:132, el gate
+deja de ser un filtro: o se lee entero —y son 132 líneas por revisar a mano— o se ignora,
+que es lo que hará cualquiera a la segunda vez.
+
+Y el propio SKILL.md avisa de este modo de fallo para el verify —«≥5 problemas homogéneos
+del mismo tipo: la hipótesis por defecto es bug del check, no de los datos»— pero el gate
+no lleva esa salvaguarda, ni agrega por tipo antes de presentar.
+
+**Remedio candidato.** Separar «opaco **sin texto propio**» de «opaco **que debería tener
+espejo y no lo tiene**». Solo el segundo es señal:
+
+- **audio/vídeo** (`opus`, `m4a`, `ogg`, `mp4`, `mov`, `avi`, `mkv`): nunca señal por falta
+  de espejo. Si acaso, un contador informativo («120 medias sin transcribir»).
+- **PDF, imagen y ofimática**: siguen siendo señal si no tienen espejo — ahí la ausencia sí
+  indica que se clasificó a ciegas.
+
+Y, con o sin ese cambio, **agregar las señales por tipo** antes de presentar la propuesta:
+un «131 × binario opaco sin espejo (129 de ellos audio/vídeo)» es accionable; 131 líneas
+sueltas no.
+
+**Cómo comprobar el remedio sin engañarse.** El test tiene que llevar dentro un `.opus`
+**y** un `.pdf`, los dos sin espejo, y afirmar que sale **una** señal y no dos — y hay que
+verlo **rojo** contra el código actual antes de arreglarlo. Un test con solo el `.pdf` pasa
+hoy y pasaría después: no prueba nada.
+
+**Disparador de promoción.** Medio. No corrompe datos ni bloquea: degrada el gate a ruido.
+Sube en cuanto haya un segundo caso con export de WhatsApp, que es el flujo normal de los
+expedientes de E&V.

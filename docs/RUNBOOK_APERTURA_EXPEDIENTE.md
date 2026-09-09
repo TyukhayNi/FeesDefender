@@ -320,7 +320,7 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad <Ciudad> --tipo-caso <TI
 W-02VEKE el tipo es `NEGATIVA_ARRAS` (sufijo `Negativa arras`) y el CRM dice `Negativa con
 oferta aceptada`. No intentes cuadrarlos: la plantilla del `case_id`
 (`f"{codigo} - {direccion} ({w_code}) - {sufijo}"`) **no puede** reproducir la referencia del
-CRM de este tenant, que lleva un ` - ` extra antes del paréntesis (`MEJORAS #178`, con la
+CRM de este tenant, que lleva un ` - ` extra antes del paréntesis (`MEJORAS #185`, con la
 consecuencia: el dedup EXACTO por referencia queda ciego; el dedup por W-code sí funciona).
 
 **Paso 2 — vincular los expedientes A MANO, uno por elemento** (`[APER-36]`: `--crm skip` no
@@ -342,7 +342,7 @@ with sostener("W-XXXXXX", avisar=print, que="el registro de los expedientes CRM"
 falso, y hará saltar el ⚠️ «Referencia desalineada» en cada pull que no lleve `--referencia`.
 `--referencia` **no lo repara** (`ensure_case` solo fija el campo si el índice es nuevo): hay que
 reponerlo y **también la línea del cuerpo**, que `_actualizar_cuerpo` no regenera. Detalle y
-remedio de raíz en `MEJORAS #177`. Verifícalo contra el CRM antes de seguir:
+remedio de raíz en `MEJORAS #184`. Verifícalo contra el CRM antes de seguir:
 
 ```python
 from core import sudespacho_relations as sr
@@ -374,7 +374,7 @@ y el clasificador la reconoció (`contestacion: ok`) en esa misma corrida. El bu
 el rol lo decide el **nombre**; las dos señales no se cruzan. No lo arregles ampliando
 `CARPETA_ID_TO_PATH`: los ids nuevos ya los resuelve la heurística de label, y a `99_Otros`. El
 diagnóstico completo y la vía de solución (la vista procesal de `05_Procedimiento`, `PLAN.md`
-fila #9) en `MEJORAS #176`.
+fila #9) en `MEJORAS #183`.
 
 **Consecuencia práctica para el letrado, hoy:** para preparar interrogatorio o conclusiones,
 **no navegues por carpetas** — la fase procesal no está en la estructura. Ordena por
