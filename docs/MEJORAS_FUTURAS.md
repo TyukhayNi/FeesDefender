@@ -8150,3 +8150,128 @@ caso: **antes de declarar que una cita no existe, agotar la segunda llave.** Fam
 
 **Disparador de promoción.** La próxima verificación de citas que incluya una AP anterior a
 ~2005, donde esta forma del ECLI es frecuente.
+## 182. Ruta `audio` en la sala de máquina: 67 de los 73 `sin_soporte` son notas de voz
+
+**Medido el 2026-09-09 sobre W-02USSI.** El censo tiene **471 documentos** y **73 en
+`sin_soporte` (15,5%)**. De esos 73, **67 son audio o vídeo** — 65 `.opus` y 2 `.mp4`,
+44,2 MB, ≈5,4 h de habla —, o sea el **92% del sin-soporte y 14,2 de los 15,5 puntos**.
+Los 6 restantes son 5 `.zip` y 1 `.vcf`. Sus filas salen todas con `tipo: ''`,
+`estado: 'sin_soporte'`, `chars: 0` y la nota genérica `sin soporte para esta extensión`.
+
+`clasificar_ruta` (`core/sala_maquina.py:47`) enruta por extensión a `pdf` | `imagen` |
+`nativo` | `ofimatica` | `sin_soporte`. Las extensiones de audio no están en ninguna lista,
+así que caen al `else` del despacho (`core/sala_maquina.py:1406`) y **nunca se intenta nada**.
+
+**Por qué importa más que un porcentaje.** El habla no es un formato secundario en este
+dominio: en W-02USSI las notas de voz son de los chats con la parte compradora y con la
+agente colaboradora, y la primera que se transcribió —25-07-2025, dos días después del
+desistimiento— ya trae material del fondo del asunto que **no está en ningún documento
+escrito del ramo**. Mientras la ruta no exista, la sala de lectura clasifica esos 67 «a
+ciegas por nombre» y el `CRONOLOGIA.md` no los ve. Es el mismo agujero que `MEJORAS #61`
+cerró para los `.doc`, en un formato donde el contenido pesa más.
+
+**Es feasible hoy, y está medido.** Con `faster-whisper` 1.2.1 (CTranslate2 4.8.2 + PyAV
+18.1.0) en un venv aislado: **no necesita el binario `ffmpeg`** —PyAV trae sus propias libs y
+abre el `.opus` directo— **ni `torch`**. Modelo `small`, `device="cpu"`, `compute_type="int8"`,
+`language="es"`, `vad_filter=True`: 137,9 s de audio → 2.096 caracteres en **79,7 s (×1,7
+tiempo real)**, `language_probability` 1,00, carga del modelo 25 s. Extrapolado a las 5,4 h:
+≈3,2 h de CPU. La calidad en castellano es utilizable tal cual; los nombres propios y los
+tecnicismos salen mal («GuruFax» por «burofax»), que es exactamente el perfil que hay que
+declarar y no maquillar.
+
+**Forma correcta de la pieza — y esto es la decisión de diseño, no un detalle.** Se modela
+sobre `ofimatica`, **no** sobre `--vision`. Son dos patrones distintos y confundirlos cuesta
+un seam inútil:
+
+- `--vision` necesita **la sesión Claude**, que el CLI no puede invocar por sí mismo. De ahí
+  el stub `_transcribir_vision` con `_es_stub`, `vision_cableada()` y el preflight
+  `_exigir_vision_cableada` que **aborta en alto** (`scripts/sala_maquina.py:283`).
+- El ASR corre **entero en local, dentro del proceso**. No hay nada que inyectar. Es una
+  **dependencia externa opcional**, igual que `soffice`: presente → se usa; ausente → el
+  documento sale `sin_soporte` **con la causa real en la nota**, y el CLI avisa antes de
+  procesar (patrón `_avisar_si_falta_soffice`, `scripts/sala_maquina.py:270`).
+
+Piezas: (a) `core/audio_a_texto.py` espejo de `core/ofimatica_a_pdf.py` — `EXTS_AUDIO`,
+`ENV_MODELO` (`FEESDEFENDER_ASR_MODELO`), `asr_disponible()`, `transcribir(src) -> str`;
+(b) `_EXTS_AUDIO` y el `return "audio"` en `clasificar_ruta`; (c) la rama `elif d.ruta ==
+"audio"` con `_audio_y_extraer`, que escribe el MD y su fila de cobertura como las demás;
+(d) el aviso de preflight; (e) `faster-whisper` como **extra opcional**, nunca dependencia
+dura de la suite.
+
+**Dos cosas que la implementación no puede perder.** Primera: el MD debe llevar los
+**segmentos sellados en tiempo** (`[mm:ss–mm:ss]`), porque en un escrito una nota de voz se
+cita por minuto y segundo, no por página; y en cabecera el modelo, la duración y el
+`language_probability`, para que se sepa **con qué instrumento** se leyó. Segunda: la
+transcripción **no da la fecha de envío**. Esa vive en el cuerpo del chat (`<adjunto: …>`), y
+la fecha incrustada en el nombre (`AUDIO-2025-07-25-11-54-55`) es la de **captura**, que la
+skill `organizar-sala-lectura` ya obliga a no confundir con la de envío. La ruta de audio
+resuelve el *texto*; el *cuándo* sigue siendo del chat.
+
+**Y una honestidad de alcance:** `estado` para una transcripción no puede reusar
+`ocr_quality` sin pensarlo. Un audio de 3 minutos con 2.000 caracteres es normal; un PDF de
+una página con 2.000 caracteres también, pero los umbrales no son los mismos y un audio de
+silencio devolvería `empty` cuando lo correcto es «no había habla». Hay que decidir el
+criterio explícitamente, no heredarlo.
+
+**Disparador de promoción.** Ya está disparado: W-02USSI tiene 67 documentos ilegibles y la
+demanda está sin presentar. Lo urgente del caso se cubre fuera del pipeline (transcripción en
+scratchpad, fuera del repo, que es donde debe estar el dato real); lo que esta entrada pide es
+que la **próxima** apertura no repita el trabajo a mano.
+
+---
+## 183. `emparejar_exports_whatsapp` solo conoce el nombrado de UN canal: 0 de 5 exports apartados
+
+**Medido el 2026-09-09 sobre W-02USSI.** El Paso 1-bis.a0 de `organizar-sala-lectura` llamó a
+`emparejar_exports_whatsapp` sobre las 441 rutas del intake y devolvió
+**`exports_crudos_whatsapp: 0`**. En el corpus hay **5 `.zip` de export de WhatsApp, 152,3 MB**,
+y los cinco se quedaron con **fila propia** entre los 410 únicos:
+
+| bytes | ruta bajo `00_Input/` |
+|---|---|
+| 130.391.552 | `01_Drive EV/_RECLAMACION/WHATSAPP/WhatsApp Chat - Sofia Mata CB.zip` |
+| 10.564.096 | `01_Drive EV/_RECLAMACION/WHATSAPP/WhatsApp Chat - Oferta Soria 32-34.zip` |
+| 10.564.089 | `2026-09-08_email_01/…_oferta_soria_32_34/WhatsApp Chat - Oferta Soria 32-34.zip` |
+| 871.424 | `01_Drive EV/_RECLAMACION/WHATSAPP/WhatsApp Chat - Joan C_ Soria.zip` |
+| 871.402 | `2026-09-08_email_01/…_joan_c_soria/WhatsApp Chat - Joan C_ Soria.zip` |
+
+**Por qué no salta, y las dos condiciones fallan por separado** (`preclasificar.py:106`). El
+helper marca un `.zip` como crudo solo si **(1)** su basename es exactamente
+`_export_original.zip` **y (2)** hay un `_chat.txt` en su mismo directorio. Aquí:
+
+1. Los zips se llaman `WhatsApp Chat - <nombre>.zip` — el nombrado de **E&V** (espejo
+   `01_Drive EV/`) y el del **lote de correo**, no el que deja `whatsapp_intake.deposit_export`.
+2. Los chats extraídos son **`_chat.docx`**, no `_chat.txt`: E&V exportó a Word. Así que
+   aunque el zip se llamara bien, el hermano no se encontraría.
+
+**Esto no es un bug del helper: es su supuesto, y el supuesto es de un solo canal.** El
+docstring lo dice a propósito — «un `.zip` con OTRO nombre (documentación aportada) se conserva
+aunque comparta carpeta con un chat» — y esa conservadurismo es correcta. El hueco es que la
+detección se ancló al nombrado de `whatsapp_intake`, y **el mismo export llega por tres vías**:
+el intake propio, el espejo del Drive de E&V y el lote de correo. Dos de las tres no pasan por
+`whatsapp_intake` y por tanto nunca llevan ese nombre.
+
+**La frontera de la que esto es ejemplo** (y es la que hay que cerrar, no el caso): *un detector
+de «crudo ya extraído» que identifica el crudo por el nombre que le pone UN productor*. El mismo
+error, con otra cara, produjo el `casi-duplicado` que sí saltó: los pares de 871.424/871.402 y
+10.564.096/10.564.089 bytes son **el mismo chat re-comprimido**, llegado por dos canales, con
+`sha256` distinto — así que `dedup_por_sha` tampoco los une.
+
+**Coste real medido.** Los 5 quedan `sin_soporte` en el censo (`chars: 0`), son 5 de las 73
+filas sin soporte, y sin apartar entran al plan de copia con `0000-00-00` — que es exactamente
+la basura de cronología que el helper existe para evitar. Y el de Sofia Mata son **130 MB** que
+se copiarían a la sala para nada: su contenido ya está extraído, fichero a fichero, en el
+directorio hermano.
+
+**Qué hacer.** Reconocer el crudo por **lo que es, no por cómo se llama**: un `.zip` es export
+crudo de WhatsApp si en su mismo directorio —o en un subdirectorio con su mismo nombre sin
+extensión, que es la forma del espejo de E&V— existe un chat extraído (`_chat.txt` **o**
+`_chat.docx`). Con eso los 5 se apartan y se anotan `duplicado_de` su chat, sin borrar nada.
+Y hay que **verificarlo con un control positivo**: un test cuyo fixture use el nombrado de E&V
+y `_chat.docx`, porque el fixture actual usa el del intake y por eso el hueco pasó verde.
+Ampliar de paso `dedup_por_sha` no sirve aquí: el re-comprimido cambia los bytes; lo que une a
+esos pares es el chat del que son crudo, no su hash.
+
+**Disparador de promoción.** Cualquier caso cuyo WhatsApp llegue por el espejo del Drive de E&V
+o por lote de correo, que son la mayoría — W-02USSI ya lo hizo por las dos.
+
+---
