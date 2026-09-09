@@ -28,7 +28,7 @@ ya se rompió una vez (2026-09-05, `site-packages` a..p borrados). Un venv dedic
 del árbol de trabajo no lo puede romper, ningún `git clean` lo toca y todos los worktrees lo
 comparten.
 
-Cuando se cablee a la sala de máquina (`MEJORAS #194`), la dependencia entra como **extra
+Cuando se cablee a la sala de máquina (`MEJORAS #205`), la dependencia entra como **extra
 opcional**, nunca en el `requirements.txt` base: el patrón es LibreOffice en
 `core/ofimatica_a_pdf.py` — presente se usa, ausente el documento sale `sin_soporte` con la
 causa real en la nota.
@@ -187,7 +187,7 @@ cuerpo vacío, indistinguibles de un fallo.
 
 ## 8. Cabos sueltos
 
-- **Cableado a la sala de máquina**: `MEJORAS #194`. Hoy la herramienta se llama a mano;
+- **Cableado a la sala de máquina**: `MEJORAS #205`. Hoy la herramienta se llama a mano;
   mientras no se cablee, un `.opus` sigue cayendo en `sin_soporte` en el censo.
 - **Copia transitoria**: durante la instalación quedó una copia del script en
   `~\.venvs\asr\transcribir.py`, en uso por una sesión hermana. **El canónico es

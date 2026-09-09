@@ -8325,7 +8325,145 @@ verifique contigüidad de ordinales daría rojo permanente sobre ellas.
 **Disparador para promoverla:** la séptima vez, o cualquier sesión que ya esté tocando los avisos de
 `session_close`. Enlaza con `#186` (1), que también propone que el cierre declare lo que no puede
 deducirse del commit.
-## 188. `sync_sudespacho pull|intake-judicial` con un W-code CREA carpeta sombra en el Drive
+
+## 188. El intake de correo dice «OK Caso abierto» dejando el material sin OCR y sin avisar
+
+> Medido el 2026-09-09 en la apertura de `W-04A6LI`, ejecutando el comando, no leyendo el código.
+
+`scripts/abrir_caso.py` en modo `libre` con `--fuente email` deposita el lote y termina así, literal:
+
+```
+Email: etiqueta '…' exportada a …\00_Input\2026-09-09_email_01
+CRM omitido (--crm skip): referencia pendiente + TODO
+OK Caso abierto: <case_id>
+```
+
+En ese momento el expediente tenía **43 `.eml` y 18 adjuntos en crudo**: sin atomizar, sin
+`.contenido.md` y sin espejo en la sala de máquina. La corrida sale con **código 0** y la última
+línea dice «OK». No encadena `sala_maquina apply`, no lo sugiere y **no deja pendiente durable**
+—ni evento, ni marcador, ni aviso—.
+
+**El OCR del correo no falta: está cableado.** Dentro de `apply` el orden lo garantiza el código
+(`scripts/sala_maquina.py`, `_atomizar_correo` → `_procesar_adjuntos` → `_construir_plan` → OCR) y
+lo vigila `test_atomiza_antes_de_construir_el_plan_de_ocr`. Un `.eml` en `00_Input` recibe OCR
+igual que un PDF del Drive, y sus adjuntos también porque `--extraer-adjuntos` (default desde el
+PR #299) los deja como ficheros sueltos ahí dentro. Lo que falta es que **alguien vuelva a
+llamar a `apply`**, y eso hoy es memoria del operador.
+
+**Por qué es caro y no molesto.** El daño no se ve: no hay traza roja. Se manifiesta semanas
+después como una **ausencia que se disfraza de «no hay»** — se busca en el expediente un documento
+que llegó como adjunto de correo, no aparece porque nadie extrajo su texto, y se concluye que no
+está. Es el mismo defecto de `feedback-no-lo-se-no-es-no-hay`, con la agravante de que la
+herramienta ha dicho «OK». Y afecta igual a la sala de lectura y a la viabilidad, que trabajarían
+sobre un expediente incompleto creyéndolo completo.
+
+**Lo que NO es la solución.** Encadenar `apply` desde `libre` reintroduce en la secuencia lo que la
+puerta de V1 excluye a propósito (`--fuente email` llama a Gmail, que es de V3), y el
+descubrimiento de correo está **diferido a V3 por decisión de Nikolai del 2026-08-24**
+(`PLAN.md`). Esta entrada no pide adelantar V3.
+
+**Lo que sí:** que un intake que ha depositado algo **no pueda terminar diciendo «OK» a secas**.
+Declararlo, no desplazarlo: el pendiente ya existe como vocabulario en V1
+(`etapa_no_ejecutada:<etapa>`, `EstadoV1.preparado_con_pendientes`), así que la pieza es reusar ese
+vocabulario en `libre` en vez de inventar uno. Mínimo viable: si el intake depositó ficheros,
+imprimir el paso que falta y registrarlo en `_intake_log.jsonl`, de modo que la ausencia quede
+**escrita** y no dependa de que el operador se acuerde.
+
+**Hermano mayor, peor por radio de daño.** El `RUNBOOK` deja anotado que la UI de Streamlit
+exporta correo y lanza el intake judicial **sin sostener el mutex del caso**. Eso puede corromper,
+no solo omitir. Si se gasta esfuerzo en cableado, va antes que esto.
+
+**Disparador de promoción.** La primera vez que alguien que no sea yo corra el intake de correo de
+un caso —Paola o Ana por la UI, o una sesión que no haya leído este runbook—, o la primera vez que
+se busque en un expediente un documento llegado por correo y no aparezca.
+
+## 189. `layout_bundle_hilo` llavea por basename, y `email_export` no lo hace único dentro del lote
+
+> Medido el 2026-09-09 montando la sala de lectura de `W-04A6LI`. Bloqueó el bundle por hilo.
+
+`layout_bundle_hilo` (`.claude/skills/organizar-sala-lectura/scripts/preclasificar.py`) usa el
+**nombre de fichero** como llave del grupo y **aborta con `ValueError`** si se repite. Su docstring
+justifica que eso es tolerable porque el choque solo puede venir de **dos lotes distintos**:
+«`_ruta_unica` solo desambigua dentro de su propio lote».
+
+**Esa premisa es falsa.** `email_export` desambigua la **carpeta contenedora**, no el nombre del
+`.eml`: un mensaje con adjuntos va a su propia subcarpeta (`…`, `…_2`, `…_3`, `…_4`) y el `.eml`
+de dentro conserva el nombre pelado. Medido en el lote `2026-09-09_email_01` de `W-04A6LI`, **un
+solo lote**:
+
+| basename | veces | parents |
+|---|---|---|
+| `2026-07-03_gracias_por_rellenar_este_formulario_pbc_comunicacion_intern.eml` | **4** | `…`, `…_2`, `…_3`, `…_4` |
+| `2026-08-14_pbc_referencia_w_04a6li_<dir>.eml` | 3 | `…`, `…_2`, `…_3` |
+| `2026-08-17_pbc_referencia_w_04a6li_<dir>.eml` | 3 | idem |
+| `2026-09-09_requerimiento_de_restitucion_honorarios_de_intermediacion_in.eml` | 3 | raíz, `…`, `…_2` |
+| `2026-06-30_arras_con_abogado_por_parte_compradora_w_04a6li.eml` | 2 | raíz, `…` |
+
+Cinco de nueve hilos del caso, uno de ellos el del **requerimiento**. Con los basenames
+repetidos no hay forma de resolver el fichero de origen desde el grupo, así que la sala de
+`W-04A6LI` se montó con los `.eml` **PLANOS** y el discriminante `sha256[:6]` — desviación
+declarada en su `_plan/`.
+
+**Dos frentes, y el segundo es la frontera.** (1) `layout_bundle_hilo` puede llavear por **ruta
+relativa** en vez de por basename: la ruta sí es única por construcción, y `agrupar_por_hilo` ya
+agrupa por la descripción del nombre, así que la llave y el agrupador son cosas distintas que hoy
+comparten valor por accidente. (2) Y la propiedad de la que esto es un ejemplo: **el export
+promete unicidad de un identificador y entrega unicidad de otro**. Cualquier consumidor que
+llavee por nombre hereda el mismo defecto — `senales_gate` lo demuestra al reportar estos cinco
+casos como «casi-duplicado: mismo nombre de origen con N sha256 distintos», que es un
+diagnóstico equivocado sobre una detección correcta.
+
+**Coste de no arreglarlo:** los hilos de correo no se agrupan y la sala pierde la lectura por
+conversación. No hay pérdida de información (el manifiesto llavea por `sha256`) ni riesgo de
+sobrescritura; `plano_existente=True` ya contempla convivir con hilos materializados planos, así
+que arreglarlo después no obliga a re-montar nada.
+
+**Disparador de promoción.** El próximo caso con correo cuya lectura por hilo importe —o antes,
+si se toca `layout_bundle_hilo` por cualquier otro motivo, porque el cambio de llave es de una
+línea y el test que lo fija es el que falta.
+
+## 190. La sala de máquina identifica por BYTES y la de lectura filtra por EXTENSIÓN, en silencio
+
+> Medido el 2026-09-09 en `W-04A6LI`: 4 documentos reales del Drive fuera del catálogo.
+
+Dos componentes del mismo expediente deciden «esto es un documento» por criterios distintos:
+
+- **Sala de máquina:** auto-detecta por **firma de bytes** desde el PR #55 (`[APER-21]` del
+  runbook). Un fichero del Drive E&V cuyo nombre no tiene punto se OCR-iza igual.
+- **Sala de lectura:** `core/inventory.py:95` hace
+  `if path.suffix.lower() not in _RELEVANT_EXTS: skipped.append(...)`. **Sin extensión no hay
+  fila**, y por tanto no hay entrada en `indice_documental.yaml` ni copia en la sala.
+
+**Y la omisión no se dice.** `core/sala_lectura.py:851` solo lee `inv["skipped"]` dentro de
+`if not catalogo_documental.load_catalog(case_id)` — o sea, únicamente cuando el catálogo queda
+**vacío**, para distinguir `sin_extension_relevante` de `input_vacio`. Con catálogo no vacío
+—el caso normal— el `skipped` no se cuenta, no se imprime y no queda en ningún evento.
+
+**Los cuatro de `W-04A6LI`**, todos con espejo MD y texto útil, todos invisibles para la sala:
+
+| Fichero en `00_Input/01_Drive EV/` | Lo que contiene | chars |
+|---|---|---|
+| `certificado Ayuntam pago tributos` | certificado municipal de estar al corriente de tributos, firmado el 30-07-2026 | 1.407 |
+| `FACTURA AGUA` | factura de agua de 27-05-2026 | 590 |
+| `FACTURA AGUA 2` | factura de agua de 24-02-2026 | 621 |
+| `facturas luz listado 2` | histórico de facturación eléctrica del inmueble | 430 |
+
+No es un caso raro: E&V sube ficheros desde el móvil sin extensión con normalidad. En este
+expediente eran **documentación de suministros y de tributos del inmueble** — la que acredita
+la actividad de la agencia sobre la finca.
+
+**Dos arreglos, y son independientes.** (1) Que `inventory.scan` decida por firma de bytes
+cuando no hay extensión, reusando lo que la sala de máquina ya tiene: entonces las dos salas
+ven lo mismo. (2) Y, con arreglo o sin él, **que `skipped` se diga siempre**: contar los
+omitidos y enumerarlos, en pantalla y en un evento de `_intake_log.jsonl`. La segunda es la
+que importa, porque el criterio de relevancia puede seguir siendo discutible mientras el
+silencio no lo es — la frontera es la misma de `MEJORAS #188`: **una ausencia que se disfraza
+de «no hay»**.
+
+**Disparador de promoción.** La primera vez que se monte una sala de lectura de un caso cuya
+prueba llegue por foto de móvil sin extensión; o antes, si se toca `inventory.scan`, porque
+enumerar `skipped` son tres líneas y el test que lo fija es el que falta.
+## 199. `sync_sudespacho pull|intake-judicial` con un W-code CREA carpeta sombra en el Drive
 
 **Medido el 2026-09-08 abriendo W-02USSI, sobre el Drive real del despacho.** El caso ya
 existía, correctamente materializado en `CASOS\Barcelona\BaRS6 - … (W-02USSI) - Negativa
@@ -8411,7 +8549,7 @@ extrajudicial previa. Es el camino normal, no el raro.
 
 ---
 
-## 189. El informe de viabilidad de E&V ya está en `00_Input` y `viabilidad-prerelleno` no lo sabe
+## 200. El informe de viabilidad de E&V ya está en `00_Input` y `viabilidad-prerelleno` no lo sabe
 
 **Medido el 2026-09-08 abriendo W-02USSI.** El fichero que E&V nombra
 `<REF> - RECLAMACIÓN HONORARIOS PROFESIONALES.xlsx`, que vive en la subcarpeta
@@ -8472,7 +8610,7 @@ ya y no depende del 2.
 
 ---
 
-## 190. Un `.rtf` con surrogates deja el espejo a 0 bytes, y `empty` no distingue «no tiene texto» de «no pude leerlo»
+## 201. Un `.rtf` con surrogates deja el espejo a 0 bytes, y `empty` no distingue «no tiene texto» de «no pude leerlo»
 
 **Medido el 2026-09-08 en la sala de máquina de W-02USSI.** El mismo documento —la petición
 inicial de monitorio, un `.rtf` de 1,7 MB— entró al caso por tres vías (el gestor documental
@@ -8530,7 +8668,7 @@ deja de ser cosmético.
 
 ---
 
-## 191. `verificacion-anclada-fuente/SKILL.md` lleva 359 bytes NUL commiteados, y ninguna verja lo mira
+## 202. `verificacion-anclada-fuente/SKILL.md` lleva 359 bytes NUL commiteados, y ninguna verja lo mira
 
 **Medido el 2026-09-08.** El fichero tiene **31.888 bytes**: 480 líneas de contenido legítimo
 y, después de la última —«…Verifíquense los outputs contra la jurisdicción aplicable antes de
@@ -8568,7 +8706,7 @@ próximo barrido de las skills — momento en que este fichero volverá a no apa
 
 ---
 
-## 192. `id_carpeta 304` sin mapear: los documentos del gestor documental judicial caen en `99_Sin categoria`
+## 203. `id_carpeta 304` sin mapear: los documentos del gestor documental judicial caen en `99_Sin categoria`
 
 **Medido el 2026-09-08 abriendo W-02USSI.** `core/config.py::CARPETA_ID_TO_PATH` tiene
 **cuatro** entradas:
@@ -8618,7 +8756,7 @@ casi cualquiera que venga de una reclamación extrajudicial previa.
 
 ---
 
-## 193. `cendoj-descarga`: un ECLI «normalizado» hace que la cita parezca inexistente
+## 204. `cendoj-descarga`: un ECLI «normalizado» hace que la cita parezca inexistente
 
 **Medido el 2026-09-09 verificando las siete citas de la demanda de W-02USSI.** CENDOJ
 publica algunos ECLI de Audiencia Provincial **con un espacio dentro del código de órgano**:
@@ -8648,7 +8786,7 @@ caso: **antes de declarar que una cita no existe, agotar la segunda llave.** Fam
 
 **Disparador de promoción.** La próxima verificación de citas que incluya una AP anterior a
 ~2005, donde esta forma del ECLI es frecuente.
-## 194. Ruta `audio` en la sala de máquina: 67 de los 73 `sin_soporte` son notas de voz
+## 205. Ruta `audio` en la sala de máquina: 67 de los 73 `sin_soporte` son notas de voz
 
 **Medido el 2026-09-09 sobre W-02USSI.** El censo tiene **471 documentos** y **73 en
 `sin_soporte` (15,5%)**. De esos 73, **67 son audio o vídeo** — 65 `.opus` y 2 `.mp4`,
@@ -8711,7 +8849,7 @@ una página con 2.000 caracteres también, pero los umbrales no son los mismos y
 silencio devolvería `empty` cuando lo correcto es «no había habla». Hay que decidir el
 criterio explícitamente, no heredarlo.
 
-**Y una regla que hereda de MEJORAS #196, descubierta en la misma sesión:** un audio que **no
+**Y una regla que hereda de MEJORAS #207, descubierta en la misma sesión:** un audio que **no
 se pudo leer** no es un audio sin habla. La ruta debe comprobar que el origen sigue montado
 antes de dar por fallido un fichero, y no debe producir un espejo vacío en un fallo de lectura
 — si no, una caída del Drive a mitad de tanda deja 38 documentos con veredicto de un problema
@@ -8723,7 +8861,7 @@ scratchpad, fuera del repo, que es donde debe estar el dato real); lo que esta e
 que la **próxima** apertura no repita el trabajo a mano.
 
 ---
-## 195. `emparejar_exports_whatsapp` solo conoce el nombrado de UN canal: 0 de 5 exports apartados
+## 206. `emparejar_exports_whatsapp` solo conoce el nombrado de UN canal: 0 de 5 exports apartados
 
 **Medido el 2026-09-09 sobre W-02USSI.** El Paso 1-bis.a0 de `organizar-sala-lectura` llamó a
 `emparejar_exports_whatsapp` sobre las 441 rutas del intake y devolvió
@@ -8779,7 +8917,7 @@ esos pares es el chat del que son crudo, no su hash.
 o por lote de correo, que son la mayoría — W-02USSI ya lo hizo por las dos.
 
 ---
-## 196. El presupuesto de reintentos se gasta en una causa que no es del documento
+## 207. El presupuesto de reintentos se gasta en una causa que no es del documento
 
 **Medido el 2026-09-09, en vivo, sobre W-02USSI.** Una tanda larga de transcripción que leía
 `.opus` desde `G:` iba por el fichero 18 de 56 cuando **`G:` (Drive Stream) se colgó**. Los 38
@@ -8827,7 +8965,7 @@ consulte **antes de cobrar un intento**; si el origen no responde, la corrida **
 declara**, en vez de recorrer el resto marcando fallos. (b) Que el contador solo suba cuando el
 origen esté vivo. (c) Que la nota del censo diga **cuál de las dos causas** fue, porque hoy
 `fallo al procesar: [Errno 2]…` no permite distinguirlas al leer el `_cobertura.json` después.
-(d) Heredarlo en la ruta `audio` de **MEJORAS #194**: un audio que no se pudo leer no es un
+(d) Heredarlo en la ruta `audio` de **MEJORAS #205**: un audio que no se pudo leer no es un
 audio sin habla. Ya está implementado y probado fuera del repo, en el script de reanudación de
 esta sesión, con las tres reglas: comprobar el volumen antes de rendirse, no producir salida
 en un fallo de lectura, e idempotencia por existencia de la salida.

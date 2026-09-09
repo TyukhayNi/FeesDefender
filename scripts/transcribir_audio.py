@@ -33,7 +33,7 @@ Decisiones que no son detalle, todas medidas el 2026-09-09:
   instrumento se leyó para que nadie confunda una cosa con la otra.
 
 El cableado a la sala de máquina (que un `.opus` deje de caer en `sin_soporte`) es
-`MEJORAS #182`, y su patrón es `core/ofimatica_a_pdf.py`: dependencia externa opcional.
+`MEJORAS #205`, y su patrón es `core/ofimatica_a_pdf.py`: dependencia externa opcional.
 """
 from __future__ import annotations
 
