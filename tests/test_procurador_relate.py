@@ -768,3 +768,47 @@ def test_h06_un_relate_que_NO_se_verifica_no_declara_la_relacion_escrita():
     assert res.relacion.ok is False, "sin relectura que lo confirme, NO se declara escrita"
     assert res.documentos.intentado is False, "no se llegó a los documentos"
     assert t.cuerpos("relate/attachments") == []
+
+
+def test_h06_sin_adjuntos_PEDIDOS_los_documentos_no_se_declaran_intentados():
+    """El camino que H-01 volvía silencioso, ahora explícito en el resultado.
+
+    `archivar` sin pedidos devuelve `ok=True` —la relación se hizo y no se pidió
+    subir nada—, pero **no puede afirmar nada sobre documentos**. Que «cero pedidos»
+    sea legítimo o sea el inventario ausente lo decide el llamante: el orquestador
+    (spec §9.1). Aquí lo que se exige es que el resultado no MIENTA diciendo que los
+    documentos se resolvieron.
+    """
+    t = FakeTransport(**{
+        "element_registries/mail": _mail_registry(cuenta="20"),
+        "findRelations": secuencia(SIN_RELACION, CON_636),
+        "relate/selected": _relate_ok(adjuntos=(("183615", "auto.pdf"),)),
+    })
+
+    res = archivar(MSG, "extrajudiciales", 636, adjuntos=[], folder_id="1", transport=t)
+
+    assert res.ok is True
+    assert res.relacion.ok is True and res.relacion.verificado is True
+    assert res.documentos.intentado is False
+    assert "no se pidió" in (res.documentos.error or "")
+    assert t.cuerpos("relate/attachments") == []
+
+
+def test_h06_si_el_manifiesto_no_se_recupera_la_relacion_sigue_siendo_un_hecho():
+    """Reanudación fallida: el correo ya estaba relacionado y el re-post que recupera
+    los `att_id` falla. La relación **existe** —eso no se pierde— y los documentos no
+    se intentaron. Sin la distinción, quien reconcilie no sabe si re-relacionar."""
+    t = FakeTransport(**{
+        "element_registries/mail": _mail_registry(cuenta="20"),
+        "findRelations": CON_636,
+        "relate/selected": lambda _c: _Resp({"detail": "boom"}, 500),
+    })
+
+    res = archivar(MSG, "extrajudiciales", 636,
+                   adjuntos=[("auto.pdf", "x.pdf")], folder_id="1", transport=t)
+
+    assert res.ok is False and res.ya_estaba is True
+    assert res.relacion.ok is True and res.relacion.verificado is True, \
+        "la relación previa es un hecho verificado por la relectura"
+    assert res.documentos.intentado is False
+    assert "manifiesto" in (res.documentos.error or "").lower()

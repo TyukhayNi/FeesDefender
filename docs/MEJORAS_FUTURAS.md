@@ -8095,3 +8095,35 @@ preguntas de producción es peor que no tener catálogo.
 **Disparador de promoción.** La primera vez que alguien corra el intake desde un worktree y lea
 «remitente_no_procurador» como un hecho, o cuando se cablee `archivar_confirmado` (rebanada 2),
 porque entonces el silencio afecta a una escritura.
+
+---
+
+## 184. Los dos sondeos del módulo de correo están al 0 % de cobertura
+
+> Medido por `session_close` el 2026-09-09, al cerrar la sesión que los promovió.
+
+`scripts/sondeo_copias_mail.py` y `scripts/sondeo_join_gmail_crm.py` tienen **0 % de líneas
+cubiertas**. Su helper compartido `scripts/_sondeo_crm.py` está al **100 %** con 10 mutantes
+muertos, pero los cuerpos de los sondeos —`censo()`, `detalle()`, `main()`— no los ejecuta ningún
+test.
+
+**Por qué importa más de lo que parece:** son las herramientas que **reproducen las mediciones que
+acaban citadas en los specs**. Un sondeo roto no da un error: da **un número**, y ese número entra
+en un documento. Toda esta sesión giró alrededor de instrumentos que no podían dar el otro valor.
+
+**Es abordable, y por eso es deuda y no limitación:** `censo(t, …)` y `detalle(t, …)` **reciben el
+transporte**, así que se prueban con el `FakeTransport` que ya existe en
+`tests/test_procurador_relate.py`. Lo que merece test:
+
+- `censo`: que la distribución salga de las páginas que devuelve el fake; que **pare** cuando una
+  página da HTTP != 200; que el mensaje del control diga «no acredita nada» con cero multicopia y
+  «SÍ, mide» con al menos uno.
+- `detalle`: que un censo ilegible (`filas_mail_por_uid` → `None`) se reporte como
+  **indeterminado** y no como «no hay filas».
+- `main`: que sin `.env` aborte con código 2 en vez de dar un error de red confuso.
+
+**Lo que NO hace falta:** cubrir la paginación real ni la red. El valor está en las ramas de
+decisión, que son puras.
+
+**Disparador de promoción.** La próxima vez que se cite una cifra de estos sondeos en un spec o en
+la bitácora, o antes de que alguien que no sea su autor los use para decidir algo.

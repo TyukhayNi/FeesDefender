@@ -2280,7 +2280,20 @@ serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
   **`R1/H-05` REVERTIDO de «refutado» a «confirmado»** (spec §12): el «medido 0/12» de la rev. 4 se
   hizo sobre 12 correos todos de copia única, así que la muestra no podía mostrar el fenómeno.
   Backlog abierto: `MEJORAS #176-#179`.
-  **Estado al 2026-09-07 (noche): la pieza (a) tiene DISEÑO ESCRITO y espera dos cosas de Nikolai.**
+  **Estado al 2026-09-09: R1 CONSUMIDA y dos rebanadas de tres CONSTRUIDAS.**
+  Spec **rev. 2** (`docs/superpowers/specs/2026-09-07-f3-cableado-bandeja-y-verificacion-design.md`),
+  con la **R1 adversarial de Codex adjudicada en su §15: NO-SHIP, 14 hallazgos, 14 confirmados,
+  0 refutados** (acta hermana `…-r1-adversarial-review.md`, informe literal y digest verificado).
+  Tres de los catorce cambiaron el ALCANCE, no la redacción: H-01 hizo crecer la pieza hacia la
+  ingesta, H-02 la encogió —**§5 retirado**: la copia sobre la que se escribe **la elige el
+  servidor**, medido— y H-06 cambió el contrato de `procurador_relate`.
+  - ✅ **Rebanada 1 — el inventario de adjuntos** (H-01, el crítico): de Gmail a la cola, con los
+    tres estados `None`/`()`/con-nombres. 10 tests, 9 mutantes muertos.
+  - ✅ **Rebanada 2 — los tres hechos del archivado** (H-06): `ArchivoResult` con `relacion` y
+    `documentos` por separado, `verificado` plano eliminado. 8 tests, 6 mutantes muertos.
+  - ⬜ **Rebanada 3 — el orquestador, y la ÚNICA que escribe en el CRM.**
+  Backlog abierto: `MEJORAS #176`–`#184`.
+  **Estado anterior (2026-09-07, noche): el diseño escrito esperaba dos cosas de Nikolai.**
   Spec: `docs/superpowers/specs/2026-09-07-f3-cableado-bandeja-y-verificacion-design.md` (PR #306,
   commits `f4eb7ac` + `904cff4`). Decisiones D1-D7 tomadas. **Pendiente: (1) que Nikolai revise el
   spec —puerta del proceso, no se escribe el plan antes—, y (2) si se mide el §11.4 (que las N
