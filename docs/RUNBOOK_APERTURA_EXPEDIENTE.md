@@ -275,11 +275,122 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   Sin esto, `scripts.crm_ficha`/el archivo posterior no saben a qué expediente(s) del
   CRM corresponde el caso.
 - **`[APER-42]` / W-02ZIIF — `--crm api` (arriba) da de alta SOLO la ficha
-  EXTRAJUDICIAL.** No hay camino documentado en este runbook para un caso que nace
-  judicial desde el principio (p. ej. llega ya con una demanda admitida) — es una
-  **decisión de diseño pendiente**, no un bug a arreglar ya (ver §9, aviso de
-  `crm_ficha.py`). Si el caso ya es judicial desde el día 1, usa `--crm skip` aquí y da de
-  alta el expediente judicial aparte, a mano, siguiendo §9.
+  EXTRAJUDICIAL.** Sigue sin haber alta judicial automática: es una **decisión de diseño
+  pendiente**, no un bug a arreglar ya (ver §9, aviso de `crm_ficha.py`). Lo que sí hay
+  desde el 2026-09-08 es el **recorrido escrito** para el caso en que el expediente
+  judicial **ya existe en el CRM** y lo que falta es montarlo en Drive: **§3-bis**, medido
+  de punta a punta en W-02VEKE. Si el caso ya es judicial desde el día 1 y **no** está en
+  el CRM, el alta del expediente judicial sigue siendo a mano por §9.
+
+---
+
+## 3-bis. Caso que nace JUDICIAL: el CRM va delante y hay que montarlo en Drive `[APER-59]`
+
+> **Recorrido medido de punta a punta el 2026-09-08 en W-02VEKE** (judicial CRM #540, 76
+> documentos, 202,5 MB; extrajudicial #464; audiencia previa ya celebrada y testigos citados).
+> Esto es lo contrario del §3: el expediente **ya vive en el CRM** —con demanda presentada,
+> contestación y minutas de prueba— y lo que no existe es la carpeta del despacho.
+
+**Lo primero, y ahorra la sesión: `--modo v1` NO sirve aquí.** Su etapa `crm` **falla** si el
+expediente registrado es judicial (`[APER-58]`: «V1 no tiene adaptador judicial»), y un fallo
+corta la secuencia y da `bloqueado`. Se va por el modo **`libre`**, en cuatro pasos.
+
+**Paso 0 — anclar antes de escribir.** El W-code sale de la carpeta de Drive de E&V
+(`get_folder_path` + `get_file_metadata`, que ya trae el `driveId` = `--team-id`). Con solo el
+W-code se leen los expedientes del CRM y el gestor documental, **sin abrir nada**:
+
+```powershell
+python -c "from core import sudespacho_relations as sr; import json; print(json.dumps(sr.list_expedientes_judiciales_candidatos('W-XXXXXX'), ensure_ascii=False, indent=2)); print(json.dumps(sr._rest_search_expedientes('extrajudiciales','W-XXXXXX'), ensure_ascii=False, indent=2))"
+```
+
+Un caso puede tener **los dos** expedientes (en W-02VEKE, #464 extrajudicial y #540 judicial,
+con la **misma** referencia). Y conviene listar el gestor **antes** de bajarlo, para saber a qué
+te enfrentas: `client.list_gdocu_docs_rest(exp_id, element="expedientes_judiciales")`.
+**Ojo: el `tamano` de ese listado no sirve para nada** — 25 de los 76 documentos de W-02VEKE
+venían a `0` y ninguno estaba vacío (la contestación declaraba 0 y pesa 394 KB). Sumarlo da un
+suelo, no el total, así que no lo uses para estimar la descarga.
+
+**Paso 1 — alta local + Drive de E&V, con `--crm skip`.** Nada de `--crm api`: crearía una ficha
+extrajudicial fantasma (`[APER-43]`).
+
+```powershell
+python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad <Ciudad> --tipo-caso <TIPO_CANONICO> `
+  --direccion "<via numero municipio>" --folder-id <id> --fuente drive_ev --crm skip --yes
+```
+
+**El sufijo sale del `tipo_caso` canónico, aunque la referencia del CRM diga otra cosa.** En
+W-02VEKE el tipo es `NEGATIVA_ARRAS` (sufijo `Negativa arras`) y el CRM dice `Negativa con
+oferta aceptada`. No intentes cuadrarlos: la plantilla del `case_id`
+(`f"{codigo} - {direccion} ({w_code}) - {sufijo}"`) **no puede** reproducir la referencia del
+CRM de este tenant, que lleva un ` - ` extra antes del paréntesis (`MEJORAS #185`, con la
+consecuencia: el dedup EXACTO por referencia queda ciego; el dedup por W-code sí funciona).
+
+**Paso 2 — vincular los expedientes A MANO, uno por elemento** (`[APER-36]`: `--crm skip` no
+vincula lo que ya existe). Bajo el mutex del caso, que es quien escribe (`MEJORAS #126`):
+
+```python
+from core import case_manager
+from core.casos.case_locator import resolve_ref
+from scripts._mutex_cli import sostener
+
+CASE = resolve_ref("W-XXXXXX")          # resuelve SIEMPRE; el W-code puro es no-op silencioso
+with sostener("W-XXXXXX", avisar=print, que="el registro de los expedientes CRM"):
+    case_manager.register_expediente(CASE, "<id_extra>", "extrajudiciales")
+    case_manager.register_expediente(CASE, "<id_jud>", "expedientes_judiciales")
+```
+
+**Y repón `referencia_crm`, que el alta ha inventado.** `abrir_caso` escribe
+`referencia_crm = case_id` **siempre**, sin consultar al CRM; con el CRM delante ese valor es
+falso, y hará saltar el ⚠️ «Referencia desalineada» en cada pull que no lleve `--referencia`.
+`--referencia` **no lo repara** (`ensure_case` solo fija el campo si el índice es nuevo): hay que
+reponerlo y **también la línea del cuerpo**, que `_actualizar_cuerpo` no regenera. Detalle y
+remedio de raíz en `MEJORAS #184`. Verifícalo contra el CRM antes de seguir:
+
+```python
+from core import sudespacho_relations as sr
+sr.verify_expediente_referencia("<id_jud>", "expedientes_judiciales",
+                                expected_referencia="<lo que quede en _caso.md>")   # match=True
+```
+
+**Paso 3 — intake del judicial con `--full`, y del extrajudicial con `pull`.** Son dos comandos
+distintos y hacen falta los dos: `intake-judicial` es el del judicial y **no** toca el otro
+expediente.
+
+```powershell
+python -m scripts.sync_sudespacho intake-judicial --case "<case_id>" --expediente <id_jud> `
+  --element expedientes_judiciales --referencia "<referencia EXACTA del CRM>" --full
+python -m scripts.sync_sudespacho pull --case "<case_id>" --expediente <id_extra> `
+  --element extrajudiciales --referencia "<referencia EXACTA del CRM>"
+```
+
+**`--full` no es opcional en un caso con vista.** Sin él, el intake acotado baja **la demanda y
+la contestación y nada más**: en W-02VEKE eran 2 de 76, y las dos minutas de prueba, las
+citaciones de testigos, el señalamiento y la grabación de la audiencia previa se quedaban en el
+CRM. Los dos comandos sostienen el mutex, así que van **en serie**, y ninguno de los dos procesa
+nada — el OCR es el paso siguiente.
+
+**Lo que vas a encontrar al terminar, y conviene saberlo antes: casi todo en `99_Otros`.** Medido:
+`01_Demanda` = 31, `99_Otros` = 45, `02_Contestacion` **sin crear** aunque la contestación existe
+y el clasificador la reconoció (`contestacion: ok`) en esa misma corrida. El bucket lo decide la
+**carpeta del CRM** —y el procurador archiva en un cajón genérico «CIVIL», no por fase— mientras
+el rol lo decide el **nombre**; las dos señales no se cruzan. No lo arregles ampliando
+`CARPETA_ID_TO_PATH`: los ids nuevos ya los resuelve la heurística de label, y a `99_Otros`. El
+diagnóstico completo y la vía de solución (la vista procesal de `05_Procedimiento`, `PLAN.md`
+fila #9) en `MEJORAS #183`.
+
+**Consecuencia práctica para el letrado, hoy:** para preparar interrogatorio o conclusiones,
+**no navegues por carpetas** — la fase procesal no está en la estructura. Ordena por
+`modified_at` (el lote de presentación es la señal útil, como ya dijo el 40º cierre) o usa
+`bucket_override` en `_caso.md` (D11) para mover a mano las piezas que vas a usar en sala.
+Y cuidado con un homónimo del mismo cajón: `MINUTA PRUEBA …` y `MINUTA AUDIENCIA PREVIA` son
+escritos procesales, y `MINUTA PROC <n>` es la **factura del procurador**. Un barrido por
+«minuta» se trae la factura.
+
+**Paso 4 — sala de máquina y sala de lectura, igual que siempre** (§5 y §7). Nada específico de
+lo judicial, salvo dos cosas que este caso trajo: la grabación de la vista es un `.mkv` de 150 MB
+que no es OCRable ni MD-able, y los `.rtf` de las minutas y los `.doc` de la demanda van por la
+ruta `ofimatica` de LibreOffice (`[APER-21]`) — si no está instalado, salen `sin_soporte` y los
+escritos propios se quedan ilegibles para cualquier LLM.
 
 ---
 

@@ -24,7 +24,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 6 | [abrir-caso F3-judicial](#abrir-caso--f1--f2a--f3-ac-mergeadas-f2b-aparcada-f3-judicial-pendiente) | disparador confirmado 2026-07-22 | plan concreto listo (4 piezas, ver bloque) | medio |
 | 7 | [Google MCP F4 (Calendar)](#siguiente-google-mcp-f1-lectura--mergeada--f2-escriturapermisosnavegación--mergeada--f3f4-pendientes) | diferida | disparador | medio |
 | 8 | [Intake email — filtro de exclusión de ruido](#siguiente-intake-email-filtro-exclusión-de-ruido-administrativo-y-cruzado) | parcial (2/4) | disparador: W-02VUDR (fuga cruzada de 7 casos ajenos + cartera de litigios) | medio |
-| 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); spec v3.1 con 2 revisiones consumidas | pieza 3 **bloqueada** por la fila #1 (OCR ciego); plan de la pieza 4 por reescribir | medio |
+| 9 | [Vista procesal en `05_Procedimiento`](#siguiente-vista-procesal-vista-procesal-del-expediente-en-05_procedimiento) | piezas 1-2 ✅ (#137, #140); **4a ✅ (#315)** — 188 tests, dos semillas verdes | Las dos rondas volvieron **NO-SHIP: 40 hallazgos, 40 confirmados** (23 sobre el plan `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4.md`, acta en `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4-r1-adversarial-review.md`; 17 sobre el diff de 4a), los 40 cerrados. Queda **4b — la que escribe** (journal, ledger, transacción, índice: **sin planificar**, con sus 2 rondas), la **pieza de destinos de fase** (planificada, sin construir) y los **tests del CLI** (`scripts/procedimiento.py` al 0%). La pieza 3 sigue con su gate rancio sin reformular | medio |
 | 11 | [Cableado del pipeline de correo (`MEJORAS #68`)](#siguiente-cableado-correo-cableado-del-pipeline-de-correo-encadenar-la-atomización-resto-de-mejoras-68) | casillas 1-2 ✅; casilla 3 **decidible, sin gates** (#98 cerrado, PR #155) | solo queda la decisión de Nikolai: `--extraer-adjuntos` a default `True` mueve la superficie de dedup de todo intake futuro | bajo |
 
 | 12 | [La firma no es intercalada: falso positivo que bloquea la Capa B](#siguiente-sandwich-firma-la-firma-no-es-una-respuesta-intercalada) | ✅ **CERRADO** — PR #164 (`aaf7dc1`) | queda su cola: `MEJORAS #109` (el síntoma original sigue sin explicar) y borrar el corpus de prueba | bajo |
@@ -1024,7 +1024,50 @@ dependencias aguas arriba que no son suyas:
       de la sesión concurrente** (`MEJORAS #90`, fila #1 de esta cola): `estado: ok` puede ser
       mentira justo para los documentos con sello de firma, que son la mayoría de lo procesal. Va
       **después** de esa fila, no en paralelo.
-- [ ] **4. La vista procesal** encima, ya sin dependencias. Su plan se reescribe desde cero.
+      **Revisado el 2026-09-08 — el gate de arriba ya no describe el estado, y no por eso queda
+      levantado.** Lo que ha cambiado en la fila #1: la **(e) se cerró el 2026-08-01** (los tres
+      casos medidos dan +0/−6/+288 chars: ruido), `MEJORAS #111` quedó **refutada al medirla**
+      (7 de 7 conservan el 100 % de las palabras) y la **pieza A está construida** (PR #193). Y el
+      2026-09-08 se midió sobre 10 adjuntos reales de procuradores que **el OCR local lee todo lo
+      legible**: 8 de 10 ni lo necesitan, el escaneado íntegro se recupera entero, y las 2 páginas
+      residuales de un traslado de 91 son **fotografía**, no texto perdido. Con eso, el argumento
+      original —«autenticar por hash no garantiza que el texto esté completo»— se sostiene mucho
+      peor. **Pero la medición no generaliza** (sus propias palabras: «las cuentas anuales de
+      W-02VND1 son otra población»), así que lo correcto es **reformular** qué dependencia queda
+      —si es la calidad declarada de la cobertura, dígase eso y no «la fila #1»— y que Nikolai
+      decida. **El atajo a evitar, que ya está señalado en memoria:** leer «el OCR está arreglado»
+      y concluir «desbloqueada».
+- [ ] **4a-bis. Los destinos de fase de `registrar_outputs`** — plan escrito el 2026-09-09,
+      sin construir: `docs/superpowers/plans/2026-09-09-destinos-de-fase-registrar-outputs.md`.
+      Estaba dentro de 4a y su R1 la sacó (H-01); decisión de alcance de Nikolai. Amplía
+      `SUBDESTINOS_EXTRA` con las cinco carpetas + sync a las siete skills + no-drift. **1
+      ronda** sobre el diff: es aditivo y no destruye. Y su Tarea 2 es la que siempre se
+      olvida — re-empaquetar e importar los siete `.skill` en el servidor.
+- [x] **4a. La vista procesal que SOLO LEE** — ✅ **PR [#315](https://github.com/TyukhayNi/FeesDefender/pull/315)**,
+      2026-09-09. Autorización por workspace, raíz autorizada con veto de reparse points por el
+      bit Name Surrogate, los tres conjuntos del CRM, gramática del mapa, selector de
+      representante, informe y borrador de mapa. `core/procedimiento/` + `scripts/procedimiento.py`,
+      **188 tests**, suite verde con las semillas 777 y 31337. **Su R1 sobre el diff volvió
+      NO-SHIP con 17 hallazgos, 17 confirmados; los 17 cerrados.** Plan y adjudicación (§8):
+      `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4a.md`; acta literal del revisor:
+      `docs/superpowers/plans/2026-09-09-vista-procesal-pieza4a-r1-adversarial-review.md`. La **regresión del corpus real ya no está SIN VERIFICAR**: con el Drive
+      montado se corrió contra W-02VEKE, salió roja y los tres defectos eran del test — el token
+      de redacción con caracteres prohibidos en Windows, un control positivo que acreditaba una
+      población distinta de la que el test medía, y catorce llamadas al selector con un par
+      `(ruta, sha)` que no existe en disco porque un bundle partido no deja fila del padre.
+      **Deuda declarada, no oculta:** cobertura del diff al **85%** con `scripts/procedimiento.py`
+      al **0%**, y los fixtures del corpus **fuera del repo** (la redacción por denylist deja
+      pasar truncamientos: 0 supervivientes por término exacto, 1 por prefijo), así que la
+      regresión solo corre con el Drive montado.
+- [ ] **Tests del CLI de la vista** — `scripts/procedimiento.py` no lo ejecuta ningún test, y el
+      CLI **ya cazó dos bugs de la fachada** que los unitarios no vieron (`16c646a`). Es el
+      aviso de cobertura del 95º cierre, y la respuesta por defecto del despacho a un aviso de
+      cobertura es escribir el test, no bajar el umbral.
+- [ ] **4b. La vista procesal que ESCRIBE** — journal de intención, ledger de propiedad, la
+      transacción y el índice. **Sin planificar.** Le corresponden **2 rondas** (decide quién
+      escribe sobre qué copia y puede destruir datos de cliente). Se planifica cuando 4a esté
+      mergeada, sobre un suelo ya revisado. `adoptar` no vuelve: la recuperación se acredita con
+      un journal escrito antes de publicar, no se infiere de la igualdad de bytes.
 
 **Bidireccional (contexto del 2026-07-27).** Lo que genera el despacho sube al CRM (para el
 procurador y para centralizar); lo que llega del juzgado y del contrario baja del CRM. De ahí
@@ -1034,8 +1077,22 @@ spec) → `MEJORAS_FUTURAS.md`. Y **falta dueño** para la preparación de la do
 (nadie produce hoy el `D-04_chat_whatsapp.pdf`).
 
 **Dependencias con otras filas:** la fila **#1 (OCR ciego)** bloquea la pieza 3 y acota lo que esta
-vista puede prometer sobre buscabilidad. La fila **#10 (`.doc`)** no la bloquea —copia el crudo y
-avisa— pero la audiencia previa de W-02MA0R la necesita.
+vista puede prometer sobre buscabilidad — **redacción de 2026-07-27, revisada el 2026-09-08: ver la
+nota bajo la pieza 3**. La fila **#10 (`.doc`)** no la bloquea —copia el crudo y avisa— pero la
+audiencia previa de W-02MA0R la necesita, y W-02VEKE también (su demanda vive en el CRM como `.doc`
+y las minutas como `.rtf`).
+
+**Disparador real, 2026-09-08 — W-02VEKE.** Hasta ahora esta fila tenía un caso piloto
+(`W-02MA0R`, en audiencia previa) y ningún caso con la vista encima. Ya lo hay: W-02VEKE es un
+ordinario con audiencia previa **celebrada**, testigos citados y juicio pendiente, y su intake
+judicial dejó **45 de 76 documentos en `99_Otros`** —las dos minutas de prueba, la de audiencia
+previa, las dos citaciones de testigos, el señalamiento, la grabación de la vista, el decreto de
+admisión, la sentencia conexa y la apelación— con `02_Contestacion` **sin crear** aunque la
+contestación existe y el clasificador la reconoció en esa misma corrida. Medición y frontera en
+`MEJORAS #183`; el recorrido del intake, ahora escrito, en `RUNBOOK_APERTURA_EXPEDIENTE.md §3-bis`.
+Dos cosas que este caso aporta al diseño y el piloto no tenía: **la fase de prueba y juicio
+existe de verdad en el corpus** (el modelo actual se acaba en la contestación), y **el rol que el
+clasificador ya resuelve no se usa para el destino** — dos señales que no se cruzan.
 
 ---
 

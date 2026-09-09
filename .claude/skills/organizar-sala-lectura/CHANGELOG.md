@@ -1,5 +1,28 @@
 # Changelog — organizar-sala-lectura
 
+## 1.16 — 2026-09-09
+- **La marca temporal del `_chat.txt` deja de estar documentada más estrecha que la
+  realidad (Paso 2, anexo de WhatsApp).** El Paso 2 decía que la línea del adjunto lleva
+  un `[DD/MM/AAAA, HH:MM]`. Un export real trae `[26/6/25, 12:07:45]`: día y mes de **uno**
+  o dos dígitos, año de **dos** o cuatro, segundos, a veces `am`/`pm` y un `U+200E`
+  delante — nada de lo cual mencionaba el documento. El modo de fallo es silencioso: un
+  regex anclado a la forma documentada no casa **ni un mensaje**, y «cero adjuntos
+  fechados» se lee igual que «el chat no los referencia». El aviso vino de la sesión
+  hermana sobre `W-02USSI`, no de un rojo.
+- **El paso apunta ahora a `core/whatsapp_export.py:27-38` como implementación de
+  referencia**, que ya trae los dos dialectos con todas esas tolerancias. El patrón
+  literal se conserva porque la skill corre **también en Cowork**, donde no puede importar
+  el módulo. Medición que lo respalda: **118 de 118 en `W-02VEKE` y 67 de 67 en
+  `W-02USSI`** (audio y vídeo; los segundos, medidos por la sesión hermana).
+- **Corrección de esta misma entrada, el mismo día.** Su primera redacción —y el mensaje
+  del commit `b02e85a`— afirmaban que **no existía ningún matcher de chat en el repo** y
+  que este SKILL.md era la única fuente escrita del formato. **Es falso**: el módulo
+  llevaba ahí desde la Fase A del intake de WhatsApp. Era una afirmación de **ausencia**
+  sacada de un barrido que no la agotó, y sostenía la conclusión entera («no baja la
+  gravedad, la sube»). Lo correcto es lo contrario: había una referencia buena a mano, y
+  el defecto era del contrato documentado. Lo levantó la sesión hermana citando el
+  fichero y las líneas.
+
 ## 1.15 — 2026-09-05
 - **El centinela «sin fecha» deja de ser una trampa (MEJORAS #131, `PLAN.md` fila #18).**
   `fecha_de_nombre` devuelve `0000-00-00` cuando no hay fecha, y esa cadena es *truthy*:

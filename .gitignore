@@ -163,3 +163,17 @@ docs/crm_atlas/atlas.json
 # Claude Code — local
 .claude/settings.local.json
 .claude/mcp_servers.json
+
+# Arneses de mutacion y sondas de un solo uso. Viven aqui para poder ejecutarse desde la
+# raiz del repo, y NO se versionan: un arnes commiteado se convierte en un test que nadie
+# mantiene y que da falsa cobertura.
+/scratch/
+
+# Fixtures del corpus real de la vista procesal. Se generan a mano con
+# `scratch/fixtures_w02veke.py` y NO se versionan: son nombres de fichero de un
+# expediente vivo, redactados por DENYLIST, y una denylist no caza truncamientos —
+# medido el 2026-09-09: el control de terminos exactos daba 0 supervivientes de 82 y un
+# control por prefijo encontro 1, un apellido de la blocklist abreviado en el nombre de un
+# fichero. Sin ellos, `tests/test_procedimiento_regresion.py` se salta con su
+# motivo y la cobertura queda declarada ausente, que es lo honesto.
+/tests/fixtures/procedimiento/

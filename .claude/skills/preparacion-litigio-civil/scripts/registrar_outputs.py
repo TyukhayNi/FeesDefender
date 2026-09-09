@@ -53,6 +53,12 @@ CASO_SUBDIRS: tuple[str, ...] = (
 )
 
 # Subcarpeta dedicada a jurisprudencia descargada (decisión #2 del plan v3).
+#
+# Las cinco carpetas de fase de la vista procesal (spec 2026-07-27 §7) **no están aquí
+# todavía, y es una decisión de alcance de Nikolai (2026-09-09)**: ampliar esta tupla
+# amplía dónde puede escribir este helper, y meterlo en la pieza 4a contradecía su
+# restricción de no escribir nada. Va en su propia pieza, con su propia revisión:
+# `docs/superpowers/plans/2026-09-09-destinos-de-fase-registrar-outputs.md`.
 SUBDESTINOS_EXTRA: tuple[str, ...] = (
     "05_Procedimiento/Jurisprudencia",
 )

@@ -8469,6 +8469,376 @@ de «no hay»**.
 **Disparador de promoción.** La primera vez que se monte una sala de lectura de un caso cuya
 prueba llegue por foto de móvil sin extensión; o antes, si se toca `inventory.scan`, porque
 enumerar `skipped` son tres líneas y el test que lo fija es el que falta.
+## 191. El intake judicial no modela la fase procesal: ni bucket ni rol para la prueba y el juicio
+
+> Medido el 2026-09-08 montando `W-02VEKE` (expediente judicial CRM #540, 76 documentos;
+> autos de 2025, audiencia previa ya celebrada, testigos citados, juicio pendiente).
+
+**Lo que se midió.** `intake-judicial --full` escribió 72 documentos de 76 (4 solapados, 0
+errores) y los repartió en dos cajones: `01_Demanda` = 31 y `99_Otros` = 45. El bucket
+`02_Contestacion` **no llegó a crearse**.
+
+En `99_Otros` acabó todo lo que hace falta para preparar un juicio: las dos minutas de prueba
+(la propia y la del contrario), la minuta de audiencia previa, la solicitud de prueba, las dos
+citaciones de testigos, las diligencias que fijan y suspenden la vista, la grabación de la
+audiencia previa (`.mkv`, 150 MB), el decreto de admisión, la sentencia de un pleito conexo y
+la apelación — junto al burofax extrajudicial de 2024.
+
+**La frontera, no el ejemplo.** `_VALID_BUCKETS` (`core/case_manager.py`) tiene seis buckets y
+los cinco con nombre son todos de la fase de **alegaciones** (`01_Demanda`, `02_Contestacion`,
+`03_Monitorio_Demanda`, `04_Monitorio_Oposicion`, `05_Diligencias_Preliminares`). Y
+`core/judicial_classifier.py` define exactamente dos roles, `ROLE_DEMANDA` y
+`ROLE_CONTESTACION`. **El modelo se acaba donde acaba la contestación**: de la audiencia previa
+en adelante no hay ni vocabulario ni destino. No es que falte un id de carpeta — es que la fase
+de prueba y juicio no existe como categoría en ningún punto del intake.
+
+**Y la señal que sí existe se descarta.** En esta corrida el clasificador acertó
+—`contestacion: ok -> CONTESTACION DDA`— y el fichero se depositó en
+`99_Otros/contestacion_dda.pdf`. El bucket lo resuelve `crm_branch_path` por la **carpeta del
+CRM** (aquí `306|CIVIL`, porque el procurador no archiva por fase) y el rol lo resuelve el
+**nombre del documento**; las dos señales no se cruzan en ningún punto del código. El intake
+sabía el rol y archivó como si no lo supiera. Hay escape manual (`bucket_override`, D11), pero
+exige que el letrado descubra el problema.
+
+**Esto no es nuevo, y ahí está lo relevante.** El 40º cierre (2026-07-27) ya lo midió en
+`W-02MA0R` / CRM 487 con la formulación correcta: «el CRM no archiva por fase procesal —38 de 70
+en un cajón genérico CIVIL, así que ningún mapeo de `id_carpeta` lo desenreda— y la señal útil
+es el **lote de presentación** (`modified_at`), no la carpeta». La respuesta diseñada es la
+**vista procesal de `05_Procedimiento`** (`PLAN.md` fila #9, spec v3.1 con dos revisiones
+adversariales de Codex consumidas, piezas 1-2 mergeadas). Lo que este caso añade no es el
+diagnóstico: es el **corpus** que le faltaba a la pieza 3 y un caso real con la vista encima.
+
+**Remedio candidato, dentro de esa vista y no aparte.** (1) Vocabulario de fase para lo
+posterior a la contestación; (2) cruzar rol y bucket: un rol resuelto `ok` manda sobre la
+carpeta del CRM, o al menos se avisa cuando discrepan; (3) `modified_at` como eje, que es la
+señal que el 40º cierre ya identificó. Ampliar `CARPETA_ID_TO_PATH` **no** vale: los tres ids
+nuevos de este expediente (`305` DECLARATIVO, `306` CIVIL, `63` RGPD) los resuelve ya la
+heurística de label, y los resuelve a `99_Otros` correctamente — el cajón no está mal mapeado,
+está mal concebido para esta fase.
+
+**Disparador de promoción.** Ya disparado: caso real en fase de juicio con la prueba
+indiferenciada. Va contra `PLAN.md` fila #9, no como entrada independiente.
+
+---
+
+## 192. `abrir_caso` INVENTA `referencia_crm` copiando el `case_id`, y el invento dispara después la alarma de desalineación
+
+> Medido el 2026-09-08 en `W-02VEKE`, un caso que ya existía en el CRM antes de abrirse en Drive.
+
+**Lo que hace.** `scripts/abrir_caso.py:1081` llama a `ensure_case(..., referencia_crm=ident.case_id)`.
+El campo que dice ser «la referencia del CRM» se rellena **siempre** con el nombre local recién
+construido, sin consultar al CRM. Con `--crm api` el alta crea la referencia con ese mismo texto y
+las dos coinciden, así que el campo es correcto por construcción. **Con `--crm skip` —el caso que ya
+está en el CRM— el campo queda falso.**
+
+Medido en este caso: `_caso.md` quedó con `referencia_crm: BaRS10 - … - Negativa arras`, mientras el
+CRM dice `BaRS10 - … - Negativa con oferta aceptada` para los dos expedientes (#464 y #540).
+
+**Lo que NO es.** No es un falso verde de la guarda. `verify_expediente_referencia` funciona:
+medida con los dos valores da `match=False` con lo que hay en `_caso.md` y `match=True` con la
+referencia real. Control positivo y negativo, los dos. El «Referencia CRM coincide» que imprimió
+el pull fue **correcto**, porque se le pasó la referencia real por `--referencia`.
+
+**La consecuencia real es la contraria de la temida:** el sistema generará una **falsa alarma
+recurrente sobre su propio dato**. El primer pull que se corra sin `--referencia` comparará el CRM
+contra el valor inventado y sacará el «Referencia desalineada CRM <-> caso local», invitando a
+abortar y revisar `_caso.md` por un desajuste que escribió el propio alta.
+
+**Y `--referencia` no lo arregla.** `ensure_case` fija `referencia_crm` solo si el índice es nuevo
+(`is_new`), coherente con su contrato de no sobrescribir. Así que el flag sirve para la validación
+de esa corrida y **no repara el dato**, que queda mal para siempre. En este caso se repuso a mano
+con el escritor atómico y se verificó contra el CRM (`match=True` en #464 y #540) — tanto el
+frontmatter (raíz y `meta`) como la línea del cuerpo, que `_actualizar_cuerpo` no regenera.
+
+**Remedio candidato.** Con `--crm skip`, no inventar: leer la referencia del CRM por W-code (una
+llamada REST por elemento; `_rest_search_expedientes` ya lo hace y devolvió los dos ids sin más
+dato que el W-code) y, si no se puede leer, **dejar el campo vacío** en vez de rellenarlo con un
+derivado. Un campo vacío es honesto y la guarda ya sabe tratarlo (`expected_referencia=None`);
+un campo inventado es peor que ninguno porque se presenta como dato del CRM. Alternativa mínima:
+que `ensure_case` acepte reponerlo cuando el llamador lo pasa explícito.
+
+---
+
+## 193. La plantilla del `case_id` no puede reproducir la referencia del CRM, y eso deja ciego el dedup exacto
+
+> Medido el 2026-09-08 en `W-02VEKE`.
+
+**El choque.** `core/abrir_caso.py:56` compone `f"{codigo} - {direccion} ({w_code}) - {sufijo}"`.
+Las referencias que este tenant tiene en el CRM llevan un separador **extra** antes del paréntesis
+—`BaRS10 - <via> - (W-02VEKE) - …`— que la plantilla no genera. No hay valor de `--direccion`
+que lo reproduzca salvo colgando un guion al final de la dirección.
+
+**Por qué importa.** `find_expediente_judicial_by_referencia` (y su gemela extrajudicial) exigen
+coincidencia **exacta tras normalizar espacios, acentos y case**; un separador de más no lo salva.
+Son las funciones que se consultan «antes de crear un expediente para detectar duplicados», así que
+para todo caso cuya referencia venga del CRM ese dedup devuelve `None` y **no protege**: un alta
+futura podría crear un judicial duplicado. El dedup por W-code
+(`list_expedientes_judiciales_candidatos`, filtro `like`) sí funciona y es el que localizó #464 y
+#540 en este caso.
+
+**Y hay un choque de nombres debajo.** `core/config.py` manda que el descriptor del `case_id` salga
+**siempre** del `tipo_caso` canónico («si no, hay que renombrar cross-sistema»). Aquí el tipo
+canónico es `NEGATIVA_ARRAS` -> sufijo `Negativa arras`, y el CRM dice `Negativa con oferta
+aceptada`. Esa regla está escrita suponiendo que **el alta local es la primera**; cuando el CRM va
+delante hay dos fuentes y una tiene que ceder, y ceder por el lado del CRM significa renombrar la
+referencia de un expediente judicial vivo. Se resolvió usando el sufijo canónico y dejando la
+referencia real en `referencia_crm` (ver `#192`), pero la regla no tiene caso escrito para esto.
+
+**Remedio candidato.** Que el dedup «antes de crear» use el **W-code** y no la referencia completa
+—es la clave estable, y ya existe la función—, dejando el match exacto para lo que de verdad
+necesite igualdad textual. Y escribir en `config.py` qué manda cuando el CRM va primero.
+
+---
+
+## 194. Un `/` en el nombre del documento del CRM parte el slug y el fichero pierde su identidad
+
+> Medido el 2026-09-08 en `W-02VEKE` (expediente judicial CRM #540).
+
+**Lo que se midió.** Dos documentos del gestor documental llegaron a `05_CRM/99_Otros` llamados
+`26_10_30_hs.pdf` y `2026_11_30_hs.pdf`. Sus nombres en el CRM son:
+
+- `DIOR-POR CONSTESTADA DDA+FIJA AUD PREVIA 24/3/26, 10:30 HS`
+- `DIOR-SUSPENDE AUD Y SEÑALA NVA VISTA  30/04/2026, 11:30 HS`
+
+El slug conservó **solo el fragmento posterior a la última barra** y descartó todo lo anterior.
+Son las dos resoluciones que **fijan y suspenden la audiencia previa**: el fichero que dice qué
+día hay vista se llama `26_10_30_hs.pdf`.
+
+**La frontera.** Es el mismo defecto que `[APER-56]` —el `/` en `--direccion` partía la carpeta
+del caso en dos— pero en otro sitio: allí lo sufría el nombre de la **carpeta**, aquí el del
+**documento**. `[APER-56]` se cerró con `MEJORAS #148` validando los campos del **alta**
+(`--codigo-caso`, `--direccion`, `--sufijo`); el nombre que llega del CRM no pasa por esa
+validación, y no puede: no es un campo que escriba el operador, es un dato remoto. Lo que hace
+falta aquí no es abortar —el documento hay que bajarlo igual— sino **normalizar la barra en vez
+de tratarla como separador de ruta**.
+
+Y hay un agravante de fecha: en un procedimiento español las resoluciones llevan la fecha con
+barras (`24/3/26`, `30/04/2026`) **por convención**, así que este caso no es raro. Cualquier
+señalamiento, plazo o vencimiento que el juzgado nombre con fecha entra por esta puerta.
+
+**Remedio candidato.** En `_safe_stem_ext` (o donde se compone el slug del documento del CRM),
+sustituir `/` y `\` por un separador inocuo **antes** de cualquier tratamiento del nombre, en vez
+de dejar que la última barra actúe como frontera. El `_` es suficiente: `dior_por_contestada_
+dda_fija_aud_previa_24_3_26_10_30_hs.pdf` es feo y es legible, y sobre todo dice qué es.
+
+**Cómo comprobar que el remedio funciona, sin fiarse del verde.** Un test con un nombre sin
+barra pasa hoy y pasaría después: no prueba nada. El test tiene que llevar la barra dentro y
+afirmar que el stem conserva el prefijo — y hay que **verlo rojo** contra el código actual antes
+de arreglarlo.
+
+**Disparador de promoción.** Bajo: los ficheros están en el expediente y su contenido es
+correcto; solo el nombre es ilegible. Sube si alguna vez hay que localizar un señalamiento por
+nombre en un caso con muchas resoluciones, o si se construye la vista procesal (`MEJORAS #191`),
+que ordena por lote y presentaría estos dos sin identidad.
+
+---
+
+## 195. `node_modules` no está en `.gitignore`, y dos skills lo necesitan para funcionar
+
+> Medido el 2026-09-08 al generar los entregables de `preparacion-juicio-oral`.
+
+**Lo que se midió.** La skill `preparacion-juicio-oral` declara `docx: ^9.7.1` en su
+`package.json` y **no trae `node_modules`** (se vendorizó a propósito sin él, 2026-06-12). Sus
+cuatro generadores `gen_*.js` no corren sin esa dependencia. Y
+`git check-ignore .claude/skills/preparacion-juicio-oral/node_modules` devuelve **no ignorado**:
+un `npm install` en la carpeta de la skill mete miles de ficheros al índice de git.
+
+O sea: la skill no funciona sin instalar, e instalar en el sitio natural contamina el repo. Hoy
+se resuelve por disciplina del operador —instalar fuera del árbol y apuntar `NODE_PATH`—, que es
+justo la clase de cosa que se olvida.
+
+**Remedio candidato.** Dos líneas independientes, y las dos merecen la pena:
+
+1. **`node_modules/` a `.gitignore`** (patrón global, no por skill). Barato y sin discusión: es
+   una red, no una solución.
+2. **Que la skill diga cómo se instala.** Su `flujo.md` describe siete fases y ninguna menciona
+   la dependencia; la Fase 3 empieza directamente en «genera `CONCLUSIONES_[REF].docx]`». Basta
+   una línea en la Fase 0 con el comando y el `NODE_PATH`, o un script que lo prepare.
+
+**Ojo con el alcance:** comprobar si le pasa lo mismo a las otras skills con `package.json`
+(`preparacion-audiencia-previa` al menos comparte generadores). El punto 1 las cubre a todas; el
+2 hay que escribirlo en cada una.
+
+**Disparador de promoción.** Ya disparado en su forma leve: hizo falta para el juicio de
+`W-02VEKE` y se resolvió instalando fuera del árbol. La entrada existe para que la próxima vez
+no haya que descubrirlo — y para que nadie cierre el hueco con un `npm install` dentro del repo.
+
+---
+
+## 196. El pipeline deja `empty` un PDF que `ocrmypdf --skip-text` lee con 12.246 caracteres
+
+> Medido el 2026-09-09 en `W-02VEKE`, montando su sala de lectura. Tres documentos, mismo
+> motor (OCRmyPDF), resultados muy distintos según quién lo invoque.
+
+**La medición.** El informe de actividades del CRM (`D 05` de la demanda) pasó por
+`sala_maquina apply` y quedó en `_cobertura.json` como **`estado: empty`, 20 caracteres**,
+con la nota «sin texto o residual». El mismo fichero, copiado al scratchpad e invocado a
+mano con `ocrmypdf -l spa --skip-text --sidecar`, devuelve **12.246 caracteres** de texto
+correcto (el reporte de LeadHub: 42 exposiciones finalizadas, 3 visitas, la tabla de
+actividades con consultor, contacto y fecha).
+
+No es un caso aislado. Los otros dos informes del CRM del mismo expediente:
+
+| documento | pipeline (`_cobertura.json`) | `ocrmypdf` directo |
+|---|---|---|
+| `d_05_crm_informe_actividades_propiedad` | **20** (`empty`) | **12.246** |
+| `d_03_crm_ficha_propiedad_acacies` | 1.583 (`ok`) | 6.140 |
+| `d_07_crm_comprador_actividades` | 989 + 3.764 (`ok`, 2 segmentos) | 4.956 |
+
+Los tres son **capturas de pantalla del CRM impresas a PDF**: página larga, tipografía
+pequeña, mucha tabla. La invocación directa fue `-l spa --skip-text`, sin `--oversample`
+ni nada especial.
+
+**Por qué importa más de lo que parece.** `texto_espejo_md` devuelve `None` cuando el
+estado es `empty` —por diseño, «no hay texto útil que ofrecer»—, así que el documento
+queda invisible aguas abajo: la sala de lectura lo clasifica **a ciegas por el nombre** y
+sin fecha, y ningún análisis posterior ve su contenido. En este caso ese documento es la
+prueba de la gestión eficaz de la agencia (las 42 exposiciones), que es hecho no
+controvertido del pleito pero cuya acreditación documental es justo ese informe.
+
+**Lo que NO se sabe todavía, y hay que medirlo antes de tocar nada.** No sé qué hace
+distinto el pipeline. Hipótesis a discriminar, en orden de coste:
+
+1. **Los peldaños de la escalera** (`MEJORAS #90` (a)/(b)): el pipeline decide por página
+   entre `pypdf` y OCR, y puede estar dando por buena una capa de texto vacía sin llegar a
+   OCRizar. El indicio: la nota del `_cobertura` es «sin texto o residual», que es el
+   veredicto DESPUÉS de intentarlo.
+2. **Los flags**: si el pipeline usa `--force-ocr` o `--redo-ocr` en vez de `--skip-text`.
+   Ojo: `--force-ocr` es el que la sesión del 2026-07-14 midió que infla 3-10× y destruye
+   la capa de texto real.
+3. **El umbral de `empty`**: que el OCR sí produzca texto y el umbral lo descarte.
+
+El experimento que lo separa es baratísimo: correr `apply --solo` sobre ESE fichero con
+log de la orden `ocrmypdf` efectiva, y compararla carácter a carácter con la mía. Hasta
+tenerlo, cualquier arreglo sería a ciegas.
+
+**Cautela sobre el alcance.** Esto NO contradice la medición del 2026-09-08 («el OCR local
+lee todo lo legible»), que se hizo con **invocación directa**, igual que la mía aquí. Si la
+diferencia está en el pipeline, las dos mediciones son compatibles y lo que falla es la
+capa de arriba, no el motor.
+
+**Disparador de promoción.** Alto si se confirma la hipótesis 1 o 2: afecta a **todos** los
+documentos escaneados de todos los casos, y el modo de fallo es silencioso (`empty` se lee
+como «este documento no tiene texto», no como «no supe leerlo»). Mientras no se mida, queda
+aquí con el dato de las tres filas.
+
+---
+
+## 197. `senales_gate` marca el audio y el vídeo como «binario opaco sin espejo MD», y eso inutiliza el gate en cualquier caso con WhatsApp
+
+> Medido el 2026-09-09 montando la sala de lectura de `W-02VEKE`: **132 señales, de las que
+> 129 eran audio, vídeo, imagen o zip**. Razón señal/ruido **2:132**.
+>
+> **Segunda población, en otro caso y por otra sesión** (aportada el 2026-09-09 por la sesión
+> «Inventario de demanda Sergio», sobre `W-02USSI`): **292 señales — 170 «bundle sin parte», 89
+> «binario opaco sin espejo» y solo 12 útiles** (W-codes ajenos). De esas 89, **67 son audio**.
+> Razón señal/ruido **12:292**.
+>
+> Dos casos distintos, dos sesiones distintas, el mismo defecto: el gate no es ruidoso *en este
+> expediente*, es ruidoso **por construcción**. Y la segunda medición añade un ángulo que la
+> primera no tenía — la señal «bundle sin parte» aporta 170 de las 292, así que **agregar por
+> tipo antes de presentar no basta**: hay al menos dos señales que hay que acotar, no una.
+
+**El defecto.** `senales_gate` (`scripts/preclasificar.py`, señal (c)) marca toda fila cuya
+extensión esté en `_EXT_OPACAS` y no tenga espejo MD en `_cobertura.json` con estado
+`ok`/`low`. Y `_EXT_OPACAS` incluye `mp4`, `mov`, `avi`, `mkv`, `m4a`, `ogg` y `opus`.
+
+Esas extensiones **no pueden tener espejo MD**: la sala de máquina las marca `sin_soporte`
+por diseño (no hay transcripción de audio en el pipeline). Así que la señal dispara siempre
+para todos ellas, y no dice «esto es ambiguo» sino «esto es un audio».
+
+**El efecto medido en W-02VEKE**: 291 filas activas, de las que 120 son `.opus` de tres
+exports de WhatsApp más 4 `.mp4`, 1 `.m4a`, 1 `.mkv` y 6 `.jpg`. Resultado: **132 señales**
+en un caso donde lo genuinamente ambiguo eran **dos** (un expose de otro W-code adjuntado
+en un chat, y el documento de `MEJORAS #196`). Con la razón señal/ruido a 2:132, el gate
+deja de ser un filtro: o se lee entero —y son 132 líneas por revisar a mano— o se ignora,
+que es lo que hará cualquiera a la segunda vez.
+
+Y el propio SKILL.md avisa de este modo de fallo para el verify —«≥5 problemas homogéneos
+del mismo tipo: la hipótesis por defecto es bug del check, no de los datos»— pero el gate
+no lleva esa salvaguarda, ni agrega por tipo antes de presentar.
+
+**Remedio candidato.** Separar «opaco **sin texto propio**» de «opaco **que debería tener
+espejo y no lo tiene**». Solo el segundo es señal:
+
+- **audio/vídeo** (`opus`, `m4a`, `ogg`, `mp4`, `mov`, `avi`, `mkv`): nunca señal por falta
+  de espejo. Si acaso, un contador informativo («120 medias sin transcribir»).
+- **PDF, imagen y ofimática**: siguen siendo señal si no tienen espejo — ahí la ausencia sí
+  indica que se clasificó a ciegas.
+
+Y, con o sin ese cambio, **agregar las señales por tipo** antes de presentar la propuesta:
+un «131 × binario opaco sin espejo (129 de ellos audio/vídeo)» es accionable; 131 líneas
+sueltas no.
+
+**Cómo comprobar el remedio sin engañarse.** El test tiene que llevar dentro un `.opus`
+**y** un `.pdf`, los dos sin espejo, y afirmar que sale **una** señal y no dos — y hay que
+verlo **rojo** contra el código actual antes de arreglarlo. Un test con solo el `.pdf` pasa
+hoy y pasaría después: no prueba nada.
+
+**Un tercer dato, del mismo montaje y sobre otro helper del mismo paso** (medido el
+2026-09-09 sobre el plan persistido de `W-02VEKE`): `emparejar_exports_whatsapp` devolvió
+**0 de 3**. Exige que el basename sea exactamente `_export_original.zip` —el que deja
+`whatsapp_intake.deposit_export`— y los tres exports del caso se llaman
+`Chat de WhatsApp con <nombre>.zip` y `WhatsApp Chat - <nombre>.zip`, que es como los
+nombra la exportación de E&V. **La sesión «Inventario de demanda Sergio» midió 0 de 5 en
+`W-02USSI`**, con el agravante de que allí los chats son `_chat.docx` y falla también la
+segunda condición.
+
+Lo que hace este dato incómodo es cómo apareció: en `W-02VEKE` los tres exports **sí**
+quedaron excluidos y con su `duplicado_de`, así que el resultado final fue correcto — porque
+**los excluí a mano** en el script de la corrida. El helper estaba inerte y su inercia no
+dejó rastro: hice su trabajo sin notar que no lo hacía él. Dos casos, dos sesiones, cero
+emparejamientos automáticos, y en uno de los dos el defecto quedó tapado por trabajo manual.
+Ver [[feedback-guarda-inerte-comprobar-el-otro-valor]].
+
+**Entrada hermana, y por qué NO se fusionan.** La causa en el censo es **`MEJORAS #205`**
+(«Ruta `audio` en la sala de máquina», PR #311): `clasificar_ruta`
+(`core/sala_maquina.py:47`) no conoce el audio, así que un `.opus` cae al `else` del despacho
+y sale `sin_soporte` — 67 de los 73 `sin_soporte` de `W-02USSI` son audio, el 92%. Esta
+entrada describe el **síntoma en el gate**, y **sigue siendo necesaria aunque la #205 se
+construya**: las imágenes y los zips no van a tener espejo nunca, así que la señal seguiría
+disparando. Cablear el audio reduce el ruido; no lo cierra.
+
+El tercer dato de arriba, sobre `emparejar_exports_whatsapp`, vive en **`MEJORAS #206`** del
+mismo PR, con el modo de fallo que aporta este caso: un helper cuya única señal de que no
+funciona es que **no hay señal**.
+
+**Disparador de promoción.** Medio. No corrompe datos ni bloquea: degrada el gate a ruido.
+Sube en cuanto haya un segundo caso con export de WhatsApp, que es el flujo normal de los
+expedientes de E&V.
+
+## 198. `drive_accesible` está definida dos veces, con la misma condición y en dos sitios
+
+**Qué pasa.** La decisión «¿se puede confiar hoy en el estado compartido del canon?» —que es
+lo que el resolver del workspace recibe como `drive_accesible`— está escrita dos veces:
+
+- `scripts/sala_maquina.py::_drive_accesible` (desde su Task 10)
+- `core/procedimiento/sede.py::drive_accesible` (desde la pieza 4a, 2026-09-09)
+
+Las dos leen `FEESDEFENDER_OFFLINE` y las dos devuelven lo mismo. La segunda se escribió a
+sabiendas, porque la primera vive en un módulo de `scripts/` y un paquete de `core/` no puede
+importar de ahí; y se **fijó con un test de no-drift**
+(`tests/test_procedimiento_fachada.py::test_drive_accesible_no_DIVERGE_de_la_de_sala_de_maquina`)
+en vez de dejarlas divergir en silencio.
+
+**Por qué importa aunque hoy estén de acuerdo.** Dos definiciones de la misma decisión es
+exactamente cómo nacen las divergencias, y el docstring de `WorkspaceRegistry` lo dice de otra
+igual («dos definiciones de "bajo el catálogo" es como nacen las divergencias, y ésta ya había
+nacido»). El test de no-drift avisa, pero no impide que alguien cambie una y actualice el test.
+
+**Remedio.** Promoverla a un sitio común del que puedan tirar los dos —el candidato natural es
+`core/casos/` , junto al resolver que la consume— y dejar en `sala_maquina` un alias. Es un
+cambio de una línea en cada lado, pero toca un módulo ya revisado y mergeado, así que no entra
+de rebote en el diff de otra pieza.
+
+**Lo que NO hay que hacer, y está medido en el docstring de `sala_maquina`:** añadirle una
+segunda condición del tipo «…o la raíz del catálogo no está montada». Se intentó, y produce
+divergencia de fuente de verdad con `case_locator._root()` más un falso negativo en cualquier
+clon o worktree sin `CASOS_ROOT` — donde **toda** invocación se iría a offline en silencio.
+
+**Disparador de promoción.** Bajo. Hoy las dos coinciden y el drift está atado por un test. Sube
+si aparece un tercer consumidor, porque entonces la duplicación deja de ser de dos.
+
 ## 199. `sync_sudespacho pull|intake-judicial` con un W-code CREA carpeta sombra en el Drive
 
 **Medido el 2026-09-08 abriendo W-02USSI, sobre el Drive real del despacho.** El caso ya
@@ -9029,3 +9399,31 @@ en un fallo de lectura, e idempotencia por existencia de la salida.
 `G:` — que es el caso normal, no el excepcional.
 
 ---
+## 208. `WorkspaceRegistry` no tiene modo de lectura no mutante, y por eso un lector necesita un preflight
+
+**Qué pasa.** `WorkspaceRegistry._leer` (`core/casos/workspace_registry.py:170-180`) pone en
+**cuarentena** un JSON ilegible antes de lanzar: lo renombra a `<fichero>.corrupto.<fecha>` con
+`os.replace`. Para su módulo es la decisión correcta —preserva la evidencia y no borra nunca— pero
+significa que **una lectura provoca una escritura**, y eso rompe el contrato de cualquier consumidor
+que declare no escribir.
+
+Lo destapó la R1 del diff de la vista procesal 4a (su H-05), demostrándolo: con el arranque de la
+fachada arreglado, resolver un caso para un informe renombraba el registro sin haber llegado siquiera
+a exigir `READ_CASE`.
+
+**Cómo está mitigado hoy, y qué no cubre.** `core/procedimiento/sede.py::registro_legible` comprueba
+los `*.json` del registro **antes** de que el resolver los lea, y falla con un mensaje que dice qué
+pasa y qué hacer. Cubre el caso práctico —un registro corrupto que ya está ahí— y **no cierra la
+ventana**: entre el preflight y la lectura real del resolver, el fichero puede corromperse y la
+cuarentena ocurriría igual.
+
+**Remedio.** Un modo de lectura no mutante en `WorkspaceRegistry` —un `cargar(..., cuarentena=False)`
+o un `inspeccionar()` que informe sin mover bytes— y que los lectores lo usen. Con eso el preflight
+duplicado de `sede.py` sobra y desaparece la ventana.
+
+**Lo que NO hay que hacer:** quitarle la cuarentena. Es correcta para quien escribe, y un registro
+ilegible es evidencia que no se borra. Lo que falta es poder **leer sin ejercerla**.
+
+**Disparador de promoción.** Bajo. La ventana es estrecha y el preflight cubre lo que pasa en la
+práctica. Sube si aparece un segundo consumidor de solo lectura, porque entonces el preflight habría
+que duplicarlo otra vez.
