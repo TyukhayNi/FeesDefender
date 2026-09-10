@@ -10316,6 +10316,24 @@ una sola pregunta del canónico, rojo. Sin la segunda mitad, el guard aprueba cu
 tanto la regla operativa es: **no regenerar la vista; usar la commiteada**, que es la que tiene el
 enrutado.
 
+## 234. El representante del dedup puede esconder el documento nuclear: el encargo firmado no aparece en el índice
+
+> Medido el 2026-09-10 en `W-048UOL`, buscando la hoja de encargo en el índice de la sala.
+
+**Qué pasa.** Dos ficheros de la carpeta de E&V son **byte-idénticos**: uno se llama
+`Contracte Signat.pdf` (dentro de `ACTIVACIÓN`) y el otro `Oferta Signada i Acceptada.pdf` (dentro
+de `OFERTA`). El dedup por `sha256` deja **un** representante, y le tocó el segundo nombre. El PDF
+contiene **dos documentos lógicos** —el encargo de venta en exclusiva y la oferta de compra—, así
+que el índice presenta el encargo bajo el rótulo de la oferta y la cadena `Contracte Signat` **no
+aparece en `INDICE.md`**.
+
+Técnicamente correcto: el fichero está, su texto partido está en los MD (`__d01`, `__d02`), y la
+nota del `_cobertura.json` dice literalmente «2 documentos lógicos». Operativamente, quien busca
+la hoja de encargo —la pieza de la que cuelga toda la reclamación— no la encuentra por su nombre.
+
+**Vía.** Que la entrada del índice del representante **enumere los nombres de origen alias** (los
+`alias_de` ya están en el `_cobertura.json`), en vez de dejarlos solo en la nota interna. Barato y
+suficiente: no cambia el dedup, cambia lo que el índice dice de él.
 ---
 
 
