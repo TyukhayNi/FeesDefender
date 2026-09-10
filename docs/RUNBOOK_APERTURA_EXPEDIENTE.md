@@ -282,7 +282,7 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   de punta a punta en W-02VEKE. Si el caso ya es judicial desde el día 1 y **no** está en
   el CRM, el alta del expediente judicial sigue siendo a mano por §9.
 
-- **`[APER-65]` / W-030TZY — Un extrajudicial NUEVO se abre en DOS comandos, y el orden que
+- **`[APER-66]` / W-030TZY — Un extrajudicial NUEVO se abre en DOS comandos, y el orden que
   funciona está medido (2026-09-10).** V1 no da de alta en el CRM (eso es V2) y `libre --crm api`
   no encadena la secuencia; hacen falta los dos, y **el segundo puede ir con `--case-id`**, que
   lee `tipo_caso` y `ciudad` de `_caso.md` y es excluyente con los seis flags de identidad:
@@ -312,7 +312,7 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   - **La `cuantia` del alta no baja a `_caso.md`**: tras el paso 2, `meta.cuantia` sigue a `null`
     aunque el CRM la tenga. Si luego se lee de ahí, no está.
 
-- **`[APER-66]` / W-030TZY — Reparto real del tiempo de una apertura, para fijar expectativa.**
+- **`[APER-67]` / W-030TZY — Reparto real del tiempo de una apertura, para fijar expectativa.**
   Medido de punta a punta el 2026-09-10 (120 ficheros del Drive E&V + 36 correos; 173 documentos
   procesados, 203 páginas de OCR). **Tiempo de máquina: 46,5 min**, repartidos así:
 
@@ -328,7 +328,7 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 
   **Lo que esto decide:** cualquier optimización que no sea del OCR ataca el 18 %. Y el OCR **no
   tiene botón barato** — paralelismo por documento refutado, idiomas/deskew/optimize sin efecto
-  medible, `rotate_pages` es un seguro: todo con sus números en `MEJORAS #217`. La consecuencia
+  medible, `rotate_pages` es un seguro: todo con sus números en `MEJORAS #222`. La consecuencia
   operativa no es correr más rápido sino **no bloquear** (el OCR va en background por `[APER-09]`)
   y **no repetirlo** (`[APER-39]`: ~1h40 tirados en W-02VUDR).
 
@@ -701,7 +701,7 @@ python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # se deti
 python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # y ahora sí termina
 ```
 
-- **`[APER-67]` / W-030TZY — «Sala de lectura organizada» no significa que estén los cuatro
+- **`[APER-68]` / W-030TZY — «Sala de lectura organizada» no significa que estén los cuatro
   artefactos, y la CRONOLOGÍA no distingue fecha de documento de fecha de fichero.** Medido el
   2026-09-10, con `organizar` terminando en 15,0 s y código 0 sobre 166 documentos. **Dos
   comprobaciones que hay que hacer a mano después, porque ninguna verja las hace:**
@@ -709,12 +709,12 @@ python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # y ahora
   1. **`ls` de los cuatro artefactos.** Salieron `INDICE.md` y `CRONOLOGIA.md`; **`_MANIFIESTO.md`
      no existe** (no lo escribe nadie: en todo `core/` y `scripts/` solo aparece en
      `core/config.py:415`, como fichero protegido) y el `indice_documental.yaml` vive en
-     `01_Procesado/`, no dentro de `Sala lectura/` como dibuja el árbol de la skill. `MEJORAS #216`.
+     `01_Procesado/`, no dentro de `Sala lectura/` como dibuja el árbol de la skill. `MEJORAS #221`.
   2. **`grep -c '(\*)' CRONOLOGIA.md` contra el conteo de `fecha_fuente: mtime` del catálogo.**
      Salieron **0 marcas para 63 de 166 fechas** (38 %) que vienen de `mtime`. El canon manda
      marcarlas `(*)`; el catálogo sabe cuáles son y el renderizador no lo mira, así que la
      cronología afirma fechas de documento que son fechas de fichero. En este caso puso
-     **2025-11-25 a un acta de 2018** cuyo nombre llevaba la fecha. `MEJORAS #215`.
+     **2025-11-25 a un acta de 2018** cuyo nombre llevaba la fecha. `MEJORAS #220`.
 
   Y una causa que se fabrica el propio pipeline: el intake sustituye la `/` prohibida por `／`
   (U+FF0F) y el parser de fechas del nombre no reconoce esa barra — ni los días de un dígito

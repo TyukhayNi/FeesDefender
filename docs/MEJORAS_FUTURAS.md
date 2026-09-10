@@ -9730,7 +9730,7 @@ que solo mire el 638 aprueba un comparador que haya dejado de comparar.
 se haga hay un expediente vivo no buscable por dirección. Para (a), medio: sube con el **segundo**
 burofax desde plantilla —el flujo que `#212` quiere encapsular— o con el primer expediente cuya
 referencia del CRM divirja del nombre de la carpeta por sufijo.
-## 214. `_tiempos.jsonl` mide el reparto del OCR pero no registra las PÁGINAS, que es lo que decide si paralelizar
+## 219. `_tiempos.jsonl` mide el reparto del OCR pero no registra las PÁGINAS, que es lo que decide si paralelizar
 
 **Medido el 2026-09-10 en la apertura de W-030TZY** (68 documentos por la ruta `ocr`,
 2.286,5 s, el 95,9 % de toda la sala de máquina).
@@ -9767,11 +9767,11 @@ páginas y otro de 1, y afirmar que la suma de `n_paginas` del `_tiempos.jsonl` 
 
 **Disparador de promoción.** Bajo por sí solo; **medio si se retoma la pregunta del
 paralelismo**, porque sin este campo la pregunta no se puede contestar con el registro que se
-construyó para contestarla. Ver `MEJORAS #217`, que es la respuesta que se obtuvo pese a él.
+construyó para contestarla. Ver `MEJORAS #222`, que es la respuesta que se obtuvo pese a él.
 
 ---
 
-## 215. La CRONOLOGÍA no marca `(*)` las fechas que vienen de `mtime`, y en esta apertura eran el 38 %
+## 220. La CRONOLOGÍA no marca `(*)` las fechas que vienen de `mtime`, y en esta apertura eran el 38 %
 
 **Medido el 2026-09-10 en W-030TZY**, sobre `01_Procesado/indice_documental.yaml` (166 entradas)
 y `01_Procesado/Sala lectura/CRONOLOGIA.md` (174 líneas).
@@ -9837,7 +9837,7 @@ familia que [[feedback-el-ok-describe-el-paso-no-el-expediente]].
 
 ---
 
-## 216. `sala_lectura organizar` dice «Sala de lectura organizada» habiendo escrito 2 de los 4 artefactos que la skill contrata
+## 221. `sala_lectura organizar` dice «Sala de lectura organizada» habiendo escrito 2 de los 4 artefactos que la skill contrata
 
 **Medido el 2026-09-10 en W-030TZY.** Con la worklist rellena, `python -m scripts.sala_lectura
 organizar --case W-030TZY` terminó en 15,0 s con código 0 y este mensaje:
@@ -9865,7 +9865,7 @@ el repo sabe cuidar un fichero que ninguna ruta produce.
   esté rancio; se decide mirando cuál de los dos es el sitio bueno y se corrige el que sobre.
 - La **ausencia** del `_MANIFIESTO.md` no es una divergencia de documentación: es una salida
   contratada que no se produce, y encima es **uno de los dos sitios donde el canon manda marcar
-  las fechas aproximadas** (`MEJORAS #215`). Las dos entradas se tocan aquí.
+  las fechas aproximadas** (`MEJORAS #220`). Las dos entradas se tocan aquí.
 
 **Por qué importa.** El mensaje de éxito describe lo que el paso hizo (copiar 149 ficheros), no lo
 que el expediente tiene. Quien lee «organizada» da por montada una sala de lectura que le falta el
@@ -9880,12 +9880,12 @@ decisión es que la ruta CLI también lo produce. Lo que no cabe es seguir dicie
 **Cómo comprobarlo sin engañarse.** Un test que corra `organizar` sobre un caso sintético y
 afirme la existencia de los cuatro. Hoy sale rojo en dos, y ese rojo es la medida de la deuda.
 
-**Disparador de promoción.** Medio. Sube a alto si se cierra `MEJORAS #215`, porque su remedio (1)
+**Disparador de promoción.** Medio. Sube a alto si se cierra `MEJORAS #220`, porque su remedio (1)
 manda marcar `(*)` en un fichero que no existe.
 
 ---
 
-## 217. El paralelismo por documento del OCR está REFUTADO, y `rotate_pages` cuesta el 28 % pero es un seguro que no se puede quitar
+## 222. El paralelismo por documento del OCR está REFUTADO, y `rotate_pages` cuesta el 28 % pero es un seguro que no se puede quitar
 
 **Medido el 2026-09-10** con la apertura de W-030TZY delante, sobre `core.anon.ocr.ocr_pdf`, en la
 máquina de 12 núcleos. Esta entrada existe **para que nadie vuelva a proponer estas dos cosas sin
