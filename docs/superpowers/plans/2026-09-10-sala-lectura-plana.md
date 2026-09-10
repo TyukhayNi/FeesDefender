@@ -119,13 +119,13 @@ tests.
 | H-01 · el sufijo generado choca con un nombre natural | ALTA | confirmado | reserva **global** de rutas finales en `_asignar_destinos`; test `test_h01_…` |
 | H-02 · cambio de participantes reasigna citas; los traslados se borran entre sí | ALTA | confirmado | `__<sha8>` para todo el grupo (§2); no se borra como ruta vieja lo que es destino nuevo; las filas excluidas **reservan** su ruta; dos tests |
 | H-03 · varias filas sin hash comparten casilla | ALTA | confirmado | regresión mía: el resultado se indexaba por `hash`. Ahora por índice, con `_discriminante` derivado del `ruta_relativa`; dos tests |
-| H-04 · una ruta existente se acepta sin mirar sus bytes | ALTA | confirmado, **PREEXISTENTE** | fuera de alcance → `MEJORAS`. Verificar el destino por hash en cada corrida es una decisión de coste, no un arreglo de este diff |
-| H-05 · el dedup no repara referencias; la reconstrucción deja huérfanos | MEDIA | confirmado, **PREEXISTENTE** | fuera de alcance → `MEJORAS` |
+| H-04 · una ruta existente se acepta sin mirar sus bytes | ALTA | confirmado, **PREEXISTENTE** | fuera de alcance → `MEJORAS #232`. Verificar el destino por hash en cada corrida es una decisión de coste, no un arreglo de este diff |
+| H-05 · el dedup no repara referencias; la reconstrucción deja huérfanos | MEDIA | confirmado, **PREEXISTENTE** | fuera de alcance → `MEJORAS #233` |
 | H-06 · la poda sigue enlaces y borra fuera de la sala | MEDIA | confirmado | riesgo **nuevo** mío, y lo midió con junctions reales: se salta enlaces y exige confinamiento físico; test |
 | H-07 · la exclusión de `_plan` no protege su subárbol | MEDIA | confirmado | riesgo nuevo mío: se filtra el subárbol, no el nombre; test |
 | H-08 · un error de poda es indistinguible de un directorio ocupado | BAJA | confirmado | se distingue por `errno` y se devuelve; test |
 | H-09 · sin bundle se borra `parent_id` y se conserva `orden_en_bundle` | MEDIA | confirmado | regresión mía frente al comportamiento anterior: solo se escriben esos dos campos si se detectó bundle; test |
-| H-10 · no hay transacción ni exclusión entre corridas solapadas | ALTA | confirmado, **PREEXISTENTE** | fuera de alcance → `MEJORAS`. Es la deuda de `MEJORAS #126` («la UI y `sala_lectura` siguen sin mutex»), no algo que estos dos pases introduzcan |
+| H-10 · no hay transacción ni exclusión entre corridas solapadas | ALTA | confirmado, **PREEXISTENTE** | fuera de alcance → `MEJORAS #229`. Es la deuda de `MEJORAS #126` («la UI y `sala_lectura` siguen sin mutex»), no algo que estos dos pases introduzcan |
 | H-11 · el plan no inventaría lo ya presente en el destino | MEDIA | confirmado, **mitad y mitad** | el directorio en el destino se rechaza y se cuenta (test); sobrescribir un **fichero** sin fila se mantiene —es el destino canónico de esa fila— pero ahora **se dice** (`SOBRESCRITO_SIN_FILA`) |
 | H-12 · aserto de parada debilitado; prioridad exacta sin probar | MEDIA | confirmado | **tenía razón y es la regla de la casa**: al aplanar cambié `not (…/"Drive E&V").exists()` por un `glob("*.pdf")` en la raíz, que es más débil. Restaurado a «con residuo, la sala no tiene ningún documento». Y el nombre exacto por documento queda fijado en `test_h12_…` |
 
@@ -135,6 +135,29 @@ escritura del YAML; y el comportamiento de enlaces en Linux/macOS. Lo declaró �
 cubierto.
 
 **Cobertura de la remediación:** ver el §6, que es donde acabó la ronda que la cubre en parte.
+
+## 5-bis. Los números de backlog de este trabajo se movieron, y los dos commits citan los viejos
+
+Las cuatro entradas de los preexistentes nacieron como `#227`-`#230` y acabaron siendo **`#229`,
+`#230`, `#232` y `#233`**; la del `_bundle_map` es `#231`. El motivo: `origin/main` llegó a `#223`
+mientras yo trabajaba y el PR **#324**, abierto, reclama `#224`-`#228`. Medido contra `origin`, no
+contra los mensajes de coordinación que me llegaron — los dos traían la foto rancia (uno daba por
+abierto un PR ya mergeado y el otro daba mi `#231` por sin commitear).
+
+| Nació como | Es | Qué es |
+|---|---|---|
+| `#227` | **`#232`** | una copia existente se acepta por su ruta, sin mirar sus bytes (H-04) |
+| `#228` | **`#233`** | el dedup no repara referencias y reconstruir deja huérfanos (H-05) |
+| `#229` | `#229` | sin transacción ni exclusión entre corridas solapadas (H-10) |
+| `#230` | `#230` | un fichero sin fila ocupa el nombre canónico de un documento (H-11, mitad) |
+| — | `#231` | `_bundle_map` indexa por hash (de la R2) |
+
+**Los dos commits de la remediación (`7ca454d` y `d9858ea`) citan en su mensaje los números
+viejos**, y no se reescriben: el repo prohíbe el `--force-with-lease` y una reescritura de historial
+por cinco referencias de prosa cuesta más de lo que arregla. Esta tabla es el mapeo, y queda aquí
+porque es donde alguien la buscará. La lección, que ya estaba escrita y me tocó dos veces el mismo
+día: **un número de backlog es una reserva hasta que se mergea**, así que no se cita en código,
+tests ni mensajes de commit antes de tenerlo firme — o se cita la medición, que sí es estable.
 
 ## 6. Adjudicación de la revisión adversarial (Codex, 2026-09-10) — NO-SHIP, remediado
 

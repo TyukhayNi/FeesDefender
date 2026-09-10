@@ -7,8 +7,8 @@ Aquí van solo los que se remedian en el diff. Los cuatro que se confirman como
 **preexistentes** y quedan fuera de alcance —H-04 (una ruta existente se acepta sin
 mirar sus bytes), H-05 (el dedup no repara referencias y la reconstrucción deja
 huérfanos), H-10 (no hay transacción ni exclusión entre corridas) y la mitad de H-11
-que es la sobrescritura de un fichero sin fila— viven en `docs/MEJORAS_FUTURAS.md`, con
-su disparador. No se prueban como si estuvieran arreglados.
+que es la sobrescritura de un fichero sin fila— viven en `docs/MEJORAS_FUTURAS.md`
+(`#229`, `#230`, `#232` y `#233`), con su disparador. No se prueban como si estuvieran arreglados.
 """
 from __future__ import annotations
 

@@ -1176,7 +1176,7 @@ ficheros de media sus adjuntos), reaprovechando el patrón de `_bundle_map`.
 
 ## 36. Guarda de colisión de nombre canónico en la sala de lectura [CERRADA]
 
-> **[CERRADA 2026-09-10]** Entra con el plan `docs/superpowers/plans/2026-09-10-sala-lectura-plana.md`, medido en W-02YZO4 y en W-048UOL. Los dos defectos iban juntos: aplanar sin guarda de colisión **pierde documentos**, porque el layout por fuente estaba tapando la colisión. El discriminante es `__<sha8>` para **todos** los miembros del grupo (nadie conserva el nombre pelado), que es lo que esta entrada pedía. Revisión adversarial R1 de Codex: NO-SHIP, 12 hallazgos, 12 confirmados — 8 remediados y 4 declarados preexistentes en #227-#230.
+> **[CERRADA 2026-09-10]** Entra con el plan `docs/superpowers/plans/2026-09-10-sala-lectura-plana.md`, medido en W-02YZO4 y en W-048UOL. Los dos defectos iban juntos: aplanar sin guarda de colisión **pierde documentos**, porque el layout por fuente estaba tapando la colisión. El discriminante es `__<sha8>` para **todos** los miembros del grupo (nadie conserva el nombre pelado), que es lo que esta entrada pedía. Revisión adversarial R1 de Codex: NO-SHIP, 12 hallazgos, 12 confirmados — 8 remediados y 4 declarados preexistentes en #229, #230, #232 y #233.
 
 **Detectado 2026-06-17** (review Task 9 sala-lectura). `poblar_sala_lectura`
 copia con `nombre_canonico` = `<fecha>_<tipo>_<descripcion><ext>`. Dos documentos
@@ -10244,50 +10244,6 @@ procede es leer esta entrada, no repetir el experimento.
 
 ---
 
-## 227. `poblar_sala_lectura` acepta una copia existente por su RUTA, sin mirar sus bytes
-
-**Detectado 2026-09-10** (R1 adversarial de Codex sobre la sala plana, H-04 · ALTA;
-**preexistente**, no lo introduce ese diff). La idempotencia se decide con
-`prev == dst_rel and dst.exists()`: igualdad de texto de la ruta más existencia. No se
-compara el hash del destino contra el catálogo ni se comprueba que el fichero esté
-completo.
-
-**Dos disparadores ejecutados por el revisor:** (1) poblar un documento, reemplazar los
-bytes de su copia por otros y volver a poblar → `SKIP_UNCHANGED: 1`, la copia corrupta
-se queda; (2) interrumpir la reposición de una copia después de escribir un fragmento →
-la ruta del catálogo ya coincide y el parcial existe, así que **lo salta
-indefinidamente**.
-
-**Por qué importa aquí y no en cualquier copiador:** la sala de lectura es lo que lee el
-letrado y lo que citan los escritos. Una copia con los bytes de otro documento, o a
-medias, es peor que no tenerla.
-
-**Solución:** comparar el destino con el hash del catálogo cuando se decide
-`SKIP_UNCHANGED` — es un `sha256` por documento y por corrida, así que hay que medir el
-coste sobre un caso grande antes de hacerlo incondicional. Alternativa más barata:
-comparar tamaño y `mtime`, que caza el parcial pero no la sustitución. **Disparador:**
-una copia corrupta o parcial observada en un caso real, o la decisión de pagar el hash.
-
-## 228. El dedup por hash de la sala no repara referencias, y reconstruir el catálogo deja huérfanos
-
-**Detectado 2026-09-10** (R1 adversarial, H-05 · MEDIA; **preexistente**). Cuando dos
-filas comparten `hash`, la primera con fuente existente se copia y las demás se saltan
-**sin actualizar su `ruta_sala_lectura`**: se quedan con la que tuvieran, o con `None`.
-Y al reconstruir el catálogo, `build_catalog` preserva por hash **la última** fila, que
-puede no ser la que tenía la copia asignada — la copia anterior queda en disco sin
-ninguna fila que la nombre.
-
-**Disparador ejecutado:** `a.pdf` en Drive y `b.pdf` en Email con los mismos bytes y
-descripciones distintas. Primera población: A tiene su copia, B tiene ruta nula.
-`inventory.scan` + `build_catalog` conservan los metadatos de B; otra población crea la
-copia de B y la de A **queda huérfana**.
-
-**Solución:** que las filas deduplicadas apunten a la copia del representante (una
-referencia, no un fichero) y que `poblar` retire las copias que ya no tiene ninguna fila.
-Lo segundo es un borrado, así que va con su propio test de que no toca nada más.
-**Disparador:** un caso donde la sala acumule huérfanos visibles, o la decisión de
-cerrar #227 (comparten el recorrido de verificación).
-
 ## 229. `poblar_sala_lectura` no tiene transacción ni exclusión: dos corridas solapadas se pisan el catálogo
 
 **Detectado 2026-09-10** (R1 adversarial, H-10 · ALTA; **preexistente**). El recorrido
@@ -10319,7 +10275,7 @@ sobrescritura de un fichero sin fila se **cuenta y se dice** (`SOBRESCRITO_SIN_F
 **Lo que queda:** decidir la política. Sobrescribir es defendible —es el destino canónico
 de esa fila y el crudo de `00_Input` está intacto— pero hoy se decide por omisión. Las
 alternativas son respetarlo y desviar la copia a un sufijo, o inventariar y reconciliar
-los huérfanos (comparte recorrido con #228). **Disparador:** decisión de Nikolai, o un
+los huérfanos (comparte recorrido con #233). **Disparador:** decisión de Nikolai, o un
 caso donde se pierda algo que importaba.
 
 ## 231. `_bundle_map` indexa por hash: dos adjuntos sin hash comparten rol y orden
@@ -10342,5 +10298,49 @@ porque toca la relación cabecera/adjunto, que tiene sus propios tests y su prop
 detector.
 
 **Solución:** indexar por identidad de fila —o por `clave_dueno`, que ya existe— en vez de
-por hash. **Disparador:** un caso con adjuntos de bundle sin hash, o cerrar #228, que
+por hash. **Disparador:** un caso con adjuntos de bundle sin hash, o cerrar #233, que
 comparte el recorrido de referencias del catálogo.
+## 232. `poblar_sala_lectura` acepta una copia existente por su RUTA, sin mirar sus bytes
+
+**Detectado 2026-09-10** (R1 adversarial de Codex sobre la sala plana, H-04 · ALTA;
+**preexistente**, no lo introduce ese diff). La idempotencia se decide con
+`prev == dst_rel and dst.exists()`: igualdad de texto de la ruta más existencia. No se
+compara el hash del destino contra el catálogo ni se comprueba que el fichero esté
+completo.
+
+**Dos disparadores ejecutados por el revisor:** (1) poblar un documento, reemplazar los
+bytes de su copia por otros y volver a poblar → `SKIP_UNCHANGED: 1`, la copia corrupta
+se queda; (2) interrumpir la reposición de una copia después de escribir un fragmento →
+la ruta del catálogo ya coincide y el parcial existe, así que **lo salta
+indefinidamente**.
+
+**Por qué importa aquí y no en cualquier copiador:** la sala de lectura es lo que lee el
+letrado y lo que citan los escritos. Una copia con los bytes de otro documento, o a
+medias, es peor que no tenerla.
+
+**Solución:** comparar el destino con el hash del catálogo cuando se decide
+`SKIP_UNCHANGED` — es un `sha256` por documento y por corrida, así que hay que medir el
+coste sobre un caso grande antes de hacerlo incondicional. Alternativa más barata:
+comparar tamaño y `mtime`, que caza el parcial pero no la sustitución. **Disparador:**
+una copia corrupta o parcial observada en un caso real, o la decisión de pagar el hash.
+
+## 233. El dedup por hash de la sala no repara referencias, y reconstruir el catálogo deja huérfanos
+
+**Detectado 2026-09-10** (R1 adversarial, H-05 · MEDIA; **preexistente**). Cuando dos
+filas comparten `hash`, la primera con fuente existente se copia y las demás se saltan
+**sin actualizar su `ruta_sala_lectura`**: se quedan con la que tuvieran, o con `None`.
+Y al reconstruir el catálogo, `build_catalog` preserva por hash **la última** fila, que
+puede no ser la que tenía la copia asignada — la copia anterior queda en disco sin
+ninguna fila que la nombre.
+
+**Disparador ejecutado:** `a.pdf` en Drive y `b.pdf` en Email con los mismos bytes y
+descripciones distintas. Primera población: A tiene su copia, B tiene ruta nula.
+`inventory.scan` + `build_catalog` conservan los metadatos de B; otra población crea la
+copia de B y la de A **queda huérfana**.
+
+**Solución:** que las filas deduplicadas apunten a la copia del representante (una
+referencia, no un fichero) y que `poblar` retire las copias que ya no tiene ninguna fila.
+Lo segundo es un borrado, así que va con su propio test de que no toca nada más.
+**Disparador:** un caso donde la sala acumule huérfanos visibles, o la decisión de
+cerrar #232 (comparten el recorrido de verificación).
+
