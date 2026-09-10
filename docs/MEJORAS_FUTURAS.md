@@ -10437,14 +10437,29 @@ expediente está afectado», es **«prácticamente el 100 % de lo que entró por
 correo y el 3 % del CRM lo confirman por el otro lado. La ratio sobre el expediente entero depende
 de cuánto pesó cada fuente en ese caso y no mide el defecto.
 
-**Un hilo abierto que esto destapa: la capa DERIVADA también está afectada** (22 % y 12 %), y eso no
-lo explica el pull de intake. Una escritura normal de Python sobre `G:` **no** rellena —15 de 15
-fieles al reponer W-02NHNC—, así que algo más escribió esos árboles con la vía de rclone. El
-candidato es el **checkin** (`repository_checkout`), que también copia con rclone hacia `G:`, y
-W-02JSVZ es justamente el caso que pasó seis semanas en local y volvió por ahí. **No verificado**:
-hay que medirlo, y si se confirma, el alcance de esta entrada no es «el intake» sino «toda
-escritura de rclone hacia `G:`», checkin incluido — con el agravante de que la verificación del
-checkin compara `G:` contra `G:` y no puede cazarlo.
+**La capa DERIVADA sale al 22 % y al 12 %, y NO es un segundo defecto: es el mismo relleno
+copiado.** Se planteó primero que lo hiciera el **checkin** (también usa rclone contra `G:`) y se
+midió antes de dejarlo escrito. **Refutado, por dos vías:**
+
+1. **Dónde están.** Los 306 ficheros derivados con la firma están **todos** bajo
+   `01_Procesado/Sala lectura/` —en W-02JSVZ, los 100 dentro de `Sala lectura/Drive E&V/`— y por
+   extensión son `.opus`, `.pdf`, `.jpg`, `.docx`, `.mp4`: **documentos fuente**, no productos del
+   pipeline. `poblar_sala_lectura` los lleva ahí con `shutil.copy2`, que copia los bytes tal cual y
+   por tanto **arrastra la cola de ceros del original**.
+2. **El control.** Lo que el pipeline genera de su puño —`INDICE.md`, `CRONOLOGIA.md`,
+   `indice_documental.yaml`, `_cobertura.md`— **no** está alineado ni acaba en ceros: termina en
+   `0d0a`. Si el escritor rellenara, rellenaría también estos.
+
+Y el mecanismo del checkin tampoco daba: usa `--checksum` y `--backup-dir` y cierra con `rclone
+check --one-way`, o sea con la verificación **encendida**; ni `--inplace` ni `--ignore-*`. Si
+rellenara, su propio check lo cazaría. **La hipótesis queda cerrada, no pendiente.**
+
+**Lo que sí cambia, y es lo caro:** reparar `00_Input` no basta. La sala de lectura guarda su propia
+copia de cada documento, así que el histórico a reponer no son 242 + 171 ficheros, son **esos más
+sus copias en la sala** — del orden del doble. Verificado por el lado bueno en W-02NHNC: tras
+reponer los 15 y **regenerar la sala entera**, quedan **0 ficheros con la firma** en
+`00_Input/01_Drive EV`, en `Sala lectura` y en `02_Sala de máquina`. La receta de reparación es
+«reponer el crudo **y** regenerar lo derivado», no solo lo primero.
 
 **Lo que el alcance cambia en la práctica.** No es solo cuántos ficheros hay mal: es que **el hash
 forense de casi todo el material de Drive de los expedientes históricos no cuadra contra el origen**,
