@@ -9730,6 +9730,268 @@ que solo mire el 638 aprueba un comparador que haya dejado de comparar.
 se haga hay un expediente vivo no buscable por dirección. Para (a), medio: sube con el **segundo**
 burofax desde plantilla —el flujo que `#212` quiere encapsular— o con el primer expediente cuya
 referencia del CRM divirja del nombre de la carpeta por sufijo.
+
+## 214. Drive for Desktop renombra bajo los pies: la custodia recorre y abre, y el pull duplica en cada ronda
+
+**Qué pasa.** Un fichero que en el Drive de E&V **no tiene extensión** rompe el pull de dos
+maneras distintas, y las dos salieron a la vez al abrir W-048U77 el 2026-09-10. La carpeta traía
+**11 de 58** ficheros sin extensión —el encargo firmado, la oferta aceptada, tres notas simples, dos acuses
+de registro, el borrador de arras, la tarjeta del CIF y dos Anexos 2 de PBC—. E&V los sube así
+con normalidad, igual que las fotos de móvil de `MEJORAS #190`.
+
+**El mecanismo, medido y no supuesto.** El nombre NO lo cambia Google Drive: lo cambia la **capa
+de presentación del montaje**. Contrastando el remoto contra el montaje sobre el mismo `00_Input`
+—`rclone lsf gdrive_tl:<caso>/00_Input --recursive --files-only` frente a un `rglob` sobre `G:`—
+salen **78 y 78**, y las **8** diferencias son los mismos 8 documentos con dos nombres: en Drive
+`CONTRATO FIRMADO`, en el montaje `CONTRATO FIRMADO.pdf`. Drive for Desktop **presenta** una
+extensión inferida del content-type para los ficheros que no la llevan; los bytes en Drive
+conservan el nombre pelado. (Mi primera lectura fue «Drive renombra al subir», y es falsa. La
+diferencia importa: si el renombrado fuera del servidor, el remoto también lo tendría, y el remedio
+sería otro.)
+
+**Mitad 1 — la custodia recorre y abre, y el nombre cambia en medio.** `hash_tree_local`
+(`scripts/abrir_caso.py:78`) hace `sorted(root.rglob("*"))` y **después** `file_sha256(p)` sobre
+cada resultado. El montaje materializa el nombre-con-extensión poco DESPUÉS de que `rclone` termine
+de escribir el pelado, así que entre el `rglob` y el `open` el fichero ya se llama `CONTRATO
+FIRMADO.pdf` y el hash muere con
+`FileNotFoundError: [WinError 2] … \DOCS ACTIVACION\CONTRATO FIRMADO`. La etapa `drive` de V1 lo
+convierte en `fallo`, corta la secuencia y devuelve `bloqueado` — con el pull ya hecho y correcto.
+No es intermitente por azar: reprodujo dos rondas seguidas, cada vez con un fichero distinto de
+esos once.
+
+**Mitad 2, la cara — cada ronda duplica.** `rclone` compara el remoto contra el **backend local**,
+o sea contra lo que el montaje enseña: ve que `CONTRATO FIRMADO` no está (está `CONTRATO
+FIRMADO.pdf`) y lo vuelve a traer **en cada pull**; el montaje resuelve la colisión depositando
+`CONTRATO FIRMADO (1).pdf`. Dos rondas
+dejaron **7 duplicados** en el expediente (65 ficheros locales contra 58 remotos). Y V1 pulsa el
+pull **con `force=True` en cada ronda por diseño** (spec: el skip por `.pulled` es un «falso punto
+fijo»), así que el expediente se ensucia de forma lineal con el número de rondas, en silencio: el
+pull sale `rc=0` y nadie compara contra el remoto.
+
+**Lo que hace falta para verlo, y hoy no existe:** un censo independiente. Se cazó con
+`rclone lsf --recursive --files-only` contra el remoto (58) frente al recuento local (65). Sin ese
+contraste, siete copias redundantes se quedan en el expediente y luego aparecen en el catálogo de
+la sala de lectura como documentos distintos. **Ojo al borrarlos:** `catastro (5).pdf`,
+seis documentos legítimos traían el `(N)` **de origen** —uno de ellos con `(1) (1) (1)`—, así que
+un borrado por patrón `\(\d+\)` se los lleva por delante. La diferencia contra el remoto es la
+única señal fiable, y hay que normalizar a **NFC** antes de comparar: un topónimo acentuado sale
+descompuesto por un lado y compuesto por el otro, y sin normalizar da dos falsos positivos.
+
+**De qué frontera es esto un ejemplo.** No es «`hash_tree_local` necesita un `try`». La propiedad
+mal cerrada es que **el árbol de intake se trata como estable entre listar y abrir**, y en `G:` no
+lo es: Drive Desktop es un sistema de ficheros activo que reescribe nombres después de la
+escritura. Todo recorrido-y-abre del camino de intake comparte el defecto —
+`hash_tree_local`, el `.stat()` de `_inventario_desde_hashes` (que recompone la ruta desde la
+clave), el inventario de la sala de máquina, `hash_tree` del MCP. Remediar solo el primero deja los
+otros tres esperando su turno, que es exactamente lo que pasó con las cuatro rondas del mutex.
+
+**Qué haría falta.**
+
+1. **Recorrido tolerante y que lo diga.** Que `hash_tree_local` capte el `FileNotFoundError` por
+   fichero, **releá el directorio** y, si aparece el mismo contenido bajo otro nombre, lo hashee
+   con el nombre nuevo; si desapareció de verdad, que lo declare en el resultado en vez de tumbar
+   la etapa. Un recorrido que no puede leer un fichero **no ha medido cero**: ha dejado ese
+   fichero sin verificar, y eso hay que decirlo.
+2. **Reconciliación contra el remoto, no solo contra lo que se acaba de escribir.** Que el pull
+   compare el censo remoto (`rclone lsf`) con el destino y **avise** de los sobrantes. Hoy
+   `reconcile` solo cuadra los hashes contra el plan que él mismo construyó del destino: cuadra
+   consigo mismo y no puede ver una copia de más.
+3. **Cerrar el bucle del renombrado.** Lo barato es que el pull, tras copiar, aprenda el mapa
+   `nombre remoto → nombre efectivo en destino` y lo persista junto al `.pulled`, de modo que la
+   ronda siguiente no vuelva a pedir lo que ya está bajo otro nombre. Lo caro y limpio es no pasar
+   por un montaje de Drive Desktop para el destino del pull.
+
+**Remedio manual de esta sesión (queda documentado en el runbook, `[APER-65]`):** no re-lanzar la
+secuencia, borrar los sobrantes verificando por sha256 que cada uno tiene gemelo idéntico, y cerrar
+la custodia aparte con `hash_tree_local` + `_intake_generico` bajo el mutex, sin re-tirar del pull.
+
+**Disparador de promoción.** Alto: el punto 1 sube al siguiente caso de E&V con ficheros sin
+extensión — que no es raro, es la norma en fotos y escaneos de móvil — porque hoy **bloquea la
+apertura**. El punto 2 sube con él, que es lo que convierte «no bloquea» en «no ensucia». El punto
+3 puede esperar.
+
+**Vecina de `MEJORAS #190`** («la sala de lectura filtra por EXTENSIÓN y la de máquina identifica
+por BYTES»): el mismo fichero sin extensión, dos defectos distintos y un mismo origen — E&V sube
+ficheros sin extensión y la cadena entera supone que el nombre lleva el tipo.
+
+## 215. `_MAGIC_BYTES` solo conoce firmas planas: un `.docx` sin extensión es `sin_soporte` y nadie lo lee
+
+**Qué pasa.** `_sniff_ext_por_contenido` (`core/sala_maquina.py:76`) es el último recurso cuando el
+nombre no trae extensión reconocible, y su tabla `_MAGIC_BYTES` tiene **seis** entradas, todas
+firmas **planas**: `%PDF-`, JPEG, PNG, GIF (×2), BMP. No hay ninguna para `PK\x03\x04`, que es la
+cabecera de todo contenedor OOXML/ODF. Resultado: un `.docx` sin extensión no se reconoce, se
+clasifica `sin_soporte` y **no llega a la ruta `ofimatica`** que desde `MEJORAS #61` sabe leerlo
+perfectamente. El fichero está íntegro; lo que falla es que nadie lo mira.
+
+**Medido el 2026-09-10 en W-048U77:** los **tres** `sin_soporte` del caso eran `.docx` sin
+extensión, con contenido, y uno de ellos es material para el fondo:
+
+| Dónde estaba (sin extensión en Drive) | Qué es de verdad |
+|---|---|
+| `OFERTAS/…/ARRAS/` | **Contrato privado de arras penitenciales** (obra nueva), 78 párrafos, fechado 26-03-2026 |
+| `DOCS ACTIVACION/PBC/` | Anexo 2 de PBC del propietario, firmado 13-01-2026 |
+| `DOCS ACTIVACION/PBC/` | Anexo 2 de PBC de otro interviniente |
+
+Los tres abren con `zipfile` + `python-docx` sin queja alguna. El coste no es teórico: en un caso de
+honorarios, el contrato de arras es de los documentos que deciden el nexo causal, y el pipeline lo
+declaró ilegible.
+
+**El sniff correcto NO es «`PK` → `.docx`».** La cabecera es ambigua por diseño: cubre `.docx`,
+`.xlsx`, `.pptx`, `.odt`, `.ods` y un `.zip` cualquiera. Hay que abrir el contenedor y mirar el
+índice, que es barato y determinista:
+
+- `word/document.xml` → `.docx`
+- `xl/workbook.xml` → `.xlsx`
+- `ppt/presentation.xml` → `.pptx`
+- entrada `mimetype` → ODF, y su contenido dice cuál
+- nada de lo anterior → `.zip`, y entonces sí `sin_soporte` (o la ruta de archivos, si se quiere
+  extraer)
+
+Eso obliga a que `_sniff_ext_por_contenido` deje de ser una función pura sobre 16 bytes y pase a
+recibir la **ruta** (o un lector perezoso), porque los 16 bytes no bastan para desambiguar. Es un
+cambio de firma pequeño con un test evidente por cada rama.
+
+**De qué frontera es esto un ejemplo.** La misma que `MEJORAS #214` y `MEJORAS #190`: **E&V sube
+ficheros sin extensión con normalidad y la cadena entera supone que el nombre lleva el tipo.** Tres
+defectos distintos —la sala de lectura filtra por extensión (#190), Drive Desktop renombra al
+vuelo (#213), el sniff no conoce contenedores (#214)— y un solo hecho detrás. Si se aborda alguno,
+abordar la propiedad: **el tipo de un documento se decide por sus bytes, y el nombre es una pista,
+nunca la fuente.** Remediar solo el ejemplo que trajo el caso de turno es lo que hizo falta cuatro
+rondas en el mutex de V1.
+
+**Control positivo, para no repetir el error de medir sin él.** Un test que hoy pasaría en vacío no
+vale: hay que meter en el árbol sintético un `.docx` **con** extensión (que debe seguir yendo por
+`ofimatica`), el mismo `.docx` **sin** extensión (que hoy va a `sin_soporte` y debe ir a
+`ofimatica`) y un `.zip` de verdad (que debe seguir siendo `sin_soporte`). Sin la tercera rama, el
+test aprueba un `PK → .docx` ciego.
+
+**Disparador de promoción.** Alto, y sube junto al punto 1 de `MEJORAS #214`: los dos se disparan
+con el mismo fichero y en la misma corrida, y arreglar uno sin el otro deja el caso a medias — con
+#213 el documento llega al expediente, con #214 alguien lo lee.
+
+## 216. `verificar_sala.py` cuenta su propio aviso como un problema, y el conteo manda a buscar un fantasma
+
+**Qué pasa.** El verify termina con `N problema(s)`, y esa N incluye la línea `ATENCIÓN: n
+problemas homogéneos del tipo …`, que no es un problema sino un consejo sobre los que sí lo son.
+El return es literal: `return avisos + [msg for _, msg in tipados]`
+(`scripts/verificar_sala.py:108`).
+
+**Medido el 2026-09-10 en W-048U77:** el script imprimió **12** líneas de `fecha_0000` y cerró con
+`13 problema(s)`. La discrepancia mandó a leer el código buscando un problema oculto de otro tipo
+—un huérfano, una colisión— que no existía. Con dos tipos distintos a la vez el desfase sería de
+dos, y con uno solo por debajo del umbral, de cero: el error no es constante, así que tampoco se
+aprende a restar.
+
+**El arreglo es de una línea:** contar solo `tipados` y dejar los `avisos` fuera del total
+(`print(f"\n{len(tipados)} problema(s).")`), o etiquetar la línea como `AVISO` y decir «N
+problema(s), M aviso(s)». Lo segundo es mejor: hoy el aviso y el problema salen por el mismo canal
+con la misma pinta.
+
+**Por qué merece una entrada y no un arreglo al vuelo.** Es la misma familia que `MEJORAS #211` y
+que el «OK que describe el paso, no el expediente»: **un número que no cuenta lo que su etiqueta
+dice contar**. En una verja de calidad eso es peor que en otro sitio, porque el número es
+justamente lo que se mira para decidir si se sigue. Y el coste ya se pagó: un rodeo a leer el
+fuente en mitad del montaje de una sala.
+
+**Disparador de promoción.** Bajo, pero es de los baratos: sube con el próximo cambio que toque
+`verificar_sala.py`. El test es evidente — un caso con ≥5 problemas del mismo tipo debe cerrar con
+el conteo de problemas reales, no con uno más.
+
+## 217. `crm_colaboradores_firmas` lee el `href` del `mailto:`, no la dirección visible, y propone escribir el teléfono de A en la ficha de B
+
+**Qué pasa.** El extractor de firmas atribuye el bloque de contacto a la dirección que
+encuentra en el **`href`** del enlace `mailto:`, no a la que el destinatario **lee**. En las
+firmas corporativas de E&V las dos cosas se separan con normalidad, porque las plantillas se
+copian entre personas y el `href` se queda rancio.
+
+**Medido el 2026-09-10 en W-048U77.** La firma de la Directora de Zona trae, literal:
+
+```html
+<a href="mailto:PERSONA-B@engelvoelkers.com" style="…">@engelvoelkers.com</a>
+```
+
+El texto visible del bloque dice `Mailto: PERSONA-A@engelvoelkers.com`; el `href` apunta a otra
+persona (`PERSONA-B`), y el nombre en negrita sobre el bloque también es el de la primera. El
+informe resultante propuso, para `PERSONA-B`, **el móvil y el fijo de `PERSONA-A`**, leídos del
+bloque de firma de esta última.
+
+**Por qué es grave y no cosmético.** `PERSONA-B` **no aparece en el expediente**:
+comprobado sobre los 12 `.eml`, no está en `From`, ni en `To`, ni en `Cc`, ni su nombre aparece
+en ningún cuerpo. Su única presencia en todo el caso son cuatro `href` heredados.
+Y el informe la marca «**no existe como colaborador**», así que
+`crm_colaboradores_firmas apply --confirmar` no habría rellenado un hueco: habría **dado de alta
+en el CRM del cliente a una persona ajena al asunto, con el teléfono de otra**. Un dato falso en
+un maestro compartido es más caro que un dato ausente, porque nadie vuelve a dudar de él.
+
+**De qué frontera es esto un ejemplo.** De la misma que `[APER-65]`: **el nombre que se muestra
+y el identificador que hay debajo son dos cosas distintas, y el código toma el segundo creyendo
+que es el primero.** En el montaje de Drive era el nombre presentado contra el nombre real; aquí
+es el texto del ancla contra el `href`. Remediar solo el `mailto:` deja la propiedad abierta.
+
+**Qué haría falta.**
+
+1. **Preferir la dirección VISIBLE** del bloque de firma; usar el `href` solo cuando no haya
+   ninguna visible, y **marcarlo en la columna «Origen»** para que se vea de dónde salió.
+2. **Cuando `href` y texto visible discrepan, es `CONFLICTO`**, que es el veredicto que el
+   informe ya tiene y que existe justo para esto: dos valores y ninguno decide, no se propone
+   nada.
+3. **Verja de pertenencia:** una dirección que no aparece en `From`/`To`/`Cc` de **ningún**
+   mensaje del expediente no puede recibir una fila de propuesta. Como mucho, va a «Candidatos»,
+   que es la sección que ya existe para lo que hay que decidir a mano. Un remitente real siempre
+   pasa esta verja, así que no cuesta cobertura.
+
+**Control positivo para el test, para no medir en vacío:** un `.eml` con (a) una firma cuyo
+`href` y texto visible coinciden — debe seguir dando `ENCONTRADO`; (b) una firma donde
+discrepan — debe dar `CONFLICTO`, no la del `href`; y (c) una dirección presente **solo** en un
+`href` — no debe generar fila de propuesta. Sin (a) el test aprueba un extractor que no encuentra
+nada.
+
+**Disparador de promoción.** **Alto.** El runbook §9 manda correr `report` → `apply` en cada
+apertura, y `apply --confirmar` escribe en el CRM del cliente. Hasta que esto se arregle, la
+regla operativa es: **leer el informe fila a fila y no aplicar en bloque** — que es lo que se
+hizo aquí, y por eso no se escribió el dato falso.
+
+## 218. El alta por API manda la cuantía como ENTERO: los céntimos del principal reclamado se pierden en silencio
+
+**Qué pasa.** `core/sudespacho_create.py:1245` (y su gemelo judicial, `:1439`) envía
+`"cuantia": int(round(datos.cuantia))`. La cuantía es el **principal reclamado**, y en una
+reclamación de honorarios sale casi siempre de aplicar el IVA a una base, así que **acaba en
+céntimos por construcción**. El alta los descarta y no lo dice: la corrida imprime
+`cuantia=28132.5` y el CRM guarda `28132.00`.
+
+**Medido el 2026-09-10 en W-048U77.** 23.250 € + 21 % = **28.132,50 €**. Tras el alta, el
+`GET` del expediente 641 devolvía `cuantia: 28132.00`. Y hay una vuelta de tuerca: `round()` de
+Python usa **redondeo bancario**, así que `round(28132.5)` es **28132**, no 28133 — el `.50`
+redondea hacia ABAJO. Un comentario del propio módulo (`:22`) dice «cuantia (entero sin
+separadores)», que es cierto del campo **legacy** `campo_1730`, y de ahí viene el `int(round(...))`;
+pero la property REST `cuantia` **sí admite decimales**.
+
+**Medido, no supuesto:** `update_expediente("641", {"cuantia": 28132.50})` seguido de `GET`
+devuelve `28132.50`, con `Numero_Expediente` y `Referencia_Cliente` intactos. El expediente
+comparable W-02Q38C tiene `74112.50` guardado, lo que confirma que el valor con céntimos vive
+bien en ese campo. Así que la pérdida es del **alta**, no del CRM.
+
+**El arreglo.** Enviar la cuantía como decimal en el POST REST (`float(datos.cuantia)`), dejando
+el `int(round(...))` **solo** donde el campo es de verdad entero: los `campo_849` / `campo_1730`
+del formato legacy, que ya pasan por `_fmt_importe_entero`. Dos rutas distintas para dos campos
+distintos, que hoy comparten una conversión que solo una de ellas necesita.
+
+**Control positivo para el test:** un alta con `cuantia=1000.00` debe seguir guardando `1000.00`
+(si no, el test aprueba cualquier cosa), y una con `cuantia=28132.50` debe guardar `28132.50`.
+Añadir `28132.5` explícitamente, porque es el valor donde el redondeo bancario se aparta del
+redondeo escolar y un test con `.6` no lo vería.
+
+**Y una segunda cosa del mismo camino de escritura, de una línea.** El *preview* de
+`scripts/crm_ficha.py:98` imprime `contrario: {ficha.contrario.apellido1}`. En una persona
+**jurídica** los apellidos van vacíos, así que la línea que un humano lee antes de autorizar la
+escritura sale literalmente `- contrario:  (dedup NIF)`: **el preview oculta justo la identidad de
+la parte que va a crear** en el CRM del cliente. Con persona física funciona por accidente. Debe
+imprimir `nombre` (que es además el único campo que el listado de la UI renderiza, §9 del
+runbook).
+
+**Disparador de promoción.** Medio-alto para la cuantía: entra con la próxima alta de un
+expediente cuyo principal lleve céntimos, que es la norma. La línea del preview va en el mismo PR
+porque es el mismo fichero y el mismo momento del flujo.
 ## 219. `_tiempos.jsonl` mide el reparto del OCR pero no registra las PÁGINAS, que es lo que decide si paralelizar
 
 **Medido el 2026-09-10 en la apertura de W-030TZY** (68 documentos por la ruta `ocr`,
