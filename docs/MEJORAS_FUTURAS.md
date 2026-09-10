@@ -10483,3 +10483,43 @@ creador al que se le pide que sea también un actualizador, y calla cuando no pu
   existe. No arregla nada, pero convierte el silencio en un aviso; es la mitad barata de (a).
 - **(c) Que el alta CRM escriba la cuantía al pasar**, ya que la tiene en la mano. Tapa este caso y
   deja `#184` y `#192` vivos.
+
+## 227. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color
+
+> Medido el 2026-09-10 al firmar el semáforo de W-02NHNC sobre
+> `assets/plantilla_informe_viabilidad.xlsx` (vía el `.xlsx` que genera `render_informe.py`).
+
+**Qué pasa.** En la hoja `INFORMACION` el bloque VIABILIDAD tiene dos filas: `E21` JURÍDICO y `E22`
+FINANZAS. Inventario completo del fichero:
+
+| | Validación (desplegable) | Formato condicional (color) |
+|---|---|---|
+| `E21` JURÍDICO | ✅ `list` = `"verde,amarillo,rojo"` | ✅ 3 reglas sobre `E21:H21` (`C6EFCE` / `FFEB9C` / `FFC7CE`) |
+| `E22` FINANZAS | ❌ **ninguna** | ❌ **ninguna** |
+
+Son las **únicas** dos entradas de esos dos inventarios en toda la hoja: no es que E22 tenga otra
+regla distinta, es que no tiene nada.
+
+**Por qué importa, y no es cosmético.** El CFO lee el semáforo **por el color** — para eso es un
+semáforo. Escribir `amarillo` en `E22` deja texto plano junto a una celda JURÍDICO en verde, y eso
+no se lee como «finanzas en amarillo»: se lee como «finanzas sin valorar», que es lo contrario de lo
+que el documento quiere decir. Un valor que no se ve equivale a un valor que no se escribió, y
+además **quien lo escribe no se entera**: la celda acepta cualquier cadena porque no hay
+validación, así que tampoco protege de un `AMARILLO` en mayúsculas o de un `ámbar`.
+
+Es el mismo modo de fallo que [[feedback-guarda-inerte-comprobar-el-otro-valor]] al revés: allí el
+instrumento solo podía dar un valor; aquí la celda puede dar cualquiera y ninguno se muestra.
+
+**Remedio (en la plantilla, no en cada informe).** Replicar en `E22` la validación y las tres reglas
+de `E21`, con los mismos `bgColor` y el alfa `FF` que exige `modelo_xlsx.md`. En W-02NHNC se hizo
+**sobre el fichero del caso** para poder firmar la valoración, y quedó anotado dentro del propio
+recuadro ejecutivo; pero el siguiente informe que se genere volverá a salir a medias, porque
+`render_informe.py` parte de la plantilla.
+
+**Cuidado con el atajo.** `modelo_xlsx.md` advierte de no regenerar el formato condicional (rompe
+el semáforo y la protección) y tiene razón: lo que hay que hacer es **añadir** las tres reglas de
+`E22:H22`, no reconstruir las de `E21`.
+
+**Y una pregunta de diseño que va con esto:** si FINANZAS nunca tuvo desplegable, conviene comprobar
+si alguien ha rellenado esa celda en los informes ya cerrados, y con qué literales. Si la respuesta
+es «nadie», puede que la fila sobre y lo que falte sea decidirlo, no cablearlo.
