@@ -10556,6 +10556,29 @@ lanzar el alta CRM con `--fuente drive_ev`.
 
 ## 226. `poblar` pisa en silencio el documento anterior cuando dos entradas comparten nombre canónico — 4 de 21 documentos ausentes de la sala
 
+> **✅ RESUELTO por el PR [#328](https://github.com/TyukhayNi/FeesDefender/pull/328) (`a2e6676`,
+> 2026-09-10), y esta entrada era un DUPLICADO de `#67.b`/`#36`.** Se abrió sin saberlo: tres mesas
+> midieron el mismo defecto el mismo día en tres casos distintos —21 documentos y 17 ficheros aquí,
+> 32 y 15 en W-048UOL con 17 imágenes descritas todas «Fotografía», y los tres de W-02YZO4 que
+> llegan por Drive y por correo—. Se conserva por la medición, no por el número.
+>
+> **El arreglo es mejor que las vías que esta entrada proponía**, y conviene leer por qué:
+> `_asignar_destinos` resuelve los nombres **en conjunto y en dos pases** —el definitivo no se puede
+> decidir documento a documento, porque depende de con quién colisione—, reserva las rutas de las
+> filas que no entran en el plan, y **en un grupo colisionado NADIE conserva el nombre pelado: todos
+> llevan `__<sha8>`**. Descarta a propósito el **ordinal** que la vía (c) de aquí sugería y que en
+> W-02NHNC se usó a mano (`_titular_1`, `_titular_2`): el ordinal se mueve cuando al grupo entra un
+> tercero, así que una cita del letrado a un fichero pasaría a señalar otro. La reserva es además
+> **global y no por grupo**, porque razonar dentro del grupo dejaba pasar el caso que su R1
+> adversarial ejecutó (descripciones `mismo`, `mismo` y `mismo_2` producen dos grupos cuyos nombres
+> finales chocan entre sí).
+>
+> Lo que esta entrada aporta y no está en `#67.b`: el **contraste barato** para detectarlo sin
+> arreglo —nº de `nombre_canonico` distintos contra nº de ficheros en la sala— y la observación de
+> que **la tensión es estructural**, no un descuido de quien clasifica: el canon exige descripción
+> sin PII y en un inmueble con dos titulares lo único que distingue los dos Anexos es justo lo que
+> no se puede escribir.
+
 > Medido el 2026-09-10 en la sala de lectura de **W-02NHNC**: el catálogo tenía **21 documentos
 > únicos** y en la sala había **17 ficheros**. Ni un aviso, ni un contador, ni una línea en el
 > `INDICE.md` que lo dijera.
