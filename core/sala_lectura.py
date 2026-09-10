@@ -756,36 +756,116 @@ def _bundle_map(entries: list, crm_docs) -> dict:
     return out
 
 
+def _directorio_destino(entry, bundles: dict) -> tuple[str, str | None, int | None]:
+    """Directorio (relativo a `01_Procesado`) donde va la copia de `entry`.
+
+    **Plano**: la sala es un único directorio y la categoría vive en `INDICE.md`, no
+    en carpetas — es la estructura canónica de la skill `organizar-sala-lectura` v1.3.
+    Hasta el 2026-09-10 esto metía un nivel por fuente (`Sala lectura/Drive E&V/`,
+    `Sala lectura/Email/`…) y contradecía su propio contrato: tercer defecto de
+    `MEJORAS #67` (#67.c), que se venía aplanando A MANO caso por caso, con el
+    workaround deshecho en el siguiente `organizar`.
+
+    La única subcarpeta que sobrevive es la del **documento compuesto**, que la skill
+    fija como excepción. Devuelve `(dir_rel, parent_id, orden_en_bundle)`.
+    """
+    b = bundles.get(entry.hash)
+    if not b:
+        return _SALA, None, None
+    bundle_slug, rol, header_hash, orden = b
+    if rol == "cabecera":
+        return f"{_SALA}/{bundle_slug}", None, None
+    return f"{_SALA}/{bundle_slug}/adjuntos", header_hash, orden
+
+
+def _desambiguar(planificados: list[tuple]) -> dict[str, str]:
+    """`{hash: nombre_final}` sufijando `_2`/`_3` lo que colisionaría en disco.
+
+    `planificados` son tuplas `(entry, dir_rel, nombre_canonico)`, una por documento
+    que se va a copiar (los repetidos por hash ya no llegan aquí).
+
+    Dos documentos DISTINTOS pueden derivar el mismo `nombre_canonico` —misma fecha,
+    mismo tipo y una descripción que sluga igual— y entonces el `shutil.copy2` del
+    segundo **sobrescribía al primero sin dejar rastro**: `MEJORAS #67.b` / `#36`. El
+    dedup por hash no protege, porque solo cubre bytes idénticos; y en W-02YZO4 los
+    tres documentos que llegan por Drive **y** por correo tienen bytes distintos (la
+    copia del Drive pesa unos cientos de bytes más), así que el dedup no los une y el
+    nombre sí colisiona. El sufijo `_2`/`_3` es el que fija la skill.
+
+    **Quién se queda el nombre pelado lo decide el `hash`, no el orden de las filas.**
+    Si dependiera del orden, una reconstrucción del catálogo que reordenase las filas
+    intercambiaría los nombres entre dos documentos de una corrida a la siguiente:
+    nadie perdería bytes, pero una cita del letrado a `…_2.pdf` pasaría a señalar otro
+    documento. Con el hash como criterio, la asignación es estable y `poblar` sigue
+    siendo idempotente.
+    """
+    grupos: dict[tuple[str, str], list[tuple]] = {}
+    for entry, dir_rel, nombre in planificados:
+        grupos.setdefault((dir_rel, nombre.lower()), []).append((entry, nombre))
+
+    final: dict[str, str] = {}
+    for (_dir_rel, _clave), grupo in grupos.items():
+        for orden, (entry, nombre) in enumerate(
+            sorted(grupo, key=lambda par: par[0].hash or "")
+        ):
+            if orden == 0:
+                final[entry.hash] = nombre
+            else:
+                p = Path(nombre)
+                final[entry.hash] = f"{p.stem}_{orden + 1}{p.suffix}"
+    return final
+
+
+def _podar_directorios_vacios(sala: Path) -> None:
+    """Retira los cascarones vacíos que deja un cambio de layout (p. ej. `Drive E&V/`).
+
+    Solo directorios **vacíos**, de abajo arriba, y nunca los que empiezan por `_`
+    (`_plan/` es del flujo de la skill, no de esta función).
+    """
+    if not sala.is_dir():
+        return
+    for d in sorted((p for p in sala.rglob("*") if p.is_dir()),
+                    key=lambda p: len(p.parts), reverse=True):
+        if d.name.startswith("_"):
+            continue
+        try:
+            d.rmdir()          # falla si no está vacío: exactamente lo que queremos
+        except OSError:
+            pass
+
+
 def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
     entries = catalogo_documental.load_catalog(case_id)
     bundles = _bundle_map(entries, crm_docs)
     acciones: dict[str, int] = {}
     vistos_hash: set[str] = set()
 
+    # 1er pase: qué se copia y a qué directorio. El nombre definitivo no se puede
+    # decidir documento a documento, porque depende de con quién colisione.
+    planificados: list[tuple] = []
     for e in entries:
         if e.hash and e.hash in vistos_hash:
             acciones["SKIP_DEDUP"] = acciones.get("SKIP_DEDUP", 0) + 1
             continue
-        src = _input_path(case_id, e.ruta_relativa)
-        if not src.exists():
+        if not _input_path(case_id, e.ruta_relativa).exists():
             acciones["MISSING_SRC"] = acciones.get("MISSING_SRC", 0) + 1
             continue
-        fuente_dir = FUENTE_LABEL.get(e.fuente, e.fuente)
-        nombre = _nombre_canonico(e)
-        e.nombre_canonico = nombre
+        dir_rel, parent_id, orden = _directorio_destino(e, bundles)
+        e.parent_id = parent_id
+        if orden is not None:
+            e.orden_en_bundle = orden
+        planificados.append((e, dir_rel, _nombre_canonico(e)))
+        if e.hash:
+            vistos_hash.add(e.hash)
 
-        b = bundles.get(e.hash)
-        if b:
-            bundle_slug, rol, header_hash, orden = b
-            if rol == "cabecera":
-                dst_rel = f"{_SALA}/{fuente_dir}/{bundle_slug}/{nombre}"
-                e.parent_id = None
-            else:
-                dst_rel = f"{_SALA}/{fuente_dir}/{bundle_slug}/adjuntos/{nombre}"
-                e.parent_id = header_hash
-                e.orden_en_bundle = orden
-        else:
-            dst_rel = f"{_SALA}/{fuente_dir}/{nombre}"
+    nombres = _desambiguar(planificados)
+
+    # 2º pase: la copia, idempotente contra `ruta_sala_lectura`.
+    for e, dir_rel, _nombre_base in planificados:
+        src = _input_path(case_id, e.ruta_relativa)
+        nombre = nombres[e.hash]
+        e.nombre_canonico = nombre
+        dst_rel = f"{dir_rel}/{nombre}"
 
         dst = caso_path(case_id) / "01_Procesado" / dst_rel
         prev = e.ruta_sala_lectura
@@ -802,9 +882,8 @@ def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
             e.ruta_sala_lectura = dst_rel
-        if e.hash:
-            vistos_hash.add(e.hash)
 
+    _podar_directorios_vacios(_sala_dir(case_id))
     catalogo_documental.save_catalog(case_id, entries)
     return {"case_id": case_id, "acciones": acciones,
             "n_bundles": len({v[0] for v in bundles.values()})}

@@ -252,7 +252,9 @@ def test_poblar_sala_lectura_copia_idempotente(tmp_casos_root):
     sl.clasificar_caso(case_id)
     r1 = sl.poblar_sala_lectura(case_id)
 
-    sala = case_dir / "01_Procesado" / "Sala lectura" / "Drive E&V"
+    # Layout PLANO desde `MEJORAS #67.c` (2026-09-10): la copia va a la RAÍZ de la
+    # sala, no a una carpeta por fuente. La categoría vive en `INDICE.md`.
+    sala = case_dir / "01_Procesado" / "Sala lectura"
     copias = list(sala.glob("*.pdf"))
     assert len(copias) == 1
     assert copias[0].read_bytes() == b"%PDF-FACTURA"
@@ -299,8 +301,9 @@ def test_poblar_con_bundles_crm(tmp_casos_root):
     ]
     sl.poblar_sala_lectura(case_id, crm_docs=crm_docs)
 
-    crm_dir = case_dir / "01_Procesado" / "Sala lectura" / "CRM"
-    bundles = [p for p in crm_dir.iterdir() if p.is_dir()]
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    assert not (sala / "CRM").exists()   # `MEJORAS #67.c`: sin carpeta por fuente
+    bundles = [p for p in sala.iterdir() if p.is_dir()]
     assert len(bundles) == 1
     adjuntos = bundles[0] / "adjuntos"
     assert adjuntos.is_dir()
@@ -316,8 +319,9 @@ def test_poblar_sin_crm_docs_degrada_a_plano(tmp_casos_root):
     ])
     sl.clasificar_caso(case_id)
     sl.poblar_sala_lectura(case_id)  # sin crm_docs
-    crm_dir = case_dir / "01_Procesado" / "Sala lectura" / "CRM"
-    assert any(crm_dir.glob("*.pdf"))  # copia plana, sin subcarpeta de bundle
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    assert not (sala / "CRM").exists()   # `MEJORAS #67.c`: sin carpeta por fuente
+    assert any(sala.glob("*.pdf"))  # copia plana, sin subcarpeta de bundle
 
 
 def test_cli_organizar_se_detiene_con_residuo(tmp_casos_root):
@@ -328,7 +332,7 @@ def test_cli_organizar_se_detiene_con_residuo(tmp_casos_root):
     res = sl.organizar(case_id)
     assert res["detenido_por_residuo"] is True
     assert res["n_residuo"] == 1
-    assert not (case_dir / "01_Procesado" / "Sala lectura" / "Drive E&V").exists()
+    assert not list((case_dir / "01_Procesado" / "Sala lectura").glob("*.pdf"))
 
 
 def test_organizar_completo_sin_residuo(tmp_casos_root):
@@ -339,7 +343,7 @@ def test_organizar_completo_sin_residuo(tmp_casos_root):
     res = sl.organizar(case_id)
     assert res["detenido_por_residuo"] is False
     assert (case_dir / "01_Procesado" / "Sala lectura" / "INDICE.md").exists()
-    assert any((case_dir / "01_Procesado" / "Sala lectura" / "Drive E&V").glob("*.pdf"))
+    assert any((case_dir / "01_Procesado" / "Sala lectura").glob("*.pdf"))
 
 
 def test_poblar_bundles_idempotente(tmp_casos_root):
