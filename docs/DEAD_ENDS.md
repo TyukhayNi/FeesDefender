@@ -521,6 +521,32 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 - **Solución aplicada:** flag `--drive-skip-shortcuts` añadido al comando rclone en `core/intake_drive.py::pull_drive_ev`. Trade-off conocido: si E&V usa shortcuts legítimos hacia ficheros fuera del Shared Drive, no se traerán; aceptable porque el uso típico apunta dentro del propio Shared Drive (recorrido recursivo igual los encuentra) o son shortcuts heredados rotos.
 
 ### `rclone copy` con destino en Shared Drive montado por Drive for Desktop → "corrupted on transfer: sizes differ"
+
+> **⚠️ La causa raíz y la conclusión de esta entrada son FALSAS. Corregido el 2026-09-10
+> (`MEJORAS #218`), medido en la apertura de W-02NHNC.** El exceso de bytes **no** es un artefacto
+> de `stat()` con los bytes íntegros debajo: son **bytes cero escritos dentro del fichero**, que
+> rellenan hasta el siguiente múltiplo de 512, sobreviven a una copia a NTFS y **se suben a la
+> nube** — el Drive del despacho guardaba el fichero rellenado, con su `sha256Checksum` cambiado.
+> Los 15 ficheros del pull de W-02NHNC salieron así, y los 9 que traen `sha256Checksum` declarado
+> por la API de Drive lo desmienten los 9.
+>
+> **Las propias cifras de esta entrada lo confirman:** `86400 vs 86528`. 86.528 = 169 × 512
+> exacto; 86.400 no es múltiplo de 512 (168,75). Los «deltas variables +128 B, +268 B» no eran
+> variables al azar: eran la distancia al siguiente bloque.
+>
+> Luego la frase «la integridad ya está garantizada extremo a extremo por la Drive API + TLS» era
+> el razonamiento con el que se **suprimió la única guarda que habría cazado esto**, y estuvo
+> vigente desde 2026-05-19. `--ignore-size --ignore-checksum` no ocultaban un falso positivo:
+> ocultaban un positivo.
+>
+> **Lo que sí se midió el 2026-09-10:** `rclone copy gdrive_ev:` hacia un directorio **NTFS**, con
+> la verificación activa (sin ninguno de los tres flags), copió los 15 con exit 0 y sin un solo
+> «corrupted on transfer». Y una escritura normal de Python sobre `G:` tampoco rellena. El relleno
+> es de la vía de escritura de rclone sobre `G:`, no de `G:`. **Sin medir todavía:** si sin los
+> tres flags reaparecen los errores **contra `G:`** — el control fue contra NTFS, que es otra
+> población. Vías de remedio en `MEJORAS #218`.
+>
+> La mitigación de `--drive-skip-shortcuts` (entrada anterior) no está afectada.
 - **Intentado:** pull con `rclone copy gdrive_ev: G:\Unidades compartidas\EXPEDIENTES - TYUKHAY LEGAL\CASOS\BaRS10 - Diagonal Ponent 22-24 - (W-02J1KW) - Vuelta\00_Input\01_Drive EV ...` y verificación post-transfer por defecto (size + checksum). Sin `--ignore-size`.
 - **Resultado:** `Failed to copy with 17 errors: last error was: corrupted on transfer: sizes differ src(Google drive root '') 86400 vs dst(Local file system at //?/G:/Unidades compartidas/...) 86528`. Patrón consistente: el **destino siempre más grande** que el origen, en deltas variables (+128 B, +268 B, …). La línea `163.447 MiB / 163.447 MiB, 100%, 11.593 MiB/s, ETA 0s` justo antes de los errores confirma que la transferencia de bytes completa al 100%.
 - **Confirmado:** 2026-05-19, sesión 21, caso BaRS10 (`.pulled` con stderr completo capturado).
