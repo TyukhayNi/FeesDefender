@@ -332,7 +332,15 @@ def test_cli_organizar_se_detiene_con_residuo(tmp_casos_root):
     res = sl.organizar(case_id)
     assert res["detenido_por_residuo"] is True
     assert res["n_residuo"] == 1
-    assert not list((case_dir / "01_Procesado" / "Sala lectura").glob("*.pdf"))
+    # El aserto original exigía que no existiera `Sala lectura/Drive E&V`. Al
+    # aplanar lo cambié por un `glob("*.pdf")` en la raíz, que es MÁS DÉBIL: una
+    # copia en cualquier subcarpeta, o de otra extensión, lo pasaba igual. Lo
+    # levantó la R1 adversarial (H-12) y aquí se exige lo que se quería decir:
+    # con residuo, la sala no tiene NINGÚN documento.
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    copiados = [p for p in sala.rglob("*")
+                if p.is_file() and p.name not in ("INDICE.md", "CRONOLOGIA.md")]
+    assert copiados == [], copiados
 
 
 def test_organizar_completo_sin_residuo(tmp_casos_root):

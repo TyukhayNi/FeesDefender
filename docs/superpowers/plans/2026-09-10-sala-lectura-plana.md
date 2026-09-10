@@ -1,0 +1,142 @@
+---
+estado: vigente
+dueño: Nikolai Tyukhay
+fecha: 2026-09-10
+---
+
+# La sala de lectura queda plana y deja de pisar documentos (`MEJORAS #67.b`, `#67.c`, `#36`)
+
+> Pieza pequeña con documento propio por una razón: la decisión la tomaron **dos sesiones a la
+> vez**, sobre el mismo fichero y desde dos casos distintos, y el contrato del nombre de los
+> ficheros de la sala **estaba escrito dos veces y en desacuerdo**. Eso necesita un hogar.
+
+## 1. Los dos defectos, y por qué van juntos
+
+`poblar_sala_lectura` construía el destino como `Sala lectura/{fuente}/{nombre}`, una carpeta por
+fuente, cuando la estructura canónica de la skill `organizar-sala-lectura` es **plana**: la
+categoría vive en `INDICE.md`, no en carpetas. Es el tercer defecto de `MEJORAS #67` (**#67.c**),
+que se venía aplanando **a mano** caso por caso — y el workaround se deshace en el siguiente
+`organizar`.
+
+Aplanar solo, sin embargo, **pierde documentos**: el layout por fuente estaba *tapando* la
+colisión de nombre canónico que el backlog tenía escrita en **`#67.b`** y **`#36`**. Dos documentos
+distintos con la misma fecha, tipo y descripción derivan el mismo nombre, y el `shutil.copy2` del
+segundo sobrescribía al primero sin dejar rastro. El dedup por hash no protege: solo cubre bytes
+idénticos.
+
+**Medido, en dos casos y por dos sesiones:**
+
+| Caso | Medición |
+|---|---|
+| W-02YZO4 (2026-09-10) | 3 colisiones reales: el encargo, la nota simple previa y el burofax llegan por Drive **y** por correo con **bytes distintos** (la copia del Drive pesa unos cientos de bytes más), así que el dedup no los une. Y 5 correos del mismo día con la misma descripción colapsando en un fichero. |
+| W-048UOL (2026-09-10, sesión hermana) | `indice_documental.yaml` con **32** documentos y **15** ficheros en la sala; 17 imágenes descritas todas como «Fotografía» colapsadas en **dos** nombres. Y el síntoma que lo hacía invisible: `organizar` imprimió `COPY: 31` con 15 ficheros en disco — **el resumen contaba copias intentadas, no ficheros escritos**. |
+
+El disparador declarado de `#36` era «la primera colisión observada en un caso real». Ya son dos
+casos, y aplanar la convierte de latente en cierta.
+
+## 2. La decisión sobre el nombre: `__<sha8>` para todos los del grupo
+
+Tres esquemas estaban sobre la mesa, dos de ellos escritos en contratos que se contradecían — la
+skill decía `_2`/`_3` y `MEJORAS #67.b` decía `__<sha8>`.
+
+| Esquema | Falla cuando… |
+|---|---|
+| `_2`/`_3` por orden de llegada | el catálogo se reordena: el pelado y los ordinales mudan de documento |
+| `_2`/`_3` con el pelado al `hash` menor | al grupo entra un tercero: el `_2` de ayer es el `_3` de hoy |
+| **`__<sha8>` para TODOS los del grupo** | solo en la transición inevitable de uno a dos miembros |
+
+**Decidido:** el tercero. En un grupo colisionado **nadie** conserva el nombre pelado; cada
+documento lleva los 8 primeros hex de su `sha256`. Es estable frente a la reordenación **y** frente
+al crecimiento del grupo, que son las dos formas en que una cita del letrado a un fichero pasa a
+señalar otro documento. Y son 8 y no 6 porque `#67.b` ya fijaba 8: así solo hay **un** literal que
+corregir (el de la skill), no dos.
+
+Consecuencia: la skill `organizar-sala-lectura` pasa a **v1.17** con ese literal corregido en sus
+dos apariciones (Paso 2 y Paso 4). **Pendiente empaquetar y re-importar el `.skill` en Cowork**:
+la fuente corregida no es la skill desplegada.
+
+## 3. Lo que entra en el código
+
+- `_directorio_destino` — destino plano; la subcarpeta del documento compuesto sobrevive como
+  única excepción. Devuelve `None` como relación **cuando no se detectó bundle**, para no pisar
+  una relación previa (ver H-09 en el §5).
+- `_asignar_destinos` — reserva **global** de rutas finales, no por grupo, y sufijado `__<sha8>`.
+  Incluye las rutas de las filas que no entran al plan: su copia sigue en disco.
+- `_discriminante` — el `sha8` del documento, o el del `ruta_relativa` si la fila llega sin hash.
+- `_podar_directorios_vacios` — retira el cascarón de la carpeta por fuente al migrar, sin seguir
+  enlaces, confinada físicamente bajo la sala, respetando el subárbol de `_plan` y **devolviendo**
+  los errores que no son «el directorio no está vacío».
+- `poblar_sala_lectura` — dos pases (el nombre definitivo depende de con quién colisione), no
+  borra como «ruta vieja» lo que es destino nuevo de otra fila, rechaza un directorio ocupando el
+  destino, dice cuándo sobrescribe un fichero sin fila, y devuelve **`n_en_sala`**: ficheros
+  escritos, no copias intentadas.
+
+Un caso ya poblado con el layout anterior **se aplana solo** en la corrida siguiente (rama
+`MOVED`).
+
+## 4. Cómo se decidió quién lo implementaba
+
+Dos sesiones arreglaron esto a la vez, sin saberlo: esta (desde W-02YZO4, citando `#67.b`/`#67.c`)
+y «Caso W-048UOL» (desde su caso, abriendo una entrada de backlog propia). Ninguna pisó a la otra en disco —worktrees
+separados— pero el choque llegaba al mergear el segundo PR, y el modo de fallo caro era
+«resolverlo» quedándose los dos mecanismos.
+
+Se resolvió comparando las dos implementaciones por propiedades, no por antigüedad: la de
+W-048UOL era estable frente al crecimiento del grupo y la de aquí frente a la reordenación, así que
+**ninguna de las dos era la buena** y el esquema del §2 sale de juntarlas. La sesión de W-048UOL
+retiró su diff (`fd401af`) y esta lo absorbe con su medición citada.
+
+**Y un detalle que casi entró en el código como referencia falsa:** su entrada de backlog es el
+`#215` **de su rama**, y en `main` el `#215` es otra cosa (`_MAGIC_BYTES`). Un número de backlog es
+una **reserva** hasta que se mergea, así que aquí se cita la medición con su fecha y no el número.
+Memoria [[feedback-numero-de-backlog-es-una-reserva]].
+
+**La lección de método, que es lo que hay que llevarse:** al abrir comprobé duplicidad **del caso**
+(grep del W-code, `git log`) y no duplicidad **del fichero que iba a cambiar**. La comprobación
+tiene que cubrir las dos cosas — `git status` de los worktrees hermanos sobre los ficheros del diff,
+antes de escribir. Memoria [[feedback-verificar-pr-duplicado-antes-ejecutar]].
+
+## 5. Adjudicación de la revisión adversarial (Codex, 2026-09-10) — NO-SHIP, remediado
+
+- **Objeto revisado:** diff `874111b..7c4a97a` — sala plana + guarda de colisión en `core/sala_lectura.py`
+- **Ronda:** R1 (única; radio de daño = no decide quién escribe ni destruye el crudo de `00_Input`)
+- **Revisor:** Codex (CLI 0.153.4), copia externa `git archive` de los dos commits, solo lectura
+- **Informe recibido:** 2026-09-10, `2026-09-10-sala-lectura-plana-r1-adversarial-review.md`, 38.925 bytes
+- **Hallazgos:** 12 — 5 ALTOS (H-01, H-02, H-03, H-04, H-10), 6 MEDIOS, 1 BAJO; **12 confirmados, 0 refutados**
+- **Remediado en:** commit de este PR, `core/sala_lectura.py` + `tests/test_sala_lectura_plana_r1.py`
+
+**El veredicto era correcto y la ronda se pagó sola.** Dos de los ALTOS los reprodujo
+**ejecutando**, no leyendo, y uno de ellos —H-01— era un hueco que mi propia guarda abría: razonaba
+dentro de cada grupo de colisión y no reservaba los nombres finales de los demás, así que
+descripciones `mismo`, `mismo` y `mismo_2` producían dos rutas idénticas. También montó el control
+que el mandato le pedía: corrió mis seis tests contra el código **base** (los seis rojos: sí
+discriminan) y construyó un **mutante** que invertía la ordenación por hash y **pasaba los seis**,
+lo que prueba que no fijaban la correspondencia documento→nombre. Ese mutante hoy muere en tres
+tests.
+
+| Hallazgo | Severidad | Veredicto | Remedio |
+|---|---|---|---|
+| H-01 · el sufijo generado choca con un nombre natural | ALTA | confirmado | reserva **global** de rutas finales en `_asignar_destinos`; test `test_h01_…` |
+| H-02 · cambio de participantes reasigna citas; los traslados se borran entre sí | ALTA | confirmado | `__<sha8>` para todo el grupo (§2); no se borra como ruta vieja lo que es destino nuevo; las filas excluidas **reservan** su ruta; dos tests |
+| H-03 · varias filas sin hash comparten casilla | ALTA | confirmado | regresión mía: el resultado se indexaba por `hash`. Ahora por índice, con `_discriminante` derivado del `ruta_relativa`; dos tests |
+| H-04 · una ruta existente se acepta sin mirar sus bytes | ALTA | confirmado, **PREEXISTENTE** | fuera de alcance → `MEJORAS`. Verificar el destino por hash en cada corrida es una decisión de coste, no un arreglo de este diff |
+| H-05 · el dedup no repara referencias; la reconstrucción deja huérfanos | MEDIA | confirmado, **PREEXISTENTE** | fuera de alcance → `MEJORAS` |
+| H-06 · la poda sigue enlaces y borra fuera de la sala | MEDIA | confirmado | riesgo **nuevo** mío, y lo midió con junctions reales: se salta enlaces y exige confinamiento físico; test |
+| H-07 · la exclusión de `_plan` no protege su subárbol | MEDIA | confirmado | riesgo nuevo mío: se filtra el subárbol, no el nombre; test |
+| H-08 · un error de poda es indistinguible de un directorio ocupado | BAJA | confirmado | se distingue por `errno` y se devuelve; test |
+| H-09 · sin bundle se borra `parent_id` y se conserva `orden_en_bundle` | MEDIA | confirmado | regresión mía frente al comportamiento anterior: solo se escriben esos dos campos si se detectó bundle; test |
+| H-10 · no hay transacción ni exclusión entre corridas solapadas | ALTA | confirmado, **PREEXISTENTE** | fuera de alcance → `MEJORAS`. Es la deuda de `MEJORAS #126` («la UI y `sala_lectura` siguen sin mutex»), no algo que estos dos pases introduzcan |
+| H-11 · el plan no inventaría lo ya presente en el destino | MEDIA | confirmado, **mitad y mitad** | el directorio en el destino se rechaza y se cuenta (test); sobrescribir un **fichero** sin fila se mantiene —es el destino canónico de esa fila— pero ahora **se dice** (`SOBRESCRITO_SIN_FILA`) |
+| H-12 · aserto de parada debilitado; prioridad exacta sin probar | MEDIA | confirmado | **tenía razón y es la regla de la casa**: al aplanar cambié `not (…/"Drive E&V").exists()` por un `glob("*.pdf")` en la raíz, que es más débil. Restaurado a «con residuo, la sala no tiene ningún documento». Y el nombre exacto por documento queda fijado en `test_h12_…` |
+
+**Lo que la R1 dejó SIN VERIFICAR y sigue así:** la genealogía de los commits (su copia no lleva
+`.git`); dos procesos realmente simultáneos; ACL reales, disco lleno y corte físico durante la
+escritura del YAML; y el comportamiento de enlaces en Linux/macOS. Lo declaró él y no se da por
+cubierto.
+
+**Cobertura de la remediación, dicha entera:** los remedios de arriba **no** han pasado por una
+segunda ronda. El presupuesto de esta pieza es de una ronda por radio de daño, y una R2 sobre el
+diff remediado queda a decisión de Nikolai. Lo que sí las cubre en parte, y se declara como lo que
+es: la R1 que la sesión de W-048UOL corrió **en paralelo** sobre su `_sin_colision` —el mismo
+mecanismo con otra asignación— ataca la completitud de la discriminación, la idempotencia entre
+corridas y si `old.unlink()` puede dejar una fila sin fichero. Cuando llegue, se adjudica aquí.

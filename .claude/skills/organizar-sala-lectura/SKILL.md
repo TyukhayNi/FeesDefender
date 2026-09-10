@@ -21,7 +21,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.16"
+  version: "1.17"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -310,9 +310,20 @@ tal diálogo.
      "Documentos compuestos").
    - **Desambigua colisiones de nombre ANTES de persistir el plan:** si dos
      documentos derivan el MISMO `nombre_canonico` (misma fecha + misma
-     descripción), añade sufijo `_2`/`_3` al segundo y siguientes. Una colisión
-     no resuelta hace que una copia pise a otra en disco sin rastro; el verify
-     del Paso 6.5 (`verificar()`) también la caza, pero es más barato evitarla aquí.
+     descripción), **ninguno conserva el nombre pelado**: todos los del grupo
+     llevan `__<sha8>` — los 8 primeros hex de su `sha256` — antes de la extensión
+     (`2025-02-27_activacion_nota_simple__a0520cdf.pdf`). Una colisión no resuelta
+     hace que una copia pise a otra en disco sin rastro; el verify del Paso 6.5
+     (`verificar()`) también la caza, pero es más barato evitarla aquí.
+     - **Por qué `__<sha8>` y no `_2`/`_3`, que es lo que decía esta línea hasta el
+       2026-09-10:** el ordinal no es estable. Si al grupo entra un tercer documento,
+       el `_2` de ayer puede ser el `_3` de hoy, y una cita del letrado a
+       `…_2.pdf` pasa a señalar otro documento; y si el pelado se lo queda «el
+       primero», basta que el catálogo se reordene para que cambie de documento. El
+       `sha8` no se mueve nunca, y por eso tampoco lo conserva nadie pelado: así la
+       única transición posible es la inevitable de 1 a 2 miembros.
+     - Misma regla que aplica el CLI (`core.sala_lectura._desambiguar`) y que fija
+       `MEJORAS #67.b`, para que las dos vías construyan la misma sala.
    No copies nada todavía.
 2-bis. **Persiste la propuesta a fichero** en
    `01_Procesado/Sala lectura/_plan/plan-<AAAA-MM-DD-HHmm>.md` — la misma
@@ -360,7 +371,7 @@ tal diálogo.
      si lo arrancó — no dejes un `rcd` huérfano en `:15572` ni lo levantes a mano);
      **aborta antes de tocar Drive** (`validar_pares`) si hay destinos duplicados
      (colisión de `nombre_canonico` sin resolver → vuelve al Paso 2, desambigua con
-     `_2`/`_3`); escribe un **log JSONL de progreso** por fila, de modo que una
+     `__<sha8>`); escribe un **log JSONL de progreso** por fila, de modo que una
      corrida interrumpida se **reanuda** sin re-copiar lo ya hecho (ver
      "Corrida interrumpida"). `usar_async=True` no cuenta una copia grande legítima
      (>60s) como fallida.

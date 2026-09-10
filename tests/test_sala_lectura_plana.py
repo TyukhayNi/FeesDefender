@@ -171,18 +171,20 @@ def test_colision_de_nombre_canonico_conserva_LOS_DOS_documentos(tmp_casos_root)
     assert {p.read_bytes() for p in ficheros} == {
         b"%PDF-NOTA-DRIVE", b"%PDF-NOTA-CORREO-distinto",
     }
-    # Uno conserva el nombre canónico y el otro lleva el sufijo `_2` de la skill.
-    nombres = sorted(p.name for p in ficheros)
-    assert nombres == [
-        "2025-02-27_activacion_nota_simple_registral.pdf",
-        "2025-02-27_activacion_nota_simple_registral_2.pdf",
-    ], nombres
+    # NINGUNO conserva el nombre pelado: los dos llevan su `__<sha8>`. Lo pedía
+    # `MEJORAS #67.b` y lo confirmó la R1 adversarial — el ordinal `_2` se mueve
+    # cuando al grupo entra un tercero, y el sha8 no.
+    esperados = sorted(
+        "2025-02-27_activacion_nota_simple_registral__%s.pdf" % e.hash[:8]
+        for e in cat.load_catalog(case_id)
+    )
+    assert sorted(p.name for p in ficheros) == esperados
     # Y el catálogo dice dónde está cada uno, sin dos filas apuntando al mismo sitio.
     rutas = [e.ruta_sala_lectura for e in cat.load_catalog(case_id)]
     assert len(set(rutas)) == len(rutas) == 2
 
 
-def test_colision_triple_numera_2_y_3(tmp_casos_root):
+def test_colision_triple_discrimina_los_tres(tmp_casos_root):
     cm, inv, cat, sl = _reload()
     case_id, case_dir = _caso_con_docs(cm, inv, cat, [
         ("01_Drive EV", "a.pdf", b"%PDF-A"),
@@ -195,12 +197,11 @@ def test_colision_triple_numera_2_y_3(tmp_casos_root):
     })
     sl.poblar_sala_lectura(case_id)
 
-    nombres = sorted(p.name for p in _ficheros(case_dir))
-    assert nombres == [
-        "2025-12-23_reclamacion_correo_interno.pdf",
-        "2025-12-23_reclamacion_correo_interno_2.pdf",
-        "2025-12-23_reclamacion_correo_interno_3.pdf",
-    ], nombres
+    esperados = sorted(
+        "2025-12-23_reclamacion_correo_interno__%s.pdf" % e.hash[:8]
+        for e in cat.load_catalog(case_id)
+    )
+    assert sorted(p.name for p in _ficheros(case_dir)) == esperados
     assert {p.read_bytes() for p in _ficheros(case_dir)} == {b"%PDF-A", b"%PDF-B", b"%PDF-C"}
 
 
