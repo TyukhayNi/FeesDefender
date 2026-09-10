@@ -10170,6 +10170,17 @@ status, no un resultado.
 **nombrar los que faltan** antes de imprimir el resultado — o escribir el `_MANIFIESTO.md`, si la
 decisión es que la ruta CLI también lo produce. Lo que no cabe es seguir diciendo «organizada».
 
+> **Confirmado en un segundo caso, y por otra sesión que llegó a lo mismo por su cuenta (W-02NHNC,
+> 2026-09-10).** Tras `organizar` + `poblar` + `render` sobre 21 documentos: `INDICE.md` (50 líneas)
+> y `CRONOLOGIA.md` (33) presentes, `_MANIFIESTO.md` **ausente**, y el `indice_documental.yaml` en
+> `01_Procesado/`, no dentro de `Sala lectura/` — las dos mitades que describe esta entrada, con el
+> mismo reparto. Se abrió una entrada aparte para el manifiesto y **se retiró al ver esta**: el
+> hallazgo es este, y dos casos independientes valen más que dos números.
+>
+> Un dato que el segundo caso añade: el manifiesto habría sido además el único sitio donde se
+> habrían listado los documentos que `poblar` pisa por colisión de nombre canónico (`#226`). Cuando
+> se escriba, esa lista es contenido obligado, no un adorno.
+
 **Cómo comprobarlo sin engañarse.** Un test que corra `organizar` sobre un caso sintético y
 afirme la existencia de los cuatro. Hoy sale rojo en dos, y ese rojo es la medida de la deuda.
 
@@ -10319,6 +10330,333 @@ una sola pregunta del canónico, rojo. Sin la segunda mitad, el guard aprueba cu
 —que es lo que un lector diligente hace— o en cuanto el cuestionario canónico cambie. Mientras
 tanto la regla operativa es: **no regenerar la vista; usar la commiteada**, que es la que tiene el
 enrutado.
+## 224. `--direccion` es el único flag de identidad que se teclea a mano, y el nombre de la carpeta de E&V ya lo trae
+
+> Medido el 2026-09-10 abriendo **W-02NHNC**: la dirección llevaba una vocal acentuada y la escribí
+> sin acento. Nadie podía avisar, porque no hay con qué comparar.
+
+**Qué pasa.** La auto-derivación B5 (`[APER-34]`) cubre tres de los seis flags de identidad:
+`--team-id` sale del `driveId`, `--codigo-caso` del nombre de la unidad compartida y `--sufijo` del
+`tipo_caso` canónico. **`--direccion` no.** Se teclea, y es el único componente del `case_id` sin
+fuente: `f"{codigo} - {direccion} ({w_code}) - {sufijo}"`.
+
+**Por qué importa más que una errata.** El `case_id` es la identidad que se propaga a tres
+sistemas (carpeta de Drive del despacho, `Referencia_Cliente` del CRM, etiqueta *leaf* de Gmail) y
+queda estampada en el frontmatter de cada espejo MD. Corregirlo después del alta es el renombrado
+cross-sistema que `[APER-04]` manda evitar; en W-02NHNC costó barato **solo** porque se cazó antes
+de crear la etiqueta y la ficha, y aun así dejó 17 frontmatters con el sello previo.
+
+**El dato existe y ya se lee.** El alta consulta la carpeta de E&V para derivar `--team-id`, y esa
+carpeta se llama `<direccion> - <W-code> - <consultor>`: el W-code de en medio da el punto de corte
+exacto para el prefijo. O sea que la dirección viene en el mismo objeto del que ya se saca la mitad
+de la identidad, y se ignora.
+
+**Vías.**
+
+- **(a) Derivar `--direccion` del nombre de la carpeta** cuando se omita, con el W-code como
+  delimitador, y que el flag explícito siga ganando (como el resto de B5). Es la que cierra la
+  causa.
+- **(b) Solo avisar**: comparar la `--direccion` recibida con el prefijo del nombre de la carpeta y
+  advertir si difieren en algo más que puntuación. Más barata, no evita el tecleo.
+- **(c) Nada, y que el operador copie y pegue.** Es el estado actual, y lo que falló.
+
+**Cuidado con (a):** no todas las carpetas de E&V siguen el patrón —hay `PROPIEDADES/1. ACTIVAS/`
+con nombres libres— así que la derivación tiene que **rendirse y pedir el flag** cuando no
+encuentre el W-code en el nombre, igual que hace `codigo_de_unidad` con una unidad comercial. Una
+derivación que adivine es peor que teclear.
+
+## 225. El pull de Drive E&V guarda los documentos RELLENADOS con ceros a múltiplo de 512, y su sha256 deja de ser el del original
+
+> Medido el 2026-09-10 en la apertura de **W-02NHNC**. Salió a la luz por un síntoma que no era
+> este: el encargo se OCR-eó **dos veces** (77,7 s de los 165,8 s de la segunda pasada) porque el
+> dedup por sha no reconoció que la copia del correo y la del Drive eran el mismo documento.
+
+**Qué pasa.** Los 9 ficheros que `pull_drive_ev` trajo a `00_Input/01_Drive EV/` pesan **el
+siguiente múltiplo de 512** y llevan **bytes cero** al final. Su `sha256` no es, por tanto, el del
+fichero de origen:
+
+| Fichero (del Drive de E&V) | bytes en origen | bytes en el expediente | de más |
+|---|---|---|---|
+| Encargo de venta | 2.773.549 | 2.774.016 | +467 |
+| Anexo 2 (propietario A) | 631.603 | 631.808 | +205 |
+| Anexo 2 (propietario B) | 631.542 | 631.808 | +266 |
+| Nota simple | 261.945 | 262.144 | +199 |
+| CEE etiqueta | 730.086 | 730.112 | +26 |
+| Ref. catastral ×2 | 67.776 / 68.629 | 68.096 / 69.120 | +320 / +491 |
+| DNI ×2 | 101.053 / 104.681 | 101.376 / 104.960 | +323 / +279 |
+
+Los **15 de 15** ficheros de la carpeta, no solo los 9 de la tabla: los otros seis (hoja de
+visita, devolución de llaves en `.pdf` y `.docx`, nota simple del comprador y los dos cruces de
+PBC) no traen `sha256Checksum` declarado y se contrastaron contra un pull independiente a NTFS.
+El contraste de los 9 es contra el `sha256Checksum` que declara la API de Drive para el fichero de
+origen, no contra una expectativa.
+
+**El relleno está en los bytes, no en el tamaño declarado, y llega a la nube.** Tres controles:
+
+1. Copiar el fichero de `G:` a NTFS conserva los 262.144 bytes y el hash; los últimos 24 bytes son
+   `00`.
+2. El mismo fichero bajado por la API de Drive pesa 261.945 y hashea a lo que Drive declara.
+3. Buscado por la API **en el Drive del despacho**, el fichero subido dice `size: 262144` y
+   `sha256Checksum: ff2d839d…` — o sea que **el archivo canónico guarda la versión rellenada**.
+
+**La causa está acotada por tres controles, y el diagnóstico de 2026-05-19 era falso.**
+
+1. **Otro escritor, mismo destino, no rellena.** En la misma sesión y en la misma ruta de `G:`, el
+   export de Gmail escribió el mismo encargo como adjunto: 2.773.549 bytes, sha idéntico al de
+   Drive. Y la sustitución de los 15 se hizo con `Path.write_bytes` sobre `G:`: **15 de 15 fieles
+   tras escribir**. O sea que no rellena `G:`, rellena **la vía de escritura de rclone** sobre `G:`.
+2. **rclone contra NTFS, con la verificación ACTIVA, sale limpio.** `rclone copy gdrive_ev: <dir
+   NTFS>` sin `--inplace`, sin `--ignore-size` y sin `--ignore-checksum` copió los 15 con **exit 0
+   y ni un «corrupted on transfer»**, y los 9 que traen `sha256Checksum` declarado cuadran los 9.
+   Eso es la vía **(c)** medida, y de paso pone en duda que los tres flags sigan hacen falta.
+3. **El comentario del código afirma lo contrario de lo que pasa.** `core/intake_drive.py:233`
+   dice que «Drive Desktop reescribe metadatos y `stat()` devuelve un tamaño ligeramente superior
+   al del origen (observado +128, +268 bytes en sesión 21)» y de ahí concluye que «la integridad
+   real está garantizada por TLS de Drive API en ambos extremos». **El exceso no está en lo que
+   devuelve `stat()`: son bytes cero dentro del fichero**, sobreviven a una copia a NTFS y llegan
+   a la nube. Los `+128` y `+268` de la sesión 21 eran, con casi total seguridad, este mismo
+   relleno leído como si fuera un artefacto de metadatos — y la conclusión fue **suprimir la única
+   guarda que lo habría cazado**. Lo que falta por medir es lo simétrico: si sin los tres flags
+   reaparecen los falsos «corrupted on transfer» **contra `G:`** (el control 2 fue contra NTFS).
+
+**ALCANCE sobre expedientes ya trabajados — y el conteo hay que hacerlo POR VÍA DE ENTRADA.**
+La pregunta la trajo la sesión de W-048UOL, que contó el 100 % de dos expedientes grandes en vez de
+una muestra. Reverificado aquí el 2026-09-10 separando por vía, porque un conteo sobre todo
+`00_Input` mezcla poblaciones que no comparten escritor. Firma del defecto = tamaño múltiplo de 512
+**y** cola de ceros (el 512-align a secas toca por azar 1 de cada 512 ficheros):
+
+| | ficheros | con la firma | |
+|---|---|---|---|
+| **W-02VEKE** · pull de rclone (`01_Drive EV`) | 242 | **224** | 93 % |
+| W-02VEKE · pull del CRM | 78 | 2 | 3 % |
+| W-02VEKE · capa derivada (`01_Procesado`) | 938 | **206** | 22 % |
+| **W-02JSVZ** · pull de rclone | 171 | **167** | 98 % |
+| W-02JSVZ · export de correo | 59 | **0** | 0 % |
+| W-02JSVZ · capa derivada | 805 | **100** | 12 % |
+
+**Cómo NO leerlo.** El dato de origen se enunció como «242 de 324» y «170 de 237», sobre
+`00_Input` entero. Los denominadores cuadran exactos (242+78+4 = 324; 171+59+7 = 237), luego el
+numerador **era** la población de rclone completa: lo que dicen esas cifras no es «el 75 % del
+expediente está afectado», es **«prácticamente el 100 % de lo que entró por rclone»**, y el 0 % del
+correo y el 3 % del CRM lo confirman por el otro lado. La ratio sobre el expediente entero depende
+de cuánto pesó cada fuente en ese caso y no mide el defecto.
+
+**La capa DERIVADA sale al 22 % y al 12 %, y NO es un segundo defecto: es el mismo relleno
+copiado.** Se planteó primero que lo hiciera el **checkin** (también usa rclone contra `G:`) y se
+midió antes de dejarlo escrito. **Refutado, por dos vías:**
+
+1. **Dónde están.** Los 306 ficheros derivados con la firma están **todos** bajo
+   `01_Procesado/Sala lectura/` —en W-02JSVZ, los 100 dentro de `Sala lectura/Drive E&V/`— y por
+   extensión son `.opus`, `.pdf`, `.jpg`, `.docx`, `.mp4`: **documentos fuente**, no productos del
+   pipeline. `poblar_sala_lectura` los lleva ahí con `shutil.copy2`, que copia los bytes tal cual y
+   por tanto **arrastra la cola de ceros del original**.
+2. **El control.** Lo que el pipeline genera de su puño —`INDICE.md`, `CRONOLOGIA.md`,
+   `indice_documental.yaml`, `_cobertura.md`— **no** está alineado ni acaba en ceros: termina en
+   `0d0a`. Si el escritor rellenara, rellenaría también estos.
+
+Y el mecanismo del checkin tampoco daba: usa `--checksum` y `--backup-dir` y cierra con `rclone
+check --one-way`, o sea con la verificación **encendida**; ni `--inplace` ni `--ignore-*`. Si
+rellenara, su propio check lo cazaría. **La hipótesis queda cerrada, no pendiente.**
+
+**Lo que sí cambia, y es lo caro:** reparar `00_Input` no basta. La sala de lectura guarda su propia
+copia de cada documento, así que el histórico a reponer no son 242 + 171 ficheros, son **esos más
+sus copias en la sala** — del orden del doble. Verificado por el lado bueno en W-02NHNC: tras
+reponer los 15 y **regenerar la sala entera**, quedan **0 ficheros con la firma** en
+`00_Input/01_Drive EV`, en `Sala lectura` y en `02_Sala de máquina`. La receta de reparación es
+«reponer el crudo **y** regenerar lo derivado», no solo lo primero.
+
+**Lo que el alcance cambia en la práctica.** No es solo cuántos ficheros hay mal: es que **el hash
+forense de casi todo el material de Drive de los expedientes históricos no cuadra contra el origen**,
+así que hoy no se puede acreditar por hash la procedencia de la documental de E&V en ningún caso
+abierto antes de arreglar esto. La reposición de W-02NHNC (15 ficheros) fue barata; hacerlo sobre
+242 y 171 no lo es, y **decidir si se repone el histórico o solo se declara es de Nikolai**, no una
+consecuencia técnica.
+
+**No es de siempre, y ese dato importa para fecharlo:** de los primeros 12 ficheros de
+`01_Drive EV` son múltiplo de 512 **0 de 12** en W-02Q38C, **1 de 12** en W-02Z2NR y **9 de 12** en
+W-048U77. Algo cambió entre medias (versión de Drive for Desktop, estado de la caché, o el propio
+rclone) y no se sabe qué.
+
+**Qué rompe, por orden de coste.**
+
+1. **La procedencia por hash, que es justo para lo que se registra.** El `sha256` del
+   `_intake_log.jsonl` de todo documento de `drive_ev` no puede cuadrarse contra el Drive de E&V.
+   En un expediente probatorio el hash está ahí para acreditar que la copia es el documento del
+   cliente; con relleno, la comparación **siempre** falla y no distingue un relleno inocente de una
+   alteración real.
+2. **El dedup entre fuentes queda ciego** (`#'Acción 11'`, dedup por sha con `alias_de`). Medido:
+   encargo, nota simple y hoja de visita procesados dos veces. En un caso de 170 documentos con
+   correo y Drive solapados, son minutos de OCR regalados.
+3. **La verificación del checkin por hash** compara `G:` contra `G:`, así que no lo caza.
+
+**Lo que NO rompe:** el contenido. Los lectores de PDF ignoran la cola tras `%%EOF`, el OCR salió
+`ok` en los 9, y el texto extraído es el del original. Esto es un defecto de integridad y de
+identidad, no de legibilidad.
+
+> **Vecina, y distinta:** el `#214` describe otro defecto de la MISMA superficie — Drive for
+> Desktop renombrando bajo los pies y el pull duplicando en cada ronda. Ese es un problema de
+> identidad de la ruta; este, de los bytes del fichero. No se arreglan juntos.
+
+**Aviso operativo mientras esto siga abierto: un caso al que se le hayan repuesto los ficheros a
+mano NO admite otro `--fuente drive_ev`.** rclone decide qué transferir por modtime (con
+`--ignore-size` y `--ignore-checksum` no le queda otra señal), y los ficheros repuestos llevan
+modtime de la reposición, distinto del de origen: el re-pull los vuelve a traer y los vuelve a
+rellenar, deshaciendo la reparación sin decir nada. En W-02NHNC eso descarta la vía cómoda de
+lanzar el alta CRM con `--fuente drive_ev`.
+
+**Vías.**
+
+- **(a) Verificar por hash después del pull**, contra el `sha256Checksum` que la API ya devuelve, y
+  gritar por fichero que no cuadre. Es la que convierte el defecto en visible; no lo arregla.
+- **(b) Quitar `--inplace`** y volver a medir los falsos «corrupted on transfer» que motivaron
+  añadirlo — con el control que nunca se corrió. Riesgo: reabre el problema de la sesión 21.
+- **(c) Pull a NTFS y luego copia a `G:`**, que es lo que hace el modo local de `[APER-41]` sin
+  proponérselo. Cuesta un tránsito más y esquiva el filesystem virtual en la escritura de rclone.
+- **(d) Truncar a la longitud declarada tras el pull.** Repara el síntoma sin entender la causa y
+  destruye evidencia si alguna vez el relleno no fuera relleno. **Descartada salvo medición.**
+
+## 226. `poblar` pisa en silencio el documento anterior cuando dos entradas comparten nombre canónico — 4 de 21 documentos ausentes de la sala
+
+> Medido el 2026-09-10 en la sala de lectura de **W-02NHNC**: el catálogo tenía **21 documentos
+> únicos** y en la sala había **17 ficheros**. Ni un aviso, ni un contador, ni una línea en el
+> `INDICE.md` que lo dijera.
+
+**Qué pasa.** `core/sala_lectura.py:718::_nombre_canonico` compone
+`{fecha_doc}_{tipo_slug}_{descripcion}{ext}` y **no lleva discriminante**. `poblar_sala_lectura`
+(línea ~800) resuelve el destino con ese nombre y copia con `shutil.copy2(src, dst)` **sin
+comprobar si `dst` ya existe apuntando a otro `hash`**. Dos entradas que coincidan en los cuatro
+campos escriben en la misma ruta: la segunda pisa a la primera, y **las dos** quedan en el
+catálogo con el mismo `ruta_sala_lectura`. El `SKIP_DEDUP` no lo cubre: ese mira el `hash`, y aquí
+los hashes son distintos — son documentos distintos.
+
+**Las tres colisiones medidas, y por qué no son un caso raro:**
+
+| Documentos | Nombre canónico que compartieron |
+|---|---|
+| Las **3 capturas** (timeline del CRM + 2 de la conversación de WhatsApp) | `2026-09-10_foto_fotografia.jpg` |
+| Los **2 screenings PBC**, uno por titular | `2022-03-28_activacion_screening_….pdf` |
+| Los **2 Anexos 2**, uno por titular | `2021-02-18_pbc_anexo_2_….pdf` |
+
+**Y esto es estructural, no un descuido de quien clasifica.** El canon exige que la `descripcion`
+vaya **sin PII** (`taxonomia_ev.md`: «Describe el documento, no a las partes»), y en un inmueble
+con **dos titulares** —que es lo normal, no la excepción— los dos Anexos 2, los dos DNI y los dos
+screenings son el mismo documento para dos personas: lo único que los distingue es justo lo que no
+se puede escribir. La regla de nombrado y la regla de PII se contradicen, y el desempate lo pone
+`shutil.copy2` borrando uno.
+
+Las capturas son peor, porque ahí no hubo clasificador humano: el automático les puso `00. FOTOS`
+con `fecha_fuente: mtime` y `descripcion` derivada del stem, y **tres documentos distintos
+colapsaron al mismo nombre con `confianza: 1.0`**. En este caso los dos que se perdían eran la
+conversación de WhatsApp en la que el consultor cita al comprador — la prueba del contacto y de la
+visita, o sea el nexo causal del que vive una reclamación por vuelta.
+
+**Lo que NO protege, y se creía que sí.** `MEJORAS #67` da por cubierta esta colisión («la colisión
+de nombres la cubría ya el sufijo SHA»). **Es falso para esta ruta:** el sufijo `__<sha8>` lo pone
+la **sala de máquina** al nombrar sus espejos (`w_02nhnc_encargo…__c7b4e911.md`), que es otra
+función y otro árbol. `_nombre_canonico` no lo lleva.
+
+> **Vecina:** el `#220` cubre la otra mitad del fechado — que la CRONOLOGIA no marca `(*)` las
+> fechas que vienen de `mtime`. Aqui el `mtime` no solo mal-fecha: ademas **colapsa** tres
+> documentos al mismo nombre, porque la fecha es el primer campo del nombre canonico.
+
+**El contraste barato que lo caza** (y que conviene correr en toda apertura, junto al de
+`[APER-60]`): número de `nombre_canonico` **distintos** en `indice_documental.yaml` contra número
+de ficheros en `01_Procesado/Sala lectura/`. Si no cuadra, hay documentos pisados. En W-02NHNC:
+21 entradas con nombre, 17 ficheros.
+
+**Vías.**
+
+- **(a) Desempatar en `_nombre_canonico`** con `__<sha8>` cuando el nombre ya esté tomado por otro
+  hash — el mismo recurso que usa la sala de máquina, y consistente con lo que #67 creía vigente.
+  Solo sufija al colisionar, así que no ensucia el caso normal.
+- **(b) Que `poblar` avise y no pise:** si `dst` existe y su hash no es el de la entrada, contar
+  `COLISION` y dejarlo fuera con la razón. Convierte la pérdida silenciosa en una lista. Combina
+  bien con (a): (b) es la red, (a) el arreglo.
+- **(c) Permitir un discriminante no-PII en la `descripcion`** (ordinal por parte: `_titular_1`,
+  `_titular_2`) y documentarlo en el canon. Es lo que se hizo **a mano** en W-02NHNC para salir del
+  paso, y funciona, pero deja el defecto vivo para el clasificador automático, que no sabe
+  ordinales.
+- **(d) Nada.** Hoy el coste es que un caso pierde documentos de la sala sin decirlo, y quien la
+  lee no tiene forma de notarlo: el `INDICE.md` los lista igual, porque lista el catálogo.
+
+## 227. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo
+
+> Medido el 2026-09-10 en W-02NHNC, siguiendo el orden que manda la memoria del despacho: alta CRM
+> **al final**, con `--crm skip` en todo el intake previo.
+
+**Qué pasa.** El caso se abre sin `--cuantia` (todavía no se conoce: sale de leer el encargo) y
+al final se lanza el alta con `--cuantia 73140`. El CRM recibe el dato —`cuantia=73140.0` en el
+payload, expediente 644— y **`_caso.md` se queda con `meta.cuantia: null`** y con la línea
+`- Cuantía: _(pendiente)_` en el cuerpo. Dos hogares para el mismo hecho, y el local dice
+«pendiente» de un dato que ya existe.
+
+**Y no se repone por la vía sancionada.** Medido: `case_manager.ensure_case(case_id,
+cuantia=73140.0)` sobre un caso ya existente **no cambia nada** —ni el frontmatter ni el cuerpo—,
+porque `ensure_case` solo fija los campos cuando crea el índice. Es **la misma limitación** que el
+RUNBOOK ya documenta para `referencia_crm` (§3-bis, `MEJORAS #184`): «hay que reponerlo y también
+la línea del cuerpo, que `_actualizar_cuerpo` no regenera». Aquí hubo que hacer las dos ediciones a
+mano, bajo el mutex.
+
+> **Vecina, y no es la misma:** el `#218` dice que el alta manda la cuantia como ENTERO y se
+> pierden los centimos. Ese es un defecto del valor que SI viaja; este, de un valor que no
+> viaja a `_caso.md` en absoluto. Se pueden dar los dos a la vez.
+
+**Coste hoy: bajo, y por eso conviene arreglarlo antes de que suba.** El único lector de
+`meta.cuantia` es `case_manager.py:200`, que pinta la línea del cuerpo. O sea que hoy el daño es un
+índice de caso que miente sobre un dato que el CRM tiene bien. Pero es la tercera vez que aparece
+el mismo patrón (`#184` la referencia, `#192` el campo, esta la cuantía): **`ensure_case` es un
+creador al que se le pide que sea también un actualizador, y calla cuando no puede.**
+
+**Vías.**
+
+- **(a) Un actualizador de verdad**: `case_manager.update_meta(case_id, **campos)` que fije el
+  frontmatter y regenere las líneas del cuerpo que le corresponden —conservando lo que no es suyo,
+  como ya hace el sumidero desde `MEJORAS #146`—. Cierra `#184`, `#192` y esta de una vez.
+- **(b) Que `ensure_case` avise** cuando recibe un campo que no va a escribir porque el índice ya
+  existe. No arregla nada, pero convierte el silencio en un aviso; es la mitad barata de (a).
+- **(c) Que el alta CRM escriba la cuantía al pasar**, ya que la tiene en la mano. Tapa este caso y
+  deja `#184` y `#192` vivos.
+
+## 228. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color
+
+> Medido el 2026-09-10 al firmar el semáforo de W-02NHNC sobre
+> `assets/plantilla_informe_viabilidad.xlsx` (vía el `.xlsx` que genera `render_informe.py`).
+
+**Qué pasa.** En la hoja `INFORMACION` el bloque VIABILIDAD tiene dos filas: `E21` JURÍDICO y `E22`
+FINANZAS. Inventario completo del fichero:
+
+| | Validación (desplegable) | Formato condicional (color) |
+|---|---|---|
+| `E21` JURÍDICO | ✅ `list` = `"verde,amarillo,rojo"` | ✅ 3 reglas sobre `E21:H21` (`C6EFCE` / `FFEB9C` / `FFC7CE`) |
+| `E22` FINANZAS | ❌ **ninguna** | ❌ **ninguna** |
+
+Son las **únicas** dos entradas de esos dos inventarios en toda la hoja: no es que E22 tenga otra
+regla distinta, es que no tiene nada.
+
+**Por qué importa, y no es cosmético.** El CFO lee el semáforo **por el color** — para eso es un
+semáforo. Escribir `amarillo` en `E22` deja texto plano junto a una celda JURÍDICO en verde, y eso
+no se lee como «finanzas en amarillo»: se lee como «finanzas sin valorar», que es lo contrario de lo
+que el documento quiere decir. Un valor que no se ve equivale a un valor que no se escribió, y
+además **quien lo escribe no se entera**: la celda acepta cualquier cadena porque no hay
+validación, así que tampoco protege de un `AMARILLO` en mayúsculas o de un `ámbar`.
+
+Es el mismo modo de fallo que [[feedback-guarda-inerte-comprobar-el-otro-valor]] al revés: allí el
+instrumento solo podía dar un valor; aquí la celda puede dar cualquiera y ninguno se muestra.
+
+**Remedio (en la plantilla, no en cada informe).** Replicar en `E22` la validación y las tres reglas
+de `E21`, con los mismos `bgColor` y el alfa `FF` que exige `modelo_xlsx.md`. En W-02NHNC se hizo
+**sobre el fichero del caso** para poder firmar la valoración, y quedó anotado dentro del propio
+recuadro ejecutivo; pero el siguiente informe que se genere volverá a salir a medias, porque
+`render_informe.py` parte de la plantilla.
+
+**Cuidado con el atajo.** `modelo_xlsx.md` advierte de no regenerar el formato condicional (rompe
+el semáforo y la protección) y tiene razón: lo que hay que hacer es **añadir** las tres reglas de
+`E22:H22`, no reconstruir las de `E21`.
+
+**Y una pregunta de diseño que va con esto:** si FINANZAS nunca tuvo desplegable, conviene comprobar
+si alguien ha rellenado esa celda en los informes ya cerrados, y con qué literales. Si la respuesta
+es «nadie», puede que la fila sobre y lo que falte sea decidirlo, no cablearlo.
+
 ## 229. `poblar_sala_lectura` no tiene transacción ni exclusión: dos corridas solapadas se pisan el catálogo
 
 **Detectado 2026-09-10** (R1 adversarial, H-10 · ALTA; **preexistente**). El recorrido
@@ -10419,3 +10757,143 @@ Lo segundo es un borrado, así que va con su propio test de que no toca nada má
 **Disparador:** un caso donde la sala acumule huérfanos visibles, o la decisión de
 cerrar #232 (comparten el recorrido de verificación).
 
+
+## 234. El representante del dedup puede esconder el documento nuclear: el encargo firmado no aparece en el índice
+
+> Medido el 2026-09-10 en `W-048UOL`, buscando la hoja de encargo en el índice de la sala.
+
+**Qué pasa.** Dos ficheros de la carpeta de E&V son **byte-idénticos**: uno se llama
+`Contracte Signat.pdf` (dentro de `ACTIVACIÓN`) y el otro `Oferta Signada i Acceptada.pdf` (dentro
+de `OFERTA`). El dedup por `sha256` deja **un** representante, y le tocó el segundo nombre. El PDF
+contiene **dos documentos lógicos** —el encargo de venta en exclusiva y la oferta de compra—, así
+que el índice presenta el encargo bajo el rótulo de la oferta y la cadena `Contracte Signat` **no
+aparece en `INDICE.md`**.
+
+Técnicamente correcto: el fichero está, su texto partido está en los MD (`__d01`, `__d02`), y la
+nota del `_cobertura.json` dice literalmente «2 documentos lógicos». Operativamente, quien busca
+la hoja de encargo —la pieza de la que cuelga toda la reclamación— no la encuentra por su nombre.
+
+**Vía.** Que la entrada del índice del representante **enumere los nombres de origen alias** (los
+`alias_de` ya están en el `_cobertura.json`), en vez de dejarlos solo en la nota interna. Barato y
+suficiente: no cambia el dedup, cambia lo que el índice dice de él.
+---
+
+
+## 235. El barrido de documental ajena solo mira NOMBRES, y un W-code que va dentro del documento es invisible
+
+**Medido el 2026-09-10 en W-02V48N**, retirando del expediente la documental del caso ajeno
+`W-02U9H8` que había entrado por un export de WhatsApp. Hicieron falta **cuatro tandas y 235
+ficheros** porque el criterio era el nombre:
+
+| Tanda | Ficheros | Qué se me quedó fuera y por qué |
+|---|---|---|
+| 1 | 192 | los 60 PDF del *split* en `02_Documentos`, una carpeta que no enumeré |
+| 2 | 60 | los 28 metadatos del split (`_segmentacion.json`, `indice.txt`), que describen el documento ajeno **sin nombrarlo** |
+| 3 | 28 | el justificante de transferencia, con nombre **UUID** |
+| 4 | 3 + 12 | tres fichas PBC cuyo `DATOS DEL ACTIVO` declara `IDGO W-02U9H8` **dentro** del PDF, con solo nombres de persona en el fichero |
+
+**La herramienta tiene el mismo punto ciego, y por diseño.** La señal (a) de
+`senales_gate` (`.claude/skills/organizar-sala-lectura/scripts/preclasificar.py`) construye su
+texto así:
+
+```python
+texto = f"{f.get('ruta_original', '')} {f.get('nombre_canonico', '')}"
+for m in _WCODE_RE.findall(texto):
+```
+
+Solo ruta y nombre. Un documento de otro expediente con nombre neutro **pasa el gate** y se
+copia a la sala de lectura. En este caso pasaron tres, y la sala se declaró verificada con
+ellos dentro (`verificar_sala.py` exit 0: comprueba que el manifiesto y el disco cuadran, no
+de quién es cada documento).
+
+**La frontera correcta:** un documento pertenece a un expediente por su **sujeto declarado**
+—el campo `IDGO` / `Nº de referencia` / `DATOS DEL ACTIVO`—, no por su nombre; y un derivado
+pertenece **por su padre**. El barrido tiene que leer contenido y **distinguir dos cosas que el
+nombre no distingue**: «documento DE otro caso» de «documento de este caso que MENCIONA otro».
+En W-02V48N el chat menciona el otro expediente de forma legítima y no se toca; un barrido por
+mención se lo habría llevado.
+
+**Y el defecto de método que lo dejó pasar tres veces:** mi verificación usaba **el mismo
+predicado que el borrado**, así que decía «0 restos» estando mal. Lo destapó preguntar por una
+propiedad independiente (si las carpetas del split habían quedado vacías). Cuando el criterio
+de borrado y el de verificación son el mismo, la verificación no verifica nada.
+
+**Disparador de promoción.** Un caso cuyo intake traiga documental de otro expediente con
+nombres neutros. El remedio es acotado: añadir a `senales_gate` un cruce contra el texto del
+espejo MD (que ya está en `_cobertura.json`) buscando un W-code ajeno **en campo de sujeto**, y
+emitir señal de gate. Prototipo funcionando en la sesión de W-02V48N (barrido por contenido
+sobre 65 documentos, 3 detectados, 1 correctamente descartado como mención).
+
+---
+
+## 236. `_adjunto_ref` devuelve el nombre del adjunto con el `U+200E` del export, y por eso NO casa nunca con el fichero en disco
+
+**Medido el 2026-09-10 en W-02V48N: 0 de 39 adjuntos casaban.** Con la marca normalizada,
+**31 de 39** cogen su fecha de envío (los 8 restantes son ficheros ya purgados del expediente).
+
+`core/whatsapp_export.py` resuelve bien la cabecera del mensaje —`_RE_IOS` tolera el `U+200E`
+inicial con su `^‎?\[`— pero el tag del adjunto no:
+
+```python
+_RE_ADJ_IOS = re.compile(r"<adjunto:\s*(.+?)>", re.IGNORECASE)
+```
+
+En este export la marca invisible va **dentro** del tag, delante del nombre, así que
+`_adjunto_ref` devuelve `'\u200eIMG-20240310-WA0000.jpg'` y `referencias_adjuntos()` produce
+una lista que no empareja con ningún fichero real. **`str.strip()` no la quita**: `U+200E` no
+es espacio en blanco.
+
+**La consecuencia no es cosmética.** La skill `organizar-sala-lectura` manda que la fecha de un
+anexo de WhatsApp sea la de **envío** del mensaje que lo adjunta, y que esa regla **prevalezca**
+sobre la jerarquía normal de fechas. Sin emparejamiento, esa regla no se puede aplicar: todos
+los adjuntos del chat caen a `0000-00-00` o heredan una fecha aproximada, y el *timeline* del
+caso —que es el producto de la sala de lectura— se degrada en silencio.
+
+**Ojo con la medición previa.** La propia skill declara «118 de 118 en W-02VEKE y 67 de 67 en
+W-02USSI», con control positivo. Esas dos poblaciones eran **audio y vídeo** y se midieron con
+el regex de la skill, no con `_adjunto_ref`. No se contradicen: miden instrumentos distintos.
+Lo que aquí se mide es la función del repo, sobre **todos** los adjuntos de un chat.
+
+**Remedio (una línea, y es el de mayor rendimiento del lote):** normalizar en `_adjunto_ref`
+antes de devolver, quitando `\u200e\u200f\u202a-\u202e\ufeff` además de los espacios. Con un
+test sobre un `_chat.txt` que traiga la marca — hoy ningún test la lleva, y por eso el defecto
+lleva vivo desde que existe el parser.
+
+**Disparador de promoción.** Inmediato: cualquier apertura con export de WhatsApp lo activa.
+
+---
+
+## 237. `apply_label` con `target_type: "thread"` devuelve éxito y no aplica la etiqueta
+
+**Medido el 2026-09-10** creando la etiqueta del caso W-02V48N en la cuenta de E&V con el MCP
+`gmail-multiaccount` (`plugins/gmail_mcp/server.py`).
+
+La llamada sobre el hilo devolvió:
+
+```json
+{"action": "apply", "label_id": "Label_406", "target_type": "thread", "label_ids": []}
+```
+
+`action: apply` y **`label_ids` vacío**. La búsqueda por esa etiqueta devolvió cero mensajes.
+La misma llamada con `target_type: "message"`, mensaje a mensaje, sí funcionó y devolvió
+`label_ids: ["UNREAD", "Label_406", "CATEGORY_PERSONAL", "INBOX"]`.
+
+**Por qué importa más de lo que parece:** el paso siguiente del runbook (§6 → intake de correo)
+exporta **la etiqueta**. Una etiqueta creada y «aplicada» al hilo que en realidad está vacía
+hace que `export_label` exporte cero mensajes con código 0. El fallo no se ve en el etiquetado,
+se ve tres pasos después como un expediente sin correspondencia — y para entonces parece un
+caso sin correo, no un bug.
+
+**Es un grito tragado:** la herramienta no puede devolver el otro valor. Devuelve `action:
+apply` haya aplicado algo o no, y el único indicio es el `label_ids` vacío, que hay que saber
+mirar.
+
+**Remedio.** Dos partes: (1) que la rama `thread` use `threads().modify()` de verdad o, si el
+alcance del token no lo permite, que **falle en vez de fingir**; (2) que la respuesta se
+construya desde el estado releído, de modo que `label_ids` sin la etiqueta pedida sea un error
+y no un campo decorativo.
+
+**Disparador de promoción.** La próxima apertura que etiquete un hilo. Mientras: etiquetar
+**mensaje a mensaje** y verificar que la etiqueta aparece en `label_ids`.
+
+---
