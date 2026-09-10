@@ -2224,6 +2224,11 @@ se ha probado** con `left.`, ni sobre el vínculo de poderdante o procurador, ni
 no está en el §17.5: probar siempre sobre un registro cuyo vínculo sea el que de verdad se quiere, no
 sobre uno cualquiera.
 
+> **Ampliado el 2026-09-10:** para `right.colaboradores.{id}` sobre `extrajudiciales` el alcance
+> ya NO es un solo caso — seis expedientes, cada uno con entre 3 y 7 colaboradores, y en los seis
+> quitó solo el del cuerpo. Detalle y receta de dedup completa en el **§17.5**. Lo que sigue sin
+> probar es `left.` y el borrado **sin cuerpo**.
+
 > **Regla que generaliza, y su límite.** Antes de escribir una relación en un elemento nuevo, leer
 > `GET /api/view/config/{element}/relations`. Si el relacionado aparece en **un solo lado**, el lado
 > se deriva: `parent` → `left.`, `children` → `right.`. **Si aparece en los DOS —que es justo el caso
@@ -2464,6 +2469,47 @@ relación primero y documento después: así no queda el huérfano descrito. No 
 verifica por lectura. ⚠️ Y **no confundir las dos operaciones**: quitar la relación desvincula el
 documento de **un** registro; borrar el documento lo elimina para **todos**, así que antes hay que
 saber de qué otros registros cuelga.
+
+- **`DELETE /api/relation_element/{element}/{id}` con `["right.colaboradores.{id}"]`** → 200
+  `"Deleted!"`, y **el alcance deja de ser un solo caso**: medido el 2026-09-10 sobre **seis
+  expedientes extrajudiciales** distintos (80, 92, 147, 148, 149, 243), cada uno con entre 3 y 7
+  colaboradores. En los seis quitó **solo** el del cuerpo y dejó los demás intactos, verificado
+  por `related_register` documento a documento. Antes de esto el §16.3 avisaba de que el borrado
+  «está validado SOLO para un caso» (`right.gdocu` sobre un `poderes`) y de que no se contara con
+  él como red; para `colaboradores` sobre `extrajudiciales`, ya se puede.
+  - La forma es `right.`, la misma que usa `link_colaborador` para crear el vínculo. No se probó
+    `left.` — y sigue sin probarse el borrado **sin cuerpo**.
+- **`DELETE /api/element_register/colaboradores/{id}`** → 200 `"Deleted!"`, y la ficha **se va de
+  verdad**: el `get_colaborador` posterior ya no la puede leer. Medido el 2026-09-10 borrando un
+  duplicado.
+  - **El orden importa y es el mismo que para los documentos: relaciones primero, ficha después.**
+    Aquí se comprobó **antes de borrar** que a la ficha no le colgaba nada
+    (`get_relaciones("colaboradores", id)` vacío en todos sus bloques). No se ha probado qué pasa
+    si se borra una ficha con vínculos vivos, y por el precedente del `DELETE /api/documents/{id}`
+    lo previsible es que deje relaciones huérfanas apuntando a una ficha inexistente.
+  - **`get_relaciones` funciona también desde el lado del colaborador**, no solo desde el
+    expediente: `get_relaciones("colaboradores", "17")` devuelve sus bloques `extrajudiciales` y
+    `expedientes_judiciales`. Es la forma de saber **qué se va a romper** antes de borrar una ficha
+    de parte, y no estaba escrita.
+
+**Receta completa de dedup de una ficha de parte duplicada** (medida de punta a punta el
+2026-09-10 sobre dos fichas de colaborador del mismo email, una de ellas rotulada por el propio
+despacho como «REASIGNAR - ELIMIINAR»):
+
+1. Leer **las dos** fichas y **sus relaciones** (`get_colaborador` + `get_relaciones` del lado
+   colaborador). Decidir cuál es la canónica por lo que arrastra, no por el id.
+2. **Aditivo primero:** vincular la canónica a todos los expedientes de la duplicada
+   (`link_colaborador`, idempotente). Verificar por lectura que quedó puesta **y que no
+   desapareció ningún otro colaborador**.
+3. **Un solo borrado de prueba:** quitar la duplicada de **un** expediente y verificar los dos
+   lados (se fue la duplicada, sobrevivieron las demás). Parar si falla.
+4. Los demás, con la misma verificación uno a uno.
+5. Comprobar que a la duplicada ya no le cuelga nada, **guardar su contenido fuera del CRM** y
+   borrar la ficha. Verificar releyendo, no por el status.
+6. **Control de cierre por conteo:** la canónica debe haber ganado exactamente los N expedientes
+   de la duplicada. En la medición: 12 → **18** extrajudiciales tras reasignar 6, con los 27
+   judiciales sin tocar. Ese cuadre es lo que distingue «reasignado» de «reasignado y además otra
+   cosa».
 
 ### 17.6 De dónde salió este contrato: se lee el front, no se captura
 
