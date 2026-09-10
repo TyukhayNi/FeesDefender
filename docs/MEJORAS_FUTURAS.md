@@ -9558,3 +9558,41 @@ actual. Un test que registre dos veces el mismo fichero idéntico pasa hoy.
 registro —conclusiones, minutas, escritos que van por versiones— deja el índice mintiendo. Y
 `preparacion-juicio-oral` y `escritos-judiciales` **registran por nombre canónico estable**, que
 es exactamente el caso que lo dispara.
+
+---
+## 212. Generar un documento desde plantilla del CRM no vive en `core/`: se improvisa cada vez
+
+**Qué pasa.** El 2026-09-10 se generó la respuesta al requerimiento del W-04A6LI desde la
+plantilla 243 del CRM y se subió al gestor documental del expediente 638, todo por API y todo
+con **scripts de scratchpad** que se tiran al cerrar la sesión. En el repo no queda nada: ni el
+render, ni el injerto del cuerpo en el RTF, ni el alta del letrado contrario.
+
+Lo que falta, concretamente:
+
+- **`core/crm_documentos.py`** (o el módulo que corresponda): `catalogo_plantillas(element)`,
+  `renderizar(id_plantilla, element, id_elemento) -> bytes RTF` y
+  `subir_al_gestor(ruta, exp_id, element, asunto)` encadenando el flujo de tres pasos del §17,
+  con la verificación por sha256 de ida y vuelta ya dentro (hoy la escribí a mano cada vez).
+- **`link_abogado_contrario(exp_id, abg_id)`** y `ensure_abogado_contrario_vinculado(...)` en
+  `core/sudespacho_relations.py`, que hoy solo cubre `clientes_contrarios`, `clientes_propios`,
+  `procuradores_propios` y `colaboradores`. Sin el vínculo, la plantilla genera el
+  encabezamiento **en blanco**, que es un fallo silencioso.
+- Un lector paginado que entienda **las dos formas de respuesta** de esta API
+  (`items`/`itemsPerPage` y `elementRegistries`/`maxResults`) y que cruce lo leído contra el
+  `totalItems` declarado. El que escribí a mano devolvió **0 sobre una tabla de 332** sin dar
+  error; ese defecto es reproducible y merece un test.
+
+Contrato ya documentado y medido: `INTEGRACION_SUDESPACHO.md` **§10.11** (plantillas de
+documento), **§10.12** (`abogados_contrarios`) y **§17** (subida en tres pasos).
+
+**Por qué no es cosmético.** El coste real de esta sesión no fue redactar: fue redescubrir. La
+subida estaba en la §17 desde el día anterior y aun así tropecé con el mismo
+`500 Missing mandatory properties` que la §17 documenta. Un módulo con su test convierte eso en
+una llamada.
+
+**Disparador de promoción.** Medio. Sube en cuanto haya un **segundo** asunto que necesite
+generar un documento desde plantilla, o si se quiere encadenar «generar → subir → enviar
+certificado» sin intervención manual. Mientras sea uno al mes, el scratchpad cuesta menos que
+el módulo.
+
+**Misma frontera que `MEJORAS #209`** («crear actuaciones en el CRM no tiene helper: la receta vive en prosa y se reescribe a mano cada vez»), que entró el mismo día por el PR #316. Son dos ejemplos de una sola propiedad mal cerrada: **el contrato del CRM se documenta y no se encapsula**, así que cada operación nueva se reescribe a mano contra la prosa. Si se aborda una, abordar la frontera: un módulo por familia de operación, no un helper por caso.
