@@ -9731,89 +9731,592 @@ se haga hay un expediente vivo no buscable por dirección. Para (a), medio: sube
 burofax desde plantilla —el flujo que `#212` quiere encapsular— o con el primer expediente cuya
 referencia del CRM divirja del nombre de la carpeta por sufijo.
 
-## 214. Todo lo que se escribe en `G:` sale rellenado con ceros a múltiplo de 512, y el `sha256` forense deja de ser el del original
+## 214. Drive for Desktop renombra bajo los pies: la custodia recorre y abre, y el pull duplica en cada ronda
 
-> Medido el 2026-09-10 abriendo `W-048UOL`, al cruzar por hash un `.zip` de la reclamación contra
-> el material ya bajado por `drive_ev`: **7 de 7 ficheros salieron «nuevos» y cuatro de ellos eran
-> el mismo documento**.
+**[PROMOVIDO → PLAN.md]** fila #27, junto con `#215`, el 2026-09-10.
 
-**Qué pasa.** Los ficheros que el intake deposita en `CASOS` (Google Drive for Desktop, `G:`)
-llevan **bytes de relleno a cero** hasta el siguiente múltiplo de 512. El contenido útil está
-intacto —el prefijo es byte-idéntico al original y el PDF termina en su `%%EOF` antes del
-relleno—, pero el fichero **no es byte-idéntico** al de origen.
+**Qué pasa.** Un fichero que en el Drive de E&V **no tiene extensión** rompe el pull de dos
+maneras distintas, y las dos salieron a la vez al abrir W-048U77 el 2026-09-10. La carpeta traía
+**11 de 58** ficheros sin extensión —el encargo firmado, la oferta aceptada, tres notas simples, dos acuses
+de registro, el borrador de arras, la tarjeta del CIF y dos Anexos 2 de PBC—. E&V los sube así
+con normalidad, igual que las fotos de móvil de `MEJORAS #190`.
 
-| Documento (`W-048UOL`) | Tamaño en Drive E&V | Tamaño en el caso | Relleno |
+**El mecanismo, medido y no supuesto.** El nombre NO lo cambia Google Drive: lo cambia la **capa
+de presentación del montaje**. Contrastando el remoto contra el montaje sobre el mismo `00_Input`
+—`rclone lsf gdrive_tl:<caso>/00_Input --recursive --files-only` frente a un `rglob` sobre `G:`—
+salen **78 y 78**, y las **8** diferencias son los mismos 8 documentos con dos nombres: en Drive
+`CONTRATO FIRMADO`, en el montaje `CONTRATO FIRMADO.pdf`. Drive for Desktop **presenta** una
+extensión inferida del content-type para los ficheros que no la llevan; los bytes en Drive
+conservan el nombre pelado. (Mi primera lectura fue «Drive renombra al subir», y es falsa. La
+diferencia importa: si el renombrado fuera del servidor, el remoto también lo tendría, y el remedio
+sería otro.)
+
+**Mitad 1 — la custodia recorre y abre, y el nombre cambia en medio.** `hash_tree_local`
+(`scripts/abrir_caso.py:78`) hace `sorted(root.rglob("*"))` y **después** `file_sha256(p)` sobre
+cada resultado. El montaje materializa el nombre-con-extensión poco DESPUÉS de que `rclone` termine
+de escribir el pelado, así que entre el `rglob` y el `open` el fichero ya se llama `CONTRATO
+FIRMADO.pdf` y el hash muere con
+`FileNotFoundError: [WinError 2] … \DOCS ACTIVACION\CONTRATO FIRMADO`. La etapa `drive` de V1 lo
+convierte en `fallo`, corta la secuencia y devuelve `bloqueado` — con el pull ya hecho y correcto.
+No es intermitente por azar: reprodujo dos rondas seguidas, cada vez con un fichero distinto de
+esos once.
+
+**Mitad 2, la cara — cada ronda QUE FUERZA EL PULL duplica.** `rclone` compara el remoto contra el
+**backend local**, o sea contra lo que el montaje enseña: ve que `CONTRATO FIRMADO` no está (está
+`CONTRATO FIRMADO.pdf`) y lo vuelve a traer; el montaje resuelve la colisión depositando
+`CONTRATO FIRMADO (1).pdf`.
+
+**La precisión importa, y se midió aparte (2026-09-10).** Esta entrada decía «en cada pull», y eso
+se había concluido de **dos** rondas — que no distinguen «re-copia una vez y se estabiliza» de
+«re-copia sin techo». Lo levantó una sesión hermana, que sobre otro caso (W-030TZY, 5 ficheros
+sin extensión) midió **+5 en la segunda ronda y 0 en la tercera** y concluyó que se estabilizaba.
+
+Se resolvió **sin escribir en el expediente**, con `rclone copy --dry-run` y los mismos flags del
+pull, contra el destino ya limpio: **listaría 7 ficheros para copiar**, exactamente los siete
+extensionless que se habían retirado. Es decir, **no se estabiliza**: mientras el nombre remoto no
+exista en local, la comparación falla en cada consulta.
+
+Las dos medidas se reconcilian por el `.pulled`: **`pull_drive_ev` salta el pull** si el marcador
+existe y no se fuerza, y **solo `--modo v1` pasa `force=True`**. Una tercera ronda que no fuerce no
+consulta el remoto, así que su «0 depositables» no dice «se estabilizó», dice «no hubo pull» — los
+dos números son compatibles con ambas historias. Redacción exacta, por tanto: **crece con cada
+ronda que fuerza el pull**, y V1 las fuerza todas por diseño (la spec llama al skip por `.pulled`
+«falso punto fijo»). Para V1 la gravedad no baja; en modo `libre` depende de si se fuerza.
+
+> **Y un aviso de método que vale más que el defecto:** contar los duplicados por el sufijo
+> ` (N)` **sobreestima**. En este caso cuatro ficheros traían el `(N)` **de origen**, y en el de la
+> sesión hermana, de 12 con ese sufijo, solo 5 eran imputables al pull. El discriminante fiable es
+> la diferencia contra el listado del remoto, normalizando a NFC, y verificar el `sha256` del
+> gemelo antes de retirar nada. Dos rondas
+dejaron **7 duplicados** en el expediente (65 ficheros locales contra 58 remotos). Y V1 pulsa el
+pull **con `force=True` en cada ronda por diseño** (spec: el skip por `.pulled` es un «falso punto
+fijo»), así que el expediente se ensucia de forma lineal con el número de rondas, en silencio: el
+pull sale `rc=0` y nadie compara contra el remoto.
+
+**Lo que hace falta para verlo, y hoy no existe:** un censo independiente. Se cazó con
+`rclone lsf --recursive --files-only` contra el remoto (58) frente al recuento local (65). Sin ese
+contraste, siete copias redundantes se quedan en el expediente y luego aparecen en el catálogo de
+la sala de lectura como documentos distintos. **Ojo al borrarlos:** `catastro (5).pdf`,
+seis documentos legítimos traían el `(N)` **de origen** —uno de ellos con `(1) (1) (1)`—, así que
+un borrado por patrón `\(\d+\)` se los lleva por delante. La diferencia contra el remoto es la
+única señal fiable, y hay que normalizar a **NFC** antes de comparar: un topónimo acentuado sale
+descompuesto por un lado y compuesto por el otro, y sin normalizar da dos falsos positivos.
+
+**De qué frontera es esto un ejemplo.** No es «`hash_tree_local` necesita un `try`». La propiedad
+mal cerrada es que **el árbol de intake se trata como estable entre listar y abrir**, y en `G:` no
+lo es: Drive Desktop es un sistema de ficheros activo que reescribe nombres después de la
+escritura. Todo recorrido-y-abre del camino de intake comparte el defecto —
+`hash_tree_local`, el `.stat()` de `_inventario_desde_hashes` (que recompone la ruta desde la
+clave), el inventario de la sala de máquina, `hash_tree` del MCP. Remediar solo el primero deja los
+otros tres esperando su turno, que es exactamente lo que pasó con las cuatro rondas del mutex.
+
+**Qué haría falta.**
+
+1. **Recorrido tolerante y que lo diga.** Que `hash_tree_local` capte el `FileNotFoundError` por
+   fichero, **releá el directorio** y, si aparece el mismo contenido bajo otro nombre, lo hashee
+   con el nombre nuevo; si desapareció de verdad, que lo declare en el resultado en vez de tumbar
+   la etapa. Un recorrido que no puede leer un fichero **no ha medido cero**: ha dejado ese
+   fichero sin verificar, y eso hay que decirlo.
+2. **Reconciliación contra el remoto, no solo contra lo que se acaba de escribir.** Que el pull
+   compare el censo remoto (`rclone lsf`) con el destino y **avise** de los sobrantes. Hoy
+   `reconcile` solo cuadra los hashes contra el plan que él mismo construyó del destino: cuadra
+   consigo mismo y no puede ver una copia de más.
+3. **Cerrar el bucle del renombrado.** Lo barato es que el pull, tras copiar, aprenda el mapa
+   `nombre remoto → nombre efectivo en destino` y lo persista junto al `.pulled`, de modo que la
+   ronda siguiente no vuelva a pedir lo que ya está bajo otro nombre. Lo caro y limpio es no pasar
+   por un montaje de Drive Desktop para el destino del pull.
+
+**Remedio manual de esta sesión (queda documentado en el runbook, `[APER-65]`):** no re-lanzar la
+secuencia, borrar los sobrantes verificando por sha256 que cada uno tiene gemelo idéntico, y cerrar
+la custodia aparte con `hash_tree_local` + `_intake_generico` bajo el mutex, sin re-tirar del pull.
+
+**Disparador de promoción.** Alto: el punto 1 sube al siguiente caso de E&V con ficheros sin
+extensión — que no es raro, es la norma en fotos y escaneos de móvil — porque hoy **bloquea la
+apertura**. El punto 2 sube con él, que es lo que convierte «no bloquea» en «no ensucia». El punto
+3 puede esperar.
+
+**Vecina de `MEJORAS #190`** («la sala de lectura filtra por EXTENSIÓN y la de máquina identifica
+por BYTES»): el mismo fichero sin extensión, dos defectos distintos y un mismo origen — E&V sube
+ficheros sin extensión y la cadena entera supone que el nombre lleva el tipo.
+
+## 215. `_MAGIC_BYTES` solo conoce firmas planas: un `.docx` sin extensión es `sin_soporte` y nadie lo lee
+
+**[PROMOVIDO → PLAN.md]** fila #27, junto con `#214`, el 2026-09-10.
+
+**Qué pasa.** `_sniff_ext_por_contenido` (`core/sala_maquina.py:76`) es el último recurso cuando el
+nombre no trae extensión reconocible, y su tabla `_MAGIC_BYTES` tiene **seis** entradas, todas
+firmas **planas**: `%PDF-`, JPEG, PNG, GIF (×2), BMP. No hay ninguna para `PK\x03\x04`, que es la
+cabecera de todo contenedor OOXML/ODF. Resultado: un `.docx` sin extensión no se reconoce, se
+clasifica `sin_soporte` y **no llega a la ruta `ofimatica`** que desde `MEJORAS #61` sabe leerlo
+perfectamente. El fichero está íntegro; lo que falla es que nadie lo mira.
+
+**Medido el 2026-09-10 en W-048U77:** los **tres** `sin_soporte` del caso eran `.docx` sin
+extensión, con contenido, y uno de ellos es material para el fondo:
+
+| Dónde estaba (sin extensión en Drive) | Qué es de verdad |
+|---|---|
+| `OFERTAS/…/ARRAS/` | **Contrato privado de arras penitenciales** (obra nueva), 78 párrafos, fechado 26-03-2026 |
+| `DOCS ACTIVACION/PBC/` | Anexo 2 de PBC del propietario, firmado 13-01-2026 |
+| `DOCS ACTIVACION/PBC/` | Anexo 2 de PBC de otro interviniente |
+
+Los tres abren con `zipfile` + `python-docx` sin queja alguna. El coste no es teórico: en un caso de
+honorarios, el contrato de arras es de los documentos que deciden el nexo causal, y el pipeline lo
+declaró ilegible.
+
+**El sniff correcto NO es «`PK` → `.docx`».** La cabecera es ambigua por diseño: cubre `.docx`,
+`.xlsx`, `.pptx`, `.odt`, `.ods` y un `.zip` cualquiera. Hay que abrir el contenedor y mirar el
+índice, que es barato y determinista:
+
+- `word/document.xml` → `.docx`
+- `xl/workbook.xml` → `.xlsx`
+- `ppt/presentation.xml` → `.pptx`
+- entrada `mimetype` → ODF, y su contenido dice cuál
+- nada de lo anterior → `.zip`, y entonces sí `sin_soporte` (o la ruta de archivos, si se quiere
+  extraer)
+
+Eso obliga a que `_sniff_ext_por_contenido` deje de ser una función pura sobre 16 bytes y pase a
+recibir la **ruta** (o un lector perezoso), porque los 16 bytes no bastan para desambiguar. Es un
+cambio de firma pequeño con un test evidente por cada rama.
+
+**De qué frontera es esto un ejemplo.** La misma que `MEJORAS #214` y `MEJORAS #190`: **E&V sube
+ficheros sin extensión con normalidad y la cadena entera supone que el nombre lleva el tipo.** Tres
+defectos distintos —la sala de lectura filtra por extensión (#190), Drive Desktop renombra al
+vuelo (#213), el sniff no conoce contenedores (#214)— y un solo hecho detrás. Si se aborda alguno,
+abordar la propiedad: **el tipo de un documento se decide por sus bytes, y el nombre es una pista,
+nunca la fuente.** Remediar solo el ejemplo que trajo el caso de turno es lo que hizo falta cuatro
+rondas en el mutex de V1.
+
+**Control positivo, para no repetir el error de medir sin él.** Un test que hoy pasaría en vacío no
+vale: hay que meter en el árbol sintético un `.docx` **con** extensión (que debe seguir yendo por
+`ofimatica`), el mismo `.docx` **sin** extensión (que hoy va a `sin_soporte` y debe ir a
+`ofimatica`) y un `.zip` de verdad (que debe seguir siendo `sin_soporte`). Sin la tercera rama, el
+test aprueba un `PK → .docx` ciego.
+
+**Disparador de promoción.** Alto, y sube junto al punto 1 de `MEJORAS #214`: los dos se disparan
+con el mismo fichero y en la misma corrida, y arreglar uno sin el otro deja el caso a medias — con
+#213 el documento llega al expediente, con #214 alguien lo lee.
+
+## 216. `verificar_sala.py` cuenta su propio aviso como un problema, y el conteo manda a buscar un fantasma
+
+**Qué pasa.** El verify termina con `N problema(s)`, y esa N incluye la línea `ATENCIÓN: n
+problemas homogéneos del tipo …`, que no es un problema sino un consejo sobre los que sí lo son.
+El return es literal: `return avisos + [msg for _, msg in tipados]`
+(`scripts/verificar_sala.py:108`).
+
+**Medido el 2026-09-10 en W-048U77:** el script imprimió **12** líneas de `fecha_0000` y cerró con
+`13 problema(s)`. La discrepancia mandó a leer el código buscando un problema oculto de otro tipo
+—un huérfano, una colisión— que no existía. Con dos tipos distintos a la vez el desfase sería de
+dos, y con uno solo por debajo del umbral, de cero: el error no es constante, así que tampoco se
+aprende a restar.
+
+**El arreglo es de una línea:** contar solo `tipados` y dejar los `avisos` fuera del total
+(`print(f"\n{len(tipados)} problema(s).")`), o etiquetar la línea como `AVISO` y decir «N
+problema(s), M aviso(s)». Lo segundo es mejor: hoy el aviso y el problema salen por el mismo canal
+con la misma pinta.
+
+**Por qué merece una entrada y no un arreglo al vuelo.** Es la misma familia que `MEJORAS #211` y
+que el «OK que describe el paso, no el expediente»: **un número que no cuenta lo que su etiqueta
+dice contar**. En una verja de calidad eso es peor que en otro sitio, porque el número es
+justamente lo que se mira para decidir si se sigue. Y el coste ya se pagó: un rodeo a leer el
+fuente en mitad del montaje de una sala.
+
+**Disparador de promoción.** Bajo, pero es de los baratos: sube con el próximo cambio que toque
+`verificar_sala.py`. El test es evidente — un caso con ≥5 problemas del mismo tipo debe cerrar con
+el conteo de problemas reales, no con uno más.
+
+## 217. `crm_colaboradores_firmas` lee el `href` del `mailto:`, no la dirección visible, y propone escribir el teléfono de A en la ficha de B
+
+**Qué pasa.** El extractor de firmas atribuye el bloque de contacto a la dirección que
+encuentra en el **`href`** del enlace `mailto:`, no a la que el destinatario **lee**. En las
+firmas corporativas de E&V las dos cosas se separan con normalidad, porque las plantillas se
+copian entre personas y el `href` se queda rancio.
+
+**Medido el 2026-09-10 en W-048U77.** La firma de la Directora de Zona trae, literal:
+
+```html
+<a href="mailto:PERSONA-B@engelvoelkers.com" style="…">@engelvoelkers.com</a>
+```
+
+El texto visible del bloque dice `Mailto: PERSONA-A@engelvoelkers.com`; el `href` apunta a otra
+persona (`PERSONA-B`), y el nombre en negrita sobre el bloque también es el de la primera. El
+informe resultante propuso, para `PERSONA-B`, **el móvil y el fijo de `PERSONA-A`**, leídos del
+bloque de firma de esta última.
+
+**Por qué es grave y no cosmético.** `PERSONA-B` **no aparece en el expediente**:
+comprobado sobre los 12 `.eml`, no está en `From`, ni en `To`, ni en `Cc`, ni su nombre aparece
+en ningún cuerpo. Su única presencia en todo el caso son cuatro `href` heredados.
+Y el informe la marca «**no existe como colaborador**», así que
+`crm_colaboradores_firmas apply --confirmar` no habría rellenado un hueco: habría **dado de alta
+en el CRM del cliente a una persona ajena al asunto, con el teléfono de otra**. Un dato falso en
+un maestro compartido es más caro que un dato ausente, porque nadie vuelve a dudar de él.
+
+**De qué frontera es esto un ejemplo.** De la misma que `[APER-65]`: **el nombre que se muestra
+y el identificador que hay debajo son dos cosas distintas, y el código toma el segundo creyendo
+que es el primero.** En el montaje de Drive era el nombre presentado contra el nombre real; aquí
+es el texto del ancla contra el `href`. Remediar solo el `mailto:` deja la propiedad abierta.
+
+**Qué haría falta.**
+
+1. **Preferir la dirección VISIBLE** del bloque de firma; usar el `href` solo cuando no haya
+   ninguna visible, y **marcarlo en la columna «Origen»** para que se vea de dónde salió.
+2. **Cuando `href` y texto visible discrepan, es `CONFLICTO`**, que es el veredicto que el
+   informe ya tiene y que existe justo para esto: dos valores y ninguno decide, no se propone
+   nada.
+3. **Verja de pertenencia:** una dirección que no aparece en `From`/`To`/`Cc` de **ningún**
+   mensaje del expediente no puede recibir una fila de propuesta. Como mucho, va a «Candidatos»,
+   que es la sección que ya existe para lo que hay que decidir a mano. Un remitente real siempre
+   pasa esta verja, así que no cuesta cobertura.
+
+**Control positivo para el test, para no medir en vacío:** un `.eml` con (a) una firma cuyo
+`href` y texto visible coinciden — debe seguir dando `ENCONTRADO`; (b) una firma donde
+discrepan — debe dar `CONFLICTO`, no la del `href`; y (c) una dirección presente **solo** en un
+`href` — no debe generar fila de propuesta. Sin (a) el test aprueba un extractor que no encuentra
+nada.
+
+**Disparador de promoción.** **Alto.** El runbook §9 manda correr `report` → `apply` en cada
+apertura, y `apply --confirmar` escribe en el CRM del cliente. Hasta que esto se arregle, la
+regla operativa es: **leer el informe fila a fila y no aplicar en bloque** — que es lo que se
+hizo aquí, y por eso no se escribió el dato falso.
+
+## 218. El alta por API manda la cuantía como ENTERO: los céntimos del principal reclamado se pierden en silencio
+
+**Qué pasa.** `core/sudespacho_create.py:1245` (y su gemelo judicial, `:1439`) envía
+`"cuantia": int(round(datos.cuantia))`. La cuantía es el **principal reclamado**, y en una
+reclamación de honorarios sale casi siempre de aplicar el IVA a una base, así que **acaba en
+céntimos por construcción**. El alta los descarta y no lo dice: la corrida imprime
+`cuantia=28132.5` y el CRM guarda `28132.00`.
+
+**Medido el 2026-09-10 en W-048U77.** 23.250 € + 21 % = **28.132,50 €**. Tras el alta, el
+`GET` del expediente 641 devolvía `cuantia: 28132.00`. Y hay una vuelta de tuerca: `round()` de
+Python usa **redondeo bancario**, así que `round(28132.5)` es **28132**, no 28133 — el `.50`
+redondea hacia ABAJO. Un comentario del propio módulo (`:22`) dice «cuantia (entero sin
+separadores)», que es cierto del campo **legacy** `campo_1730`, y de ahí viene el `int(round(...))`;
+pero la property REST `cuantia` **sí admite decimales**.
+
+**Medido, no supuesto:** `update_expediente("641", {"cuantia": 28132.50})` seguido de `GET`
+devuelve `28132.50`, con `Numero_Expediente` y `Referencia_Cliente` intactos. El expediente
+comparable W-02Q38C tiene `74112.50` guardado, lo que confirma que el valor con céntimos vive
+bien en ese campo. Así que la pérdida es del **alta**, no del CRM.
+
+**El arreglo.** Enviar la cuantía como decimal en el POST REST (`float(datos.cuantia)`), dejando
+el `int(round(...))` **solo** donde el campo es de verdad entero: los `campo_849` / `campo_1730`
+del formato legacy, que ya pasan por `_fmt_importe_entero`. Dos rutas distintas para dos campos
+distintos, que hoy comparten una conversión que solo una de ellas necesita.
+
+**Control positivo para el test:** un alta con `cuantia=1000.00` debe seguir guardando `1000.00`
+(si no, el test aprueba cualquier cosa), y una con `cuantia=28132.50` debe guardar `28132.50`.
+Añadir `28132.5` explícitamente, porque es el valor donde el redondeo bancario se aparta del
+redondeo escolar y un test con `.6` no lo vería.
+
+**Y una segunda cosa del mismo camino de escritura, de una línea.** El *preview* de
+`scripts/crm_ficha.py:98` imprime `contrario: {ficha.contrario.apellido1}`. En una persona
+**jurídica** los apellidos van vacíos, así que la línea que un humano lee antes de autorizar la
+escritura sale literalmente `- contrario:  (dedup NIF)`: **el preview oculta justo la identidad de
+la parte que va a crear** en el CRM del cliente. Con persona física funciona por accidente. Debe
+imprimir `nombre` (que es además el único campo que el listado de la UI renderiza, §9 del
+runbook).
+
+**Disparador de promoción.** Medio-alto para la cuantía: entra con la próxima alta de un
+expediente cuyo principal lleve céntimos, que es la norma. La línea del preview va en el mismo PR
+porque es el mismo fichero y el mismo momento del flujo.
+## 219. `_tiempos.jsonl` mide el reparto del OCR pero no registra las PÁGINAS, que es lo que decide si paralelizar
+
+**Medido el 2026-09-10 en la apertura de W-030TZY** (68 documentos por la ruta `ocr`,
+2.286,5 s, el 95,9 % de toda la sala de máquina).
+
+El gancho `on_documento` de `core/sala_maquina.ejecutar` existe con un propósito escrito en su
+propio docstring:
+
+> «Existe porque nadie había medido dónde se va el tiempo del montaje, y sin ese reparto no se
+> puede decidir si paralelizar el OCR compra algo: `ocr_pdf` no pasa `jobs`, así que ocrmypdf ya
+> paraleliza por página con todos los núcleos, y el paralelismo externo puede ser un salto o ser
+> nada **según el reparto de páginas del caso**.»
+
+**El registro no lleva ese reparto.** El campo `paginas` de cada fila no es un contador: es la
+etiqueta de rango del split (`"1-3"`), y viene **vacía en 64 de las 68 filas** de OCR. Sumarlo da
+4 páginas para un caso que tiene 203. La magnitud que el docstring nombra como decisoria es
+justo la que el instrumento no guarda.
+
+Para poder calcular los 11,3 s/página de esta apertura hubo que **abrir con `pypdf` los 68 PDF de
+`01_OCR/`** y cruzarlos por `slug`. Funciona, pero es un rodeo: el dato existía en el momento de
+medir y se tiró.
+
+**Por qué importa más que un campo de más.** La media de 11,3 s/página esconde una dispersión de
+**35×**: la escritura de 44 páginas salió a 1,3 s/página (59,4 s) y un escaneo de 1 página a
+45,3 s. Con el número de páginas se ve de un vistazo que el coste lo manda la **calidad del
+escaneo**, no el volumen; sin él, la única lectura posible es «este documento tardó mucho», que
+no se puede accionar.
+
+**Remedio.** `on_documento` ya recibe las filas de cobertura, y `DocCobertura` sí tiene `paginas`
+para la ruta PDF. Añadir a la fila del tiempo un `n_paginas` entero (y renombrar o dejar como
+está el `paginas` textual, que es otra cosa: el rango del segmento). Coste: una línea y su test.
+
+**Cómo comprobarlo sin engañarse.** Correr `apply` sobre un caso sintético con un PDF de 3
+páginas y otro de 1, y afirmar que la suma de `n_paginas` del `_tiempos.jsonl` es 4. Hoy sale 0.
+
+**Disparador de promoción.** Bajo por sí solo; **medio si se retoma la pregunta del
+paralelismo**, porque sin este campo la pregunta no se puede contestar con el registro que se
+construyó para contestarla. Ver `MEJORAS #222`, que es la respuesta que se obtuvo pese a él.
+
+---
+
+## 220. La CRONOLOGÍA no marca `(*)` las fechas que vienen de `mtime`, y en esta apertura eran el 38 %
+
+**Medido el 2026-09-10 en W-030TZY**, sobre `01_Procesado/indice_documental.yaml` (166 entradas)
+y `01_Procesado/Sala lectura/CRONOLOGIA.md` (174 líneas).
+
+El canon de clasificación lo dice sin matices
+(`.claude/skills/organizar-sala-lectura/references/taxonomia_ev.md`):
+
+> Jerarquía de fecha del documento: (a) otorgamiento/firma en el cuerpo → (b) otra fecha
+> inequívoca del contenido → (c) fecha del nombre del fichero → (d) `0000-00-00`.
+> **`mtime` NO es fuente; si se usa como aproximación, marcar `(*)`** en CRONOLOGIA y _MANIFIESTO.
+
+Contado:
+
+| | |
+|---|---|
+| entradas con `fecha_fuente: contenido` | 103 |
+| entradas con `fecha_fuente: mtime` | **63 (38 %)** |
+| líneas de `CRONOLOGIA.md` con `(*)` | **0** |
+
+El catálogo **sí sabe** de dónde salió cada fecha —guarda `fecha_fuente`— y el renderizador de la
+cronología **no lo mira**. El resultado es una tabla cronológica en la que 63 filas afirman una
+fecha de documento que en realidad es la fecha en que alguien tocó el fichero en el Drive.
+
+**El caso que lo destapó, y que además prueba que el escalón (c) se salta.** Tres actas de la
+comunidad de propietarios, con la fecha **en el nombre del fichero**:
+
+| Fichero | Fecha que puso el pipeline | Fecha real (del nombre) |
+|---|---|---|
+| `Acta Extraordinaria 11-06-2025.pdf` | 2025-06-11 ✅ | 2025-06-11 |
+| `Acta Extraordinaria 23／10／2018.pdf` | **2025-11-25** ❌ | 2018-10-23 |
+| `Acta ordinaria 8-01-2025.pdf` | **2025-11-21** ❌ | 2025-01-08 |
+
+Dos de tres cayeron a `mtime` teniendo el escalón (c) disponible. Y la primera de las dos falla
+por una causa que **se fabrica el propio pipeline**: el intake sustituye la `/` prohibida por la
+barra de ancho completo `／` (U+FF0F), y el parser de fechas del nombre no la reconoce. La
+segunda falla por el día de un solo dígito (`8-01-2025`).
+
+**Por qué importa.** Una cronología es el documento del que se leen los hechos para construir el
+relato, y aquí presentaba **2025-11-25 para un acta de 2018** — siete años de desviación, en un
+asunto cuyo fondo es precisamente qué se sabía y cuándo sobre el uso administrativo del inmueble.
+Un error así no se detecta leyendo la cronología: se detecta abriendo el documento, que es lo que
+la cronología existe para evitar.
+
+**Remedio, en dos piezas separables.**
+1. **Declarar lo aproximado** (barato, cierra el agujero de confianza): el renderizador lee
+   `fecha_fuente` y añade `(*)` cuando vale `mtime`, con la leyenda al pie. No cambia ninguna
+   fecha; deja de afirmar lo que no sabe.
+2. **Subir el escalón (c)** (arregla la causa): que el parser del nombre reconozca `／` (U+FF0F)
+   —y, ya que se toca, el resto de sustituciones que hace el propio intake— y los días de un
+   dígito.
+
+La (1) va primero: es la que convierte un dato falso en un dato marcado, y no depende de acertar
+con el parser.
+
+**Cómo comprobarlo sin engañarse.** Un caso sintético con un fichero cuyo nombre lleve fecha y
+cuyo `mtime` sea otro: afirmar (a) que la fecha elegida es la del nombre y (b) que si se fuerza el
+camino `mtime`, la línea de la cronología lleva `(*)`. Hoy la segunda aserción falla en cualquier
+caso real, porque no hay una sola `(*)` en todo el fichero.
+
+**Disparador de promoción.** **Alto.** No falla en rojo: produce una cronología plausible y
+equivocada, que es el peor modo de fallo para un documento que se lee y no se audita. Misma
+familia que [[feedback-el-ok-describe-el-paso-no-el-expediente]].
+
+---
+
+## 221. `sala_lectura organizar` dice «Sala de lectura organizada» habiendo escrito 2 de los 4 artefactos que la skill contrata
+
+**Medido el 2026-09-10 en W-030TZY.** Con la worklist rellena, `python -m scripts.sala_lectura
+organizar --case W-030TZY` terminó en 15,0 s con código 0 y este mensaje:
+
+```
+Sala de lectura organizada. Acciones: {'COPY': 149, 'SKIP_DEDUP': 17}
+```
+
+Lo que hay en `01_Procesado/Sala lectura/` después:
+
+| Artefacto | La skill lo contrata | Existe |
+|---|---|---|
+| `INDICE.md` | sí | ✅ 40.857 bytes |
+| `CRONOLOGIA.md` | sí | ✅ 32.080 bytes |
+| `_MANIFIESTO.md` | sí | ❌ **no existe en todo el expediente** |
+| `indice_documental.yaml` | sí, **dentro de `Sala lectura/`** | ⚠️ existe, pero en `01_Procesado/` |
+
+`SKILL.md` los enumera cuatro veces (la descripción, el árbol de la línea 124, la re-aplicación de
+la 183 y el cierre de la 275). `_MANIFIESTO.md` no lo escribe **nadie**: en todo `core/` y
+`scripts/` la única mención es `core/config.py:415`, que lo lista como fichero protegido — o sea,
+el repo sabe cuidar un fichero que ninguna ruta produce.
+
+**Las dos mitades del problema son distintas y conviene no mezclarlas.**
+- La **ubicación** del `indice_documental.yaml` puede ser simplemente que el árbol de la skill
+  esté rancio; se decide mirando cuál de los dos es el sitio bueno y se corrige el que sobre.
+- La **ausencia** del `_MANIFIESTO.md` no es una divergencia de documentación: es una salida
+  contratada que no se produce, y encima es **uno de los dos sitios donde el canon manda marcar
+  las fechas aproximadas** (`MEJORAS #220`). Las dos entradas se tocan aquí.
+
+**Por qué importa.** El mensaje de éxito describe lo que el paso hizo (copiar 149 ficheros), no lo
+que el expediente tiene. Quien lee «organizada» da por montada una sala de lectura que le falta el
+manifiesto, y no hay ninguna verja que lo mire. Es exactamente
+[[feedback-verificar-por-resultado-en-mi-herramienta]]: el «OK» de la propia herramienta es un
+status, no un resultado.
+
+**Remedio.** Al final de `organizar`, comprobar la existencia de los artefactos contratados y
+**nombrar los que faltan** antes de imprimir el resultado — o escribir el `_MANIFIESTO.md`, si la
+decisión es que la ruta CLI también lo produce. Lo que no cabe es seguir diciendo «organizada».
+
+**Cómo comprobarlo sin engañarse.** Un test que corra `organizar` sobre un caso sintético y
+afirme la existencia de los cuatro. Hoy sale rojo en dos, y ese rojo es la medida de la deuda.
+
+**Disparador de promoción.** Medio. Sube a alto si se cierra `MEJORAS #220`, porque su remedio (1)
+manda marcar `(*)` en un fichero que no existe.
+
+---
+
+## 222. El paralelismo por documento del OCR está REFUTADO, y `rotate_pages` cuesta el 28 % pero es un seguro que no se puede quitar
+
+**Medido el 2026-09-10** con la apertura de W-030TZY delante, sobre `core.anon.ocr.ocr_pdf`, en la
+máquina de 12 núcleos. Esta entrada existe **para que nadie vuelva a proponer estas dos cosas sin
+leer los números**: las dos parecen ahorros evidentes y ninguna lo es.
+
+**Contexto.** El OCR fue el **95,9 %** de la sala de máquina (2.286,5 s de 2.383,4 s) y el
+**82 %** de todo el tiempo de máquina de la apertura. Cualquier optimización que no sea del OCR
+optimiza el 18 % del problema.
+
+### (a) Paralelismo por documento — REFUTADO
+
+Hipótesis razonable y falsa: como 48 de los 68 documentos tienen **una sola página** y suman el
+33,9 % del tiempo, y `ocrmypdf` paraleliza **por página**, esos 48 estarían corriendo en 1 núcleo
+de 12 y un pool de procesos los repartiría.
+
+Medido con 2 documentos, serie contra pool de 2 procesos, 3 repeticiones alternando el orden:
+
+| | mediana |
+|---|---|
+| serie | 26,5 s |
+| pool de 2 | 24,1 s |
+| **paralelo / serie** | **0,91** |
+
+0,91, no 0,50. **Los núcleos no estaban ociosos**: `ocrmypdf`/Tesseract ya usan más de un hilo
+dentro de una página (OpenMP, más las etapas de deskew, rotación y optimización). El paralelismo
+externo no compra nada aquí, y una proyección tipo LPT que sí lo suponía daba un «74,9 % de ahorro
+con 4 procesos» que es **falso** y quedó retirado.
+
+### (b) Las cuatro palancas de configuración — solo una mueve, y es un seguro
+
+Mismo documento, 4 repeticiones interleaved, con **control de fidelidad del texto** (un ahorro que
+cambia el texto extraído no es un ahorro, es pérdida de prueba):
+
+| Condición | mediana | vs base | similitud |
 |---|---|---|---|
-| oferta aceptada | 2.747.021 | 2.747.392 | 371 |
-| certificado bancario | 218.388 | 218.624 | 236 |
-| justificante de transferencia | 21.644 | 22.016 | 372 |
-| factura | 129.987 | 130.048 | 61 |
+| base (`spa+cat+rus`, deskew, rotate, optimize 1) | 12,3 s | 1,00× | referencia |
+| **sin `rotate_pages`** | **8,9 s** | **0,72×** | 1,000 |
+| sin `rus` (`spa+cat`) | 11,8 s | 0,96× | 1,000 |
+| `optimize=0` | 12,1 s | 0,98× | 1,000 |
+| sin `deskew` | 12,2 s | 0,99× | 1,000 |
 
-**No es de esta corrida y no es un artefacto de lectura.** Copiado de `G:` a `C:` conserva el
-tamaño rellenado, y el barrido da `30/34` en `W-048UOL`, `242/324` en `W-02VEKE` y `170/237` en
-`W-02JSVZ`. En casos antiguos (`BaRR3 …`) los tamaños son libres: 36 de 44 no son múltiplo de 512,
-o sea que el instrumento **sí puede dar el otro valor**.
+El stack de idiomas, el deskew y el optimize **no cuestan nada medible**, pese a que `spa+cat+rus`
+es el default de `ocr_pdf` y **ningún llamador lo sobreescribe** (0 apariciones de `idiomas=` fuera
+de la definición). Sale un 28 % de `rotate_pages`, que sobre esta apertura serían ~640 s.
 
-**El comentario de `core/intake_drive.py:233` ya vio el síntoma y lo leyó de menos.** Dice que
-Drive Desktop «reescribe metadatos y `stat()` devuelve un tamaño ligeramente superior» (observado
-+128, +268 en la sesión 21) y concluye que basta suprimir la verificación con `--ignore-size
---ignore-checksum --inplace`. Lo que falta en esa lectura: los bytes **están en el fichero**, no
-solo en el `stat()`.
+### (c) El control positivo, que es el que decide
 
-**Consecuencias, por orden de coste.**
-1. **El dedup por `sha256` entre fuentes no ve los duplicados.** Es lo que lo destapó: cuatro
-   documentos del `.zip` eran los mismos que ya estaban en el caso y el intake los habría
-   depositado otra vez. La detección de `#211`/acción 11 funciona *dentro* de una fuente, donde
-   todos comparten el mismo relleno.
-2. **La cadena de custodia por hash no cuadra contra el original del cliente.** El `sha256` que
-   guarda `_intake_log.jsonl` es el del fichero rellenado; el que da la API de Drive de E&V es el
-   del original. Acreditar «es el mismo documento» exige explicar el relleno.
-3. Alcance: **todo** caso escrito por esta vía, no solo los nuevos.
+Los 963 caracteres idénticos de la tabla anterior se midieron sobre una página **recta**: ahí
+`rotate_pages` no tiene nada que hacer, así que el instrumento **no podía dar el otro valor**. Con
+la página girada de verdad —rasterizada a 200 dpi y girada 90°, que es lo que produce una foto de
+móvil apaisada, y este corpus tiene fotos de móvil— el veredicto se invierte:
 
-**Vías, sin decidir.** (a) Comparar por **prefijo** (hash del contenido hasta el tamaño de origen)
-allí donde hoy se compara por sha; (b) escribir en local y publicar a Drive por `rclone` contra la
-API en vez de por el filesystem montado; (c) truncar tras copiar —hay que medir si Drive Desktop
-vuelve a rellenar—. Antes de nada, **medir si el relleno lo pone Drive Desktop o el `--inplace`**:
-el comentario culpa al primero y nadie lo ha probado con y sin el flag.
+| Documento | `rotate_pages` | mediana | chars | similitud vs recto |
+|---|---|---|---|---|
+| recto | True | 5,6 s | 896 | 1,000 |
+| recto | False | 4,1 s | 896 | 1,000 |
+| girado 90° real | True | 5,1 s | 898 | **0,987** |
+| girado 90° real | **False** | 4,3 s | 1014 | **0,650** |
 
-## 215. [DUPLICADA de `#67.b` + `#67.c`] La medición de W-048UOL: 32 documentos en el catálogo, 15 en la sala
+Con la opción puesta, el texto de la página girada se recupera **igual que si estuviera recta**
+(0,987). Sin ella, se degrada a 0,650. **El 28 % es la prima del seguro, no un ahorro**, y
+`rotate_pages` no se puede quitar globalmente.
 
-> **No es una entrada nueva y la abrí sin mirar el backlog, que es el error.** El defecto ya
-> estaba escrito y con el fix propuesto: **`#67.b`** (colisión de `nombre_canonico`, fix
-> «sufijar con `__<sha8>`») y **`#67.c`** (`poblar` escribe subcarpetas por fuente, fix «que
-> escriba plano salvo bundles»). Lo que aporta esta entrada es **la medición**, no el
-> diagnóstico.
->
-> **El arreglo entra por la rama de W-02YZO4** (`7c4a97a`, que cita `#67.b`, `#67.c` y `#36`),
-> no por aquí: dos sesiones escribimos el mismo par de arreglos a la vez sobre el mismo
-> fichero, y la suya trae además la **poda del cascarón** de las carpetas por fuente y un test
-> de **migración** del layout viejo. Mi diff se retiró antes de abrir PR para que no hubiera
-> dos.
+**Un aviso metodológico que costó una medición.** El primer intento de este control giró el PDF con
+`pypdf.rotate`, que escribe el flag `/Rotate` y **deja los píxeles rectos**: eso no es un escaneo
+girado sino un metadato, y devolvió números incoherentes (similitud 0,020 **con** la opción y 0,644
+sin ella). El control válido exige rasterizar. Misma familia que
+[[feedback-el-control-positivo-mide-otra-poblacion]].
 
-**La medición, que es lo que se conserva.** En W-048UOL (2026-09-10), tras `organizar`:
-`indice_documental.yaml` declaraba **32 documentos** y en `Sala lectura/` había **15 ficheros**,
-repartidos en dos carpetas de fuente (`Drive E&V/`, `Manual/`). Diecisiete imágenes —once fotos
-de las escrituras de la sociedad, cuatro documentos de identidad y dos de la oferta— compartían
-**dos únicos nombres** (`2026-03-16_foto_fotografia.jpeg` y `2026-03-17_foto_fotografia.jpeg`),
-porque el clasificador describe toda imagen como «Fotografía» y la fecha era la misma. Cada copia
-pisaba a la anterior.
+**Y otro sobre el ruido.** La primera pasada, sin repeticiones, dio «quitar `cat+rus` ahorra un
+51 %». La réplica dio lo contrario. La misma condición varió entre 21,3 s y 26,8 s en tres
+repeticiones seguidas, y entre 12,3 s y 26,5 s según lo que estuviera corriendo la máquina.
+**Con este ruido, una corrida por condición no mide nada**: todo lo de arriba son medianas de 3-4
+repeticiones alternando el orden.
 
-**Dos cosas que la medición añade al diagnóstico ya escrito:**
+**Lo que queda abierto, y es donde está el tiempo.** Si `rotate_pages` es obligatorio y las otras
+tres palancas no mueven, el OCR **no tiene botón barato**: sus 38 minutos son intrínsecos a
+OCR-izar 203 páginas de escaneos de calidad desigual. La vía que queda no es correr más rápido
+sino **no bloquear**: el OCR ya corre en background y lo caro no es que dure, es **repetirlo**
+(el `[APER-39]` de W-02VUDR: ~1h40 de OCR tirado). Antes de volver a tocar la configuración,
+medir cuántas aperturas repiten el OCR y por qué.
 
-- **El resumen declara éxito sobre la pérdida.** `organizar` imprimió
-  `Acciones: {'COPY': 31, 'SKIP_DEDUP': 1}` con 15 ficheros en disco: `COPY` cuenta **copias
-  intentadas**, no ficheros escritos. Mientras eso no cambie, ninguna corrida futura avisará.
-- **No se pierde información, se pierde el acceso.** El `INDICE.md` conserva las 32 entradas y
-  enlaza al original de `00_Input` y a su MD. Lo que engaña es la carpeta poblada, que aparenta
-  ser el expediente y muestra la mitad.
+**Disparador de promoción.** Ninguno: esto es un **resultado negativo archivado**, no una tarea.
+Se promueve solo si alguien propone paralelizar el OCR o tocar sus flags — y entonces lo que
+procede es leer esta entrada, no repetir el experimento.
 
-**Y una decisión de contrato que hay que cerrar de paso**, porque hoy hay dos literales vivos y
-distintos: la skill `organizar-sala-lectura` v1.3 (Paso 2) manda desambiguar con `_2`/`_3`,
-mientras `#67.b` manda `__<sha8>`. El sufijo por hash es el que aguanta que el grupo **crezca**
-—un `_2` puede pasar a `_3` y dejar sin referente la cita del letrado a un fichero—, así que el
-literal que sobra es el de la skill. Que lo corrija el PR que implemente el arreglo.
+---
 
-## 216. El representante del dedup puede esconder el documento nuclear: el encargo firmado no aparece en el índice
+
+## 223. Ejecutar `sync_cuestionario_from_canon.py` —el comando que la propia skill manda correr— DEGRADA la skill
+
+**Qué pasa.** El `SKILL.md` de `viabilidad-prerelleno` dice de su cuestionario: «vista **GENERADA**
+desde `data/_plantillas/cuestionario_viabilidad.yaml`; regenerar con
+`scripts/sync_cuestionario_from_canon.py`, no editar a mano». Correr ese comando hoy produce una
+vista **peor** que la commiteada.
+
+**Medido el 2026-09-10** (comparando la salida del script contra el fichero en `main`):
+
+| | vista commiteada | tras regenerar |
+|---|---|---|
+| preguntas | 88 | 90 |
+| `clase_fuente` poblado | **58 documental + 30 testifical** | **0 — `null` en las 90** |
+
+Las dos diferencias son daño:
+
+1. **`clase_fuente: null` en todas.** Es el campo con el que el paso 3 de la skill enruta cada
+   pregunta a documental o testifical, y por tanto lo que decide qué fila cae en el guion de
+   entrevista. Sin él, la skill se queda sin su default de enrutado. El script no lo emite: su
+   `SLUG2HITO` mapea `respalda` → rótulo de hito, y `clase_fuente` no se deriva de ninguna clave
+   del canónico.
+2. **Dos preguntas de más, `rec_01` y `rec_01_fecha`**, que `respalda: ['reclamacion_finanzas']`
+   — el hito que `hitos_derivacion.md` declara **eliminado del modelo aprobado** («son 14, no
+   15»). El canónico las conserva y el script las arrastra.
+
+**Cómo se descubrió, que es la parte incómoda:** llamando a `sync_cuestionario_from_canon.py
+--help`. **El script no tiene `--help`**: no usa `argparse`, así que el flag se ignora y el script
+**se ejecuta**, escribiendo la vista en `.claude/skills/`. Se revirtió con `git checkout --` sobre
+ese fichero. Vale como aviso propio: un script de sincronización sin CLI convierte cualquier
+sondeo en una escritura.
+
+**Qué haría falta.**
+
+- Que el script **emita `clase_fuente`** —derivándolo del canónico, o consumiendo un campo nuevo
+  que el canónico debería tener— o que **preserve** el valor existente si no sabe derivarlo. Hoy
+  lo pone a `null` en silencio, que es la peor de las tres opciones.
+- **Decidir qué manda sobre las dos preguntas del hito retirado**: o se retiran del canónico, o el
+  script las filtra por `respalda` no mapeado, o se documenta que el cuestionario conserva
+  preguntas sin hito. Cualquiera vale; hoy la vista y el canónico discrepan y nada lo dice.
+- Un `argparse` mínimo, aunque sea sin opciones, para que `--help` no escriba.
+- **Un guard que compare la vista con la salida del script.** Es la comprobación que habría
+  cazado esto sin que nadie lo pisara: `session_close` vigila drift de helpers y de taxonomía, y
+  el del cuestionario no lo mira nadie.
+
+**Control positivo para ese guard:** con la vista y el canónico alineados debe salir verde; tocando
+una sola pregunta del canónico, rojo. Sin la segunda mitad, el guard aprueba cualquier cosa.
+
+**Disparador de promoción.** Medio-alto: sube en cuanto alguien siga la instrucción del `SKILL.md`
+—que es lo que un lector diligente hace— o en cuanto el cuestionario canónico cambie. Mientras
+tanto la regla operativa es: **no regenerar la vista; usar la commiteada**, que es la que tiene el
+enrutado.
+
+## 234. El representante del dedup puede esconder el documento nuclear: el encargo firmado no aparece en el índice
 
 > Medido el 2026-09-10 en `W-048UOL`, buscando la hoja de encargo en el índice de la sala.
 

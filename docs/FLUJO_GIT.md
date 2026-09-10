@@ -98,6 +98,16 @@ Ante cualquier lío: **mirar → entender → acción reversible → verificar.*
   Que ese `remove` acabe en `Permission denied` es lo NORMAL al cerrar una sesión-en-worktree,
   no un fallo: desregistra y vacía el contenido, y solo deja la carcasa. Detalle y señales:
   `DEAD_ENDS.md` §«Worktree muerto como *cwd* de sesión».
+- **Y lo que ese estado te hace a continuación, que es lo caro: desde la carcasa, TODO comando
+  git opera sobre la RAÍZ COMPARTIDA, sin avisar.** La carcasa vive dentro del repo, así que git
+  resuelve hacia arriba. Va en las dos direcciones: puedes **commitear en `main` de la raíz**
+  creyendo estar en tu rama, y puedes **sacar la raíz de `main`** — un `git switch -c <rama>`
+  lanzado desde ahí crea la rama y **mueve la raíz compartida a ella** (visto el 2026-09-10).
+  **Señal barata, y la misma para los dos casos:** `git status -sb` dice `## main...origin/main`
+  cuando esperabas tu rama, o tu rama cuando esperabas la raíz. **Qué hacer:** dar el worktree
+  por perdido, devolver la raíz a `main` (`git -C <raíz> switch main`) y usar **`git -C <ruta>`
+  explícito** el resto de la sesión; si necesitas seguir trabajando, **monta un worktree nuevo**
+  en vez de reparar la carcasa. El detalle completo sigue en `DEAD_ENDS.md`.
 
 ---
 
