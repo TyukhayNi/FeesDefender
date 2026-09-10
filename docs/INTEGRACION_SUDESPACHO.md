@@ -1062,6 +1062,81 @@ Confirmado por HAR el 2026-07-19. Se conserva por si la vía REST endureciera la
 
 ---
 
+### 10.11 Generar un DOCUMENTO desde plantilla del CRM (familia `rtf`) — confirmado 2026-09-10
+
+> Medido en vivo sobre el expediente extrajudicial **638** (W-04A6LI) generando el burofax de
+> respuesta a un requerimiento. Cierra el hueco que dejaba el §10.9: **allí están las plantillas de
+> EMAIL** (`templates/html`, `is_html=1`); aquí las de **documento**, que en la UI son
+> «Gestor documental → Acciones → Crear documento» y viven en la familia **`rtf`**. Misma
+> `x-api-key` que el resto de `core/`: **no hace falta UI ni HAR**.
+
+| Operación | Método · endpoint |
+|---|---|
+| Catálogo de plantillas de documento | `GET /api/templates/rtf/{element}?properties[]=id&properties[]=nombre&properties[]=id_carpeta&properties[]=is_rtf&page=N` |
+| Detalle de una plantilla | `GET /api/templates/rtf/detail/{idTemplate}` |
+| **Documento RENDERIZADO para el expediente** | `GET /api/templates/rtf/{idTemplate}/{element}/{idElement}` → `200 {content, name}` |
+| Lote a PDF (ZIP) | `POST /api/templates/rtf/{idTemplate}/{element}` |
+
+`content` es el **RTF completo**, con el membrete de E&V y el pie de costas incrustados (~1,6 MB
+para una carta de dos páginas). El render **no guarda nada**: para dejar el documento en el gestor
+documental del expediente, encadenar el flujo de tres pasos del **§17**.
+
+- **`properties[]` es obligatorio**: sin él, `404 "It is necessary to include properties in the
+  request"`. Pedir un campo inexistente devuelve **500 con la lista entera de campos válidos**
+  (`accion, activo, asunto, datos, elemento, id_carpeta, is_rtf, nombre, predefinido, is_html,
+  is_notification, origen, origen_id, id, …`), que es el probe de §0.3 aplicado aquí.
+- **El `{element}` de la ruta NO filtra por el campo `elemento`** del registro: el catálogo
+  (392 plantillas en el tenant `tnm`, 30 por página) devuelve también las de otros elementos. Buscar
+  por `nombre`.
+- ⚠️ **Este endpoint usa la OTRA forma de respuesta paginada.** El §14.2 documenta
+  `{totalItems, currentPage, itemsPerPage, items}`, y `templates/rtf` devuelve
+  `{totalItems, currentPage, maxResults, elementRegistries}`. Un lector que entienda solo una de las
+  dos **no falla: devuelve cero**. Con `abogados_contrarios` me dio «0 registros» sobre una tabla de
+  **332**, y de ahí a dar de alta un duplicado afirmando que no existía hay un paso. Cruzar siempre
+  lo leído contra el `totalItems` que declara el servidor.
+
+**Qué vuelca la plantilla, y de qué campo.** `[extrajudiciales->Referencia_Cliente]` alimenta a la
+vez la línea `REF:` y la frase «el inmueble sito en …»: si ahí está el nombre de la carpeta del caso,
+la carta dice «el inmueble sito en VaRS3 - Calle 31, 6 (W-04A6LI) - Devolucion honorarios». Se deja
+el `W-XXXXXX` y la dirección se escribe en el cuerpo. Y **`[abogados_contrarios->*]` sale vacío si el
+letrado contrario no está vinculado al expediente**, con lo que el encabezamiento se genera en
+blanco: completar la ficha CRM ANTES de generar (mismo corolario que el §10.9).
+
+**Huecos que la plantilla no puede rellenar** y hay que tocar a mano en el documento: los marcadores
+`XX`/`XXX` de precios y porcentajes, el campo `[XX]` de la ciudad del centro de trabajo (que además
+arrastra un **comentario de Word** con la nota al letrado: hay que borrar el grupo
+`{\*\annotation}` y sus anclas `atrfstart`/`atrfend`/`atnid`/`atnauthor` antes de enviar), y el
+guion suelto del `REF:` cuando el `[expedientes_judiciales->referencia_cliente]` está vacío por ser
+un extrajudicial.
+
+### 10.12 `abogados_contrarios` — alta y vínculo al expediente (confirmado 2026-09-10)
+
+No estaba en este documento y no tiene helper en `core/sudespacho_relations.py` (que solo cubre
+`clientes_contrarios`, `clientes_propios`, `procuradores_propios` y `colaboradores`).
+
+```
+POST /api/element_register/abogados_contrarios   {nombre, email, telefono1, direccion, cp, poblacion, provincia, Num_Colegiado, Colegio_Profesional, web, notas}  → 201 {id}
+POST /api/relation_element/extrajudiciales/{exp} ["right.abogados_contrarios.{id}"]                                                                               → 201
+```
+
+`abogados_contrarios` es **parent: expedientes_judiciales, extrajudiciales**, luego desde el
+expediente el lado es `right.` (regla del §16.3). Campos reales: `1apellido, 2apellido, ccc,
+Colegio_Profesional, cp, direccion, email, fax, iva, movil, nacionalidad, nif_cif, nombre, notas,
+Num_Colegiado, poblacion, provincia, telefono1, telefono2, telefono3, web`.
+
+- **Convención de la casa, medida sobre las 332 fichas del tenant:** `nombre` lleva el **nombre
+  completo en mayúsculas** y `1apellido`/`2apellido` van vacíos. Es lo que rinde la plantilla y lo
+  único que muestra el listado de la UI (misma trampa que el §10.6).
+- La ficha se rellena **completa** (dirección, teléfonos, email, colegio y `notas` con la fuente de
+  cada dato); si el expediente no trae el dato, se busca. `provincia` es un `Select` cuyo `id` **es
+  la etiqueta** (`"Alicante"`): resolverlo con `GET /api/view/enums/abogados_contrarios/provincia`
+  (patrón §14.4), nunca adivinarlo.
+- El `PUT` para completar la ficha es **parcial** (§10.7). Si se manda el juego completo, **quitar
+  los campos vacíos**: un `Select` en blanco lo rechaza con
+  `404 "The value: <> sent for the property: iva is incorrect"`.
+
+---
+
 ## 12. Expediente judicial — Crear y vincular (confirmado 2026-04-30)
 
 ### 12.1 Crear expediente judicial

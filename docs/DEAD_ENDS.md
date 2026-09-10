@@ -437,6 +437,13 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
   (probable: `/api/clientes_propios/{id}` o ruta análoga sin `element_registries`).
 
 ### ✅ RESUELTO (2026-06-10) — `GET /api/files/presigned_download_url/{doc_id}` → HTTP 400 "Unable to generate an IRI"
+> ⚠️ **Esto es la DESCARGA. La SUBIDA funciona** (`GET /api/files/presigned_upload_url` →
+> `PUT` a S3 → `POST /api/documents`): contrato completo en `INTEGRACION_SUDESPACHO.md §17`,
+> verificado en vivo el 2026-09-09 y reusado el 2026-09-10. La nota se añade porque leer esta
+> entrada y concluir «el módulo `Upload` está roto, no hay API para subir» es un paso corto y
+> **yo lo di**: lo tenía así en memoria y me puse a redescubrir por API algo ya documentado.
+> Lo que se rompió en la ventana 2026-05-04/11 fueron los **dos endpoints de presigned-URL de
+> descarga**, no la subida.
 - **Intentado:** descarga de los documentos del expediente judicial 649 vía `pull_expediente_v2` (`download_document_rest` → `presigned_download_url`)
 - **Resultado:** todos los docs fallaban con HTTP 400 y body
   `{"@context":"/api/contexts/Error","@type":"hydra:Error","hydra:title":"An error occurred",`
