@@ -2278,6 +2278,12 @@ de escribir. Llave de emparejamiento = *Su ref* (= `num_expediente/serie`,
 serie=año). **RGPD — excepción acotada SOLO a este flujo:** usa LLM cloud UE
 (Scaleway/Mistral Small 3.2); no deroga la regla general del resto del repo.
 
+**Prerequisito real de la escritura, resuelto a mano el 2026-09-10:** crear la actuación que
+deriva de la notificación recibida ya está **medido de punta a punta** —los cinco pasos, los
+`id_predefinido` reales y las cuatro trampas— en `docs/INTEGRACION_SUDESPACHO.md §15.6`. Lo que
+falta es encapsularlo: **no hay helper en `core/` para actuaciones** (`sudespacho_create.py` no
+las cubre), y hacerlo a mano deja basura en el CRM si el segundo POST falla. `MEJORAS #209`.
+
 **Estado por fases (detalle en el doc §15):**
 - **F1 — Matcher (read-only).** ✅ HECHA (s39, 2026-06-12). `core/llm_cloud.py`
   (conector LLM cloud intercambiable) + `core/procurador_intake.py` (señales LLM +

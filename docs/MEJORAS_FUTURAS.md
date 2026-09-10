@@ -9427,3 +9427,53 @@ ilegible es evidencia que no se borra. Lo que falta es poder **leer sin ejercerl
 **Disparador de promoción.** Bajo. La ventana es estrecha y el preflight cubre lo que pasa en la
 práctica. Sube si aparece un segundo consumidor de solo lectura, porque entonces el preflight habría
 que duplicarlo otra vez.
+
+---
+
+## 209. Crear actuaciones en el CRM no tiene helper: la receta vive en prosa y se reescribe a mano cada vez
+
+**Qué pasa.** El 2026-09-10 se creó a mano, con `urllib` en un heredoc, una actuación
+`TA - CONTROL DICTADO SENTENCIA` colgada del expediente judicial de `W-02VEKE`, y se corrigió su
+cuantía. Funcionó, y quedó documentado en `INTEGRACION_SUDESPACHO.md §15.6`. Pero **no hay ni una
+función en `core/` que lo haga**: `core/sudespacho_create.py` crea expedientes, clientes,
+contrarios y colaboradores; `core/sudespacho_relations.py` vincula; **actuaciones no está**.
+
+**Por qué importa ahora y no antes.** Nikolai avisó ese mismo día de que va a pedir crear
+actuaciones **cada vez más**, y nombró el destino: la **F3 del intake de procuradores**, que tiene
+que crear la actuación **derivada de la notificación recibida**. Es decir, esto deja de ser un
+gesto manual y pasa a ser un paso de pipeline.
+
+**Los cinco pasos que el helper tiene que encapsular** —y cada uno es un sitio donde equivocarse:
+
+1. **Resolver `(elemento, id)` del expediente**, no el número a secas. En `W-02VEKE`, `464` es de
+   `extrajudiciales` y `540` de `expedientes_judiciales`, y `GET expedientes_judiciales/464`
+   devuelve **200 con un expediente de otro caso**. El par correcto está en `_caso.md`, bajo
+   `sudespacho_expedientes`.
+2. **Aprender el `id_predefinido`** filtrando una instancia real por su asunto literal: el
+   catálogo de predefinidas **no se expone como elemento REST**. Medido: `TA - CONTROL DICTADO
+   SENTENCIA` → `84`.
+3. **`profesional_asignado` es el username** (`ana.velastegui`), no el id de `empleados`.
+4. `POST element_register/actuaciones`.
+5. `POST relation_element/{elemento}/{exp}` con `["right.actuaciones.{id}"]` — **sin esto la
+   actuación queda huérfana y el paso 4 devuelve `201` igual**.
+
+**Y el verificador, que es la mitad del valor.** La comprobación válida es releer **del lado del
+expediente** con el filtro `associated`; filtrar por el `id` de la actuación devuelve **404**
+aunque exista. Un helper que devuelva el id sin comprobar la vinculación reproduce exactamente el
+modo de fallo que documenta el §15.2.
+
+**Forma candidata.** `core/sudespacho_actuaciones.py` con dos funciones puras y una de IO:
+`resolver_predefinida(asunto) -> id | None` (lectura), `crear_actuacion(exp_elemento, exp_id, ...)
+-> Actuacion` (los dos POST más la relectura de verificación, devolviendo el estado real de la
+vinculación y no solo el id), y un DTO con los campos que el CRM acepta de verdad. Cablearlo
+después en F3.
+
+**Cómo comprobarlo sin engañarse.** El test tiene que cubrir el caso en que **el segundo POST
+falla y el primero no**: hoy eso deja basura en el CRM sin que nadie se entere. Y un test que
+muerda la confusión de elementos: pedir `expedientes_judiciales` con un id que solo existe en
+`extrajudiciales` **no** debe dar por bueno el registro que vuelva.
+
+**Disparador de promoción.** Alto en cuanto se retome **F3 del intake de procuradores** —es su
+prerequisito real, no un adorno—, o en cuanto la creación manual se repita una tercera vez. Hasta
+entonces la prosa del §15.6 basta para hacerlo a mano sin volver a descubrir las trampas.
+
