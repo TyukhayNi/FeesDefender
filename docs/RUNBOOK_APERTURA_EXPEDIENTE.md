@@ -328,7 +328,7 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 
   **Lo que esto decide:** cualquier optimización que no sea del OCR ataca el 18 %. Y el OCR **no
   tiene botón barato** — paralelismo por documento refutado, idiomas/deskew/optimize sin efecto
-  medible, `rotate_pages` es un seguro: todo con sus números en `MEJORAS #216`. La consecuencia
+  medible, `rotate_pages` es un seguro: todo con sus números en `MEJORAS #217`. La consecuencia
   operativa no es correr más rápido sino **no bloquear** (el OCR va en background por `[APER-09]`)
   y **no repetirlo** (`[APER-39]`: ~1h40 tirados en W-02VUDR).
 
@@ -709,12 +709,12 @@ python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # y ahora
   1. **`ls` de los cuatro artefactos.** Salieron `INDICE.md` y `CRONOLOGIA.md`; **`_MANIFIESTO.md`
      no existe** (no lo escribe nadie: en todo `core/` y `scripts/` solo aparece en
      `core/config.py:415`, como fichero protegido) y el `indice_documental.yaml` vive en
-     `01_Procesado/`, no dentro de `Sala lectura/` como dibuja el árbol de la skill. `MEJORAS #215`.
+     `01_Procesado/`, no dentro de `Sala lectura/` como dibuja el árbol de la skill. `MEJORAS #216`.
   2. **`grep -c '(\*)' CRONOLOGIA.md` contra el conteo de `fecha_fuente: mtime` del catálogo.**
      Salieron **0 marcas para 63 de 166 fechas** (38 %) que vienen de `mtime`. El canon manda
      marcarlas `(*)`; el catálogo sabe cuáles son y el renderizador no lo mira, así que la
      cronología afirma fechas de documento que son fechas de fichero. En este caso puso
-     **2025-11-25 a un acta de 2018** cuyo nombre llevaba la fecha. `MEJORAS #214`.
+     **2025-11-25 a un acta de 2018** cuyo nombre llevaba la fecha. `MEJORAS #215`.
 
   Y una causa que se fabrica el propio pipeline: el intake sustituye la `/` prohibida por `／`
   (U+FF0F) y el parser de fechas del nombre no reconoce esa barra — ni los días de un dígito
