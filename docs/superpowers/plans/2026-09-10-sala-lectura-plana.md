@@ -134,9 +134,38 @@ tests.
 escritura del YAML; y el comportamiento de enlaces en Linux/macOS. Lo declaró él y no se da por
 cubierto.
 
-**Cobertura de la remediación, dicha entera:** los remedios de arriba **no** han pasado por una
-segunda ronda. El presupuesto de esta pieza es de una ronda por radio de daño, y una R2 sobre el
-diff remediado queda a decisión de Nikolai. Lo que sí las cubre en parte, y se declara como lo que
-es: la R1 que la sesión de W-048UOL corrió **en paralelo** sobre su `_sin_colision` —el mismo
-mecanismo con otra asignación— ataca la completitud de la discriminación, la idempotencia entre
-corridas y si `old.unlink()` puede dejar una fila sin fichero. Cuando llegue, se adjudica aquí.
+**Cobertura de la remediación:** ver el §6, que es donde acabó la ronda que la cubre en parte.
+
+## 6. Adjudicación de la revisión adversarial (Codex, 2026-09-10) — NO-SHIP, remediado
+
+- **Objeto revisado:** diff `874111b..9ce7183` — la implementación HERMANA del mismo mecanismo, retirada en `fd401af`
+- **Ronda:** R2 de la pieza (R1 sobre ese objeto); la corrió la sesión «Caso W-048UOL» y me pasó el informe
+- **Revisor:** Codex, copia externa del objeto, solo lectura, con sondas ejecutadas
+- **Informe recibido:** 2026-09-10, `2026-09-10-sala-lectura-plana-r2-hermana-adversarial-review.md`, 23.831 bytes
+- **Hallazgos:** 5 — 3 ALTOS, 1 MEDIO, 1 BAJO; **3 vivos en mi código ya remediado, 2 ya cubiertos**
+- **Remediado en:** commit de este PR, `core/sala_lectura.py` + `tests/test_sala_lectura_plana_r2.py`
+
+**Una ronda sobre otro objeto que resultó ser sobre el mío.** El diff que revisó es el de la
+sesión hermana, que se retiró y no llega a `main`. Pero atacó el **mecanismo**, no su sintaxis, y
+**tres de sus cinco hallazgos sobrevivían a mi remediación de la R1**. Que dos rondas
+independientes, sobre dos implementaciones distintas del mismo mecanismo, encuentren defectos
+distintos es el argumento más fuerte que he visto para el contrato de revisión de este repo.
+
+| Hallazgo | Severidad | Veredicto sobre MI código | Remedio |
+|---|---|---|---|
+| su H-01 · el `unlink` borra el destino de otra fila — **mitad por reordenación** | ALTA | **ya cubierto** por la asignación por hash de la R1: quién se lleva cada nombre no depende del recorrido | — |
+| su H-01 · **mitad por capitalización** | ALTA | **VIVO**. Mi barrera comparaba cadenas, y en Windows `Manual/` y `manual/` son la misma carpeta: al migrar, el `unlink` de una fila borraba la copia recién escrita de otra. Lo reprodujo **ejecutando en Windows**, y sin reordenar nada | `clave_ruta` normaliza separador y capitalización, y la barrera compara por esa clave; test |
+| su H-02 · hashes vacíos | ALTA | **VIVO**. El dueño de una reserva era `hash or ""`, así que todas las filas sin hash lo compartían y una podía tomar la ruta de otra. Su tabla de `("","")`, `(None,None)`, `(None,"")`, `("",None)` es el mapa exacto del defecto | `clave_dueno`: el hash cuando lo hay, algo único por fila cuando no — conservando que las deduplicadas SÍ compartan dueño; dos tests |
+| su H-03 · las filas saltadas no reservan su ruta | ALTA | **ya cubierto** por la R1 (`reservadas`), comprobado contra la fuente y no por fecha | — |
+| su H-04 · la migración deja la estructura vieja | BAJA | **ya cubierto** por `_podar_directorios_vacios`, y su medición en vivo es la confirmación de que hacía falta | — |
+| su H-05 · debilitó el aserto de parada por residuo | MEDIA | **el mismo aserto que yo había debilitado**, ya restaurado por la R1. Su aviso me hizo pasar la mutación por los otros cuatro: dos `any(...)` quedan reforzados | test reforzado |
+| extra · **borrar antes de copiar** | — | **VIVO**, y preexistente a los dos diffs. Un fallo de copia dejaba el destino viejo borrado, el nuevo sin crear y el catálogo apuntando a la nada. **La migración lo activa sobre el expediente entero**: en W-02YZO4 fueron 26 documentos en una corrida | se copia y **después** se borra; test con `OSError` inyectado + control positivo de que la migración sigue retirando la copia vieja |
+| extra · `_bundle_map` indexa por hash | — | confirmado, **PREEXISTENTE** | fuera de alcance → `MEJORAS #231` |
+
+**Y lo que sigue SIN cubrir, dicho sin adornos:** ni la remediación de la R1 ni estos tres
+arreglos han pasado por una ronda adversarial. Son dos remediaciones sin revisar sobre una pieza
+cuyo presupuesto declarado era **una** ronda. El techo de dos rondas por pieza ya está consumido, y
+una tercera **necesita autorización expresa de Nikolai** — no la pido escondida en un documento:
+queda dicho aquí y en el resumen de la sesión. Lo que sí acredita el estado actual son los tests
+(16 de la R1 + 7 de la R2, con sus controles positivos y el mutante muerto) y la verificación por
+contenido sobre el expediente real.

@@ -10321,3 +10321,26 @@ de esa fila y el crudo de `00_Input` está intacto— pero hoy se decide por omi
 alternativas son respetarlo y desviar la copia a un sufijo, o inventariar y reconciliar
 los huérfanos (comparte recorrido con #228). **Disparador:** decisión de Nikolai, o un
 caso donde se pierda algo que importaba.
+
+## 231. `_bundle_map` indexa por hash: dos adjuntos sin hash comparten rol y orden
+
+**Detectado 2026-09-10** (R1 adversarial de Codex sobre la implementación hermana de la
+sala plana, §3.1; **preexistente**, no lo introduce ninguno de los dos diffs).
+`core/sala_lectura._bundle_map` devuelve `{hash: (bundle_slug, rol, header_hash, orden)}`.
+`CatalogEntry` admite `hash` vacío, y entonces **todas** las filas sin hash comparten la
+misma casilla: el último miembro procesado sobrescribe el registro de los anteriores.
+
+**Medido por el revisor** con las sondas `bundle_empty` y `bundle_none`: dos adjuntos
+distintos sin hash salen los dos con `orden_en_bundle=2`, aunque los dos ficheros se
+conserven. Con `None` en vez de `""` se conservan los dos ficheros, así que el defecto no
+se generaliza a toda pareja de vacíos — el mapa sí.
+
+**Por qué no se arregla con el resto:** el 2026-09-10 se corrigió la misma familia en el
+asignador de destinos (`clave_dueno`: el `hash` cuando lo hay, algo único por fila cuando
+no), y `_bundle_map` es el otro sitio donde la misma suposición vive. Se deja aparte
+porque toca la relación cabecera/adjunto, que tiene sus propios tests y su propio
+detector.
+
+**Solución:** indexar por identidad de fila —o por `clave_dueno`, que ya existe— en vez de
+por hash. **Disparador:** un caso con adjuntos de bundle sin hash, o cerrar #228, que
+comparte el recorrido de referencias del catálogo.

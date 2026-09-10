@@ -321,7 +321,12 @@ def test_poblar_sin_crm_docs_degrada_a_plano(tmp_casos_root):
     sl.poblar_sala_lectura(case_id)  # sin crm_docs
     sala = case_dir / "01_Procesado" / "Sala lectura"
     assert not (sala / "CRM").exists()   # `MEJORAS #67.c`: sin carpeta por fuente
-    assert any(sala.glob("*.pdf"))  # copia plana, sin subcarpeta de bundle
+    # `any(...)` solo comprobaba EXISTENCIA, y ya era débil antes de aplanar: lo señaló
+    # la R1 de la implementación hermana. Se exige el fichero exacto y sus bytes.
+    copias = [q for q in sala.rglob("*.pdf")]
+    assert len(copias) == 1, [q.name for q in copias]
+    assert copias[0].parent == sala          # plano, sin subcarpeta de bundle
+    assert copias[0].read_bytes() == b"%PDF-D1"
 
 
 def test_cli_organizar_se_detiene_con_residuo(tmp_casos_root):
@@ -350,8 +355,13 @@ def test_organizar_completo_sin_residuo(tmp_casos_root):
     ])
     res = sl.organizar(case_id)
     assert res["detenido_por_residuo"] is False
-    assert (case_dir / "01_Procesado" / "Sala lectura" / "INDICE.md").exists()
-    assert any((case_dir / "01_Procesado" / "Sala lectura").glob("*.pdf"))
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    assert (sala / "INDICE.md").exists()
+    # Igual que arriba: `any` no distinguía un PDF correcto de cualquier PDF.
+    copias = [q for q in sala.rglob("*.pdf")]
+    assert len(copias) == 1, [q.name for q in copias]
+    assert copias[0].parent == sala
+    assert copias[0].read_bytes() == b"%PDF-1"
 
 
 def test_poblar_bundles_idempotente(tmp_casos_root):

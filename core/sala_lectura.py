@@ -801,6 +801,33 @@ def _discriminante(entry) -> str:
     return hashlib.sha256((entry.ruta_relativa or "").encode("utf-8")).hexdigest()[:8]
 
 
+def clave_ruta(ruta: str) -> str:
+    """La ruta como la ve el FILESYSTEM, para comparar ocupación.
+
+    Windows y el Drive del despacho **no distinguen mayúsculas**, así que
+    `Sala lectura/Manual/x.pdf` y `Sala lectura/manual/x.pdf` son el mismo fichero y
+    comparar las cadenas tal cual dice que son dos. La R1 de la implementación hermana
+    lo reprodujo ejecutando en Windows, y en la migración: una cabecera de bundle cuyo
+    slug es `manual` aterriza sobre la carpeta `Manual` del layout viejo, y el
+    `old.unlink()` de la otra fila borra la copia recién escrita.
+    """
+    return ruta.replace("\\", "/").casefold()
+
+
+def clave_dueno(entry) -> str:
+    """Quién ocupa una ruta. El `hash` cuando lo hay; algo único por fila cuando no.
+
+    Con el `hash` como dueño, la fila deduplicada y su representante comparten dueño y
+    el representante puede tomar la ruta que su gemela reservó — que es lo que se
+    quiere. Pero `CatalogEntry` admite `hash` vacío, y entonces **todas** las filas sin
+    hash tenían el mismo dueño `""`: una podía tomar la ruta reservada por otra y
+    sobrescribirla. Lo midió la R1 de la implementación hermana con una tabla de
+    `("", "")`, `(None, None)`, `(None, "")` y `("", None)`. El dedup no protege: solo
+    mira hashes verdaderos.
+    """
+    return entry.hash or f"sin-hash:{entry.ruta_relativa}"
+
+
 def _asignar_destinos(planificados: list[tuple], reservadas: dict[str, str]) -> list[str]:
     """Ruta de destino de cada planificado, sin que dos acaben en la misma.
 
@@ -839,8 +866,8 @@ def _asignar_destinos(planificados: list[tuple], reservadas: dict[str, str]) -> 
     tomadas = dict(reservadas)
     destinos: list[str] = [""] * len(planificados)
 
-    def _libre(ruta: str, hash_: str) -> bool:
-        return tomadas.get(ruta, hash_) == hash_
+    def _libre(ruta: str, dueno: str) -> bool:
+        return tomadas.get(clave_ruta(ruta), dueno) == dueno
 
     # Grupos y miembros en orden determinista: la asignación no puede depender del
     # orden en que el catálogo devuelva las filas.
@@ -849,15 +876,30 @@ def _asignar_destinos(planificados: list[tuple], reservadas: dict[str, str]) -> 
         colisiona = len(miembros) > 1
         for idx in miembros:
             entry, dir_rel, nombre = planificados[idx]
+            dueno = clave_dueno(entry)
             p = Path(nombre)
-            base = f"{p.stem}__{_discriminante(entry)}" if colisiona else p.stem
-            cand = f"{dir_rel}/{base}{p.suffix}"
-            n = 2
-            while not _libre(cand, entry.hash or ""):
-                cand = f"{dir_rel}/{base}_{n}{p.suffix}"
-                n += 1
-            tomadas[cand] = entry.hash or ""
-            destinos[idx] = cand
+            # Candidatos, en orden: el nombre pelado —solo si su grupo no colisiona—,
+            # después el `__<sha8>`, y solo al final los ordinales. El ordinal es el
+            # último recurso a propósito: depende del conjunto, mientras que el `sha8`
+            # sale del documento. Si el pelado está tomado por OTRO grupo o por una
+            # ruta reservada, se cae al `sha8` y no a un `_2` que mañana se mueva.
+            cands = ([] if colisiona else [p.stem]) + [f"{p.stem}__{_discriminante(entry)}"]
+            elegido = None
+            for base in cands:
+                cand = f"{dir_rel}/{base}{p.suffix}"
+                if _libre(cand, dueno):
+                    elegido = cand
+                    break
+            if elegido is None:
+                base, n = cands[-1], 2
+                while True:
+                    cand = f"{dir_rel}/{base}_{n}{p.suffix}"
+                    if _libre(cand, dueno):
+                        elegido = cand
+                        break
+                    n += 1
+            tomadas[clave_ruta(elegido)] = dueno
+            destinos[idx] = elegido
     return destinos
 
 
@@ -928,7 +970,7 @@ def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
             excluida = True
         if excluida:
             if e.ruta_sala_lectura:
-                reservadas.setdefault(e.ruta_sala_lectura, e.hash or "")
+                reservadas.setdefault(clave_ruta(e.ruta_sala_lectura), clave_dueno(e))
             continue
         dir_rel, relacion = _directorio_destino(e, bundles)
         if relacion is not None:
@@ -940,8 +982,10 @@ def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
             vistos_hash.add(e.hash)
 
     destinos = _asignar_destinos(planificados, reservadas)
-    # Ninguna copia recién escrita puede borrarse como «ruta vieja» de otra fila (H-02).
-    destinos_nuevos = set(destinos)
+    # Ninguna copia recién escrita puede borrarse como «ruta vieja» de otra fila. Se
+    # compara por clave de FILESYSTEM: en Windows `Manual/` y `manual/` son la misma
+    # carpeta, y comparando cadenas el `unlink` de una fila borraba la copia de la otra.
+    destinos_nuevos = {clave_ruta(d) for d in destinos}
 
     # 2º pase: la copia, idempotente contra `ruta_sala_lectura`.
     for (e, _dir_rel, _nombre_base), dst_rel in zip(planificados, destinos):
@@ -961,20 +1005,28 @@ def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
         if prev == dst_rel and dst.exists():
             acciones["SKIP_UNCHANGED"] = acciones.get("SKIP_UNCHANGED", 0) + 1
         else:
-            if prev and prev != dst_rel:
+            migra = bool(prev) and prev != dst_rel
+            if not migra and dst.exists():
+                # Ocupaba el nombre algo que el catálogo no conoce. Se sobrescribe
+                # —es el destino canónico de esta fila— pero se DICE.
+                acciones["SOBRESCRITO_SIN_FILA"] = (
+                    acciones.get("SOBRESCRITO_SIN_FILA", 0) + 1)
+            # **Copiar ANTES de borrar.** Al revés, un fallo de copia dejaba el destino
+            # viejo borrado, el nuevo sin crear y el catálogo apuntando a una ruta
+            # inexistente — y como `save_catalog` no se alcanza, ni queda constancia. Es
+            # anterior a este diff, pero la migración del layout lo activa sobre el
+            # expediente ENTERO de golpe: en W-02YZO4 fueron 26 documentos en una
+            # corrida. Reproducido inyectando un `OSError` en la R1 de la
+            # implementación hermana.
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            if migra:
                 old = caso_path(case_id) / "01_Procesado" / prev
-                if old.exists() and prev not in destinos_nuevos:
+                if old.exists() and clave_ruta(prev) not in destinos_nuevos:
                     old.unlink()
                 acciones["MOVED"] = acciones.get("MOVED", 0) + 1
             else:
-                if dst.exists():
-                    # Ocupaba el nombre algo que el catálogo no conoce. Se sobrescribe
-                    # —es el destino canónico de esta fila— pero se DICE.
-                    acciones["SOBRESCRITO_SIN_FILA"] = (
-                        acciones.get("SOBRESCRITO_SIN_FILA", 0) + 1)
                 acciones["COPY"] = acciones.get("COPY", 0) + 1
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
             e.ruta_sala_lectura = dst_rel
 
     problemas_poda = _podar_directorios_vacios(_sala_dir(case_id))
