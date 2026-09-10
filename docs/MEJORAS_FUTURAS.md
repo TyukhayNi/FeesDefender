@@ -9730,3 +9730,248 @@ que solo mire el 638 aprueba un comparador que haya dejado de comparar.
 se haga hay un expediente vivo no buscable por dirección. Para (a), medio: sube con el **segundo**
 burofax desde plantilla —el flujo que `#212` quiere encapsular— o con el primer expediente cuya
 referencia del CRM divirja del nombre de la carpeta por sufijo.
+
+## 217. `--direccion` es el único flag de identidad que se teclea a mano, y el nombre de la carpeta de E&V ya lo trae
+
+> Medido el 2026-09-10 abriendo **W-02NHNC**: la dirección llevaba una vocal acentuada y la escribí
+> sin acento. Nadie podía avisar, porque no hay con qué comparar.
+
+**Qué pasa.** La auto-derivación B5 (`[APER-34]`) cubre tres de los seis flags de identidad:
+`--team-id` sale del `driveId`, `--codigo-caso` del nombre de la unidad compartida y `--sufijo` del
+`tipo_caso` canónico. **`--direccion` no.** Se teclea, y es el único componente del `case_id` sin
+fuente: `f"{codigo} - {direccion} ({w_code}) - {sufijo}"`.
+
+**Por qué importa más que una errata.** El `case_id` es la identidad que se propaga a tres
+sistemas (carpeta de Drive del despacho, `Referencia_Cliente` del CRM, etiqueta *leaf* de Gmail) y
+queda estampada en el frontmatter de cada espejo MD. Corregirlo después del alta es el renombrado
+cross-sistema que `[APER-04]` manda evitar; en W-02NHNC costó barato **solo** porque se cazó antes
+de crear la etiqueta y la ficha, y aun así dejó 17 frontmatters con el sello previo.
+
+**El dato existe y ya se lee.** El alta consulta la carpeta de E&V para derivar `--team-id`, y esa
+carpeta se llama `<direccion> - <W-code> - <consultor>`: el W-code de en medio da el punto de corte
+exacto para el prefijo. O sea que la dirección viene en el mismo objeto del que ya se saca la mitad
+de la identidad, y se ignora.
+
+**Vías.**
+
+- **(a) Derivar `--direccion` del nombre de la carpeta** cuando se omita, con el W-code como
+  delimitador, y que el flag explícito siga ganando (como el resto de B5). Es la que cierra la
+  causa.
+- **(b) Solo avisar**: comparar la `--direccion` recibida con el prefijo del nombre de la carpeta y
+  advertir si difieren en algo más que puntuación. Más barata, no evita el tecleo.
+- **(c) Nada, y que el operador copie y pegue.** Es el estado actual, y lo que falló.
+
+**Cuidado con (a):** no todas las carpetas de E&V siguen el patrón —hay `PROPIEDADES/1. ACTIVAS/`
+con nombres libres— así que la derivación tiene que **rendirse y pedir el flag** cuando no
+encuentre el W-code en el nombre, igual que hace `codigo_de_unidad` con una unidad comercial. Una
+derivación que adivine es peor que teclear.
+
+## 218. El pull de Drive E&V guarda los documentos RELLENADOS con ceros a múltiplo de 512, y su sha256 deja de ser el del original
+
+> Medido el 2026-09-10 en la apertura de **W-02NHNC**. Salió a la luz por un síntoma que no era
+> este: el encargo se OCR-eó **dos veces** (77,7 s de los 165,8 s de la segunda pasada) porque el
+> dedup por sha no reconoció que la copia del correo y la del Drive eran el mismo documento.
+
+**Qué pasa.** Los 9 ficheros que `pull_drive_ev` trajo a `00_Input/01_Drive EV/` pesan **el
+siguiente múltiplo de 512** y llevan **bytes cero** al final. Su `sha256` no es, por tanto, el del
+fichero de origen:
+
+| Fichero (del Drive de E&V) | bytes en origen | bytes en el expediente | de más |
+|---|---|---|---|
+| Encargo de venta | 2.773.549 | 2.774.016 | +467 |
+| Anexo 2 (propietario A) | 631.603 | 631.808 | +205 |
+| Anexo 2 (propietario B) | 631.542 | 631.808 | +266 |
+| Nota simple | 261.945 | 262.144 | +199 |
+| CEE etiqueta | 730.086 | 730.112 | +26 |
+| Ref. catastral ×2 | 67.776 / 68.629 | 68.096 / 69.120 | +320 / +491 |
+| DNI ×2 | 101.053 / 104.681 | 101.376 / 104.960 | +323 / +279 |
+
+Los **15 de 15** ficheros de la carpeta, no solo los 9 de la tabla: los otros seis (hoja de
+visita, devolución de llaves en `.pdf` y `.docx`, nota simple del comprador y los dos cruces de
+PBC) no traen `sha256Checksum` declarado y se contrastaron contra un pull independiente a NTFS.
+El contraste de los 9 es contra el `sha256Checksum` que declara la API de Drive para el fichero de
+origen, no contra una expectativa.
+
+**El relleno está en los bytes, no en el tamaño declarado, y llega a la nube.** Tres controles:
+
+1. Copiar el fichero de `G:` a NTFS conserva los 262.144 bytes y el hash; los últimos 24 bytes son
+   `00`.
+2. El mismo fichero bajado por la API de Drive pesa 261.945 y hashea a lo que Drive declara.
+3. Buscado por la API **en el Drive del despacho**, el fichero subido dice `size: 262144` y
+   `sha256Checksum: ff2d839d…` — o sea que **el archivo canónico guarda la versión rellenada**.
+
+**La causa está acotada por tres controles, y el diagnóstico de 2026-05-19 era falso.**
+
+1. **Otro escritor, mismo destino, no rellena.** En la misma sesión y en la misma ruta de `G:`, el
+   export de Gmail escribió el mismo encargo como adjunto: 2.773.549 bytes, sha idéntico al de
+   Drive. Y la sustitución de los 15 se hizo con `Path.write_bytes` sobre `G:`: **15 de 15 fieles
+   tras escribir**. O sea que no rellena `G:`, rellena **la vía de escritura de rclone** sobre `G:`.
+2. **rclone contra NTFS, con la verificación ACTIVA, sale limpio.** `rclone copy gdrive_ev: <dir
+   NTFS>` sin `--inplace`, sin `--ignore-size` y sin `--ignore-checksum` copió los 15 con **exit 0
+   y ni un «corrupted on transfer»**, y los 9 que traen `sha256Checksum` declarado cuadran los 9.
+   Eso es la vía **(c)** medida, y de paso pone en duda que los tres flags sigan hacen falta.
+3. **El comentario del código afirma lo contrario de lo que pasa.** `core/intake_drive.py:233`
+   dice que «Drive Desktop reescribe metadatos y `stat()` devuelve un tamaño ligeramente superior
+   al del origen (observado +128, +268 bytes en sesión 21)» y de ahí concluye que «la integridad
+   real está garantizada por TLS de Drive API en ambos extremos». **El exceso no está en lo que
+   devuelve `stat()`: son bytes cero dentro del fichero**, sobreviven a una copia a NTFS y llegan
+   a la nube. Los `+128` y `+268` de la sesión 21 eran, con casi total seguridad, este mismo
+   relleno leído como si fuera un artefacto de metadatos — y la conclusión fue **suprimir la única
+   guarda que lo habría cazado**. Lo que falta por medir es lo simétrico: si sin los tres flags
+   reaparecen los falsos «corrupted on transfer» **contra `G:`** (el control 2 fue contra NTFS).
+
+**No es de siempre, y ese dato importa para fecharlo:** de los primeros 12 ficheros de
+`01_Drive EV` son múltiplo de 512 **0 de 12** en W-02Q38C, **1 de 12** en W-02Z2NR y **9 de 12** en
+W-048U77. Algo cambió entre medias (versión de Drive for Desktop, estado de la caché, o el propio
+rclone) y no se sabe qué.
+
+**Qué rompe, por orden de coste.**
+
+1. **La procedencia por hash, que es justo para lo que se registra.** El `sha256` del
+   `_intake_log.jsonl` de todo documento de `drive_ev` no puede cuadrarse contra el Drive de E&V.
+   En un expediente probatorio el hash está ahí para acreditar que la copia es el documento del
+   cliente; con relleno, la comparación **siempre** falla y no distingue un relleno inocente de una
+   alteración real.
+2. **El dedup entre fuentes queda ciego** (`#'Acción 11'`, dedup por sha con `alias_de`). Medido:
+   encargo, nota simple y hoja de visita procesados dos veces. En un caso de 170 documentos con
+   correo y Drive solapados, son minutos de OCR regalados.
+3. **La verificación del checkin por hash** compara `G:` contra `G:`, así que no lo caza.
+
+**Lo que NO rompe:** el contenido. Los lectores de PDF ignoran la cola tras `%%EOF`, el OCR salió
+`ok` en los 9, y el texto extraído es el del original. Esto es un defecto de integridad y de
+identidad, no de legibilidad.
+
+**Aviso operativo mientras esto siga abierto: un caso al que se le hayan repuesto los ficheros a
+mano NO admite otro `--fuente drive_ev`.** rclone decide qué transferir por modtime (con
+`--ignore-size` y `--ignore-checksum` no le queda otra señal), y los ficheros repuestos llevan
+modtime de la reposición, distinto del de origen: el re-pull los vuelve a traer y los vuelve a
+rellenar, deshaciendo la reparación sin decir nada. En W-02NHNC eso descarta la vía cómoda de
+lanzar el alta CRM con `--fuente drive_ev`.
+
+**Vías.**
+
+- **(a) Verificar por hash después del pull**, contra el `sha256Checksum` que la API ya devuelve, y
+  gritar por fichero que no cuadre. Es la que convierte el defecto en visible; no lo arregla.
+- **(b) Quitar `--inplace`** y volver a medir los falsos «corrupted on transfer» que motivaron
+  añadirlo — con el control que nunca se corrió. Riesgo: reabre el problema de la sesión 21.
+- **(c) Pull a NTFS y luego copia a `G:`**, que es lo que hace el modo local de `[APER-41]` sin
+  proponérselo. Cuesta un tránsito más y esquiva el filesystem virtual en la escritura de rclone.
+- **(d) Truncar a la longitud declarada tras el pull.** Repara el síntoma sin entender la causa y
+  destruye evidencia si alguna vez el relleno no fuera relleno. **Descartada salvo medición.**
+
+## 219. `poblar` pisa en silencio el documento anterior cuando dos entradas comparten nombre canónico — 4 de 21 documentos ausentes de la sala
+
+> Medido el 2026-09-10 en la sala de lectura de **W-02NHNC**: el catálogo tenía **21 documentos
+> únicos** y en la sala había **17 ficheros**. Ni un aviso, ni un contador, ni una línea en el
+> `INDICE.md` que lo dijera.
+
+**Qué pasa.** `core/sala_lectura.py:718::_nombre_canonico` compone
+`{fecha_doc}_{tipo_slug}_{descripcion}{ext}` y **no lleva discriminante**. `poblar_sala_lectura`
+(línea ~800) resuelve el destino con ese nombre y copia con `shutil.copy2(src, dst)` **sin
+comprobar si `dst` ya existe apuntando a otro `hash`**. Dos entradas que coincidan en los cuatro
+campos escriben en la misma ruta: la segunda pisa a la primera, y **las dos** quedan en el
+catálogo con el mismo `ruta_sala_lectura`. El `SKIP_DEDUP` no lo cubre: ese mira el `hash`, y aquí
+los hashes son distintos — son documentos distintos.
+
+**Las tres colisiones medidas, y por qué no son un caso raro:**
+
+| Documentos | Nombre canónico que compartieron |
+|---|---|
+| Las **3 capturas** (timeline del CRM + 2 de la conversación de WhatsApp) | `2026-09-10_foto_fotografia.jpg` |
+| Los **2 screenings PBC**, uno por titular | `2022-03-28_activacion_screening_….pdf` |
+| Los **2 Anexos 2**, uno por titular | `2021-02-18_pbc_anexo_2_….pdf` |
+
+**Y esto es estructural, no un descuido de quien clasifica.** El canon exige que la `descripcion`
+vaya **sin PII** (`taxonomia_ev.md`: «Describe el documento, no a las partes»), y en un inmueble
+con **dos titulares** —que es lo normal, no la excepción— los dos Anexos 2, los dos DNI y los dos
+screenings son el mismo documento para dos personas: lo único que los distingue es justo lo que no
+se puede escribir. La regla de nombrado y la regla de PII se contradicen, y el desempate lo pone
+`shutil.copy2` borrando uno.
+
+Las capturas son peor, porque ahí no hubo clasificador humano: el automático les puso `00. FOTOS`
+con `fecha_fuente: mtime` y `descripcion` derivada del stem, y **tres documentos distintos
+colapsaron al mismo nombre con `confianza: 1.0`**. En este caso los dos que se perdían eran la
+conversación de WhatsApp en la que el consultor cita al comprador — la prueba del contacto y de la
+visita, o sea el nexo causal del que vive una reclamación por vuelta.
+
+**Lo que NO protege, y se creía que sí.** `MEJORAS #67` da por cubierta esta colisión («la colisión
+de nombres la cubría ya el sufijo SHA»). **Es falso para esta ruta:** el sufijo `__<sha8>` lo pone
+la **sala de máquina** al nombrar sus espejos (`w_02nhnc_encargo…__c7b4e911.md`), que es otra
+función y otro árbol. `_nombre_canonico` no lo lleva.
+
+**El contraste barato que lo caza** (y que conviene correr en toda apertura, junto al de
+`[APER-60]`): número de `nombre_canonico` **distintos** en `indice_documental.yaml` contra número
+de ficheros en `01_Procesado/Sala lectura/`. Si no cuadra, hay documentos pisados. En W-02NHNC:
+21 entradas con nombre, 17 ficheros.
+
+**Vías.**
+
+- **(a) Desempatar en `_nombre_canonico`** con `__<sha8>` cuando el nombre ya esté tomado por otro
+  hash — el mismo recurso que usa la sala de máquina, y consistente con lo que #67 creía vigente.
+  Solo sufija al colisionar, así que no ensucia el caso normal.
+- **(b) Que `poblar` avise y no pise:** si `dst` existe y su hash no es el de la entrada, contar
+  `COLISION` y dejarlo fuera con la razón. Convierte la pérdida silenciosa en una lista. Combina
+  bien con (a): (b) es la red, (a) el arreglo.
+- **(c) Permitir un discriminante no-PII en la `descripcion`** (ordinal por parte: `_titular_1`,
+  `_titular_2`) y documentarlo en el canon. Es lo que se hizo **a mano** en W-02NHNC para salir del
+  paso, y funciona, pero deja el defecto vivo para el clasificador automático, que no sabe
+  ordinales.
+- **(d) Nada.** Hoy el coste es que un caso pierde documentos de la sala sin decirlo, y quien la
+  lee no tiene forma de notarlo: el `INDICE.md` los lista igual, porque lista el catálogo.
+
+## 220. El `_MANIFIESTO.md` que la skill declara como salida no lo escribe nadie
+
+> Medido el 2026-09-10 en W-02NHNC: tras `organizar` + `poblar` + `render`, la sala tiene
+> `INDICE.md`, `CRONOLOGIA.md` e `indice_documental.yaml`. **`_MANIFIESTO.md` no existe.**
+
+**Qué pasa.** `grep -rn MANIFIESTO core/ scripts/` no devuelve ni una escritura de ese fichero: las
+apariciones son `config.DERIVADOS_REGENERABLES` (que le da una regla de merge para el
+checkout/checkin), el `_MANIFIESTO_PROCESAL.json` de la vista procesal y el `_manifiesto.yaml` de
+los lotes de intake — otros ficheros. La skill `organizar-sala-lectura`, en cambio, lo declara como
+salida en su propia descripción y en su diagrama de árbol, y —esto es lo que muerde— su lógica de
+**«Re-aplicación»** dice leer `_MANIFIESTO.md` para saber qué estaba ya hecho *sin leer ni copiar*,
+y anota ahí los duplicados saltados.
+
+**Consecuencia.** Quien monta la sala por el CLI —que es la vía que manda el RUNBOOK §7 en local—
+obtiene **3 de las 4** salidas declaradas, y la re-aplicación de la skill se apoya en un fichero
+que no va a encontrar. No es una pérdida de datos: el catálogo (`indice_documental.yaml`) tiene
+todo lo que el manifiesto resumiría. Es un contrato que no se cumple, y con `#219` al lado importa:
+el manifiesto era el sitio natural donde un documento pisado habría salido listado.
+
+**Vías.** (a) Que `render` lo escriba desde el catálogo, que ya tiene los campos. (b) Retirarlo de
+la skill y de `DERIVADOS_REGENERABLES`, y que el catálogo sea la única salida estructurada —
+decidir cuál de las dos, pero no dejarlo declarado y sin escribir.
+
+## 221. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo
+
+> Medido el 2026-09-10 en W-02NHNC, siguiendo el orden que manda la memoria del despacho: alta CRM
+> **al final**, con `--crm skip` en todo el intake previo.
+
+**Qué pasa.** El caso se abre sin `--cuantia` (todavía no se conoce: sale de leer el encargo) y
+al final se lanza el alta con `--cuantia 73140`. El CRM recibe el dato —`cuantia=73140.0` en el
+payload, expediente 644— y **`_caso.md` se queda con `meta.cuantia: null`** y con la línea
+`- Cuantía: _(pendiente)_` en el cuerpo. Dos hogares para el mismo hecho, y el local dice
+«pendiente» de un dato que ya existe.
+
+**Y no se repone por la vía sancionada.** Medido: `case_manager.ensure_case(case_id,
+cuantia=73140.0)` sobre un caso ya existente **no cambia nada** —ni el frontmatter ni el cuerpo—,
+porque `ensure_case` solo fija los campos cuando crea el índice. Es **la misma limitación** que el
+RUNBOOK ya documenta para `referencia_crm` (§3-bis, `MEJORAS #184`): «hay que reponerlo y también
+la línea del cuerpo, que `_actualizar_cuerpo` no regenera». Aquí hubo que hacer las dos ediciones a
+mano, bajo el mutex.
+
+**Coste hoy: bajo, y por eso conviene arreglarlo antes de que suba.** El único lector de
+`meta.cuantia` es `case_manager.py:200`, que pinta la línea del cuerpo. O sea que hoy el daño es un
+índice de caso que miente sobre un dato que el CRM tiene bien. Pero es la tercera vez que aparece
+el mismo patrón (`#184` la referencia, `#192` el campo, esta la cuantía): **`ensure_case` es un
+creador al que se le pide que sea también un actualizador, y calla cuando no puede.**
+
+**Vías.**
+
+- **(a) Un actualizador de verdad**: `case_manager.update_meta(case_id, **campos)` que fije el
+  frontmatter y regenere las líneas del cuerpo que le corresponden —conservando lo que no es suyo,
+  como ya hace el sumidero desde `MEJORAS #146`—. Cierra `#184`, `#192` y esta de una vez.
+- **(b) Que `ensure_case` avise** cuando recibe un campo que no va a escribir porque el índice ya
+  existe. No arregla nada, pero convierte el silencio en un aviso; es la mitad barata de (a).
+- **(c) Que el alta CRM escriba la cuantía al pasar**, ya que la tiene en la mano. Tapa este caso y
+  deja `#184` y `#192` vivos.
