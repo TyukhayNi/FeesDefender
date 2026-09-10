@@ -9733,6 +9733,8 @@ referencia del CRM divirja del nombre de la carpeta por sufijo.
 
 ## 214. Drive for Desktop renombra bajo los pies: la custodia recorre y abre, y el pull duplica en cada ronda
 
+**[PROMOVIDO → PLAN.md]** fila #27, junto con `#215`, el 2026-09-10.
+
 **Qué pasa.** Un fichero que en el Drive de E&V **no tiene extensión** rompe el pull de dos
 maneras distintas, y las dos salieron a la vez al abrir W-048U77 el 2026-09-10. La carpeta traía
 **11 de 58** ficheros sin extensión —el encargo firmado, la oferta aceptada, tres notas simples, dos acuses
@@ -9815,6 +9817,8 @@ por BYTES»): el mismo fichero sin extensión, dos defectos distintos y un mismo
 ficheros sin extensión y la cadena entera supone que el nombre lleva el tipo.
 
 ## 215. `_MAGIC_BYTES` solo conoce firmas planas: un `.docx` sin extensión es `sin_soporte` y nadie lo lee
+
+**[PROMOVIDO → PLAN.md]** fila #27, junto con `#214`, el 2026-09-10.
 
 **Qué pasa.** `_sniff_ext_por_contenido` (`core/sala_maquina.py:76`) es el último recurso cuando el
 nombre no trae extensión reconocible, y su tabla `_MAGIC_BYTES` tiene **seis** entradas, todas
