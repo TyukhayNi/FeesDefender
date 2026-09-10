@@ -918,6 +918,22 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
 6. **(Si procede) Actuación facturable:** `POST element_register/actuaciones` **+ vincular
    aparte** con `relation_element` (§15.2/15.3). `duracion` en `HH:MM:SS` → segundos;
    `Prioridad` obligatoria; **tarifa solo por UI** (§15.4).
+
+   **`[APER-72]` / W-02O7E2 — El prefijo del `Subject` ES la tarifa, y el
+   `id_predefinido` no existe.** Medido el 2026-09-10 sobre 20 actuaciones reales del despacho
+   (actuación 21384, expediente 643):
+   - **`SENIOR - EXTRAJUDICIAL - REVISION VIABILIDAD`** es la de Nikolai, con `precio_hora`
+     **103,00**; las **`ABOGADO - …`** son de otra persona del equipo, a **77,00**. Copiar el
+     prefijo equivocado factura al cliente la tarifa de otro. El catálogo del manual
+     (`docs/MANUAL_DESPACHO.md`) lista la forma canónica; el prefijo lo eliges por **quién firma**.
+   - **`id_predefinido` viene VACÍO en las 20**, así que estas actuaciones **no nacen de
+     plantilla** y el paso 1 de la receta (§15.6, «aprender el id_predefinido de una instancia
+     real») **no aplica a este tipo**: se omite el campo. Buscarlo y no encontrarlo es el
+     resultado correcto, no un fallo de la consulta.
+   - `precio_hora` **sí** se escribe por API (lo que no se puede automatizar es el botón «aplicar
+     tarifa usuario» de §15.4), y `tipo_actuacion` va vacío en todas las reales.
+   - La verificación es la del §15.6 paso 6: releer **desde el lado del expediente**. El `GET` por
+     id de la actuación devuelve 404 aunque exista.
 7. **`[APER-50]` / W-02ZIIF — Juzgado (solo judicial):** NO es una relación M2M simple ni
    una propiedad plana del expediente — es una relación con atributos propios vía el
    elemento intermedio `autos` (secuencia de 4 llamadas REST confirmada; detalle completo
@@ -958,6 +974,20 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
   - **Contrario extranjero: el móvil no se puede guardar.** `movil` solo acepta 9 dígitos
     españoles (`[APER-14]`); un `+40 …` rumano no entra. Déjalo **vacío y dilo** en el
     comentario del YAML: es un dato que el CRM no puede almacenar, no un dato que falte.
+- **`[APER-71]` / W-02O7E2 — Dos deudores que comparten correo se funden en UNA ficha, y
+  `ensure_contrario_vinculado` lo dice como «existente».** Medido el 2026-09-10 sobre el
+  expediente 643: la segunda firmante del encargo, con NIF propio y distinto, se resolvió a la
+  ficha del primero y **no quedó vinculada**. `resolver_parte` deduplica **por NIF o email** y su
+  rama de conflicto exige que **los dos** criterios devuelvan ficha; con el NIF sin resultado y el
+  email casando, resuelve por email sin avisar y `_completar_contrario_existente` escribe encima
+  de la ficha ajena. En un matrimonio, que es la norma entre propietarios, el correo doméstico es
+  uno solo.
+  - **Cómo se caza:** mirar el **id devuelto**, no el mensaje. `ensure_contrario_vinculado`
+    devuelve `(id, created)`; si `created` es `False` y el id es el del otro deudor, se ha fundido.
+  - **Salida practicada:** `create_cliente_contrario(...)` + `link_contrario(exp_id, cid)`, y
+    comprobar con `get_relaciones("extrajudiciales", exp_id)`, que devuelve la lista acumulada.
+  - **Y recuerda `[APER-63]`:** `crm_ficha` lee **un** contrario del YAML. En una reclamación con
+    dos firmantes solidarios, el segundo es siempre trabajo a mano. `MEJORAS #239`.
 - **`[APER-15]` La doc puede ir por detrás del código** → verificar contra
   `core/sudespacho_relations.py` (`ensure_*`, `link_*`); **grep del código > doc**.
 - **`[APER-16]` / `[APER-33]` Estado de PR/merge por `gh`, no por la rama local.**

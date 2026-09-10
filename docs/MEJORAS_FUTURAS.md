@@ -1188,6 +1188,23 @@ guarda de colisión en `poblar_sala_lectura` (sufijo `_2`/`_3` por destino ya us
 en la corrida, determinista respetando idempotencia) o fragmento de hash en el
 nombre. **Disparador:** primera colisión observada en un caso real.
 
+> **Tercera medición, y llegó con el arreglo ya escrito — 2026-09-10, `W-02O7E2`.** Esta sesión
+> midió el mismo defecto sin saber que otra lo estaba cerrando: al enumerar TODAS las colisiones
+> del catálogo aparecieron **cuatro grupos** de documentos distintos con el mismo nombre canónico
+> —los tres recibos de IBI, los dos Anexo 2 de PBC, las dos copias de la nota simple actualizada y
+> los dos correos del 15-07-2026—, y de cada grupo llegaba a la sala **un solo fichero**. Se
+> remedió a mano dando descripción propia a cada documento. Vale como confirmación independiente
+> en un tercer caso, y deja una lección de método: **remediar el grupo que salta a la vista deja
+> los otros tres pisándose**; lo que los caza es agrupar las entradas por `_nombre_canonico(e)` y
+> mirar cuáles tienen más de un `hash`.
+>
+> **Lo que el arreglo NO cubre, y sigue vivo:** el sufijo por sha resuelve la pérdida de ficheros,
+> no la causa aguas arriba. El clasificador determinista llamó *fotografia* a los tres IBI —lo son,
+> en el sentido de que son fotos de un papel— cuando son recibos que acreditan el inmueble al
+> corriente de tributos. Con el arreglo, el índice ya no pierde documentos pero enumera tres
+> entradas llamadas «fotografia»: la unicidad se arregló en `poblar`, la **descripción** sigue
+> siendo del clasificador.
+
 ## 37. Clasificador LLM del residuo de intake (autorrelleno de la worklist `_clasificar.md`) [PROMOVIDO → PLAN.md]
 
 > **[PROMOVIDO → PLAN.md] 2026-06-18.** Disparador concreto (petición de Nikolai).
@@ -8462,6 +8479,28 @@ No es un caso raro: E&V sube ficheros desde el móvil sin extensión con normali
 expediente eran **documentación de suministros y de tributos del inmueble** — la que acredita
 la actividad de la agencia sobre la finca.
 
+**Segunda medición — 2026-09-10, `W-02O7E2`: cinco documentos más, y cuatro son prueba de
+identidad.** Fuera del catálogo quedaron los **cuatro DNI de los dos propietarios firmantes del
+encargo** (`DNI JUAN DURAN DELANTE`, `DNI JUAN DURAN detrás`, `DNI Francisca delante`,
+`Dni Francisca detrás`: JPEG del Drive E&V sin extensión, con OCR hecho — 19 a 118 chars) y el
+vídeo de captación (`Video de Sandra Brieva`, mp4 sin extensión, `sin_soporte`).
+
+El contraste barato que ya recomienda el runbook los caza sin ambigüedad: **62 filas** en
+`_cobertura.json` contra **49 entradas** en `indice_documental.yaml`. De las 14 que no casan, 9 son
+hijos de bundles partidos —el padre sí está indexado, y eso no es pérdida— y 5 son estos. Conviene
+apuntar el matiz para quien repita la medición: el hueco bruto **exagera**, porque los hijos de
+bundle inflan `_cobertura.json`; hay que restarlos antes de creerse la cifra.
+
+**Por qué este caso sube la prioridad y el de `W-04A6LI` no lo hacía del todo:** allí lo perdido era
+documentación del inmueble; aquí es **la identidad de quien firmó el encargo**, que en una
+reclamación de honorarios es el documento con el que se identifica al deudor en la demanda y en la
+ficha del CRM.
+
+**Remedio aplicado a mano en ese caso, por si sirve de patrón:** alta manual en el catálogo con el
+`sha256` de `_cobertura.json` como `id_doc`, y la extensión declarada en el `nombre_original` de la
+entrada — no basta renombrar el fichero copiado, porque `_nombre_canonico` deriva la extensión de
+`nombre_original` y la siguiente corrida de `poblar` se la vuelve a quitar (medido: dos veces).
+
 **Dos arreglos, y son independientes.** (1) Que `inventory.scan` decida por firma de bytes
 cuando no hay extensión, reusando lo que la sala de máquina ya tiene: entonces las dos salas
 ven lo mismo. (2) Y, con arreglo o sin él, **que `skipped` se diga siempre**: contar los
@@ -10897,3 +10936,56 @@ y no un campo decorativo.
 **mensaje a mensaje** y verificar que la etiqueta aparece en `label_ids`.
 
 ---
+
+## 239. `resolver_parte` resuelve por email un NIF que no encuentra, y funde dos personas en una ficha
+
+> **Medido en vivo el 2026-09-10 en `W-02O7E2`** (expediente extrajudicial CRM #643): la segunda
+> deudora, con NIF propio y distinto, se resolvió a la ficha del primer deudor y **no quedó
+> vinculada al expediente**. `ensure_contrario_vinculado` devolvió `('1121', False)` — el id del
+> otro— y lo dijo como «existente», que es exactamente lo que se dice cuando todo va bien.
+
+**Qué pasó.** Los dos firmantes del encargo son un matrimonio y comparten el correo doméstico. Al
+vincular a la segunda:
+
+- `_buscar_registros(clientes_contrarios, nif_cif, <NIF de ella>)` → **vacío**: su ficha no existía.
+- `_buscar_registros(clientes_contrarios, email, <email común>)` → **la ficha de él**.
+
+En `core/sudespacho_relations.py:1207`, la rama de conflicto exige `if ids_nif and ids_mail:` — con
+`ids_nif` vacío no hay conflicto que declarar, así que el flujo cae hasta `if ids_mail:` (`:1217`) y
+devuelve `ResolucionParte(id=…, por="email")`. `_exigir_identidad_cierta` no tiene nada que
+levantar, y `_completar_contrario_existente` **escribe encima de la ficha del otro** los campos que
+allí estén vacíos.
+
+**La frontera, no el ejemplo.** El defecto no es «matrimonios con email común». Es que la función
+resuelve por un criterio **cuando el otro criterio fue aportado y lo desmiente**. Un NIF que se
+aporta y no aparece en la ficha que casa por email es una afirmación sobre la identidad —«esta
+persona tiene este documento»— y hoy se descarta en silencio. Como `resolver_parte` es común a las
+dos jurisdicciones y a los tres elementos de parte, lo mismo ocurre en `colaboradores`: dos
+consultores dados de alta con el email genérico de la oficina colapsan en una ficha.
+
+**Y hay un segundo daño, peor que el primero:** el falso positivo no solo *no crea* la ficha que
+falta, sino que **contamina la existente**. `_completar_contrario_existente` rellena los huecos de la
+ficha de él con los datos de ella (dirección, CP, provincia, móvil). En este caso no hubo daño
+visible porque los campos ya estaban llenos y el domicilio de ambos es el mismo inmueble; con una
+ficha a medias, el resultado es una persona con los datos de otra y sin ninguna señal.
+
+**El arreglo.** Cuando se aporta NIF y la búsqueda por NIF **resuelve a vacío** mientras la de email
+devuelve ficha, hay dos hipótesis y ninguna es «es la misma persona»: o es una persona distinta que
+comparte correo, o es la misma con el NIF sin rellenar en el CRM. Distinguirlas es barato — leer el
+`nif_cif` de la ficha que casó por email:
+
+- ficha **sin** `nif_cif` → es la misma persona con el dato incompleto: resolver y completar (lo de hoy);
+- ficha **con** `nif_cif` **distinto** → son dos personas: crear ficha nueva, no vincular la ajena;
+- y si no se puede leer, `SIN_COMPROBAR` → fallar cerrado, que es la política ya decidida.
+
+**Control positivo para el test** (sin él, el test aprueba cualquier cosa): el caso que hoy funciona
+—contrario **sin NIF** que deduplica por email— tiene que seguir resolviendo a la ficha existente.
+Los tres casos del arreglo, con la ficha ajena teniendo `nif_cif` vacío, igual y distinto, son tres
+asertos distintos; el que mata al mutante es el tercero.
+
+**Disparador de promoción.** Alto, y por dos razones. La primera es que ya ha ocurrido y hubo que
+sortearlo a mano con `create_cliente_contrario` + `link_contrario` (fichas 1121 y 1122 del #643). La
+segunda es la consecuencia: en una reclamación de honorarios los deudores solidarios son los
+firmantes del encargo, y un deudor que no consta en la ficha es un deudor que se queda fuera de la
+demanda. Entra con la próxima apertura cuyos deudores compartan correo, que en un matrimonio es lo
+normal.

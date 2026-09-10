@@ -2065,6 +2065,13 @@ exactamente este camino.
    exacto, el `id_predefinido` puede ser otro, así que **filtra por el asunto literal del catálogo
    del manual** (`docs/MANUAL_DESPACHO.md`) y no por una aproximación.
 
+   **Y hay un tercer resultado posible, medido el 2026-09-10 sobre `W-02O7E2`: que no haya
+   `id_predefinido` que aprender.** Las 20 instancias reales de `SENIOR - EXTRAJUDICIAL - REVISION
+   VIABILIDAD` y de `ADM - EXTRAJUDICIAL - …` traen el campo **vacío**: esas actuaciones no nacen
+   de plantilla predefinida. Cuando la consulta devuelve filas y todas tienen el campo vacío, la
+   lectura correcta es **omitir el campo en el POST**, no seguir buscando ni inventar un entero.
+   El paso 1 sirve para no inventarlo, no para exigir que exista.
+
 2. **`profesional_asignado` es el USERNAME, no el id de empleado.** `ana.velastegui`,
    `Nikolai_Tyukhay`. El id de `empleados` (Ana es el 8) **no vale aquí**. Los siete empleados con
    su username salen de
