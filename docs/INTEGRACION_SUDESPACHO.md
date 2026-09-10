@@ -2123,6 +2123,54 @@ derivado de facturación**: esa decisión es de administración, no de quien cor
 
 ---
 
+### 15.7 El asunto, la predefinida que no existe y los enums — medido creando una actuación (2026-09-10, W-02NHNC)
+
+Complementa la receta de §15.6 con lo que hay que saber **antes** de redactar el payload. Todo
+leído del CRM, no supuesto.
+
+**1. El prefijo del asunto sigue el ROL de quien la ejecuta, no el tipo de trabajo.** Sobre las
+instancias reales: `SENIOR - EXTRAJUDICIAL - …` las de Nikolai, `ABOGADO - …` las de Paola,
+`JUNIOR - …` las de Sergio, `ADM - …` las de Ana. **El catálogo de `docs/MANUAL_DESPACHO.md` lista
+la variante `ABOGADO - EXTRAJUDICIAL - REVISION VIABILIDAD`**, que es la de Paola: copiar el
+catálogo tal cual pone la actuación de Nikolai con el prefijo de otro. La regla del manual («no se
+crean predefinidas nuevas; si no hay exacta, se usa la que más se asemeje») sigue valiendo, pero
+**el asunto se copia de una instancia del profesional que la va a ejecutar**, no del catálogo.
+
+**2. `id_predefinido` puede no existir para el asunto que buscas, y el paso 1 de §15.6 entonces no
+tiene respuesta.** De las 25 instancias de `REVISION VIABILIDAD`, **las 25 traen
+`id_predefinido` vacío**: esa actuación no sale de plantilla predefinida. En cambio
+`SENIOR - EXTRAJUDICIAL - APERTURA E ESTUDIO INICIAL CASO` sí la tiene (**65**), y el mismo 65
+aparece bajo otro asunto (`SEGUIMIENTO COMUNICAC…`), luego **65 no identifica el asunto: identifica
+una plantilla genérica de `SENIOR - EXTRAJUDICIAL`**. Conclusión operativa: si el filtro por asunto
+devuelve `id_predefinido` vacío, **manda el payload sin ese campo** — no lo rellenes con el de un
+asunto parecido.
+
+**3. Enums verificados** (`GET /api/view/enums/actuaciones/{prop}`):
+
+| Propiedad | Valores literales |
+|---|---|
+| `Estado` | `Planificado` · `Hecho` — *protegido* |
+| `tipo_actuacion` | **`LLamada`** (con dos L, así en el `id`; su `label` es `Llamada`) · `Tarea` |
+| `Prioridad` | `Alta` · `Media` · `Baja` — *protegido* |
+
+El doble `LLamada` es del `id` del enum, que es lo que hay que mandar; el `label` sí está bien
+escrito. Y `GET /api/view/enums/actuaciones/prioridad` (minúscula) devuelve **500**: el nombre de la
+propiedad es `Prioridad`.
+
+**4. `GET /api/view/config/actuaciones/fields` funciona y devuelve 37 campos activos** — el atajo de
+§15.1 confirmado sobre este elemento. Útil porque el **GET-detalle de una actuación concreta
+(`/api/element_register/actuaciones/{id}`) devuelve HTTP 500** con `Undefined array key
+"properties"` si no se le pasa `?properties=`; para leer una instancia es más cómodo
+`element_registries` con el filtro `like` sobre `Subject` y las propiedades explícitas.
+
+**5. Para anclar la DURACIÓN, mira las instancias del mismo asunto y del mismo profesional.** No es
+un detalle de estilo: es la diferencia entre imputar una estimación y imputar algo comparable.
+Medido: las 9 de `SENIOR - EXTRAJUDICIAL - REVISION VIABILIDAD` van de **0:27:16 a 3:14:20 con
+mediana 1:43:12**, y la única de `APERTURA E ESTUDIO INICIAL CASO` está en **1:09:06**. En
+W-02NHNC se estimó primero 2h15 para la fase de viabilidad y la medición del log forense dio
+**39:36** — un factor de **3,4**. El campo es un `Cronometro`, o sea que la convención de la casa es
+tiempo de reloj.
+
 ## 16. El elemento `poderes` — leer, escribir y relacionar (confirmado 2026-09-08)
 
 Salió de organizar el fichero entero (85 registros, 87 documentos) desde la API. Todo lo de esta
