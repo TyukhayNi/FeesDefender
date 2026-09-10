@@ -1,5 +1,23 @@
 # Changelog — organizar-sala-lectura
 
+## 1.17 — 2026-09-10
+- **La desambiguación de nombres pasa de `_2`/`_3` a `__<sha8>`, y en un grupo colisionado
+  NADIE conserva el nombre pelado** (Paso 2, y la mención del Paso 4 al abortar por
+  destinos duplicados). El literal anterior contradecía a `MEJORAS #67.b`, que ya fijaba
+  el fragmento de hash: dos contratos escritos y en desacuerdo sobre el nombre de los
+  ficheros que lee el letrado.
+- **Por qué el ordinal no servía**, medido el 2026-09-10 en dos casos reales (W-02YZO4 y
+  W-048UOL) y confirmado por dos rondas adversariales: si al grupo entra un tercer
+  documento, el `_2` de ayer puede ser el `_3` de hoy; y si el pelado se lo queda «el
+  primero», basta que el catálogo se reordene para que cambie de documento. En los dos
+  casos una cita a un fichero pasa a señalar otro. El `sha8` sale del propio documento y
+  no se mueve, y por eso tampoco lo conserva nadie pelado: así la única transición posible
+  es la inevitable de uno a dos miembros.
+- **Misma regla que aplica el CLI** (`core.sala_lectura._asignar_destinos`), para que las
+  dos vías construyan la misma sala. El CLI añade además la reserva GLOBAL de rutas: el
+  razonamiento por grupo dejaba pasar que el sufijo generado por un grupo fuese el nombre
+  natural de otro.
+
 ## 1.16 — 2026-09-09
 - **La marca temporal del `_chat.txt` deja de estar documentada más estrecha que la
   realidad (Paso 2, anexo de WhatsApp).** El Paso 2 decía que la línea del adjunto lleva

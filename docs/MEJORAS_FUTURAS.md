@@ -1174,7 +1174,9 @@ opera sobre `GdocuDocInfo`). Los chats de WhatsApp y su multimedia se copian
 plano. **Solución:** detector análogo para WhatsApp (el chat es la cabecera, los
 ficheros de media sus adjuntos), reaprovechando el patrón de `_bundle_map`.
 
-## 36. Guarda de colisión de nombre canónico en la sala de lectura
+## 36. Guarda de colisión de nombre canónico en la sala de lectura [CERRADA]
+
+> **[CERRADA 2026-09-10]** Entra con el plan `docs/superpowers/plans/2026-09-10-sala-lectura-plana.md`, medido en W-02YZO4 y en W-048UOL. Los dos defectos iban juntos: aplanar sin guarda de colisión **pierde documentos**, porque el layout por fuente estaba tapando la colisión. El discriminante es `__<sha8>` para **todos** los miembros del grupo (nadie conserva el nombre pelado), que es lo que esta entrada pedía. Revisión adversarial R1 de Codex: NO-SHIP, 12 hallazgos, 12 confirmados — 8 remediados y 4 declarados preexistentes en #229, #230, #232 y #233.
 
 **Detectado 2026-06-17** (review Task 9 sala-lectura). `poblar_sala_lectura`
 copia con `nombre_canonico` = `<fecha>_<tipo>_<descripcion><ext>`. Dos documentos
@@ -2826,6 +2828,8 @@ anticipación. Ver `docs/superpowers/specs/2026-07-16-mcp-drive-disco-local-desi
 §5 y §9 para el razonamiento de right-sizing original.
 
 ## 67. `core/sala_lectura.py` (CLI deprecado): ruta MD desalineada + colisión de nombres en `poblar`
+
+> **[67.b y 67.c CERRADAS 2026-09-10]** Ver el bloque de #36: mismo plan, misma R1. El 67.a (ruta MD) ya se cerró con `MEJORAS #151`.
 
 **Anotado 2026-07-17.** Descubierto abriendo el caso W-02T3XO con el **CLI `scripts/sala_lectura.py`**
 (envuelve `core/sala_lectura.py`, marcado DEPRECADO 2026-06-18, superado por la skill
@@ -10326,7 +10330,6 @@ una sola pregunta del canónico, rojo. Sin la segunda mitad, el guard aprueba cu
 —que es lo que un lector diligente hace— o en cuanto el cuestionario canónico cambie. Mientras
 tanto la regla operativa es: **no regenerar la vista; usar la commiteada**, que es la que tiene el
 enrutado.
-
 ## 224. `--direccion` es el único flag de identidad que se teclea a mano, y el nombre de la carpeta de E&V ya lo trae
 
 > Medido el 2026-09-10 abriendo **W-02NHNC**: la dirección llevaba una vocal acentuada y la escribí
@@ -10653,6 +10656,107 @@ el semáforo y la protección) y tiene razón: lo que hay que hacer es **añadir
 **Y una pregunta de diseño que va con esto:** si FINANZAS nunca tuvo desplegable, conviene comprobar
 si alguien ha rellenado esa celda en los informes ya cerrados, y con qué literales. Si la respuesta
 es «nadie», puede que la fila sobre y lo que falte sea decidirlo, no cablearlo.
+
+## 229. `poblar_sala_lectura` no tiene transacción ni exclusión: dos corridas solapadas se pisan el catálogo
+
+**Detectado 2026-09-10** (R1 adversarial, H-10 · ALTA; **preexistente**). El recorrido
+carga una instantánea del catálogo, escribe y borra en disco, y **reescribe el catálogo
+entero al final**. No sostiene el mutex del caso (`MEJORAS #126` ya declaraba esta deuda:
+«lo que sigue siendo disciplina es la UI de Streamlit y…»), y `save_catalog` escribe
+directo, sin fichero temporal ni `replace`.
+
+**Disparador ejecutado por el revisor:** la corrida A carga una fila y copia; antes de su
+guardado se añade una segunda fila y corre B completa con las dos; A reanuda y guarda su
+instantánea de una fila. Resultado: **un catálogo con una fila y dos ficheros en disco**.
+
+**Solución:** sostener el mutex del caso en `poblar`/`organizar` como ya hacen
+`export_label_emails`, `atomize_emails` y `sync_sudespacho pull`, y hacer atómica la
+escritura del YAML (temporal + `os.replace`). Lo segundo es barato y vale por sí solo.
+**Disparador:** el primer caso trabajado por dos vías a la vez, o cerrar #126 del todo.
+
+## 230. Un fichero sin fila puede estar ocupando el nombre canónico de un documento
+
+**Detectado 2026-09-10** (R1 adversarial, H-11 · MEDIA; la mitad que **no** se remedia).
+El plan de nombres solo ve las filas del catálogo, así que un fichero que ya esté en la
+sala **sin fila que lo nombre** —dejado por una corrida vieja, por un renombrado a mano o
+por la skill— se sobrescribe si su nombre coincide con el destino canónico de una fila.
+
+**Lo que sí entró el 2026-09-10:** un **directorio** ocupando el destino se rechaza y se
+cuenta (antes `copy2` metía el fichero dentro y el catálogo apuntaba a la carpeta), y la
+sobrescritura de un fichero sin fila se **cuenta y se dice** (`SOBRESCRITO_SIN_FILA`).
+
+**Lo que queda:** decidir la política. Sobrescribir es defendible —es el destino canónico
+de esa fila y el crudo de `00_Input` está intacto— pero hoy se decide por omisión. Las
+alternativas son respetarlo y desviar la copia a un sufijo, o inventariar y reconciliar
+los huérfanos (comparte recorrido con #233). **Disparador:** decisión de Nikolai, o un
+caso donde se pierda algo que importaba.
+
+## 231. `_bundle_map` indexa por hash: dos adjuntos sin hash comparten rol y orden
+
+**Detectado 2026-09-10** (R1 adversarial de Codex sobre la implementación hermana de la
+sala plana, §3.1; **preexistente**, no lo introduce ninguno de los dos diffs).
+`core/sala_lectura._bundle_map` devuelve `{hash: (bundle_slug, rol, header_hash, orden)}`.
+`CatalogEntry` admite `hash` vacío, y entonces **todas** las filas sin hash comparten la
+misma casilla: el último miembro procesado sobrescribe el registro de los anteriores.
+
+**Medido por el revisor** con las sondas `bundle_empty` y `bundle_none`: dos adjuntos
+distintos sin hash salen los dos con `orden_en_bundle=2`, aunque los dos ficheros se
+conserven. Con `None` en vez de `""` se conservan los dos ficheros, así que el defecto no
+se generaliza a toda pareja de vacíos — el mapa sí.
+
+**Por qué no se arregla con el resto:** el 2026-09-10 se corrigió la misma familia en el
+asignador de destinos (`clave_dueno`: el `hash` cuando lo hay, algo único por fila cuando
+no), y `_bundle_map` es el otro sitio donde la misma suposición vive. Se deja aparte
+porque toca la relación cabecera/adjunto, que tiene sus propios tests y su propio
+detector.
+
+**Solución:** indexar por identidad de fila —o por `clave_dueno`, que ya existe— en vez de
+por hash. **Disparador:** un caso con adjuntos de bundle sin hash, o cerrar #233, que
+comparte el recorrido de referencias del catálogo.
+## 232. `poblar_sala_lectura` acepta una copia existente por su RUTA, sin mirar sus bytes
+
+**Detectado 2026-09-10** (R1 adversarial de Codex sobre la sala plana, H-04 · ALTA;
+**preexistente**, no lo introduce ese diff). La idempotencia se decide con
+`prev == dst_rel and dst.exists()`: igualdad de texto de la ruta más existencia. No se
+compara el hash del destino contra el catálogo ni se comprueba que el fichero esté
+completo.
+
+**Dos disparadores ejecutados por el revisor:** (1) poblar un documento, reemplazar los
+bytes de su copia por otros y volver a poblar → `SKIP_UNCHANGED: 1`, la copia corrupta
+se queda; (2) interrumpir la reposición de una copia después de escribir un fragmento →
+la ruta del catálogo ya coincide y el parcial existe, así que **lo salta
+indefinidamente**.
+
+**Por qué importa aquí y no en cualquier copiador:** la sala de lectura es lo que lee el
+letrado y lo que citan los escritos. Una copia con los bytes de otro documento, o a
+medias, es peor que no tenerla.
+
+**Solución:** comparar el destino con el hash del catálogo cuando se decide
+`SKIP_UNCHANGED` — es un `sha256` por documento y por corrida, así que hay que medir el
+coste sobre un caso grande antes de hacerlo incondicional. Alternativa más barata:
+comparar tamaño y `mtime`, que caza el parcial pero no la sustitución. **Disparador:**
+una copia corrupta o parcial observada en un caso real, o la decisión de pagar el hash.
+
+## 233. El dedup por hash de la sala no repara referencias, y reconstruir el catálogo deja huérfanos
+
+**Detectado 2026-09-10** (R1 adversarial, H-05 · MEDIA; **preexistente**). Cuando dos
+filas comparten `hash`, la primera con fuente existente se copia y las demás se saltan
+**sin actualizar su `ruta_sala_lectura`**: se quedan con la que tuvieran, o con `None`.
+Y al reconstruir el catálogo, `build_catalog` preserva por hash **la última** fila, que
+puede no ser la que tenía la copia asignada — la copia anterior queda en disco sin
+ninguna fila que la nombre.
+
+**Disparador ejecutado:** `a.pdf` en Drive y `b.pdf` en Email con los mismos bytes y
+descripciones distintas. Primera población: A tiene su copia, B tiene ruta nula.
+`inventory.scan` + `build_catalog` conservan los metadatos de B; otra población crea la
+copia de B y la de A **queda huérfana**.
+
+**Solución:** que las filas deduplicadas apunten a la copia del representante (una
+referencia, no un fichero) y que `poblar` retire las copias que ya no tiene ninguna fila.
+Lo segundo es un borrado, así que va con su propio test de que no toca nada más.
+**Disparador:** un caso donde la sala acumule huérfanos visibles, o la decisión de
+cerrar #232 (comparten el recorrido de verificación).
+
 
 ## 234. El representante del dedup puede esconder el documento nuclear: el encargo firmado no aparece en el índice
 

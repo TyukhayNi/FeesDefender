@@ -18,6 +18,8 @@ Excepción RGPD temporal autorizada por Nikolai (spec
 """
 from __future__ import annotations
 
+import errno
+import os
 import re
 import shutil
 from pathlib import Path
@@ -756,57 +758,285 @@ def _bundle_map(entries: list, crm_docs) -> dict:
     return out
 
 
+def _directorio_destino(entry, bundles: dict) -> tuple[str, tuple | None]:
+    """Directorio (relativo a `01_Procesado`) donde va la copia de `entry`.
+
+    **Plano**: la sala es un único directorio y la categoría vive en `INDICE.md`, no
+    en carpetas — es la estructura canónica de la skill `organizar-sala-lectura` v1.3.
+    Hasta el 2026-09-10 esto metía un nivel por fuente (`Sala lectura/Drive E&V/`,
+    `Sala lectura/Email/`…) y contradecía su propio contrato: tercer defecto de
+    `MEJORAS #67` (#67.c), que se venía aplanando A MANO caso por caso, con el
+    workaround deshecho en el siguiente `organizar`.
+
+    La única subcarpeta que sobrevive es la del **documento compuesto**, que la skill
+    fija como excepción.
+
+    Devuelve `(dir_rel, relacion)`, donde `relacion` es `None` **cuando no se detectó
+    bundle** y `(parent_id, orden)` cuando sí. La distinción no es cosmética: escribir
+    `parent_id = None` en una fila sin bundle **borra** una relación previa y deja su
+    `orden_en_bundle` puesto, o sea un par incoherente. Lo cazó la R1 adversarial
+    (H-09) comparando fila por fila contra el comportamiento anterior, que solo tocaba
+    esos dos campos dentro de la rama de bundle.
+    """
+    b = bundles.get(entry.hash)
+    if not b:
+        return _SALA, None
+    bundle_slug, rol, header_hash, orden = b
+    if rol == "cabecera":
+        return f"{_SALA}/{bundle_slug}", (None, None)
+    return f"{_SALA}/{bundle_slug}/adjuntos", (header_hash, orden)
+
+
+def _discriminante(entry) -> str:
+    """Los 8 primeros hex del `sha256` del documento; estable entre corridas.
+
+    Si la fila llega **sin hash** —el modelo y el cargador lo admiten, aunque el
+    inventario normal lo calcule— se deriva del `ruta_relativa`, que es lo único que
+    distingue esa fila. Sin esto, todas las filas sin hash compartían casilla y se
+    pisaban entre ellas: R1 adversarial, H-03.
+    """
+    if entry.hash:
+        return entry.hash[:8]
+    import hashlib
+    return hashlib.sha256((entry.ruta_relativa or "").encode("utf-8")).hexdigest()[:8]
+
+
+def clave_ruta(ruta: str) -> str:
+    """La ruta como la ve el FILESYSTEM, para comparar ocupación.
+
+    Windows y el Drive del despacho **no distinguen mayúsculas**, así que
+    `Sala lectura/Manual/x.pdf` y `Sala lectura/manual/x.pdf` son el mismo fichero y
+    comparar las cadenas tal cual dice que son dos. La R1 de la implementación hermana
+    lo reprodujo ejecutando en Windows, y en la migración: una cabecera de bundle cuyo
+    slug es `manual` aterriza sobre la carpeta `Manual` del layout viejo, y el
+    `old.unlink()` de la otra fila borra la copia recién escrita.
+    """
+    return ruta.replace("\\", "/").casefold()
+
+
+def clave_dueno(entry) -> str:
+    """Quién ocupa una ruta. El `hash` cuando lo hay; algo único por fila cuando no.
+
+    Con el `hash` como dueño, la fila deduplicada y su representante comparten dueño y
+    el representante puede tomar la ruta que su gemela reservó — que es lo que se
+    quiere. Pero `CatalogEntry` admite `hash` vacío, y entonces **todas** las filas sin
+    hash tenían el mismo dueño `""`: una podía tomar la ruta reservada por otra y
+    sobrescribirla. Lo midió la R1 de la implementación hermana con una tabla de
+    `("", "")`, `(None, None)`, `(None, "")` y `("", None)`. El dedup no protege: solo
+    mira hashes verdaderos.
+    """
+    return entry.hash or f"sin-hash:{entry.ruta_relativa}"
+
+
+def _asignar_destinos(planificados: list[tuple], reservadas: dict[str, str]) -> list[str]:
+    """Ruta de destino de cada planificado, sin que dos acaben en la misma.
+
+    `planificados` son tuplas `(entry, dir_rel, nombre_canonico)`, una por documento
+    que se va a copiar. `reservadas` es `{ruta: hash_del_dueño}` con las copias de las
+    filas que **no** entran en el plan (deduplicadas, o sin fuente): sus rutas siguen
+    ocupadas en disco y nadie puede tomarlas.
+
+    Dos documentos DISTINTOS pueden derivar el mismo `nombre_canonico` —misma fecha,
+    mismo tipo y una descripción que sluga igual— y entonces el `shutil.copy2` del
+    segundo **sobrescribía al primero sin dejar rastro**: `MEJORAS #67.b` / `#36`. El
+    dedup por hash no protege, porque solo cubre bytes idénticos; y en W-02YZO4 los
+    tres documentos que llegan por Drive **y** por correo tienen bytes distintos (la
+    copia del Drive pesa unos cientos de bytes más), así que el dedup no los une y el
+    nombre sí colisiona. Medido también en W-048UOL el 2026-09-10 por la sesión hermana: 32 documentos en
+    el catálogo y **15** ficheros en la sala, con 17 imágenes descritas todas como
+    «Fotografía» colapsadas en dos nombres.
+
+    **En un grupo colisionado NADIE conserva el nombre pelado:** todos llevan
+    `__<sha8>`. Es lo que fija `MEJORAS #67.b`, y las dos alternativas que se probaron
+    antes fallan cada una por un lado — el ordinal `_2`/`_3` se mueve cuando al grupo
+    entra un tercero, y dárselo «al primero» hace que una reordenación del catálogo lo
+    mude de documento. En los dos casos una cita del letrado a un fichero pasaría a
+    señalar otro. Con el `sha8` la única transición posible es la inevitable de uno a
+    dos miembros.
+
+    **Y la reserva es GLOBAL, no por grupo.** Razonar dentro del grupo dejaba pasar el
+    caso que la R1 adversarial ejecutó (H-01): descripciones `mismo`, `mismo` y
+    `mismo_2` producen dos grupos cuyos nombres finales chocan entre sí. Se lleva un
+    registro único de rutas tomadas y, si la candidata está ocupada, se sigue sufijando.
+    """
+    grupos: dict[tuple[str, str], list] = {}
+    for idx, (entry, dir_rel, nombre) in enumerate(planificados):
+        grupos.setdefault((dir_rel, nombre.lower()), []).append(idx)
+
+    tomadas = dict(reservadas)
+    destinos: list[str] = [""] * len(planificados)
+
+    def _libre(ruta: str, dueno: str) -> bool:
+        return tomadas.get(clave_ruta(ruta), dueno) == dueno
+
+    # Grupos y miembros en orden determinista: la asignación no puede depender del
+    # orden en que el catálogo devuelva las filas.
+    for clave in sorted(grupos):
+        miembros = sorted(grupos[clave], key=lambda i: _discriminante(planificados[i][0]))
+        colisiona = len(miembros) > 1
+        for idx in miembros:
+            entry, dir_rel, nombre = planificados[idx]
+            dueno = clave_dueno(entry)
+            p = Path(nombre)
+            # Candidatos, en orden: el nombre pelado —solo si su grupo no colisiona—,
+            # después el `__<sha8>`, y solo al final los ordinales. El ordinal es el
+            # último recurso a propósito: depende del conjunto, mientras que el `sha8`
+            # sale del documento. Si el pelado está tomado por OTRO grupo o por una
+            # ruta reservada, se cae al `sha8` y no a un `_2` que mañana se mueva.
+            cands = ([] if colisiona else [p.stem]) + [f"{p.stem}__{_discriminante(entry)}"]
+            elegido = None
+            for base in cands:
+                cand = f"{dir_rel}/{base}{p.suffix}"
+                if _libre(cand, dueno):
+                    elegido = cand
+                    break
+            if elegido is None:
+                base, n = cands[-1], 2
+                while True:
+                    cand = f"{dir_rel}/{base}_{n}{p.suffix}"
+                    if _libre(cand, dueno):
+                        elegido = cand
+                        break
+                    n += 1
+            tomadas[clave_ruta(elegido)] = dueno
+            destinos[idx] = elegido
+    return destinos
+
+
+def _podar_directorios_vacios(sala: Path) -> list[str]:
+    """Retira los cascarones vacíos que deja un cambio de layout (p. ej. `Drive E&V/`).
+
+    Devuelve la lista de problemas que NO son «el directorio no está vacío», para que
+    el llamador pueda decirlos. Tres cosas que la R1 adversarial midió ejecutando, y
+    que esta versión corrige:
+
+    * **No sigue ni borra enlaces** (H-06). `is_dir()` dice `True` de un symlink o una
+      junction a directorio, `rglob` los recorría y `rmdir` los eliminaba — con el
+      destino fuera de la sala y no vacío. Ahora se salta todo enlace y se exige que el
+      directorio esté **físicamente** bajo la sala una vez resuelto.
+    * **Protege el subárbol de `_plan`, no solo su nombre** (H-07). Se filtraba el
+      nombre del directorio visitado, así que `_plan/lote/pendiente/` se borraba igual.
+    * **No confunde un error con un directorio ocupado** (H-08). El `except OSError`
+      pelado se tragaba también un `PermissionError`, y la corrida terminaba en verde
+      dejando restos sin decir por qué.
+    """
+    problemas: list[str] = []
+    if not sala.is_dir():
+        return problemas
+    raiz = sala.resolve()
+    directorios: list[Path] = []
+    for base, subdirs, _ficheros in os.walk(sala, topdown=False, followlinks=False):
+        for nombre in subdirs:
+            directorios.append(Path(base) / nombre)
+    for d in sorted(directorios, key=lambda p: len(p.parts), reverse=True):
+        if d.is_symlink() or os.path.islink(d):      # junction incluida, en Windows
+            continue
+        try:
+            real = d.resolve(strict=True)
+        except OSError:
+            continue
+        if raiz != real and raiz not in real.parents:
+            continue
+        if any(parte.startswith("_") for parte in d.relative_to(sala).parts):
+            continue
+        try:
+            d.rmdir()          # falla si no está vacío: exactamente lo que queremos
+        except OSError as exc:
+            if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                problemas.append(f"{d.name}: {exc.__class__.__name__} {exc}")
+    return problemas
+
+
 def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
     entries = catalogo_documental.load_catalog(case_id)
     bundles = _bundle_map(entries, crm_docs)
     acciones: dict[str, int] = {}
     vistos_hash: set[str] = set()
 
+    # 1er pase: qué se copia y a qué directorio. El nombre definitivo no se puede
+    # decidir documento a documento, porque depende de con quién colisione.
+    planificados: list[tuple] = []
+    # Las copias de las filas que NO entran al plan siguen ocupando su sitio en disco.
+    # Sin reservarlas, una fila cuya fuente desaparece dejaba libre su nombre y otra lo
+    # tomaba, sobrescribiendo una copia que seguía siendo válida: R1 adversarial, H-02.
+    reservadas: dict[str, str] = {}
     for e in entries:
+        excluida = False
         if e.hash and e.hash in vistos_hash:
             acciones["SKIP_DEDUP"] = acciones.get("SKIP_DEDUP", 0) + 1
-            continue
-        src = _input_path(case_id, e.ruta_relativa)
-        if not src.exists():
+            excluida = True
+        elif not _input_path(case_id, e.ruta_relativa).exists():
             acciones["MISSING_SRC"] = acciones.get("MISSING_SRC", 0) + 1
+            excluida = True
+        if excluida:
+            if e.ruta_sala_lectura:
+                reservadas.setdefault(clave_ruta(e.ruta_sala_lectura), clave_dueno(e))
             continue
-        fuente_dir = FUENTE_LABEL.get(e.fuente, e.fuente)
-        nombre = _nombre_canonico(e)
-        e.nombre_canonico = nombre
-
-        b = bundles.get(e.hash)
-        if b:
-            bundle_slug, rol, header_hash, orden = b
-            if rol == "cabecera":
-                dst_rel = f"{_SALA}/{fuente_dir}/{bundle_slug}/{nombre}"
-                e.parent_id = None
-            else:
-                dst_rel = f"{_SALA}/{fuente_dir}/{bundle_slug}/adjuntos/{nombre}"
-                e.parent_id = header_hash
+        dir_rel, relacion = _directorio_destino(e, bundles)
+        if relacion is not None:
+            e.parent_id, orden = relacion
+            if orden is not None:
                 e.orden_en_bundle = orden
-        else:
-            dst_rel = f"{_SALA}/{fuente_dir}/{nombre}"
+        planificados.append((e, dir_rel, _nombre_canonico(e)))
+        if e.hash:
+            vistos_hash.add(e.hash)
 
+    destinos = _asignar_destinos(planificados, reservadas)
+    # Ninguna copia recién escrita puede borrarse como «ruta vieja» de otra fila. Se
+    # compara por clave de FILESYSTEM: en Windows `Manual/` y `manual/` son la misma
+    # carpeta, y comparando cadenas el `unlink` de una fila borraba la copia de la otra.
+    destinos_nuevos = {clave_ruta(d) for d in destinos}
+
+    # 2º pase: la copia, idempotente contra `ruta_sala_lectura`.
+    for (e, _dir_rel, _nombre_base), dst_rel in zip(planificados, destinos):
+        src = _input_path(case_id, e.ruta_relativa)
         dst = caso_path(case_id) / "01_Procesado" / dst_rel
         prev = e.ruta_sala_lectura
+
+        # Un directorio en el destino no es una copia: `copy2` metería el fichero
+        # DENTRO con su nombre de origen y el catálogo apuntaría a la carpeta, que la
+        # corrida siguiente aceptaría como copia buena (R1 adversarial, H-11).
+        if dst.is_dir():
+            acciones["DST_OCUPADO_POR_DIRECTORIO"] = (
+                acciones.get("DST_OCUPADO_POR_DIRECTORIO", 0) + 1)
+            continue
+
+        e.nombre_canonico = Path(dst_rel).name
         if prev == dst_rel and dst.exists():
             acciones["SKIP_UNCHANGED"] = acciones.get("SKIP_UNCHANGED", 0) + 1
         else:
-            if prev and prev != dst_rel:
+            migra = bool(prev) and prev != dst_rel
+            if not migra and dst.exists():
+                # Ocupaba el nombre algo que el catálogo no conoce. Se sobrescribe
+                # —es el destino canónico de esta fila— pero se DICE.
+                acciones["SOBRESCRITO_SIN_FILA"] = (
+                    acciones.get("SOBRESCRITO_SIN_FILA", 0) + 1)
+            # **Copiar ANTES de borrar.** Al revés, un fallo de copia dejaba el destino
+            # viejo borrado, el nuevo sin crear y el catálogo apuntando a una ruta
+            # inexistente — y como `save_catalog` no se alcanza, ni queda constancia. Es
+            # anterior a este diff, pero la migración del layout lo activa sobre el
+            # expediente ENTERO de golpe: en W-02YZO4 fueron 26 documentos en una
+            # corrida. Reproducido inyectando un `OSError` en la R1 de la
+            # implementación hermana.
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            if migra:
                 old = caso_path(case_id) / "01_Procesado" / prev
-                if old.exists():
+                if old.exists() and clave_ruta(prev) not in destinos_nuevos:
                     old.unlink()
                 acciones["MOVED"] = acciones.get("MOVED", 0) + 1
             else:
                 acciones["COPY"] = acciones.get("COPY", 0) + 1
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
             e.ruta_sala_lectura = dst_rel
-        if e.hash:
-            vistos_hash.add(e.hash)
 
+    problemas_poda = _podar_directorios_vacios(_sala_dir(case_id))
     catalogo_documental.save_catalog(case_id, entries)
     return {"case_id": case_id, "acciones": acciones,
+            # `COPY` cuenta copias INTENTADAS, no ficheros escritos: en W-048UOL
+            # imprimió `COPY: 31` con 15 ficheros en disco y nadie avisó de la pérdida
+            # (medido el 2026-09-10). Este es el número que cuenta destinos distintos.
+            "n_en_sala": len(destinos_nuevos),
+            "problemas_poda": problemas_poda,
             "n_bundles": len({v[0] for v in bundles.values()})}
 
 
