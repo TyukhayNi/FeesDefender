@@ -246,6 +246,33 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   nombra el campo culpable** (`--codigo-caso`, `--direccion` o `--sufijo`) y no crea esqueleto
   alguno, en vez de terminar en 0 dejando el intake en una ruta sombra. El consejo sigue en pie
   porque el error hay que evitarlo, no solo detectarlo.
+- **`[APER-65]` / W-048U77 — Un fichero que en Drive NO tiene extensión bloquea la etapa
+  `drive` y, en cada ronda, DUPLICA.** Medido el 2026-09-10 sobre una carpeta con **11 de 58**
+  ficheros sin extensión (`CONTRATO FIRMADO`, `OFERTA ACEPTADA`, `NS 27／07`…). Dos defectos con
+  el mismo origen: el destino vive en un montaje de Google Drive for Desktop, que **presenta**
+  una extensión inferida del content-type para los ficheros que en Drive no la llevan, poco
+  después de que `rclone` escriba el nombre pelado. **No es Drive quien renombra**: medido el
+  2026-09-10, remoto y montaje tienen los mismos 78 ficheros y las 8 diferencias son los mismos
+  8 documentos con dos nombres (`CONTRATO FIRMADO` en Drive, `CONTRATO FIRMADO.pdf` en `G:`).
+  Consecuencia práctica: los nombres de origen del **remoto** no son los del montaje, así que la
+  ruta `rcd` de la sala de lectura (que copia por el remoto) no sirve sobre esos ficheros.
+  - **Síntoma 1:** `hash_tree_local` recorre (`rglob`) y **después** abre, y entre las dos cosas
+    el nombre cambió → `FileNotFoundError: [WinError 2] … \DOCS ACTIVACION\CONTRATO FIRMADO`,
+    etapa `drive` en `fallo`, V1 `bloqueado` (**con el pull ya hecho y correcto**). No es azar:
+    reprodujo dos rondas seguidas, cada vez con otro fichero de los once.
+  - **Síntoma 2, el caro:** como el nombre remoto ya no existe en local, `rclone` lo re-copia en
+    **cada** pull y Drive Desktop deposita `… (1).pdf`. Dos rondas = **7 duplicados**. Y V1
+    fuerza el pull en cada ronda por diseño, así que **relanzar no repara: ensucia más**.
+  - **Qué hacer cuando lo veas.** (1) **No relances la secuencia.** (2) Censo independiente:
+    `rclone lsf gdrive_ev: --drive-team-drive <id> --drive-root-folder-id <id>
+    --drive-skip-shortcuts --recursive --files-only` y compara el conteo con el local. (3) Borra
+    los sobrantes **por diferencia contra el remoto, nunca por patrón `(N)`** — en W-048U77 seis
+    documentos legítimos traían el `(N)` de origen, uno de ellos con `(1) (1) (1)` — y solo tras
+    verificar por `sha256` que cada sobrante tiene gemelo idéntico; normaliza a **NFC** antes de
+    comparar, o un topónimo acentuado da falsos positivos. (4) Cierra la custodia aparte, sin re-tirar del pull:
+    `hash_tree_local(target_dir, prefijo=brain.SUBDIR_DRIVE_EV)` + `_intake_generico(...,
+    raiz_hashes=target_dir.parent)` bajo `scripts._mutex_cli.sostener`. (5) Sigue por §5 con
+    `sala_maquina apply` a mano. Diagnóstico completo y las tres vías de arreglo: `MEJORAS #214`.
 - **`[APER-34]` Auto-derivación (B5):** en `--fuente drive_ev`, si se omiten,
   `--team-id` (driveId), `--codigo-caso` (nombre de la unidad compartida vía Drive API) y
   `--sufijo` (del `tipo_caso` canónico) se **auto-derivan** desde `--folder-id`. Los flags
@@ -281,6 +308,62 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   judicial **ya existe en el CRM** y lo que falta es montarlo en Drive: **§3-bis**, medido
   de punta a punta en W-02VEKE. Si el caso ya es judicial desde el día 1 y **no** está en
   el CRM, el alta del expediente judicial sigue siendo a mano por §9.
+
+- **`[APER-66]` / W-030TZY — Un extrajudicial NUEVO se abre en DOS comandos, y el orden que
+  funciona está medido (2026-09-10).** V1 no da de alta en el CRM (eso es V2) y `libre --crm api`
+  no encadena la secuencia; hacen falta los dos, y **el segundo puede ir con `--case-id`**, que
+  lee `tipo_caso` y `ciudad` de `_caso.md` y es excluyente con los seis flags de identidad:
+
+  ```powershell
+  # 1) identidad + Drive E&V + sala de máquina, bajo un solo mutex
+  python -m scripts.abrir_caso --modo v1 --w-code W-XXXXXX --ciudad <Ciudad> `
+    --tipo-caso <TIPO_CANONICO> --direccion "<via numero>" --folder-id <id> `
+    --fuente drive_ev --crm skip --yes
+  # 2) alta CRM sobre el caso ya montado
+  python -m scripts.abrir_caso --case-id W-XXXXXX --fuente drive_ev --crm api `
+    --cuantia <n> --folder-id <id> --yes
+  ```
+
+  El paso 2 **registra el expediente en `_caso.md`** él solo (`abrir_caso.py:743` llama a
+  `case_manager.register_expediente(...,"extrajudiciales")`), así que **no hay que vincular a
+  mano**: el `[APER-36]` es para el caso en que el expediente ya existía en el CRM antes, no para
+  éste. Verificado leyendo el `_caso.md` después: `sudespacho_expedientes: [{id: '640', element:
+  extrajudiciales}]`.
+
+  - **El orden inverso también vale y ahorra un paso** (primero `libre --crm api`, luego `--modo
+    v1 --case-id`): así la etapa `crm` de V1 encuentra el expediente en vez de salir `saltada` con
+    el pendiente `crm_sin_expediente`. **No está corrido**; lo de arriba sí.
+  - **No hay `--fuente` que signifique «ninguna»** (`_FUENTES_CLI = drive_ev|manual|whatsapp|email`),
+    así que el paso 2 arrastra un re-pase de intake. Medido: **24,1 s en total**, alta CRM incluida,
+    con `0 depositables, 125 duplicados omitidos`. Es peaje, no un problema.
+  - **La `cuantia` del alta no baja a `_caso.md`**: tras el paso 2, `meta.cuantia` sigue a `null`
+    aunque el CRM la tenga. Si luego se lee de ahí, no está.
+
+- **`[APER-67]` / W-030TZY — Reparto real del tiempo de una apertura, para fijar expectativa.**
+  Medido de punta a punta el 2026-09-10 (120 ficheros del Drive E&V + 36 correos; 173 documentos
+  procesados, 203 páginas de OCR). **Tiempo de máquina: 46,5 min**, repartidos así:
+
+  | Fase | Tiempo | % |
+  |---|---|---|
+  | **OCR** (68 documentos) | **38,1 min** | **82 %** |
+  | resto de la sala de máquina (atomización, pypdf, nativo, inventario) | 1,6 min | 3 % |
+  | alta + pull del Drive E&V | 1,8 min | 4 % |
+  | export de la etiqueta Gmail (36 mensajes) | 1,2 min | 2 % |
+  | etiqueta Gmail + 6 hilos (a mano, 7 llamadas MCP) | 1,0 min | 2 % |
+  | alta CRM + ficha completa | 1,2 min | 3 % |
+  | sala de lectura, las dos corridas del CLI | 0,4 min | 1 % |
+
+  **Lo que esto decide:** cualquier optimización que no sea del OCR ataca el 18 %. Y el OCR **no
+  tiene botón barato** — paralelismo por documento refutado, idiomas/deskew/optimize sin efecto
+  medible, `rotate_pages` es un seguro: todo con sus números en `MEJORAS #222`. La consecuencia
+  operativa no es correr más rápido sino **no bloquear** (el OCR va en background por `[APER-09]`)
+  y **no repetirlo** (`[APER-39]`: ~1h40 tirados en W-02VUDR).
+
+  **Lo que NO es tiempo de máquina y sí es el cuello real:** con la sala de máquina hecha, el CLI
+  de la sala de lectura se detiene y pide clasificar **80 documentos a mano** en
+  `01_Procesado/_revisar/_clasificar.md` (tipo + parte + descripción por fila). Esos 80 son trabajo
+  de criterio, no de CPU, y no aparecen en ninguna medición de las de arriba. Antes de optimizar
+  segundos de OCR, mirar ahí.
 
 ---
 
@@ -644,6 +727,29 @@ python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # se deti
 #    → rellena Tipo/Fecha/Parte/Descripcion en 01_Procesado/_revisar/_clasificar.md
 python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # y ahora sí termina
 ```
+
+- **`[APER-68]` / W-030TZY — «Sala de lectura organizada» no significa que estén los cuatro
+  artefactos, y la CRONOLOGÍA no distingue fecha de documento de fecha de fichero.** Medido el
+  2026-09-10, con `organizar` terminando en 15,0 s y código 0 sobre 166 documentos. **Dos
+  comprobaciones que hay que hacer a mano después, porque ninguna verja las hace:**
+
+  1. **`ls` de los cuatro artefactos.** Salieron `INDICE.md` y `CRONOLOGIA.md`; **`_MANIFIESTO.md`
+     no existe** (no lo escribe nadie: en todo `core/` y `scripts/` solo aparece en
+     `core/config.py:415`, como fichero protegido) y el `indice_documental.yaml` vive en
+     `01_Procesado/`, no dentro de `Sala lectura/` como dibuja el árbol de la skill. `MEJORAS #221`.
+  2. **`grep -c '(\*)' CRONOLOGIA.md` contra el conteo de `fecha_fuente: mtime` del catálogo.**
+     Salieron **0 marcas para 63 de 166 fechas** (38 %) que vienen de `mtime`. El canon manda
+     marcarlas `(*)`; el catálogo sabe cuáles son y el renderizador no lo mira, así que la
+     cronología afirma fechas de documento que son fechas de fichero. En este caso puso
+     **2025-11-25 a un acta de 2018** cuyo nombre llevaba la fecha. `MEJORAS #220`.
+
+  Y una causa que se fabrica el propio pipeline: el intake sustituye la `/` prohibida por `／`
+  (U+FF0F) y el parser de fechas del nombre no reconoce esa barra — ni los días de un dígito
+  (`8-01-2025`). Por eso el escalón (c) del canon se salta teniendo la fecha delante. **Al revisar
+  la worklist, corrige a mano las fechas cuyo nombre de fichero las lleve**: es donde se cazan.
+
+  **El contraste de `[APER-60]` sí salió limpio aquí:** 183 filas de `_cobertura.json` contra 166
+  entradas del catálogo, diferencia 17 = exactamente los `SKIP_DEDUP`. Cuadra; no se perdió nada.
 
 **Secuencia granular**, si quieres ver cada paso (o si `organizar` te deja algo a medias):
 

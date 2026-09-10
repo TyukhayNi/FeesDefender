@@ -882,6 +882,29 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
   se le pasa y el fallo es silencioso**, con el agravante de que aquí el comando que corrompe
   y el que informa del éxito son el mismo.
 
+## `pre-commit install` en un worktree: «Cowardly refusing … core.hooksPath», y los hooks YA estaban puestos
+
+- **Intentado:** instalar los hooks en un worktree de Claude Code, siguiendo la instrucción de
+  `CLAUDE.md` («instalar en cada clon/worktree: `pre-commit install && pre-commit install
+  --hook-type pre-push`»), porque `<git-dir>/hooks/pre-commit` no existía y parecía que el
+  worktree se iba a commitear **sin verja local**.
+- **Resultado:** `[ERROR] Cowardly refusing to install hooks with core.hooksPath set`, las dos
+  veces, con el hint `git config --unset-all core.hooksPath`. **Seguir el hint habría sido el
+  error.**
+- **Confirmado:** 2026-09-10 (worktree `caso-incumplimiento-exclusiva-3797fc`).
+- **Conclusión:** el worktree trae `core.hooksPath` en su propio `config.worktree`, apuntando a
+  `.git/hooks` **del repo principal** — donde el clon ya tiene instalados `pre-commit` y
+  `pre-push`. Los hooks **corren igual**, y eso se verifica por resultado, no por la ausencia del
+  fichero: el `git commit` imprimió `Detect hardcoded secrets … Passed`, `check for added large
+  files … Passed`, `leak-guard … Passed`. Antes de tocar nada,
+  `git config --show-origin --get-all core.hooksPath` y mirar si hay un `pre-commit` (sin
+  `.sample`) en esa ruta. **Si se hubiera hecho el `--unset-all`, el worktree se habría quedado
+  sin verja para poder «instalarla»** — el remedio habría creado el problema que buscaba evitar.
+- **Familia:** el `fatal: 'main' is already used by worktree` de `gh pr merge --squash
+  --delete-branch` (`docs/FLUJO_GIT.md §4`): las dos son herramientas que asumen un clon y se
+  topan con la topología de worktrees, y en las dos el mensaje de error apunta a un remedio peor
+  que el síntoma.
+
 ## Plantilla para nuevas entradas
 
 ```markdown
