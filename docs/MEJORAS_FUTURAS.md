@@ -10415,6 +10415,44 @@ origen, no contra una expectativa.
    guarda que lo habría cazado**. Lo que falta por medir es lo simétrico: si sin los tres flags
    reaparecen los falsos «corrupted on transfer» **contra `G:`** (el control 2 fue contra NTFS).
 
+**ALCANCE sobre expedientes ya trabajados — y el conteo hay que hacerlo POR VÍA DE ENTRADA.**
+La pregunta la trajo la sesión de W-048UOL, que contó el 100 % de dos expedientes grandes en vez de
+una muestra. Reverificado aquí el 2026-09-10 separando por vía, porque un conteo sobre todo
+`00_Input` mezcla poblaciones que no comparten escritor. Firma del defecto = tamaño múltiplo de 512
+**y** cola de ceros (el 512-align a secas toca por azar 1 de cada 512 ficheros):
+
+| | ficheros | con la firma | |
+|---|---|---|---|
+| **W-02VEKE** · pull de rclone (`01_Drive EV`) | 242 | **224** | 93 % |
+| W-02VEKE · pull del CRM | 78 | 2 | 3 % |
+| W-02VEKE · capa derivada (`01_Procesado`) | 938 | **206** | 22 % |
+| **W-02JSVZ** · pull de rclone | 171 | **167** | 98 % |
+| W-02JSVZ · export de correo | 59 | **0** | 0 % |
+| W-02JSVZ · capa derivada | 805 | **100** | 12 % |
+
+**Cómo NO leerlo.** El dato de origen se enunció como «242 de 324» y «170 de 237», sobre
+`00_Input` entero. Los denominadores cuadran exactos (242+78+4 = 324; 171+59+7 = 237), luego el
+numerador **era** la población de rclone completa: lo que dicen esas cifras no es «el 75 % del
+expediente está afectado», es **«prácticamente el 100 % de lo que entró por rclone»**, y el 0 % del
+correo y el 3 % del CRM lo confirman por el otro lado. La ratio sobre el expediente entero depende
+de cuánto pesó cada fuente en ese caso y no mide el defecto.
+
+**Un hilo abierto que esto destapa: la capa DERIVADA también está afectada** (22 % y 12 %), y eso no
+lo explica el pull de intake. Una escritura normal de Python sobre `G:` **no** rellena —15 de 15
+fieles al reponer W-02NHNC—, así que algo más escribió esos árboles con la vía de rclone. El
+candidato es el **checkin** (`repository_checkout`), que también copia con rclone hacia `G:`, y
+W-02JSVZ es justamente el caso que pasó seis semanas en local y volvió por ahí. **No verificado**:
+hay que medirlo, y si se confirma, el alcance de esta entrada no es «el intake» sino «toda
+escritura de rclone hacia `G:`», checkin incluido — con el agravante de que la verificación del
+checkin compara `G:` contra `G:` y no puede cazarlo.
+
+**Lo que el alcance cambia en la práctica.** No es solo cuántos ficheros hay mal: es que **el hash
+forense de casi todo el material de Drive de los expedientes históricos no cuadra contra el origen**,
+así que hoy no se puede acreditar por hash la procedencia de la documental de E&V en ningún caso
+abierto antes de arreglar esto. La reposición de W-02NHNC (15 ficheros) fue barata; hacerlo sobre
+242 y 171 no lo es, y **decidir si se repone el histórico o solo se declara es de Nikolai**, no una
+consecuencia técnica.
+
 **No es de siempre, y ese dato importa para fecharlo:** de los primeros 12 ficheros de
 `01_Drive EV` son múltiplo de 512 **0 de 12** en W-02Q38C, **1 de 12** en W-02Z2NR y **9 de 12** en
 W-048U77. Algo cambió entre medias (versión de Drive for Desktop, estado de la caché, o el propio
