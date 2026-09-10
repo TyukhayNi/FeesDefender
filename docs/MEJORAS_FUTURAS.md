@@ -9596,3 +9596,137 @@ certificado» sin intervención manual. Mientras sea uno al mes, el scratchpad c
 el módulo.
 
 **Misma frontera que `MEJORAS #209`** («crear actuaciones en el CRM no tiene helper: la receta vive en prosa y se reescribe a mano cada vez»), que entró el mismo día por el PR #316. Son dos ejemplos de una sola propiedad mal cerrada: **el contrato del CRM se documenta y no se encapsula**, así que cada operación nueva se reescribe a mano contra la prosa. Si se aborda una, abordar la frontera: un módulo por familia de operación, no un helper por caso.
+
+---
+
+## 213. La guarda de alineación CRM ↔ caso compara por IGUALDAD EXACTA, y la convención del campo ya no es el `case_id`
+
+> **El dato del 638 ya está repuesto (2026-09-10, decisión de Nikolai: vía (e)).**
+> `PUT /api/element_register/extrajudiciales/638 {"Referencia_Cliente": "<case_id>"}` → HTTP 200, y
+> verificado **por relectura de los 27 campos**: la referencia vale el `case_id`, **cero campos
+> colaterales cambiados** (`Notas` intacta, 2.389 caracteres antes y después — el `PUT` parcial de
+> §10.7 se cumplió). Con eso vuelven a verde las cuatro consecuencias medidas:
+> `verify_expediente_referencia` → `match=True`; `find_expediente_by_referencia` → `'638'`; y el
+> expediente vuelve a salir buscando `Calle 31`, `VaRS3` y `Devolucion honorarios`. El `_caso.md`
+> deja de mentir sin haberlo tocado.
+>
+> **Lo que sigue vivo de esta entrada, y es lo que importa:** (1) el **retoque manual** de las dos
+> apariciones del campo en cada documento que se genere de la plantilla 243 — mientras nadie lo
+> haga, la carta vuelve a decir «el inmueble sito en VaRS3 - Calle 31, 6 (W-04A6LI) - Devolucion
+> honorarios»; y (2) **(a)**, que la guarda sepa comparar por W-code, que no era el arreglo de este
+> caso. Editar la plantilla queda **descartado**.
+
+> Medido el 2026-09-10 sobre el extrajudicial **638** (`W-04A6LI`), preguntando «por qué este
+> expediente no tiene referencia canónica». **El campo no estaba vacío: tenía `W-04A6LI` pelado.**
+
+**Qué pasa.** `Referencia_Cliente` del 638 vale `'W-04A6LI'`, no
+`'VaRS3 - Calle 31, 6 (W-04A6LI) - Devolucion honorarios'`. No lo hizo el código: ni
+`abrir_caso.crm_payload` (`core/abrir_caso.py:285`) ni la UI (`streamlit_app.py:2440`) envían otra
+cosa que el `case_id`, y el alta del 93º cierre fue por la vía V1. **Se acortó a mano el
+2026-09-10, y por una razón buena**, escrita en `INTEGRACION_SUDESPACHO.md` §10.11: la plantilla
+243 (`BUROFAX - ENGEL - DEVOLUCION HONORARIOS - VENTAS`) vuelca
+`[extrajudiciales->Referencia_Cliente]` **a la vez** en la línea `REF:` y en la frase «el inmueble
+sito en …», así que con el `case_id` dentro la carta decía «el inmueble sito en VaRS3 - Calle 31, 6
+(W-04A6LI) - Devolucion honorarios». La §10.11 zanjó: «se deja el `W-XXXXXX`».
+
+**El problema no es el acortado: es que nada más se enteró.** Medido en vivo contra el CRM:
+
+| Comprobación | Resultado |
+|---|---|
+| `verify_expediente_referencia(638, 'extrajudiciales', expected=case_id)` | `match=False`, `found=True` |
+| `_rest_search_expedientes('extrajudiciales', case_id)` | `[{'id': '638', 'label': 'W-04A6LI'}]` — **sí lo encuentra** |
+| `find_expediente_by_referencia(case_id)` | `None` — `_match_in_results` exige label idéntico |
+| `wcode_match('W-04A6LI', case_id)` | `True` |
+| `buscar_expedientes_duplicados(w_code='W-04A6LI')` | bloquea igual: ancla en el W-code |
+
+Consecuencias, por orden de coste:
+
+1. **Falsa alarma perpetua.** `scripts/sync_sudespacho.py:210` imprimirá «⚠️ Referencia
+   desalineada CRM ↔ caso local» en **cada** pull del 638, y `scripts/audit_referencias_casos.py`
+   sale con **código 1** por este caso. Una guarda que grita sobre una decisión deliberada se
+   contesta por rutina y deja de proteger — el mismo modo de fallo que el `--force` rutinario que
+   describe `buscar_expedientes_duplicados`.
+2. **El `_caso.md` miente.** Sigue con `referencia_crm: VaRS3 - Calle 31, 6 (W-04A6LI) -
+   Devolucion honorarios`, que no es lo que el CRM dice. Es **otra instancia de `#192`** (el campo
+   que dice ser «la referencia del CRM» se rellena con el nombre local y nunca se relee), esta vez
+   con el CRM moviéndose *después* del alta en vez de antes.
+3. **`find_expediente_by_referencia` queda ciego** para este expediente. Hoy no tiene llamador de
+   producción fuera del módulo, así que es latente, no activo.
+
+**El censo, para no exagerarlo.** De los **611** extrajudiciales del tenant: 398 llevan el W-code
+dentro de una referencia larga, **1 lo lleva pelado** (el 638), 50 no tienen referencia y 162 no
+tienen W-code (asuntos no-FeesDefender, `PRUEBA - BORRAR`, referencias `BCN-RS-…` del CRM de E&V).
+El acortado es **un caso**, no una convención implantada. Y ahí está la decisión pendiente.
+
+**La frontera, no el ejemplo:** un mismo campo sirve a dos consumidores con exigencias
+incompatibles — la **plantilla**, que lo intercala en prosa y quiere el código corto, y la
+**guarda de alineación**, que lo compara con el nombre de la carpeta y quiere el `case_id` entero.
+Cualquier remedio que arregle solo el 638 deja la colisión viva para el segundo burofax que se
+genere.
+
+**El mecanismo, con la plantilla delante** (medido el 2026-09-10, `GET
+/api/templates/rtf/detail/243` → RTF de 1.631.790 bytes, y el render read-only de la 243 sobre el
+638). El marcador `[extrajudiciales->Referencia_Cliente]` aparece **dos veces** en el cuerpo de la
+plantilla, y la segunda es la que muerde:
+
+```
+[1]  REF: [expedientes_judiciales.referencia_cliente] - [extrajudiciales->Referencia_Cliente]
+[2]  …por la mediación en el contrato de compra del inmueble sito en
+     [expedientes_judiciales.referencia_cliente] [extrajudiciales.Referencia_Cliente]
+     (en adelante, el "Inmueble")…
+```
+
+Renderizado hoy contra el 638, las dos salen `W-04A6LI` (y el marcador judicial sale vacío por ser
+un extrajudicial, de donde el guion suelto del `REF:`). **Quien escribió la plantilla usó el campo
+de la referencia como si fuese la dirección del inmueble**: no es que el `REF:` se contamine, es que
+la frase del cuerpo nombra la finca con ese campo. De ahí que el `case_id` entero, que es lo
+correcto como llave, se leyera como una barbaridad dentro de la carta.
+
+**Lo que cuesta el campo corto, medido.** `_rest_search_por_texto('extrajudiciales', …)` busca solo
+sobre `Referencia_Cliente`, luego el 638 dejó de ser localizable en el CRM por cualquier cosa que no
+sea su W-code:
+
+| Se busca | ¿sale el 638? |
+|---|---|
+| `Calle 31` | **no** |
+| `VaRS3` | **no** |
+| `Devolucion honorarios` | **no** |
+| `W-04A6LI` | sí |
+
+Para quien busque en la UI por calle, por equipo o por tipo de asunto, ese expediente se ha vuelto
+invisible. Ese es el precio real, y es mayor que el aviso ruidoso del pull.
+
+**Remedios candidatos.**
+
+- **(b) Editar la plantilla — DESCARTADO por Nikolai el 2026-09-10.** El RTF es un fichero
+  (`downloadUrlRtfFile` en S3) y sería editable, pero no se tocan las plantillas del cliente. Queda
+  escrito para que nadie lo vuelva a proponer como si fuese gratis.
+- **(e) Retocar el DOCUMENTO, no la llave** — la vía que queda abierta y la más barata.
+  `Referencia_Cliente` vuelve al `case_id` (una escritura sobre el 638) y las dos apariciones se
+  corrigen a mano en el `.docx` renderizado. El flujo ya exige retoques manuales por documento
+  —los `XX` de precios y porcentajes, el `[XX]` de la ciudad, el borrado del comentario de Word
+  `{\*\annotation}`—, así que son **dos reemplazos más sobre un documento que ya se abre a mano**.
+  A cambio: la guarda y la auditoría vuelven a verde solas, el `_caso.md` deja de mentir, y el
+  expediente vuelve a ser buscable por calle. Es el remedio recomendado.
+- **(a) Que la guarda compare por W-code.** `wcode_match` ya existe en el módulo y ya lo usa el
+  dedup; `verify_expediente_referencia` devolvería un tercer estado —`match_wcode`— y el pull lo
+  imprimiría como «coincide por W-code; la referencia del CRM es más corta». **Vale la pena aunque
+  se aplique (e)**: no es el arreglo de este caso, es que la guarda hoy solo sabe decir «idéntica»
+  o «desalineada», y la referencia del CRM puede divergir legítimamente del nombre de la carpeta
+  (sufijos distintos, ya visto en el 464/540 de `W-02VEKE`).
+- **(c) `Referencia_Propia`** está vacía en el 638 y es `TextCorto`: sería el sitio natural de la
+  dirección para la plantilla, pero la 243 **no la lee** (0 ocurrencias del marcador en el RTF), así
+  que sin editar la plantilla —descartado— no sirve. Anotado para no volver a mirarlo.
+- **(d) Reponer el `_caso.md`.** Con (e) se resuelve por sí solo: si el campo del CRM vuelve al
+  `case_id`, lo que dice el `_caso.md` pasa a ser verdad sin tocarlo. Si se decidiera dejar el campo
+  corto, entonces hay que reponerlo —o vaciarlo, que es la salida honesta de `#192`.
+
+**Cómo comprobarlo sin engañarse.** El control positivo y el negativo están los dos a mano:
+`verify_expediente_referencia` sobre el 638 con `expected=case_id` debe dar `False` hoy y `True`
+tras (e); y sobre cualquiera de los 398 con referencia larga debe seguir dando `match=True`. Un test
+que solo mire el 638 aprueba un comparador que haya dejado de comparar.
+
+**Disparador de promoción.** Para (e), inmediato: es una escritura y dos reemplazos, y mientras no
+se haga hay un expediente vivo no buscable por dirección. Para (a), medio: sube con el **segundo**
+burofax desde plantilla —el flujo que `#212` quiere encapsular— o con el primer expediente cuya
+referencia del CRM divirja del nombre de la carpeta por sufijo.
