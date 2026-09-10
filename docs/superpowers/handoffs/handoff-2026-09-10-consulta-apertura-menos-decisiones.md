@@ -88,7 +88,7 @@ premisa».
    skills sueltos, cada uno con su verificación a mano.
 2. **Las herramientas dicen «OK» del paso, no del expediente.** Siete veces hoy: `organizar`
    «organizada» con 2 de 4 artefactos (`#221`); `render_informe` «OK» con 51 y 70 filas sin
-   marcar; `apply_label` éxito sin aplicar (`#237`); intake de correo «OK» sin OCR (`#188`);
+   marcar; `apply_label` éxito sin aplicar (`#237`); `verificar_sala` contando su propio aviso como un problema (`#216`);
    informe de firmas proponiendo un alta falsa (`#217`); pull «hecho» con hashes falsos
    (`#225`); parser de actuaciones devolviendo cero sobre 20.825. Mientras nada cierre el lazo
    sobre el expediente, el verificador es el letrado, y eso es «estar encima».
