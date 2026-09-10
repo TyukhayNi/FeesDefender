@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 import shutil
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Callable
 
 from core import catalogo_documental
@@ -756,41 +756,11 @@ def _bundle_map(entries: list, crm_docs) -> dict:
     return out
 
 
-def _sin_colision(dst_rel: str, hash_: str | None, ocupadas: dict[str, str]) -> str:
-    """La ruta de destino de `hash_`, discriminada si otro documento ya la ocupa.
-
-    Dos documentos DISTINTOS pueden producir el mismo nombre canónico: basta que
-    compartan fecha, tipo y descripción, que es justo lo que pasa con las imágenes que
-    el clasificador describe como «Fotografía». Sin discriminante, la segunda copia
-    pisaba a la primera y nadie lo decía — el resumen cuenta copias intentadas, no
-    ficheros escritos (`MEJORAS #215`, medido en W-048UOL: 32 documentos en el catálogo,
-    15 en la sala).
-
-    El discriminante es el `sha256[:6]`, que es estable entre corridas: la misma entrada
-    aterriza siempre en la misma ruta, así que `poblar` sigue siendo idempotente. Se
-    devuelve `dst_rel` intacto cuando nadie la ocupa o cuando la ocupa este mismo hash.
-    """
-    ocupante = ocupadas.get(dst_rel)
-    if ocupante is None or ocupante == hash_:
-        ocupadas[dst_rel] = hash_ or ""
-        return dst_rel
-    p = PurePosixPath(dst_rel)
-    disc = (hash_ or "")[:6] or "sin_hash"
-    cand = str(p.with_name(f"{p.stem}__{disc}{p.suffix}"))
-    n = 2
-    while ocupadas.get(cand) not in (None, hash_):
-        cand = str(p.with_name(f"{p.stem}__{disc}_{n}{p.suffix}"))
-        n += 1
-    ocupadas[cand] = hash_ or ""
-    return cand
-
-
 def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
     entries = catalogo_documental.load_catalog(case_id)
     bundles = _bundle_map(entries, crm_docs)
     acciones: dict[str, int] = {}
     vistos_hash: set[str] = set()
-    ocupadas: dict[str, str] = {}
 
     for e in entries:
         if e.hash and e.hash in vistos_hash:
@@ -800,23 +770,22 @@ def poblar_sala_lectura(case_id: str, *, crm_docs=None) -> dict:
         if not src.exists():
             acciones["MISSING_SRC"] = acciones.get("MISSING_SRC", 0) + 1
             continue
+        fuente_dir = FUENTE_LABEL.get(e.fuente, e.fuente)
         nombre = _nombre_canonico(e)
+        e.nombre_canonico = nombre
 
         b = bundles.get(e.hash)
         if b:
             bundle_slug, rol, header_hash, orden = b
             if rol == "cabecera":
-                dst_rel = f"{_SALA}/{bundle_slug}/{nombre}"
+                dst_rel = f"{_SALA}/{fuente_dir}/{bundle_slug}/{nombre}"
                 e.parent_id = None
             else:
-                dst_rel = f"{_SALA}/{bundle_slug}/adjuntos/{nombre}"
+                dst_rel = f"{_SALA}/{fuente_dir}/{bundle_slug}/adjuntos/{nombre}"
                 e.parent_id = header_hash
                 e.orden_en_bundle = orden
         else:
-            dst_rel = f"{_SALA}/{nombre}"
-
-        dst_rel = _sin_colision(dst_rel, e.hash, ocupadas)
-        e.nombre_canonico = PurePosixPath(dst_rel).name
+            dst_rel = f"{_SALA}/{fuente_dir}/{nombre}"
 
         dst = caso_path(case_id) / "01_Procesado" / dst_rel
         prev = e.ruta_sala_lectura

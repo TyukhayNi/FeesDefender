@@ -9776,50 +9776,42 @@ API en vez de por el filesystem montado; (c) truncar tras copiar —hay que medi
 vuelve a rellenar—. Antes de nada, **medir si el relleno lo pone Drive Desktop o el `--inplace`**:
 el comentario culpa al primero y nadie lo ha probado con y sin el flag.
 
-## 215. `sala_lectura poblar` sobrescribe en silencio: 32 entradas del índice quedaron en 15 ficheros
+## 215. [DUPLICADA de `#67.b` + `#67.c`] La medición de W-048UOL: 32 documentos en el catálogo, 15 en la sala
 
-> **CERRADA el 2026-09-10, el mismo día, junto con el tercer defecto de `#67`.**
-> `poblar_sala_lectura` ya no antepone la carpeta de fuente —la sala queda **plana**, como
-> fija la skill v1.3, con el bundle como único anidamiento— y `_sin_colision` discrimina con
-> `sha256[:6]` cuando dos entradas distintas resuelven al mismo nombre. Dos tests nuevos en
-> `tests/test_sala_lectura.py` (vistos rojos antes del arreglo: *«un documento pisó al otro»*
-> y *«hay PDFs anidados»*), más cinco aserciones de tests existentes actualizadas al contrato
-> nuevo. Medido sobre W-048UOL tras re-poblar: **31 documentos en la sala** (eran 15), 31
-> rutas únicas y ninguna anidada, con las 32 entradas del índice intactas — la que falta es
-> el `SKIP_DEDUP`.
+> **No es una entrada nueva y la abrí sin mirar el backlog, que es el error.** El defecto ya
+> estaba escrito y con el fix propuesto: **`#67.b`** (colisión de `nombre_canonico`, fix
+> «sufijar con `__<sha8>`») y **`#67.c`** (`poblar` escribe subcarpetas por fuente, fix «que
+> escriba plano salvo bundles»). Lo que aporta esta entrada es **la medición**, no el
+> diagnóstico.
 >
-> **Lo que queda declarado, no arreglado:** quién se queda el nombre limpio y quién lleva
-> sufijo depende del **orden del catálogo**. Es estable mientras no se re-catalogue; si el
-> orden cambiara, un documento podría mudarse de ruta (sin pérdida: `poblar` mueve, y el
-> original vive en `00_Input`). Cerrarlo del todo pide asignar el discriminante a **todos**
-> los colisionados, no solo al segundo.
->
-> **Y sigue abierto lo que este arreglo NO toca:** el `INDICE.md` continúa **agrupado por
-> fuente** en su texto (`## Drive E&V`, `## Manual`). Aplanar las carpetas no aplana el
-> índice, y agruparlo por categoría es otra decisión.
+> **El arreglo entra por la rama de W-02YZO4** (`7c4a97a`, que cita `#67.b`, `#67.c` y `#36`),
+> no por aquí: dos sesiones escribimos el mismo par de arreglos a la vez sobre el mismo
+> fichero, y la suya trae además la **poda del cascarón** de las carpetas por fuente y un test
+> de **migración** del layout viejo. Mi diff se retiró antes de abrir PR para que no hubiera
+> dos.
 
-> Medido el 2026-09-10 en `W-048UOL`, contando lo que había en `Sala lectura/` después de que
-> `organizar` dijera `Acciones: {'COPY': 31, 'SKIP_DEDUP': 1}`.
+**La medición, que es lo que se conserva.** En W-048UOL (2026-09-10), tras `organizar`:
+`indice_documental.yaml` declaraba **32 documentos** y en `Sala lectura/` había **15 ficheros**,
+repartidos en dos carpetas de fuente (`Drive E&V/`, `Manual/`). Diecisiete imágenes —once fotos
+de las escrituras de la sociedad, cuatro documentos de identidad y dos de la oferta— compartían
+**dos únicos nombres** (`2026-03-16_foto_fotografia.jpeg` y `2026-03-17_foto_fotografia.jpeg`),
+porque el clasificador describe toda imagen como «Fotografía» y la fecha era la misma. Cada copia
+pisaba a la anterior.
 
-**Qué pasa.** El nombre canónico de destino es `AAAA-MM-DD_<categoria>_<descripcion>`, y para las
-imágenes que el auto-clasificador manda a `00. FOTOS` la descripción degenera en `fotografia`.
-Diecisiete imágenes del caso (once fotos de las escrituras de la sociedad, cuatro documentos de
-identidad y dos de la oferta) comparten dos únicas fechas → **dos nombres** →
-`2026-03-16_foto_fotografia.jpeg` y `2026-03-17_foto_fotografia.jpeg`, cada uno pisando al
-anterior. `COPY: 31` cuenta **copias intentadas**, no ficheros resultantes, así que la salida
-declara éxito sobre una sala que perdió la mitad.
+**Dos cosas que la medición añade al diagnóstico ya escrito:**
 
-**Lo que NO pasa: no se pierde información.** El `INDICE.md` conserva las 32 entradas y enlaza a
-cada original de `00_Input` y a su MD. El daño es que la carpeta poblada **aparenta** ser el
-expediente y muestra 15 de 32, sin decirlo.
+- **El resumen declara éxito sobre la pérdida.** `organizar` imprimió
+  `Acciones: {'COPY': 31, 'SKIP_DEDUP': 1}` con 15 ficheros en disco: `COPY` cuenta **copias
+  intentadas**, no ficheros escritos. Mientras eso no cambie, ninguna corrida futura avisará.
+- **No se pierde información, se pierde el acceso.** El `INDICE.md` conserva las 32 entradas y
+  enlaza al original de `00_Input` y a su MD. Lo que engaña es la carpeta poblada, que aparenta
+  ser el expediente y muestra la mitad.
 
-**Relación con `#67`.** Su tercer defecto (subcarpetas por fuente en vez de estructura plana)
-sigue abierto y se vio igual aquí (`Sala lectura/Drive E&V/`, `Sala lectura/Manual/`). La colisión
-de nombres se daba por cubierta «por el sufijo SHA»: **el sufijo lo llevan los MD, no los ficheros
-poblados**.
-
-**Vía mínima.** Sufijo `sha256[:6]` en el nombre de destino cuando el nombre canónico ya existe
-con otro hash, y que el resumen cuente ficheros escritos, no copias intentadas.
+**Y una decisión de contrato que hay que cerrar de paso**, porque hoy hay dos literales vivos y
+distintos: la skill `organizar-sala-lectura` v1.3 (Paso 2) manda desambiguar con `_2`/`_3`,
+mientras `#67.b` manda `__<sha8>`. El sufijo por hash es el que aguanta que el grupo **crezca**
+—un `_2` puede pasar a `_3` y dejar sin referente la cita del letrado a un fichero—, así que el
+literal que sobra es el de la skill. Que lo corrija el PR que implemente el arreglo.
 
 ## 216. El representante del dedup puede esconder el documento nuclear: el encargo firmado no aparece en el índice
 
