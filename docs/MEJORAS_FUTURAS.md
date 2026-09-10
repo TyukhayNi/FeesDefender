@@ -9596,3 +9596,249 @@ certificado» sin intervención manual. Mientras sea uno al mes, el scratchpad c
 el módulo.
 
 **Misma frontera que `MEJORAS #209`** («crear actuaciones en el CRM no tiene helper: la receta vive en prosa y se reescribe a mano cada vez»), que entró el mismo día por el PR #316. Son dos ejemplos de una sola propiedad mal cerrada: **el contrato del CRM se documenta y no se encapsula**, así que cada operación nueva se reescribe a mano contra la prosa. Si se aborda una, abordar la frontera: un módulo por familia de operación, no un helper por caso.
+
+---
+
+## 213. `_tiempos.jsonl` mide el reparto del OCR pero no registra las PÁGINAS, que es lo que decide si paralelizar
+
+**Medido el 2026-09-10 en la apertura de W-030TZY** (68 documentos por la ruta `ocr`,
+2.286,5 s, el 95,9 % de toda la sala de máquina).
+
+El gancho `on_documento` de `core/sala_maquina.ejecutar` existe con un propósito escrito en su
+propio docstring:
+
+> «Existe porque nadie había medido dónde se va el tiempo del montaje, y sin ese reparto no se
+> puede decidir si paralelizar el OCR compra algo: `ocr_pdf` no pasa `jobs`, así que ocrmypdf ya
+> paraleliza por página con todos los núcleos, y el paralelismo externo puede ser un salto o ser
+> nada **según el reparto de páginas del caso**.»
+
+**El registro no lleva ese reparto.** El campo `paginas` de cada fila no es un contador: es la
+etiqueta de rango del split (`"1-3"`), y viene **vacía en 64 de las 68 filas** de OCR. Sumarlo da
+4 páginas para un caso que tiene 203. La magnitud que el docstring nombra como decisoria es
+justo la que el instrumento no guarda.
+
+Para poder calcular los 11,3 s/página de esta apertura hubo que **abrir con `pypdf` los 68 PDF de
+`01_OCR/`** y cruzarlos por `slug`. Funciona, pero es un rodeo: el dato existía en el momento de
+medir y se tiró.
+
+**Por qué importa más que un campo de más.** La media de 11,3 s/página esconde una dispersión de
+**35×**: la escritura de 44 páginas salió a 1,3 s/página (59,4 s) y un escaneo de 1 página a
+45,3 s. Con el número de páginas se ve de un vistazo que el coste lo manda la **calidad del
+escaneo**, no el volumen; sin él, la única lectura posible es «este documento tardó mucho», que
+no se puede accionar.
+
+**Remedio.** `on_documento` ya recibe las filas de cobertura, y `DocCobertura` sí tiene `paginas`
+para la ruta PDF. Añadir a la fila del tiempo un `n_paginas` entero (y renombrar o dejar como
+está el `paginas` textual, que es otra cosa: el rango del segmento). Coste: una línea y su test.
+
+**Cómo comprobarlo sin engañarse.** Correr `apply` sobre un caso sintético con un PDF de 3
+páginas y otro de 1, y afirmar que la suma de `n_paginas` del `_tiempos.jsonl` es 4. Hoy sale 0.
+
+**Disparador de promoción.** Bajo por sí solo; **medio si se retoma la pregunta del
+paralelismo**, porque sin este campo la pregunta no se puede contestar con el registro que se
+construyó para contestarla. Ver `MEJORAS #216`, que es la respuesta que se obtuvo pese a él.
+
+---
+
+## 214. La CRONOLOGÍA no marca `(*)` las fechas que vienen de `mtime`, y en esta apertura eran el 38 %
+
+**Medido el 2026-09-10 en W-030TZY**, sobre `01_Procesado/indice_documental.yaml` (166 entradas)
+y `01_Procesado/Sala lectura/CRONOLOGIA.md` (174 líneas).
+
+El canon de clasificación lo dice sin matices
+(`.claude/skills/organizar-sala-lectura/references/taxonomia_ev.md`):
+
+> Jerarquía de fecha del documento: (a) otorgamiento/firma en el cuerpo → (b) otra fecha
+> inequívoca del contenido → (c) fecha del nombre del fichero → (d) `0000-00-00`.
+> **`mtime` NO es fuente; si se usa como aproximación, marcar `(*)`** en CRONOLOGIA y _MANIFIESTO.
+
+Contado:
+
+| | |
+|---|---|
+| entradas con `fecha_fuente: contenido` | 103 |
+| entradas con `fecha_fuente: mtime` | **63 (38 %)** |
+| líneas de `CRONOLOGIA.md` con `(*)` | **0** |
+
+El catálogo **sí sabe** de dónde salió cada fecha —guarda `fecha_fuente`— y el renderizador de la
+cronología **no lo mira**. El resultado es una tabla cronológica en la que 63 filas afirman una
+fecha de documento que en realidad es la fecha en que alguien tocó el fichero en el Drive.
+
+**El caso que lo destapó, y que además prueba que el escalón (c) se salta.** Tres actas de la
+comunidad de propietarios, con la fecha **en el nombre del fichero**:
+
+| Fichero | Fecha que puso el pipeline | Fecha real (del nombre) |
+|---|---|---|
+| `Acta Extraordinaria 11-06-2025.pdf` | 2025-06-11 ✅ | 2025-06-11 |
+| `Acta Extraordinaria 23／10／2018.pdf` | **2025-11-25** ❌ | 2018-10-23 |
+| `Acta ordinaria 8-01-2025.pdf` | **2025-11-21** ❌ | 2025-01-08 |
+
+Dos de tres cayeron a `mtime` teniendo el escalón (c) disponible. Y la primera de las dos falla
+por una causa que **se fabrica el propio pipeline**: el intake sustituye la `/` prohibida por la
+barra de ancho completo `／` (U+FF0F), y el parser de fechas del nombre no la reconoce. La
+segunda falla por el día de un solo dígito (`8-01-2025`).
+
+**Por qué importa.** Una cronología es el documento del que se leen los hechos para construir el
+relato, y aquí presentaba **2025-11-25 para un acta de 2018** — siete años de desviación, en un
+asunto cuyo fondo es precisamente qué se sabía y cuándo sobre el uso administrativo del inmueble.
+Un error así no se detecta leyendo la cronología: se detecta abriendo el documento, que es lo que
+la cronología existe para evitar.
+
+**Remedio, en dos piezas separables.**
+1. **Declarar lo aproximado** (barato, cierra el agujero de confianza): el renderizador lee
+   `fecha_fuente` y añade `(*)` cuando vale `mtime`, con la leyenda al pie. No cambia ninguna
+   fecha; deja de afirmar lo que no sabe.
+2. **Subir el escalón (c)** (arregla la causa): que el parser del nombre reconozca `／` (U+FF0F)
+   —y, ya que se toca, el resto de sustituciones que hace el propio intake— y los días de un
+   dígito.
+
+La (1) va primero: es la que convierte un dato falso en un dato marcado, y no depende de acertar
+con el parser.
+
+**Cómo comprobarlo sin engañarse.** Un caso sintético con un fichero cuyo nombre lleve fecha y
+cuyo `mtime` sea otro: afirmar (a) que la fecha elegida es la del nombre y (b) que si se fuerza el
+camino `mtime`, la línea de la cronología lleva `(*)`. Hoy la segunda aserción falla en cualquier
+caso real, porque no hay una sola `(*)` en todo el fichero.
+
+**Disparador de promoción.** **Alto.** No falla en rojo: produce una cronología plausible y
+equivocada, que es el peor modo de fallo para un documento que se lee y no se audita. Misma
+familia que [[feedback-el-ok-describe-el-paso-no-el-expediente]].
+
+---
+
+## 215. `sala_lectura organizar` dice «Sala de lectura organizada» habiendo escrito 2 de los 4 artefactos que la skill contrata
+
+**Medido el 2026-09-10 en W-030TZY.** Con la worklist rellena, `python -m scripts.sala_lectura
+organizar --case W-030TZY` terminó en 15,0 s con código 0 y este mensaje:
+
+```
+Sala de lectura organizada. Acciones: {'COPY': 149, 'SKIP_DEDUP': 17}
+```
+
+Lo que hay en `01_Procesado/Sala lectura/` después:
+
+| Artefacto | La skill lo contrata | Existe |
+|---|---|---|
+| `INDICE.md` | sí | ✅ 40.857 bytes |
+| `CRONOLOGIA.md` | sí | ✅ 32.080 bytes |
+| `_MANIFIESTO.md` | sí | ❌ **no existe en todo el expediente** |
+| `indice_documental.yaml` | sí, **dentro de `Sala lectura/`** | ⚠️ existe, pero en `01_Procesado/` |
+
+`SKILL.md` los enumera cuatro veces (la descripción, el árbol de la línea 124, la re-aplicación de
+la 183 y el cierre de la 275). `_MANIFIESTO.md` no lo escribe **nadie**: en todo `core/` y
+`scripts/` la única mención es `core/config.py:415`, que lo lista como fichero protegido — o sea,
+el repo sabe cuidar un fichero que ninguna ruta produce.
+
+**Las dos mitades del problema son distintas y conviene no mezclarlas.**
+- La **ubicación** del `indice_documental.yaml` puede ser simplemente que el árbol de la skill
+  esté rancio; se decide mirando cuál de los dos es el sitio bueno y se corrige el que sobre.
+- La **ausencia** del `_MANIFIESTO.md` no es una divergencia de documentación: es una salida
+  contratada que no se produce, y encima es **uno de los dos sitios donde el canon manda marcar
+  las fechas aproximadas** (`MEJORAS #214`). Las dos entradas se tocan aquí.
+
+**Por qué importa.** El mensaje de éxito describe lo que el paso hizo (copiar 149 ficheros), no lo
+que el expediente tiene. Quien lee «organizada» da por montada una sala de lectura que le falta el
+manifiesto, y no hay ninguna verja que lo mire. Es exactamente
+[[feedback-verificar-por-resultado-en-mi-herramienta]]: el «OK» de la propia herramienta es un
+status, no un resultado.
+
+**Remedio.** Al final de `organizar`, comprobar la existencia de los artefactos contratados y
+**nombrar los que faltan** antes de imprimir el resultado — o escribir el `_MANIFIESTO.md`, si la
+decisión es que la ruta CLI también lo produce. Lo que no cabe es seguir diciendo «organizada».
+
+**Cómo comprobarlo sin engañarse.** Un test que corra `organizar` sobre un caso sintético y
+afirme la existencia de los cuatro. Hoy sale rojo en dos, y ese rojo es la medida de la deuda.
+
+**Disparador de promoción.** Medio. Sube a alto si se cierra `MEJORAS #214`, porque su remedio (1)
+manda marcar `(*)` en un fichero que no existe.
+
+---
+
+## 216. El paralelismo por documento del OCR está REFUTADO, y `rotate_pages` cuesta el 28 % pero es un seguro que no se puede quitar
+
+**Medido el 2026-09-10** con la apertura de W-030TZY delante, sobre `core.anon.ocr.ocr_pdf`, en la
+máquina de 12 núcleos. Esta entrada existe **para que nadie vuelva a proponer estas dos cosas sin
+leer los números**: las dos parecen ahorros evidentes y ninguna lo es.
+
+**Contexto.** El OCR fue el **95,9 %** de la sala de máquina (2.286,5 s de 2.383,4 s) y el
+**82 %** de todo el tiempo de máquina de la apertura. Cualquier optimización que no sea del OCR
+optimiza el 18 % del problema.
+
+### (a) Paralelismo por documento — REFUTADO
+
+Hipótesis razonable y falsa: como 48 de los 68 documentos tienen **una sola página** y suman el
+33,9 % del tiempo, y `ocrmypdf` paraleliza **por página**, esos 48 estarían corriendo en 1 núcleo
+de 12 y un pool de procesos los repartiría.
+
+Medido con 2 documentos, serie contra pool de 2 procesos, 3 repeticiones alternando el orden:
+
+| | mediana |
+|---|---|
+| serie | 26,5 s |
+| pool de 2 | 24,1 s |
+| **paralelo / serie** | **0,91** |
+
+0,91, no 0,50. **Los núcleos no estaban ociosos**: `ocrmypdf`/Tesseract ya usan más de un hilo
+dentro de una página (OpenMP, más las etapas de deskew, rotación y optimización). El paralelismo
+externo no compra nada aquí, y una proyección tipo LPT que sí lo suponía daba un «74,9 % de ahorro
+con 4 procesos» que es **falso** y quedó retirado.
+
+### (b) Las cuatro palancas de configuración — solo una mueve, y es un seguro
+
+Mismo documento, 4 repeticiones interleaved, con **control de fidelidad del texto** (un ahorro que
+cambia el texto extraído no es un ahorro, es pérdida de prueba):
+
+| Condición | mediana | vs base | similitud |
+|---|---|---|---|
+| base (`spa+cat+rus`, deskew, rotate, optimize 1) | 12,3 s | 1,00× | referencia |
+| **sin `rotate_pages`** | **8,9 s** | **0,72×** | 1,000 |
+| sin `rus` (`spa+cat`) | 11,8 s | 0,96× | 1,000 |
+| `optimize=0` | 12,1 s | 0,98× | 1,000 |
+| sin `deskew` | 12,2 s | 0,99× | 1,000 |
+
+El stack de idiomas, el deskew y el optimize **no cuestan nada medible**, pese a que `spa+cat+rus`
+es el default de `ocr_pdf` y **ningún llamador lo sobreescribe** (0 apariciones de `idiomas=` fuera
+de la definición). Sale un 28 % de `rotate_pages`, que sobre esta apertura serían ~640 s.
+
+### (c) El control positivo, que es el que decide
+
+Los 963 caracteres idénticos de la tabla anterior se midieron sobre una página **recta**: ahí
+`rotate_pages` no tiene nada que hacer, así que el instrumento **no podía dar el otro valor**. Con
+la página girada de verdad —rasterizada a 200 dpi y girada 90°, que es lo que produce una foto de
+móvil apaisada, y este corpus tiene fotos de móvil— el veredicto se invierte:
+
+| Documento | `rotate_pages` | mediana | chars | similitud vs recto |
+|---|---|---|---|---|
+| recto | True | 5,6 s | 896 | 1,000 |
+| recto | False | 4,1 s | 896 | 1,000 |
+| girado 90° real | True | 5,1 s | 898 | **0,987** |
+| girado 90° real | **False** | 4,3 s | 1014 | **0,650** |
+
+Con la opción puesta, el texto de la página girada se recupera **igual que si estuviera recta**
+(0,987). Sin ella, se degrada a 0,650. **El 28 % es la prima del seguro, no un ahorro**, y
+`rotate_pages` no se puede quitar globalmente.
+
+**Un aviso metodológico que costó una medición.** El primer intento de este control giró el PDF con
+`pypdf.rotate`, que escribe el flag `/Rotate` y **deja los píxeles rectos**: eso no es un escaneo
+girado sino un metadato, y devolvió números incoherentes (similitud 0,020 **con** la opción y 0,644
+sin ella). El control válido exige rasterizar. Misma familia que
+[[feedback-el-control-positivo-mide-otra-poblacion]].
+
+**Y otro sobre el ruido.** La primera pasada, sin repeticiones, dio «quitar `cat+rus` ahorra un
+51 %». La réplica dio lo contrario. La misma condición varió entre 21,3 s y 26,8 s en tres
+repeticiones seguidas, y entre 12,3 s y 26,5 s según lo que estuviera corriendo la máquina.
+**Con este ruido, una corrida por condición no mide nada**: todo lo de arriba son medianas de 3-4
+repeticiones alternando el orden.
+
+**Lo que queda abierto, y es donde está el tiempo.** Si `rotate_pages` es obligatorio y las otras
+tres palancas no mueven, el OCR **no tiene botón barato**: sus 38 minutos son intrínsecos a
+OCR-izar 203 páginas de escaneos de calidad desigual. La vía que queda no es correr más rápido
+sino **no bloquear**: el OCR ya corre en background y lo caro no es que dure, es **repetirlo**
+(el `[APER-39]` de W-02VUDR: ~1h40 de OCR tirado). Antes de volver a tocar la configuración,
+medir cuántas aperturas repiten el OCR y por qué.
+
+**Disparador de promoción.** Ninguno: esto es un **resultado negativo archivado**, no una tarea.
+Se promueve solo si alguien propone paralelizar el OCR o tocar sus flags — y entonces lo que
+procede es leer esta entrada, no repetir el experimento.
+
+---
