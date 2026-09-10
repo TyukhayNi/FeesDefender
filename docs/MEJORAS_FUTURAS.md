@@ -9429,7 +9429,138 @@ práctica. Sube si aparece un segundo consumidor de solo lectura, porque entonce
 que duplicarlo otra vez.
 
 ---
-## 209. Generar un documento desde plantilla del CRM no vive en `core/`: se improvisa cada vez
+
+## 209. Crear actuaciones en el CRM no tiene helper: la receta vive en prosa y se reescribe a mano cada vez
+
+**Qué pasa.** El 2026-09-10 se creó a mano, con `urllib` en un heredoc, una actuación
+`TA - CONTROL DICTADO SENTENCIA` colgada del expediente judicial de `W-02VEKE`, y se corrigió su
+cuantía. Funcionó, y quedó documentado en `INTEGRACION_SUDESPACHO.md §15.6`. Pero **no hay ni una
+función en `core/` que lo haga**: `core/sudespacho_create.py` crea expedientes, clientes,
+contrarios y colaboradores; `core/sudespacho_relations.py` vincula; **actuaciones no está**.
+
+**Por qué importa ahora y no antes.** Nikolai avisó ese mismo día de que va a pedir crear
+actuaciones **cada vez más**, y nombró el destino: la **F3 del intake de procuradores**, que tiene
+que crear la actuación **derivada de la notificación recibida**. Es decir, esto deja de ser un
+gesto manual y pasa a ser un paso de pipeline.
+
+**Los cinco pasos que el helper tiene que encapsular** —y cada uno es un sitio donde equivocarse:
+
+1. **Resolver `(elemento, id)` del expediente**, no el número a secas. En `W-02VEKE`, `464` es de
+   `extrajudiciales` y `540` de `expedientes_judiciales`, y `GET expedientes_judiciales/464`
+   devuelve **200 con un expediente de otro caso**. El par correcto está en `_caso.md`, bajo
+   `sudespacho_expedientes`.
+2. **Aprender el `id_predefinido`** filtrando una instancia real por su asunto literal: el
+   catálogo de predefinidas **no se expone como elemento REST**. Medido: `TA - CONTROL DICTADO
+   SENTENCIA` → `84`.
+3. **`profesional_asignado` es el username** (`ana.velastegui`), no el id de `empleados`.
+4. `POST element_register/actuaciones`.
+5. `POST relation_element/{elemento}/{exp}` con `["right.actuaciones.{id}"]` — **sin esto la
+   actuación queda huérfana y el paso 4 devuelve `201` igual**.
+
+**Y el verificador, que es la mitad del valor.** La comprobación válida es releer **del lado del
+expediente** con el filtro `associated`; filtrar por el `id` de la actuación devuelve **404**
+aunque exista. Un helper que devuelva el id sin comprobar la vinculación reproduce exactamente el
+modo de fallo que documenta el §15.2.
+
+**Forma candidata.** `core/sudespacho_actuaciones.py` con dos funciones puras y una de IO:
+`resolver_predefinida(asunto) -> id | None` (lectura), `crear_actuacion(exp_elemento, exp_id, ...)
+-> Actuacion` (los dos POST más la relectura de verificación, devolviendo el estado real de la
+vinculación y no solo el id), y un DTO con los campos que el CRM acepta de verdad. Cablearlo
+después en F3.
+
+**Cómo comprobarlo sin engañarse.** El test tiene que cubrir el caso en que **el segundo POST
+falla y el primero no**: hoy eso deja basura en el CRM sin que nadie se entere. Y un test que
+muerda la confusión de elementos: pedir `expedientes_judiciales` con un id que solo existe en
+`extrajudiciales` **no** debe dar por bueno el registro que vuelva.
+
+**Disparador de promoción.** Alto en cuanto se retome **F3 del intake de procuradores** —es su
+prerequisito real, no un adorno—, o en cuanto la creación manual se repita una tercera vez. Hasta
+entonces la prosa del §15.6 basta para hacerlo a mano sin volver a descubrir las trampas.
+
+---
+
+## 210. `transcribir_audio` sale con código 0 cuando le falta su dependencia, e imprime el resumen como si hubiera transcrito
+
+**Medido el 2026-09-10**, con un juicio a hora y media y quince audios que hacían falta para la
+vista. `python -m scripts.transcribir_audio <carpeta> -s <salida>` con el intérprete del venv del
+repo —que **no** tiene `faster-whisper`, porque vive en el venv dedicado `~/.venvs/asr`— imprimió:
+
+```
+ModuleNotFoundError: No module named 'faster_whisper'
+15 fichero(s) · modelo large-v3-turbo · diarización no
+[exited with code 0]
+```
+
+**Tres cosas mal en cuatro líneas.** El traceback va a stdout/stderr pero **no cambia el código de
+salida**; la línea de resumen dice «15 fichero(s)» cuando se generaron **cero**; y `exit 0` hace
+que cualquier `&&` posterior —o un paso de pipeline— dé el trabajo por hecho. Lo que delató el
+fallo no fue el código de salida: fue contar los `.md` de la carpeta de salida y encontrar 0.
+
+**Es la familia de [[feedback-no-lo-se-no-es-no-hay]] aplicada al código de salida**, y el propio
+repo ya la remedió una vez en `preparar-residuo` con la decisión escrita: *«el estado "no pude
+mirar" sale con código distinto de 0. Un aviso con salida 0 es la versión engañosa»*. Aquí no se
+instaló. Ver también [[feedback-verificar-por-resultado-en-mi-herramienta]].
+
+**Remedio.** Tres líneas, y las tres importan:
+
+- El `ImportError` de `faster_whisper` sale con **código propio distinto de 0** y con el mensaje
+  orientado a la causa: *«falta faster-whisper; este script se corre con `~/.venvs/asr/Scripts/python.exe`,
+  ver `docs/INSTALACION_ASR.md §2`»*. Hoy el remedio está en la doc y el script no lo dice.
+- La **línea de resumen se emite al final y con lo realmente producido**, no con lo enumerado al
+  principio: «15 enumerados, 0 transcritos» en vez de «15 fichero(s)».
+- Si `transcritos == 0` y `enumerados > 0`, **salida distinta de 0** aunque no haya habido
+  excepción.
+
+**Cómo comprobarlo sin engañarse.** El test tiene que invocar el script con un intérprete o un
+entorno **sin** la dependencia y afirmar que el código de salida **no es 0**; verlo rojo contra el
+código actual antes de arreglarlo. Un test que solo compruebe el camino feliz pasa hoy y pasaría
+después.
+
+**Disparador de promoción.** Alto en cuanto la transcripción se encadene a otro paso
+(`MEJORAS #205`, ruta `audio` en la sala de máquina): ahí un `exit 0` mentiroso deja el expediente
+sin transcripciones y con el pipeline diciendo que fue bien. Suelto y a mano, se nota enseguida.
+
+---
+
+## 211. `registrar_outputs` no actualiza la fila que ya existe en el `_index.md`, y devuelve éxito igual
+
+**Medido el 2026-09-10.** Tras sustituir `05_Procedimiento/CONCLUSIONES_W-02VEKE.docx` por la
+versión usada en la vista —118.378 bytes frente a 19.793, otro `sha256`— se volvió a registrar con
+`registrar_outputs.py` pasándole `estado: "presentado"`, la fecha del día y las fuentes nuevas. El
+script imprimió sus dos líneas de éxito y **no tocó la fila**: el `_index.md` seguía diciendo
+
+```
+| `CONCLUSIONES_W-02VEKE.docx` | conclusiones | actora | 2026-09-09 | … | borrador |
+```
+
+para un fichero que ya era el definitivo. Hubo que editar la fila **a mano**.
+
+**Por qué es más grave de lo que parece.** El `_index.md` es el manifiesto del que se lee «qué hay
+en esta fase del expediente», y aquí afirmaba `borrador` de un documento presentado en juicio. Es
+[[feedback-corregir-el-doc-y-no-su-indice]] con el agravante de que **el registrador es justo la
+herramienta que existe para que el índice no quede rancio**, y su idempotencia por nombre lo
+convierte en lo contrario: un no-op silencioso.
+
+**El modo de fallo, en una frase:** idempotencia por **clave** (el nombre) cuando el contenido ya
+ha cambiado, sin comparar el `sha256` ni avisar.
+
+**Remedio candidato.** Al encontrar la fila, comparar: si el `sha256` del fichero difiere del
+registrado —o si difieren `estado`/`fuentes`/`meta`—, **actualizar la fila y decirlo**
+(`[registrar_outputs] fila actualizada: CONCLUSIONES_W-02VEKE.docx (borrador → presentado)`). Si
+todo coincide, el no-op actual es correcto, pero también debería decirse. Requiere que el índice
+guarde el `sha256`, que hoy no está en la tabla: eso es parte del arreglo, no un extra.
+
+**Cómo comprobarlo sin engañarse.** Registrar dos veces el **mismo nombre con contenido
+distinto** y afirmar que la segunda deja la fila con el estado nuevo; verlo rojo contra el código
+actual. Un test que registre dos veces el mismo fichero idéntico pasa hoy.
+
+**Disparador de promoción.** Medio-alto: cualquier documento que se rehaga tras su primer
+registro —conclusiones, minutas, escritos que van por versiones— deja el índice mintiendo. Y
+`preparacion-juicio-oral` y `escritos-judiciales` **registran por nombre canónico estable**, que
+es exactamente el caso que lo dispara.
+
+---
+## 212. Generar un documento desde plantilla del CRM no vive en `core/`: se improvisa cada vez
 
 **Qué pasa.** El 2026-09-10 se generó la respuesta al requerimiento del W-04A6LI desde la
 plantilla 243 del CRM y se subió al gestor documental del expediente 638, todo por API y todo
@@ -9463,3 +9594,5 @@ una llamada.
 generar un documento desde plantilla, o si se quiere encadenar «generar → subir → enviar
 certificado» sin intervención manual. Mientras sea uno al mes, el scratchpad cuesta menos que
 el módulo.
+
+**Misma frontera que `MEJORAS #209`** («crear actuaciones en el CRM no tiene helper: la receta vive en prosa y se reescribe a mano cada vez»), que entró el mismo día por el PR #316. Son dos ejemplos de una sola propiedad mal cerrada: **el contrato del CRM se documenta y no se encapsula**, así que cada operación nueva se reescribe a mano contra la prosa. Si se aborda una, abordar la frontera: un módulo por familia de operación, no un helper por caso.

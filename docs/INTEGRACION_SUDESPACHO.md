@@ -2035,6 +2035,92 @@ huérfanos** caen justo ahí: lista acordada endpoint por endpoint, o nada.
 > ℹ️ **Contexto de permisos (2026-08-03):** `Delete` se retiró de los cuatro `api.key.*`, así que un
 > sondeo accidental ya no puede borrar. `facturas`-Create **sigue ON**. Detalle en la referencia común §3.
 
+### 15.6 Receta completa y verificada de punta a punta (2026-09-10, W-02VEKE)
+
+Corrida real: crear `TA - CONTROL DICTADO SENTENCIA` para Ana a dos meses vista sobre el
+expediente judicial de un caso, y corregir su cuantía. Salió bien, pero **cuatro cosas de esta
+misma sección estaban mal o faltaban**. Quedan aquí porque el flujo se va a repetir: el intake de
+procuradores (`F3`) tiene que crear una actuación **derivada de la notificación recibida**, y es
+exactamente este camino.
+
+**Los cinco pasos, en orden, y ninguno es opcional:**
+
+1. **Aprender el `id_predefinido` de una instancia real, no inventarlo.** El catálogo de
+   predefinidas **no se expone como elemento REST** (`/api/elements` devuelve 89 y ninguno es de
+   predefinidas). Se lee de actuaciones ya creadas con esa plantilla:
+
+   ```
+   GET /api/element_registries/actuaciones?page=1&itemsPerPage=10
+       &properties[0]=Subject&properties[1]=id_predefinido
+       &filterGroup[condition]=AND
+       &filterGroup[filterGroups][0][condition]=AND
+       &filterGroup[filterGroups][0][filters][0][operator]=like
+       &filterGroup[filterGroups][0][filters][0][property]=Subject
+       &filterGroup[filterGroups][0][filters][0][value]=CONTROL%20DICTADO
+       &return_totals=true
+   ```
+
+   Ids **medidos** el 2026-09-10: `TA - CONTROL DICTADO SENTENCIA` → **84**. Una variante
+   histórica (`TJ - IMPULSO - CONTROL - DICTADO SENTENCIA…`) usa **66**: si el asunto no casa
+   exacto, el `id_predefinido` puede ser otro, así que **filtra por el asunto literal del catálogo
+   del manual** (`docs/MANUAL_DESPACHO.md`) y no por una aproximación.
+
+2. **`profesional_asignado` es el USERNAME, no el id de empleado.** `ana.velastegui`,
+   `Nikolai_Tyukhay`. El id de `empleados` (Ana es el 8) **no vale aquí**. Los siete empleados con
+   su username salen de
+   `GET /api/element_registries/empleados?page=1&itemsPerPage=60&properties[0]=nombre&properties[1]=email`.
+
+3. **Resolver el expediente por su ELEMENTO, no por el número a secas.** Cada elemento numera
+   aparte: en W-02VEKE, `464` es de `extrajudiciales` y `540` de `expedientes_judiciales`, y
+   `GET expedientes_judiciales/464` devuelve **un expediente de otro caso** —con 200 y todo—. El
+   par `(elemento, id)` está en `00_Input/_caso.md` bajo `sudespacho_expedientes`; úsalo, y
+   contrasta con algo del propio expediente (el conteo de documentos, la referencia) antes de
+   escribir.
+
+4. **POST de la actuación** (§15.2). Confirmado con `Estado: "Planificado"`,
+   `fecha_vencimiento` en ISO con offset (`2026-11-10T00:00:00.000+01:00`), `facturar`/`obligacion`
+   como booleanos, `id_predefinido` como entero. `201 {"id": N, "message": "Created!"}`.
+
+5. **POST de vinculación** (§15.3) — `POST /api/relation_element/expedientes_judiciales/{exp_id}`
+   con `["right.actuaciones.{id}"]`. **Sin este paso la actuación queda huérfana**, y el POST del
+   paso 4 devuelve 201 igual: el status no distingue una actuación colgada de una perdida.
+
+6. **Verificar POR RESULTADO, releyendo del lado del expediente**, que es lo único que prueba que
+   la vinculación funcionó:
+
+   ```
+   GET /api/element_registries/actuaciones?…
+       &filterGroup[filterGroups][0][filters][0][operator]=associated
+       &filterGroup[filterGroups][0][filters][0][property]=left.expedientes_judiciales.id
+       &filterGroup[filterGroups][0][filters][0][value]={exp_id}
+   ```
+
+   Un `GET element_registries/actuaciones` filtrando por `id` de la actuación devuelve **404**
+   aunque la actuación exista: no sirve como comprobación. La del lado del expediente sí.
+
+**Dos correcciones a la documentación de esta misma página:**
+
+- **La forma de la respuesta de `/api/element_registries/{element}` NO es `hydra:member`** (como
+  dice §8): es `{"totalItems", "currentPage", "itemsPerPage", "items"}`, y cada ítem trae
+  `values[]` con `{property: {name}, value}` — hay que aplanar. Lo de `hydra:` será de otra
+  versión del backend o de otro tenant.
+- **El operador de filtro por texto es `like`.** `contains` devuelve **404** y `search` no
+  existe. `equals` y `associated` funcionan como está documentado.
+
+**`PUT element_register/{element}/{id}` es parcial de verdad — medido, no supuesto.** Corregir un
+solo campo (`{"cuantia": "45405.25"}`) sobre un expediente con 23 campos poblados no perdió
+ninguno ni cambió ningún otro. Comprobado capturando los 27 campos antes y después y comparándolos
+uno a uno. Aun así: **captura el «antes» a fichero antes de cada PUT**, que es lo que permite
+revertir.
+
+**Y una trampa de dominio, no de API:** en `expedientes_judiciales` la cuantía vive en `cuantia`
+**y** hay un `total` con el mismo valor, junto a `saldo_facturado` / `total_pendiente` /
+`saldo_cobrado` / `saldo_pendiente`. Corregir solo `cuantia` deja la cifra vieja en `total`, y
+quien facture o tase costas leyendo `total` arrastra el error. **No se toca `total` sin saber si es
+derivado de facturación**: esa decisión es de administración, no de quien corrige la cuantía.
+
+
+
 ---
 
 ## 16. El elemento `poderes` — leer, escribir y relacionar (confirmado 2026-09-08)
