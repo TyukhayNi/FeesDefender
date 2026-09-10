@@ -9761,10 +9761,33 @@ convierte en `fallo`, corta la secuencia y devuelve `bloqueado` — con el pull 
 No es intermitente por azar: reprodujo dos rondas seguidas, cada vez con un fichero distinto de
 esos once.
 
-**Mitad 2, la cara — cada ronda duplica.** `rclone` compara el remoto contra el **backend local**,
-o sea contra lo que el montaje enseña: ve que `CONTRATO FIRMADO` no está (está `CONTRATO
-FIRMADO.pdf`) y lo vuelve a traer **en cada pull**; el montaje resuelve la colisión depositando
-`CONTRATO FIRMADO (1).pdf`. Dos rondas
+**Mitad 2, la cara — cada ronda QUE FUERZA EL PULL duplica.** `rclone` compara el remoto contra el
+**backend local**, o sea contra lo que el montaje enseña: ve que `CONTRATO FIRMADO` no está (está
+`CONTRATO FIRMADO.pdf`) y lo vuelve a traer; el montaje resuelve la colisión depositando
+`CONTRATO FIRMADO (1).pdf`.
+
+**La precisión importa, y se midió aparte (2026-09-10).** Esta entrada decía «en cada pull», y eso
+se había concluido de **dos** rondas — que no distinguen «re-copia una vez y se estabiliza» de
+«re-copia sin techo». Lo levantó una sesión hermana, que sobre otro caso (W-030TZY, 5 ficheros
+sin extensión) midió **+5 en la segunda ronda y 0 en la tercera** y concluyó que se estabilizaba.
+
+Se resolvió **sin escribir en el expediente**, con `rclone copy --dry-run` y los mismos flags del
+pull, contra el destino ya limpio: **listaría 7 ficheros para copiar**, exactamente los siete
+extensionless que se habían retirado. Es decir, **no se estabiliza**: mientras el nombre remoto no
+exista en local, la comparación falla en cada consulta.
+
+Las dos medidas se reconcilian por el `.pulled`: **`pull_drive_ev` salta el pull** si el marcador
+existe y no se fuerza, y **solo `--modo v1` pasa `force=True`**. Una tercera ronda que no fuerce no
+consulta el remoto, así que su «0 depositables» no dice «se estabilizó», dice «no hubo pull» — los
+dos números son compatibles con ambas historias. Redacción exacta, por tanto: **crece con cada
+ronda que fuerza el pull**, y V1 las fuerza todas por diseño (la spec llama al skip por `.pulled`
+«falso punto fijo»). Para V1 la gravedad no baja; en modo `libre` depende de si se fuerza.
+
+> **Y un aviso de método que vale más que el defecto:** contar los duplicados por el sufijo
+> ` (N)` **sobreestima**. En este caso cuatro ficheros traían el `(N)` **de origen**, y en el de la
+> sesión hermana, de 12 con ese sufijo, solo 5 eran imputables al pull. El discriminante fiable es
+> la diferencia contra el listado del remoto, normalizando a NFC, y verificar el `sha256` del
+> gemelo antes de retirar nada. Dos rondas
 dejaron **7 duplicados** en el expediente (65 ficheros locales contra 58 remotos). Y V1 pulsa el
 pull **con `force=True` en cada ronda por diseño** (spec: el skip por `.pulled` es un «falso punto
 fijo»), así que el expediente se ensucia de forma lineal con el número de rondas, en silencio: el
@@ -10151,7 +10174,7 @@ decisión es que la ruta CLI también lo produce. Lo que no cabe es seguir dicie
 > hallazgo es este, y dos casos independientes valen más que dos números.
 >
 > Un dato que el segundo caso añade: el manifiesto habría sido además el único sitio donde se
-> habrían listado los documentos que `poblar` pisa por colisión de nombre canónico (`#225`). Cuando
+> habrían listado los documentos que `poblar` pisa por colisión de nombre canónico (`#226`). Cuando
 > se escriba, esa lista es contenido obligado, no un adorno.
 
 **Cómo comprobarlo sin engañarse.** Un test que corra `organizar` sobre un caso sintético y
@@ -10250,7 +10273,60 @@ Se promueve solo si alguien propone paralelizar el OCR o tocar sus flags — y e
 procede es leer esta entrada, no repetir el experimento.
 
 ---
-## 223. `--direccion` es el único flag de identidad que se teclea a mano, y el nombre de la carpeta de E&V ya lo trae
+
+
+## 223. Ejecutar `sync_cuestionario_from_canon.py` —el comando que la propia skill manda correr— DEGRADA la skill
+
+**Qué pasa.** El `SKILL.md` de `viabilidad-prerelleno` dice de su cuestionario: «vista **GENERADA**
+desde `data/_plantillas/cuestionario_viabilidad.yaml`; regenerar con
+`scripts/sync_cuestionario_from_canon.py`, no editar a mano». Correr ese comando hoy produce una
+vista **peor** que la commiteada.
+
+**Medido el 2026-09-10** (comparando la salida del script contra el fichero en `main`):
+
+| | vista commiteada | tras regenerar |
+|---|---|---|
+| preguntas | 88 | 90 |
+| `clase_fuente` poblado | **58 documental + 30 testifical** | **0 — `null` en las 90** |
+
+Las dos diferencias son daño:
+
+1. **`clase_fuente: null` en todas.** Es el campo con el que el paso 3 de la skill enruta cada
+   pregunta a documental o testifical, y por tanto lo que decide qué fila cae en el guion de
+   entrevista. Sin él, la skill se queda sin su default de enrutado. El script no lo emite: su
+   `SLUG2HITO` mapea `respalda` → rótulo de hito, y `clase_fuente` no se deriva de ninguna clave
+   del canónico.
+2. **Dos preguntas de más, `rec_01` y `rec_01_fecha`**, que `respalda: ['reclamacion_finanzas']`
+   — el hito que `hitos_derivacion.md` declara **eliminado del modelo aprobado** («son 14, no
+   15»). El canónico las conserva y el script las arrastra.
+
+**Cómo se descubrió, que es la parte incómoda:** llamando a `sync_cuestionario_from_canon.py
+--help`. **El script no tiene `--help`**: no usa `argparse`, así que el flag se ignora y el script
+**se ejecuta**, escribiendo la vista en `.claude/skills/`. Se revirtió con `git checkout --` sobre
+ese fichero. Vale como aviso propio: un script de sincronización sin CLI convierte cualquier
+sondeo en una escritura.
+
+**Qué haría falta.**
+
+- Que el script **emita `clase_fuente`** —derivándolo del canónico, o consumiendo un campo nuevo
+  que el canónico debería tener— o que **preserve** el valor existente si no sabe derivarlo. Hoy
+  lo pone a `null` en silencio, que es la peor de las tres opciones.
+- **Decidir qué manda sobre las dos preguntas del hito retirado**: o se retiran del canónico, o el
+  script las filtra por `respalda` no mapeado, o se documenta que el cuestionario conserva
+  preguntas sin hito. Cualquiera vale; hoy la vista y el canónico discrepan y nada lo dice.
+- Un `argparse` mínimo, aunque sea sin opciones, para que `--help` no escriba.
+- **Un guard que compare la vista con la salida del script.** Es la comprobación que habría
+  cazado esto sin que nadie lo pisara: `session_close` vigila drift de helpers y de taxonomía, y
+  el del cuestionario no lo mira nadie.
+
+**Control positivo para ese guard:** con la vista y el canónico alineados debe salir verde; tocando
+una sola pregunta del canónico, rojo. Sin la segunda mitad, el guard aprueba cualquier cosa.
+
+**Disparador de promoción.** Medio-alto: sube en cuanto alguien siga la instrucción del `SKILL.md`
+—que es lo que un lector diligente hace— o en cuanto el cuestionario canónico cambie. Mientras
+tanto la regla operativa es: **no regenerar la vista; usar la commiteada**, que es la que tiene el
+enrutado.
+## 224. `--direccion` es el único flag de identidad que se teclea a mano, y el nombre de la carpeta de E&V ya lo trae
 
 > Medido el 2026-09-10 abriendo **W-02NHNC**: la dirección llevaba una vocal acentuada y la escribí
 > sin acento. Nadie podía avisar, porque no hay con qué comparar.
@@ -10285,7 +10361,7 @@ con nombres libres— así que la derivación tiene que **rendirse y pedir el fl
 encuentre el W-code en el nombre, igual que hace `codigo_de_unidad` con una unidad comercial. Una
 derivación que adivine es peor que teclear.
 
-## 224. El pull de Drive E&V guarda los documentos RELLENADOS con ceros a múltiplo de 512, y su sha256 deja de ser el del original
+## 225. El pull de Drive E&V guarda los documentos RELLENADOS con ceros a múltiplo de 512, y su sha256 deja de ser el del original
 
 > Medido el 2026-09-10 en la apertura de **W-02NHNC**. Salió a la luz por un síntoma que no era
 > este: el encargo se OCR-eó **dos veces** (77,7 s de los 165,8 s de la segunda pasada) porque el
@@ -10382,7 +10458,7 @@ lanzar el alta CRM con `--fuente drive_ev`.
 - **(d) Truncar a la longitud declarada tras el pull.** Repara el síntoma sin entender la causa y
   destruye evidencia si alguna vez el relleno no fuera relleno. **Descartada salvo medición.**
 
-## 225. `poblar` pisa en silencio el documento anterior cuando dos entradas comparten nombre canónico — 4 de 21 documentos ausentes de la sala
+## 226. `poblar` pisa en silencio el documento anterior cuando dos entradas comparten nombre canónico — 4 de 21 documentos ausentes de la sala
 
 > Medido el 2026-09-10 en la sala de lectura de **W-02NHNC**: el catálogo tenía **21 documentos
 > únicos** y en la sala había **17 ficheros**. Ni un aviso, ni un contador, ni una línea en el
@@ -10446,7 +10522,7 @@ de ficheros en `01_Procesado/Sala lectura/`. Si no cuadra, hay documentos pisado
 - **(d) Nada.** Hoy el coste es que un caso pierde documentos de la sala sin decirlo, y quien la
   lee no tiene forma de notarlo: el `INDICE.md` los lista igual, porque lista el catálogo.
 
-## 226. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo
+## 227. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo
 
 > Medido el 2026-09-10 en W-02NHNC, siguiendo el orden que manda la memoria del despacho: alta CRM
 > **al final**, con `--crm skip` en todo el intake previo.
@@ -10484,7 +10560,7 @@ creador al que se le pide que sea también un actualizador, y calla cuando no pu
 - **(c) Que el alta CRM escriba la cuantía al pasar**, ya que la tiene en la mano. Tapa este caso y
   deja `#184` y `#192` vivos.
 
-## 227. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color
+## 228. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color
 
 > Medido el 2026-09-10 al firmar el semáforo de W-02NHNC sobre
 > `assets/plantilla_informe_viabilidad.xlsx` (vía el `.xlsx` que genera `render_informe.py`).
