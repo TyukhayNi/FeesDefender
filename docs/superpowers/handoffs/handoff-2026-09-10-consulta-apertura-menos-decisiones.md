@@ -2,11 +2,11 @@
 tipo: handoff
 estado: activo
 creado: 2026-09-10
-origen: sesión de consulta del 2026-09-10 (Claude Code remoto, sin acceso a los transcripts) — lectura de los seis bloques de apertura de la bitácora de ese día (99º a 104º), de `MEJORAS #209`-`#237`, del runbook, de las filas 15 y 21 de `PLAN.md`, del §21 y §24 de la spec de apertura integral y del código de `scripts/abrir_caso.py` y `core/apertura_v1.py`
+origen: sesión de consulta del 2026-09-10 (Claude Code remoto, sin acceso a los transcripts) — lectura de los siete bloques de apertura de la bitácora de ese día (99º a 105º), de `MEJORAS #209`-`#239`, del runbook, de las filas 15 y 21 de `PLAN.md`, del §21 y §24 de la spec de apertura integral y del código de `scripts/abrir_caso.py` y `core/apertura_v1.py`
 destino: Nikolai (decide el orden y las tres decisiones del §6) y la sesión de Claude Code que ejecute las piezas; lo durable se promueve a `PLAN.md` con su disparador y este fichero pasa a `consumido`
 ---
 
-# Handoff — La apertura automatizada, medida sobre las seis aperturas del 2026-09-10, y cómo hacerla menos dependiente de las decisiones del letrado
+# Handoff — La apertura automatizada, medida sobre las siete aperturas del 2026-09-10, y cómo hacerla menos dependiente de las decisiones del letrado
 
 **Andamio efímero, no fuente de verdad** (`GOBERNANZA_FUENTES_VERDAD §5`). Lo que aquí es
 diagnóstico se apoya en mediciones ya escritas en la bitácora y en el backlog; lo que es
@@ -29,12 +29,13 @@ LeadHub, sala de lectura, viabilidad y archivo a **V3**. **Ni V2 ni V3 se han co
 **Premisa 2 — «he tenido que estar encima del pipeline»: confirmada, y es estructural.** V1
 automatiza el tramo que ya corría solo en segundo plano (el OCR es el 82 % del tiempo de
 máquina, `[APER-67]`) y ese tiempo de máquina es ~15 % del reloj de una apertura (W-02NHNC:
-14:18 de 1:37:22). El 85 % restante —clasificar, viabilidad, ficha, verificar, reparar— sigue en
+14:18 de 1:37:22; W-02O7E2: 7:26 de 2:30:00, un 5 %). Lo demás —clasificar, viabilidad, ficha, verificar, reparar— sigue en
 manos del operador o de una sesión que le pregunta.
 
-**Premisa 3 — «cinco sesiones de apertura»: incompleta.** La bitácora tiene **seis** bloques de
-apertura fechados el 2026-09-10: W-048U77, W-030TZY, W-02V48N, W-048UOL, W-02NHNC y W-02YZO4.
-Se han leído los seis. Los transcripts de las sesiones no están en el repo; lo leído es lo que
+**Premisa 3 — «cinco sesiones de apertura»: incompleta.** La bitácora tiene **siete** bloques de
+apertura fechados el 2026-09-10: W-048U77, W-030TZY, W-02V48N, W-048UOL, W-02NHNC, W-02YZO4 y
+W-02O7E2 —este último (105º, PR #333) entró en `main` mientras se escribía este handoff—.
+Se han leído los siete. Los transcripts de las sesiones no están en el repo; lo leído es lo que
 cada sesión dejó escrito (bloque de cierre, entradas de backlog, gotchas del runbook).
 
 ## 1. Qué hay construido, leído del código
@@ -67,16 +68,20 @@ fase de diseño.
 | W-048UOL | corrió | tipo elegido al alta y **retipificado** el mismo día (40 ficheros); viabilidad con **51 de 88** filas sin marcar; sala aplanada a mano | decisión de retipificar; contar la columna del `.xlsx`; coordinación con dos sesiones que arreglaban lo mismo |
 | W-02NHNC | corrió (5:18) | **`#225`** (pull rellena con ceros a múltiplo de 512: hash forense falso, dedup roto, OCR doble); `#224`, `#226`, `#227`, `#228` | ~15 min de reproceso; reponer 15 ficheros y regenerar la sala; cuantía a `_caso.md` a mano |
 | W-02YZO4 | corrió | viabilidad con **70 de 88** sin marcar; §15.6 de `INTEGRACION` invertido (`items`/`hydra:member`) → «cero actuaciones» falso | aplanar la sala **arreglando el motor en la misma sesión** (PR #328, 2 rondas, 17 hallazgos); control positivo sobre el parser |
+| W-02O7E2 | corrió; dos corridas de OCR, **7:26 de máquina sobre 2:30:00 de reloj** | **`#239`** (`ensure_contrario_vinculado` funde a dos deudores que comparten correo y lo dice como «existente»); `#190` segunda medición (los cuatro DNI y un vídeo, sin extensión, fuera del catálogo); cuatro grupos de colisión de nombre, no uno; `[APER-71]`, `[APER-72]` | crear y vincular a mano a la segunda deudora; reponer extensiones dos veces hasta declararlas en el catálogo; cuatro renumeraciones del backlog y dos del ordinal |
 
 Reloj medido en W-02NHNC (103º): mecánica 38:41 · sala de lectura 12:16 · ficha CRM 6:48 ·
-viabilidad 39:36 · **total 1:37:22, de los que 14:18 son de máquina**.
+viabilidad 39:36 · **total 1:37:22, de los que 14:18 son de máquina**. Y en W-02O7E2 (105º): mecánica
+12:00 · sala de lectura, viabilidad y ficha 2:18:00 · **total 2:30:00, de los que 7:26 son de máquina**.
 
-Y el día en conjunto: **seis aperturas en cinco o seis sesiones paralelas**, 17 PRs mergeados,
-29 entradas nuevas de backlog (`#209`–`#237`), tres renumeraciones, dos «101º cierre», el mismo
+Y el día en conjunto: **siete aperturas en hasta seis sesiones paralelas** (censo del 101º), 18 PRs
+mergeados, 30 entradas nuevas de backlog (`#209`–`#239`), una misma entrada renumerada cuatro veces
+(219 → 236 → 236 «devuelto» → 239) y un ordinal dos (103º → 104º → 105º), dos «101º cierre», el mismo
 fichero (`core/sala_lectura.py`) arreglado por dos sesiones sin saberlo, y tres de cuatro
 mensajes de coordinación con la foto rancia (101º). Una sesión hizo de «orquestador del
 cierre por encargo de Nikolai» y aun así el reparto salió bien «por casualidad, no por la
-premisa».
+premisa». Y la mesa de W-02O7E2 lo dejó escrito en su cierre: «la coordinación entre mesas
+costó más que el trabajo que coordinaba».
 
 ## 3. Por qué pareció que no funcionó
 
@@ -86,15 +91,18 @@ premisa».
    del 2026-08-24**, no por fallo: V2 y V3 nunca se construyeron. Abrir un extrajudicial sigue
    siendo, contados sobre el runbook, dos comandos de `abrir_caso` más unos diez comandos y
    skills sueltos, cada uno con su verificación a mano.
-2. **Las herramientas dicen «OK» del paso, no del expediente.** Siete veces hoy: `organizar`
+2. **Las herramientas dicen «OK» del paso, no del expediente.** Ocho veces hoy: `organizar`
    «organizada» con 2 de 4 artefactos (`#221`); `render_informe` «OK» con 51 y 70 filas sin
    marcar; `apply_label` éxito sin aplicar (`#237`); `verificar_sala` contando su propio aviso como un problema (`#216`);
    informe de firmas proponiendo un alta falsa (`#217`); pull «hecho» con hashes falsos
-   (`#225`); parser de actuaciones devolviendo cero sobre 20.825. Mientras nada cierre el lazo
+   (`#225`); parser de actuaciones devolviendo cero sobre 20.825; `ensure_contrario_vinculado` devolviendo
+   «existente» con el id del otro deudor (`#239`). Mientras nada cierre el lazo
    sobre el expediente, el verificador es el letrado, y eso es «estar encima».
-3. **Tres defectos de la capa base obligaron a reparar y reprocesar a mano:** el relleno con
+3. **Cuatro defectos de la capa base obligaron a reparar y reprocesar a mano:** el relleno con
    ceros (`#225`, afecta a prácticamente todo lo que entra por rclone), el renombrado del
-   montaje (`#214`) y la colisión de nombres en la sala (`#226`, ya cerrado). Cualquier V2
+   montaje (`#214`), la colisión de nombres en la sala (`#226`, ya cerrado) y los ficheros sin
+   extensión que la sala de lectura descarta en silencio (`#190`, segunda medición en W-02O7E2, donde
+   eran los DNI de quien firmó el encargo). Cualquier V2
    construida encima multiplica el reproceso.
 4. **La atención se fue a orquestar sesiones, no expedientes.** Seis aperturas en paralelo con
    reparaciones de código intercaladas generaron la coordinación del punto anterior. La única
@@ -163,7 +171,8 @@ reduce el «estar encima»**, y no depende de P1: puede correr hoy como comando 
 
 ### P3 — La capa base antes que cualquier V2: `#225`, `#214`, `#215`
 
-`#214` y `#215` ya están promovidos (`[SIGUIENTE-TIPO-POR-BYTES]`). **`#225` tiene disparador
+`#214` y `#215` ya están promovidos (`[SIGUIENTE-TIPO-POR-BYTES]`); `#190` es de la misma familia
+—extensión ausente, documento fuera del catálogo— y hoy tiene dos mediciones. **`#225` tiene disparador
 consumado** (seis casos hoy y el histórico) y no está promovido. Su vía (c) —pull a *staging*
 NTFS y copia verificada con `rclone check`— es el «staging disjunto» que la spec (§6.2) ya
 prescribe y que `[APER-41]` hace a mano. Decisión de Nikolai pendiente, y cara: reponer el
@@ -190,10 +199,11 @@ pendiente de entrevista, que es la mitad del valor de la hoja (51/88 y 70/88 hoy
 ### P6 — Ficha CRM y actuación sin YAML a mano
 
 Generar el esqueleto de `_ficha_crm.yaml` desde `_apertura.yaml`, el informe de firmas y el JSON
-de viabilidad (contrario, importes, fechas); `crm_ficha` con N contrarios (`[APER-63]`); cuantía
-decimal (`#218`); `core/sudespacho_actuaciones.py` (`#209`) con la predefinida aprendida
-(`SENIOR - EXTRAJUDICIAL - APERTURA E ESTUDIO INICIAL CASO`, `pre=65`) y la duración leída del
-`estado.json` (`iniciada`/`terminada` ya existen; falta `duracion_s` en el evento) — que es a la
+de viabilidad (contrario, importes, fechas); `crm_ficha` con N contrarios (`[APER-63]`) y sin
+fundir por email a dos deudores con NIF distinto (`#239`, `[APER-71]`); cuantía decimal (`#218`); `core/sudespacho_actuaciones.py` (`#209`) con el asunto canónico elegido por
+**quién firma** —el prefijo es la tarifa, `[APER-72]`—, el `id_predefinido` solo cuando una instancia
+real lo declare (`pre=65` en `APERTURA E ESTUDIO INICIAL CASO`; vacío en las 20 de `REVISION
+VIABILIDAD`) y la duración leída del `estado.json` (`iniciada`/`terminada` ya existen; falta `duracion_s` en el evento) — que es a la
 vez el instrumento de la acción 12. Corregir el §15.6 de `INTEGRACION_SUDESPACHO.md`
 (`items`/`hydra:member` está al revés, 104º). 1 ronda.
 
