@@ -41,6 +41,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 24 | [Alta canónica de un poder en el CRM desde el PDF](#siguiente-alta-poder-alta-canónica-de-un-poder-en-el-crm-desde-el-pdf-con-su-procurador-enganchado) | **pendiente — diseño escrito, sin construir** | disparador: decisión expresa de Nikolai el 2026-09-08, al cerrar el saneado del fichero de poderes. Contrato medido y escrito **entero**: el elemento en `docs/INTEGRACION_SUDESPACHO.md` §16 y la **subida al gestor en §17** (cerrada el 2026-09-09). Queda **integrar, no descubrir**. Gates duros: dos endpoints devuelven **201 sin hacer nada** (`relation_element` con el lado equivocado §16.3, `documents/multiple` §17.2), y el listado filtrado **tarda en indexar**, así que un censo negativo no prueba ausencia (§17.4) — por confiar en él se subió un certificado duplicado el 2026-09-09 | medio |
 | 25 | Reconocimiento de voz local (ASR + diarización) | ✅ **cerrada el 2026-09-09 (PR #308, `dbdfdc1`)** — `scripts/transcribir_audio.py`, `docs/INSTALACION_ASR.md` y 44 tests (9/9 mutantes). Venv dedicado fuera del repo. **Mergeada SIN ronda adversarial por orden expresa de Nikolai; la ausencia se declara en `INSTALACION_ASR.md §9` y la ronda sigue debiéndose.** NO incluye el cableado a la sala de máquina: un `.opus` sigue saliendo `sin_soporte` en el censo | encargo directo | — |
 | 26 | Skill `demanda-honorarios-ev` (preparar/revisar la demanda de honorarios E&V) | **spec rev. 2 + plan de 9 tareas escritos, SIN construir** (PR #311): [spec](docs/superpowers/specs/2026-09-08-demanda-honorarios-ev-design.md), [plan](docs/superpowers/plans/2026-09-09-demanda-honorarios-ev-v1.md) | ⛔ **espera el pase de Nikolai sobre la demanda de W-02USSI** → rev. 3 del spec antes de construir: el catálogo de ocho familias se sembró de una sola lectura | alto |
+| 27 | [El tipo de un documento se decide por sus BYTES (`MEJORAS #214` + `#215`)](#siguiente-tipo-por-bytes-el-tipo-de-un-documento-se-decide-por-sus-bytes-no-por-el-nombre-mejoras-214--215) | **pendiente — dos defectos medidos, sin construir** | disparador: **ya disparado** en la apertura de W-048U77 (2026-09-10), cuya carpeta de E&V traía 11 de 58 ficheros sin extensión. Hoy eso **bloquea la apertura** (`[APER-65]`) y además ensucia el expediente con duplicados en cada ronda. Promovida por decisión de Nikolai el 2026-09-10 | medio |
 
 > **Fila 23 añadida el 2026-09-07, al final y sin reordenar, igual que las anteriores.** Es la mitad
 > de test de `MEJORAS #145`, no una promoción de la entrada: la de producción se queda donde está
@@ -70,6 +71,74 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
 
 ---
+
+## [SIGUIENTE-TIPO-POR-BYTES] El tipo de un documento se decide por sus BYTES, no por el nombre (`MEJORAS #214` + `#215`)
+
+**Por qué es una fila y no backlog.** Las dos entradas se dispararon **en la misma corrida**, con
+el mismo fichero, abriendo `W-048U77` el 2026-09-10: la carpeta de E&V traía **11 de 58 ficheros
+sin extensión**, que en ese Drive es lo normal (escaneos y fotos de móvil, igual que
+`MEJORAS #190`). Juntas producen dos daños de clase distinta, y **arreglar una sin la otra deja
+el caso a medias**: con `#214` el documento llega íntegro al expediente, con `#215` alguien lo lee.
+
+**Estado hoy: se sabe hacer a mano, no está construido.** El recorrido manual completo está en el
+runbook, `[APER-65]` — censo independiente con `rclone lsf`, borrado de sobrantes por diferencia
+contra el remoto (nunca por patrón `(N)`), custodia cerrada aparte sin re-tirar del pull, y
+`sala_maquina apply` a mano. Funciona; cuesta una sesión.
+
+### Las dos piezas
+
+**A — `MEJORAS #214`: el recorrido tolerante y la reconciliación contra el remoto.**
+El montaje de Drive for Desktop **presenta** una extensión inferida del content-type para los
+ficheros que en Drive no la llevan, poco después de que `rclone` escriba el nombre pelado.
+`hash_tree_local` lista y **luego** abre, así que muere con `FileNotFoundError` sobre un fichero
+que está — y la etapa `drive` de V1 pasa a `bloqueado` con el pull ya hecho. Peor: `rclone`
+compara contra el montaje, re-copia esos ficheros en **cada** pull, y V1 fuerza el pull en cada
+ronda por diseño → duplicados que crecen linealmente. Dos rondas dejaron siete.
+
+Lo que hay que construir, en orden de rendimiento:
+
+1. Recorrido que **capte el fallo por fichero**, relea el directorio y, si el contenido reaparece
+   bajo otro nombre, lo hashee con el nuevo; si desapareció de verdad, que lo **declare** en el
+   resultado en vez de tumbar la etapa. Un fichero que no se pudo leer no ha medido cero: ha
+   quedado **sin verificar**, y eso se dice.
+2. **Reconciliación contra el remoto**, no solo contra lo que se acaba de escribir. Hoy
+   `reconcile` cuadra los hashes contra el plan que él mismo construyó del destino: cuadra
+   consigo mismo y no puede ver una copia de más.
+3. (Diferible) Persistir el mapa `nombre remoto → nombre efectivo` junto al `.pulled`, para que la
+   ronda siguiente no vuelva a pedir lo que ya está bajo otro nombre.
+
+**B — `MEJORAS #215`: el sniff que entiende contenedores.**
+`_sniff_ext_por_contenido` (`core/sala_maquina.py:76`) tiene seis firmas, todas **planas**
+(`%PDF-`, JPEG, PNG, GIF ×2, BMP). No hay entrada para `PK\x03\x04`, así que un `.docx` sin
+extensión sale `sin_soporte` y **no llega a la ruta `ofimatica`** que desde `MEJORAS #61` sabe
+leerlo. Los tres `sin_soporte` de W-048U77 eran `.docx` con contenido, y uno era un **contrato de
+arras de 78 párrafos** — de los documentos que deciden el nexo causal en una reclamación de
+honorarios.
+
+El sniff correcto **no es `PK` → `.docx`**: la cabecera cubre `.docx`, `.xlsx`, `.pptx`, ODF y un
+`.zip` cualquiera. Hay que abrir el contenedor y mirar el índice (`word/document.xml`,
+`xl/workbook.xml`, `ppt/presentation.xml`, entrada `mimetype`), lo que obliga a que la función
+reciba la **ruta** en vez de 16 bytes. Cambio de firma pequeño, un test por rama.
+
+### Gate y control positivo
+
+Sin gate: las dos son independientes y no esperan a nadie. **El listón de los tests**, que es
+donde esto se puede quedar en verde sin probar nada:
+
+- Para B, el árbol sintético necesita las **tres** ramas: un `.docx` **con** extensión (debe
+  seguir yendo por `ofimatica`), el mismo **sin** extensión (hoy `sin_soporte`, debe ir a
+  `ofimatica`) y un `.zip` de verdad (debe seguir siendo `sin_soporte`). Sin la tercera, el test
+  aprueba un `PK → .docx` ciego.
+- Para A, un caso donde el fichero **cambia de nombre entre el listado y la apertura** y otro
+  donde **desaparece de verdad**: el primero debe hashearse, el segundo debe salir declarado como
+  no verificado. Si solo se prueba el primero, el remedio se convierte en «tragarse el error».
+
+**Radio de daño → 1 ronda adversarial** (sobre el diff): la pieza no decide quién escribe sobre
+qué copia ni puede destruir datos de cliente — el recorrido solo **lee** y el sniff solo
+**clasifica**. Presupuesto de rondas: ver `[SIGUIENTE-PRESUPUESTO-PROCESO]`.
+
+**Diagnóstico completo, con las mediciones:** `MEJORAS #214` y `#215`; remedio manual mientras
+tanto, `docs/RUNBOOK_APERTURA_EXPEDIENTE.md` `[APER-65]`.
 
 ## [SIGUIENTE-ALTA-CODEX] Las doce acciones del informe de Codex sobre el alta de expedientes
 
