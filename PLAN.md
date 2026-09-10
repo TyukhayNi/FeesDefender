@@ -94,15 +94,16 @@ PRs antes de `main`, y la acción 1 ya estaba cerrada cuando llegó):
 | 9 | Primera publicación de un caso nacido en local (`#139`) | pendiente, **sin empezar** — escribe en Drive, no se puede probar sin operar sobre el Drive real | `MEJORAS #139`, `[APER-41]` |
 | 10 | `.doc` ilegibles + cobertura visible | ✅ **implementada el 2026-09-05 (PR #294, `63c8aa2`; R1 de Codex 5/5 adjudicada en el §4 del plan)** — ruta `ofimatica` (`.doc`/`.dot`/`.odt`/`.ott`/`.ppt`/`.pps`/`.pptx`/`.odp`) → LibreOffice headless → PDF buscable en `01_OCR/` → camino PDF; sin conversor, `sin_soporte` con la causa en la nota y aviso en `plan`/`apply`. Plan: `docs/superpowers/plans/2026-09-05-accion-10-ofimatica-en-la-sala-de-maquina.md` | `core/ofimatica_a_pdf.py`, `core/sala_maquina.clasificar_ruta`; `MEJORAS #61` punto `.doc` `[RESUELTO]` |
 | 11 | Dedup por contenido conservando procedencias (`#147`) | ✅ **vía A implementada el 2026-09-06 (PR #296, `aabd060`; R1 de Codex 7/7 adjudicada en el §4 del plan)** — el mismo fichero (mismo `sha256`) en dos carpetas del cliente produce UN espejo y DOS filas de custodia: la copia sale con método `duplicado`, hereda el estado del titular y su nota dice dónde está el espejo; el titular anota «también en …». `plan` los cuenta aparte. Plan: `docs/superpowers/plans/2026-09-06-accion-11-dedup-via-a-sala-de-maquina.md`. **Vía B (mismo contenido, bytes distintos: C.S.V./texto normalizado) sigue en `MEJORAS #147`** | `MEJORAS #147` |
-| 12 | Ficha operativa de cierre de apertura + medir el recorrido en tres aperturas | pendiente, **sin empezar** | — |
+| 12 | Ficha operativa de cierre de apertura + medir el recorrido en tres aperturas | **apertura 1 de 3 MEDIDA** (W-030TZY, 2026-09-10); el INSTRUMENTO sigue sin construir | Reparto real en `RUNBOOK [APER-67]`: **46,5 min de máquina, el 82 % en OCR**. Y el cuello que no es de máquina: la sala de lectura se detiene pidiendo clasificar **80 documentos a mano**. Tres hallazgos con número: `MEJORAS #219` (el `_tiempos.jsonl` no guarda páginas, que es lo que decide el paralelismo que su propio docstring dice querer decidir), `#221` (`organizar` dice «organizada» con 2 de 4 artefactos) y `#222` (paralelismo por documento **refutado**, 0,91; `rotate_pages` cuesta el 28 % y es un seguro, con control positivo sobre página rasterizada y girada). El recorte del instrumento —`ronda_id`/`iniciada`/`terminada`/`duracion_s` al evento de `registrar_cierre_v1`— **sigue sin hacerse** |
 
 **Reparto de sesiones (decisión de Nikolai, 2026-09-05):** esta sesión orquesta; la sesión
 hermana «Completar fichas de colaboradores» es dueña de `core/crm_ficha.py`, `scripts/crm_ficha.py`,
 `core/email_firmas.py` y la parte de colaboradores de `core/sudespacho_relations.py`, y tiene
 encargada la acción 8.
 
-**Lo que NO se declara hecho aunque esté escrito:** las acciones **9 y 12** no tienen diseño (sí
-dimensionado, del 2026-09-06); la 8 está encargada, no construida. Las **10, 11 y 6** se cerraron
+**Lo que NO se declara hecho aunque esté escrito:** la acción **9** no tiene diseño (sí
+dimensionado, del 2026-09-06) y la **12** tiene ya su primera apertura medida pero **ningún código**:
+medir tres aperturas no construye el instrumento que las mediría solo; la 8 está encargada, no construida. Las **10, 11 y 6** se cerraron
 después de escribir esta línea (PRs #294, #296 y #299).
 
 ---
