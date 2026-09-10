@@ -246,6 +246,33 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   nombra el campo culpable** (`--codigo-caso`, `--direccion` o `--sufijo`) y no crea esqueleto
   alguno, en vez de terminar en 0 dejando el intake en una ruta sombra. El consejo sigue en pie
   porque el error hay que evitarlo, no solo detectarlo.
+- **`[APER-65]` / W-048U77 — Un fichero que en Drive NO tiene extensión bloquea la etapa
+  `drive` y, en cada ronda, DUPLICA.** Medido el 2026-09-10 sobre una carpeta con **11 de 58**
+  ficheros sin extensión (`CONTRATO FIRMADO`, `OFERTA ACEPTADA`, `NS 27／07`…). Dos defectos con
+  el mismo origen: el destino vive en un montaje de Google Drive for Desktop, que **presenta**
+  una extensión inferida del content-type para los ficheros que en Drive no la llevan, poco
+  después de que `rclone` escriba el nombre pelado. **No es Drive quien renombra**: medido el
+  2026-09-10, remoto y montaje tienen los mismos 78 ficheros y las 8 diferencias son los mismos
+  8 documentos con dos nombres (`CONTRATO FIRMADO` en Drive, `CONTRATO FIRMADO.pdf` en `G:`).
+  Consecuencia práctica: los nombres de origen del **remoto** no son los del montaje, así que la
+  ruta `rcd` de la sala de lectura (que copia por el remoto) no sirve sobre esos ficheros.
+  - **Síntoma 1:** `hash_tree_local` recorre (`rglob`) y **después** abre, y entre las dos cosas
+    el nombre cambió → `FileNotFoundError: [WinError 2] … \DOCS ACTIVACION\CONTRATO FIRMADO`,
+    etapa `drive` en `fallo`, V1 `bloqueado` (**con el pull ya hecho y correcto**). No es azar:
+    reprodujo dos rondas seguidas, cada vez con otro fichero de los once.
+  - **Síntoma 2, el caro:** como el nombre remoto ya no existe en local, `rclone` lo re-copia en
+    **cada** pull y Drive Desktop deposita `… (1).pdf`. Dos rondas = **7 duplicados**. Y V1
+    fuerza el pull en cada ronda por diseño, así que **relanzar no repara: ensucia más**.
+  - **Qué hacer cuando lo veas.** (1) **No relances la secuencia.** (2) Censo independiente:
+    `rclone lsf gdrive_ev: --drive-team-drive <id> --drive-root-folder-id <id>
+    --drive-skip-shortcuts --recursive --files-only` y compara el conteo con el local. (3) Borra
+    los sobrantes **por diferencia contra el remoto, nunca por patrón `(N)`** — en W-048U77 seis
+    documentos legítimos traían el `(N)` de origen, uno de ellos con `(1) (1) (1)` — y solo tras
+    verificar por `sha256` que cada sobrante tiene gemelo idéntico; normaliza a **NFC** antes de
+    comparar, o un topónimo acentuado da falsos positivos. (4) Cierra la custodia aparte, sin re-tirar del pull:
+    `hash_tree_local(target_dir, prefijo=brain.SUBDIR_DRIVE_EV)` + `_intake_generico(...,
+    raiz_hashes=target_dir.parent)` bajo `scripts._mutex_cli.sostener`. (5) Sigue por §5 con
+    `sala_maquina apply` a mano. Diagnóstico completo y las tres vías de arreglo: `MEJORAS #214`.
 - **`[APER-34]` Auto-derivación (B5):** en `--fuente drive_ev`, si se omiten,
   `--team-id` (driveId), `--codigo-caso` (nombre de la unidad compartida vía Drive API) y
   `--sufijo` (del `tipo_caso` canónico) se **auto-derivan** desde `--folder-id`. Los flags
