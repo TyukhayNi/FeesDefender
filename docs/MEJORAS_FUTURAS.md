@@ -9730,3 +9730,112 @@ que solo mire el 638 aprueba un comparador que haya dejado de comparar.
 se haga hay un expediente vivo no buscable por dirección. Para (a), medio: sube con el **segundo**
 burofax desde plantilla —el flujo que `#212` quiere encapsular— o con el primer expediente cuya
 referencia del CRM divirja del nombre de la carpeta por sufijo.
+
+## 214. Todo lo que se escribe en `G:` sale rellenado con ceros a múltiplo de 512, y el `sha256` forense deja de ser el del original
+
+> Medido el 2026-09-10 abriendo `W-048UOL`, al cruzar por hash un `.zip` de la reclamación contra
+> el material ya bajado por `drive_ev`: **7 de 7 ficheros salieron «nuevos» y cuatro de ellos eran
+> el mismo documento**.
+
+**Qué pasa.** Los ficheros que el intake deposita en `CASOS` (Google Drive for Desktop, `G:`)
+llevan **bytes de relleno a cero** hasta el siguiente múltiplo de 512. El contenido útil está
+intacto —el prefijo es byte-idéntico al original y el PDF termina en su `%%EOF` antes del
+relleno—, pero el fichero **no es byte-idéntico** al de origen.
+
+| Documento (`W-048UOL`) | Tamaño en Drive E&V | Tamaño en el caso | Relleno |
+|---|---|---|---|
+| oferta aceptada | 2.747.021 | 2.747.392 | 371 |
+| certificado bancario | 218.388 | 218.624 | 236 |
+| justificante de transferencia | 21.644 | 22.016 | 372 |
+| factura | 129.987 | 130.048 | 61 |
+
+**No es de esta corrida y no es un artefacto de lectura.** Copiado de `G:` a `C:` conserva el
+tamaño rellenado, y el barrido da `30/34` en `W-048UOL`, `242/324` en `W-02VEKE` y `170/237` en
+`W-02JSVZ`. En casos antiguos (`BaRR3 …`) los tamaños son libres: 36 de 44 no son múltiplo de 512,
+o sea que el instrumento **sí puede dar el otro valor**.
+
+**El comentario de `core/intake_drive.py:233` ya vio el síntoma y lo leyó de menos.** Dice que
+Drive Desktop «reescribe metadatos y `stat()` devuelve un tamaño ligeramente superior» (observado
++128, +268 en la sesión 21) y concluye que basta suprimir la verificación con `--ignore-size
+--ignore-checksum --inplace`. Lo que falta en esa lectura: los bytes **están en el fichero**, no
+solo en el `stat()`.
+
+**Consecuencias, por orden de coste.**
+1. **El dedup por `sha256` entre fuentes no ve los duplicados.** Es lo que lo destapó: cuatro
+   documentos del `.zip` eran los mismos que ya estaban en el caso y el intake los habría
+   depositado otra vez. La detección de `#211`/acción 11 funciona *dentro* de una fuente, donde
+   todos comparten el mismo relleno.
+2. **La cadena de custodia por hash no cuadra contra el original del cliente.** El `sha256` que
+   guarda `_intake_log.jsonl` es el del fichero rellenado; el que da la API de Drive de E&V es el
+   del original. Acreditar «es el mismo documento» exige explicar el relleno.
+3. Alcance: **todo** caso escrito por esta vía, no solo los nuevos.
+
+**Vías, sin decidir.** (a) Comparar por **prefijo** (hash del contenido hasta el tamaño de origen)
+allí donde hoy se compara por sha; (b) escribir en local y publicar a Drive por `rclone` contra la
+API en vez de por el filesystem montado; (c) truncar tras copiar —hay que medir si Drive Desktop
+vuelve a rellenar—. Antes de nada, **medir si el relleno lo pone Drive Desktop o el `--inplace`**:
+el comentario culpa al primero y nadie lo ha probado con y sin el flag.
+
+## 215. `sala_lectura poblar` sobrescribe en silencio: 32 entradas del índice quedaron en 15 ficheros
+
+> **CERRADA el 2026-09-10, el mismo día, junto con el tercer defecto de `#67`.**
+> `poblar_sala_lectura` ya no antepone la carpeta de fuente —la sala queda **plana**, como
+> fija la skill v1.3, con el bundle como único anidamiento— y `_sin_colision` discrimina con
+> `sha256[:6]` cuando dos entradas distintas resuelven al mismo nombre. Dos tests nuevos en
+> `tests/test_sala_lectura.py` (vistos rojos antes del arreglo: *«un documento pisó al otro»*
+> y *«hay PDFs anidados»*), más cinco aserciones de tests existentes actualizadas al contrato
+> nuevo. Medido sobre W-048UOL tras re-poblar: **31 documentos en la sala** (eran 15), 31
+> rutas únicas y ninguna anidada, con las 32 entradas del índice intactas — la que falta es
+> el `SKIP_DEDUP`.
+>
+> **Lo que queda declarado, no arreglado:** quién se queda el nombre limpio y quién lleva
+> sufijo depende del **orden del catálogo**. Es estable mientras no se re-catalogue; si el
+> orden cambiara, un documento podría mudarse de ruta (sin pérdida: `poblar` mueve, y el
+> original vive en `00_Input`). Cerrarlo del todo pide asignar el discriminante a **todos**
+> los colisionados, no solo al segundo.
+>
+> **Y sigue abierto lo que este arreglo NO toca:** el `INDICE.md` continúa **agrupado por
+> fuente** en su texto (`## Drive E&V`, `## Manual`). Aplanar las carpetas no aplana el
+> índice, y agruparlo por categoría es otra decisión.
+
+> Medido el 2026-09-10 en `W-048UOL`, contando lo que había en `Sala lectura/` después de que
+> `organizar` dijera `Acciones: {'COPY': 31, 'SKIP_DEDUP': 1}`.
+
+**Qué pasa.** El nombre canónico de destino es `AAAA-MM-DD_<categoria>_<descripcion>`, y para las
+imágenes que el auto-clasificador manda a `00. FOTOS` la descripción degenera en `fotografia`.
+Diecisiete imágenes del caso (once fotos de las escrituras de la sociedad, cuatro documentos de
+identidad y dos de la oferta) comparten dos únicas fechas → **dos nombres** →
+`2026-03-16_foto_fotografia.jpeg` y `2026-03-17_foto_fotografia.jpeg`, cada uno pisando al
+anterior. `COPY: 31` cuenta **copias intentadas**, no ficheros resultantes, así que la salida
+declara éxito sobre una sala que perdió la mitad.
+
+**Lo que NO pasa: no se pierde información.** El `INDICE.md` conserva las 32 entradas y enlaza a
+cada original de `00_Input` y a su MD. El daño es que la carpeta poblada **aparenta** ser el
+expediente y muestra 15 de 32, sin decirlo.
+
+**Relación con `#67`.** Su tercer defecto (subcarpetas por fuente en vez de estructura plana)
+sigue abierto y se vio igual aquí (`Sala lectura/Drive E&V/`, `Sala lectura/Manual/`). La colisión
+de nombres se daba por cubierta «por el sufijo SHA»: **el sufijo lo llevan los MD, no los ficheros
+poblados**.
+
+**Vía mínima.** Sufijo `sha256[:6]` en el nombre de destino cuando el nombre canónico ya existe
+con otro hash, y que el resumen cuente ficheros escritos, no copias intentadas.
+
+## 216. El representante del dedup puede esconder el documento nuclear: el encargo firmado no aparece en el índice
+
+> Medido el 2026-09-10 en `W-048UOL`, buscando la hoja de encargo en el índice de la sala.
+
+**Qué pasa.** Dos ficheros de la carpeta de E&V son **byte-idénticos**: uno se llama
+`Contracte Signat.pdf` (dentro de `ACTIVACIÓN`) y el otro `Oferta Signada i Acceptada.pdf` (dentro
+de `OFERTA`). El dedup por `sha256` deja **un** representante, y le tocó el segundo nombre. El PDF
+contiene **dos documentos lógicos** —el encargo de venta en exclusiva y la oferta de compra—, así
+que el índice presenta el encargo bajo el rótulo de la oferta y la cadena `Contracte Signat` **no
+aparece en `INDICE.md`**.
+
+Técnicamente correcto: el fichero está, su texto partido está en los MD (`__d01`, `__d02`), y la
+nota del `_cobertura.json` dice literalmente «2 documentos lógicos». Operativamente, quien busca
+la hoja de encargo —la pieza de la que cuelga toda la reclamación— no la encuentra por su nombre.
+
+**Vía.** Que la entrada del índice del representante **enumere los nombres de origen alias** (los
+`alias_de` ya están en el `_cobertura.json`), en vez de dejarlos solo en la nota interna. Barato y
+suficiente: no cambia el dedup, cambia lo que el índice dice de él.

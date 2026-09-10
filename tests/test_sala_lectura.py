@@ -252,7 +252,7 @@ def test_poblar_sala_lectura_copia_idempotente(tmp_casos_root):
     sl.clasificar_caso(case_id)
     r1 = sl.poblar_sala_lectura(case_id)
 
-    sala = case_dir / "01_Procesado" / "Sala lectura" / "Drive E&V"
+    sala = case_dir / "01_Procesado" / "Sala lectura"   # PLANA: sin carpeta por fuente
     copias = list(sala.glob("*.pdf"))
     assert len(copias) == 1
     assert copias[0].read_bytes() == b"%PDF-FACTURA"
@@ -299,8 +299,8 @@ def test_poblar_con_bundles_crm(tmp_casos_root):
     ]
     sl.poblar_sala_lectura(case_id, crm_docs=crm_docs)
 
-    crm_dir = case_dir / "01_Procesado" / "Sala lectura" / "CRM"
-    bundles = [p for p in crm_dir.iterdir() if p.is_dir()]
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    bundles = [p for p in sala.iterdir() if p.is_dir()]
     assert len(bundles) == 1
     adjuntos = bundles[0] / "adjuntos"
     assert adjuntos.is_dir()
@@ -316,8 +316,8 @@ def test_poblar_sin_crm_docs_degrada_a_plano(tmp_casos_root):
     ])
     sl.clasificar_caso(case_id)
     sl.poblar_sala_lectura(case_id)  # sin crm_docs
-    crm_dir = case_dir / "01_Procesado" / "Sala lectura" / "CRM"
-    assert any(crm_dir.glob("*.pdf"))  # copia plana, sin subcarpeta de bundle
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    assert any(sala.glob("*.pdf"))  # copia plana, sin subcarpeta de bundle
 
 
 def test_cli_organizar_se_detiene_con_residuo(tmp_casos_root):
@@ -328,7 +328,7 @@ def test_cli_organizar_se_detiene_con_residuo(tmp_casos_root):
     res = sl.organizar(case_id)
     assert res["detenido_por_residuo"] is True
     assert res["n_residuo"] == 1
-    assert not (case_dir / "01_Procesado" / "Sala lectura" / "Drive E&V").exists()
+    assert not any((case_dir / "01_Procesado" / "Sala lectura").glob("*.pdf"))
 
 
 def test_organizar_completo_sin_residuo(tmp_casos_root):
@@ -339,7 +339,7 @@ def test_organizar_completo_sin_residuo(tmp_casos_root):
     res = sl.organizar(case_id)
     assert res["detenido_por_residuo"] is False
     assert (case_dir / "01_Procesado" / "Sala lectura" / "INDICE.md").exists()
-    assert any((case_dir / "01_Procesado" / "Sala lectura" / "Drive E&V").glob("*.pdf"))
+    assert any((case_dir / "01_Procesado" / "Sala lectura").glob("*.pdf"))
 
 
 def test_poblar_bundles_idempotente(tmp_casos_root):
@@ -860,3 +860,62 @@ def test_la_cli_de_la_sala_de_lectura_acepta_el_w_code(tmp_casos_root):
     assert "1 entradas" in r.output
     # Y sobre el caso DE VERDAD, no sobre una carpeta inventada con el W-code.
     assert cat.load_catalog(case_id), "resolvio el W-code a otro sitio"
+
+
+# --- Sala PLANA + colisión de nombre canónico (MEJORAS #215 y el 3.º de #67) ---
+
+
+def test_poblar_deja_la_sala_plana_sin_subcarpeta_por_fuente(tmp_casos_root):
+    """La skill v1.3 fija estructura PLANA: la categoría vive en INDICE.md, no en carpetas.
+
+    `poblar` metía cada documento bajo `Sala lectura/<fuente>/`, así que la sala salía
+    dividida en `Drive E&V/`, `Manual/`, `CRM/`… El único anidamiento que la skill admite
+    es el del documento compuesto (bundle), que sí lleva su subcarpeta.
+    """
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "Factura honorarios.pdf", b"%PDF-FACTURA"),
+        ("04_Manual", "Nota simple.pdf", b"%PDF-NOTA"),
+    ])
+    sl.clasificar_caso(case_id)
+    sl.poblar_sala_lectura(case_id)
+
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    assert sorted(p.name for p in sala.glob("*.pdf")) == sorted(
+        p.name for p in sala.rglob("*.pdf")
+    ), "hay PDFs anidados: la sala no es plana"
+    assert len(list(sala.glob("*.pdf"))) == 2
+    assert not (sala / "Drive E&V").exists()
+
+
+def test_poblar_no_pisa_dos_documentos_con_el_mismo_nombre_canonico(tmp_casos_root):
+    """Dos documentos DISTINTOS que producen el mismo nombre canónico son dos ficheros.
+
+    Medido en W-048UOL (2026-09-10): diecisiete imágenes con la misma fecha y la misma
+    descripción automática («Fotografía») se resolvían todas a
+    `2026-03-17_foto_fotografia.jpeg` y se sobrescribían unas a otras. El catálogo
+    declaraba 32 documentos y en la sala había 15, sin que nada lo dijera: `COPY` cuenta
+    copias intentadas, no ficheros escritos.
+    """
+    cm, inv, cat, sl = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("01_Drive EV", "IMG_001.jpeg", b"\xff\xd8JPEG-UNO"),
+        ("01_Drive EV", "IMG_002.jpeg", b"\xff\xd8JPEG-DOS"),
+    ])
+    sl.clasificar_caso(case_id)
+    entries = cat.load_catalog(case_id)
+    assert len(entries) == 2
+    for e in entries:                      # forzar el mismo nombre canónico
+        e.tipo_documental = "00. FOTOS"
+        e.fecha_doc = "2026-03-17"
+        e.descripcion = "Fotografía"
+    cat.save_catalog(case_id, entries)
+
+    sl.poblar_sala_lectura(case_id)
+
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    copias = sorted(sala.rglob("*.jpeg"))
+    assert len(copias) == 2, f"un documento pisó al otro: {[p.name for p in copias]}"
+    assert {p.read_bytes() for p in copias} == {b"\xff\xd8JPEG-UNO", b"\xff\xd8JPEG-DOS"}
+    rutas = [e.ruta_sala_lectura for e in cat.load_catalog(case_id)]
+    assert len(set(rutas)) == 2, f"el catálogo apunta dos entradas al mismo fichero: {rutas}"
