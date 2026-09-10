@@ -9477,3 +9477,84 @@ muerda la confusión de elementos: pedir `expedientes_judiciales` con un id que 
 prerequisito real, no un adorno—, o en cuanto la creación manual se repita una tercera vez. Hasta
 entonces la prosa del §15.6 basta para hacerlo a mano sin volver a descubrir las trampas.
 
+---
+
+## 210. `transcribir_audio` sale con código 0 cuando le falta su dependencia, e imprime el resumen como si hubiera transcrito
+
+**Medido el 2026-09-10**, con un juicio a hora y media y quince audios que hacían falta para la
+vista. `python -m scripts.transcribir_audio <carpeta> -s <salida>` con el intérprete del venv del
+repo —que **no** tiene `faster-whisper`, porque vive en el venv dedicado `~/.venvs/asr`— imprimió:
+
+```
+ModuleNotFoundError: No module named 'faster_whisper'
+15 fichero(s) · modelo large-v3-turbo · diarización no
+[exited with code 0]
+```
+
+**Tres cosas mal en cuatro líneas.** El traceback va a stdout/stderr pero **no cambia el código de
+salida**; la línea de resumen dice «15 fichero(s)» cuando se generaron **cero**; y `exit 0` hace
+que cualquier `&&` posterior —o un paso de pipeline— dé el trabajo por hecho. Lo que delató el
+fallo no fue el código de salida: fue contar los `.md` de la carpeta de salida y encontrar 0.
+
+**Es la familia de [[feedback-no-lo-se-no-es-no-hay]] aplicada al código de salida**, y el propio
+repo ya la remedió una vez en `preparar-residuo` con la decisión escrita: *«el estado "no pude
+mirar" sale con código distinto de 0. Un aviso con salida 0 es la versión engañosa»*. Aquí no se
+instaló. Ver también [[feedback-verificar-por-resultado-en-mi-herramienta]].
+
+**Remedio.** Tres líneas, y las tres importan:
+
+- El `ImportError` de `faster_whisper` sale con **código propio distinto de 0** y con el mensaje
+  orientado a la causa: *«falta faster-whisper; este script se corre con `~/.venvs/asr/Scripts/python.exe`,
+  ver `docs/INSTALACION_ASR.md §2`»*. Hoy el remedio está en la doc y el script no lo dice.
+- La **línea de resumen se emite al final y con lo realmente producido**, no con lo enumerado al
+  principio: «15 enumerados, 0 transcritos» en vez de «15 fichero(s)».
+- Si `transcritos == 0` y `enumerados > 0`, **salida distinta de 0** aunque no haya habido
+  excepción.
+
+**Cómo comprobarlo sin engañarse.** El test tiene que invocar el script con un intérprete o un
+entorno **sin** la dependencia y afirmar que el código de salida **no es 0**; verlo rojo contra el
+código actual antes de arreglarlo. Un test que solo compruebe el camino feliz pasa hoy y pasaría
+después.
+
+**Disparador de promoción.** Alto en cuanto la transcripción se encadene a otro paso
+(`MEJORAS #205`, ruta `audio` en la sala de máquina): ahí un `exit 0` mentiroso deja el expediente
+sin transcripciones y con el pipeline diciendo que fue bien. Suelto y a mano, se nota enseguida.
+
+---
+
+## 211. `registrar_outputs` no actualiza la fila que ya existe en el `_index.md`, y devuelve éxito igual
+
+**Medido el 2026-09-10.** Tras sustituir `05_Procedimiento/CONCLUSIONES_W-02VEKE.docx` por la
+versión usada en la vista —118.378 bytes frente a 19.793, otro `sha256`— se volvió a registrar con
+`registrar_outputs.py` pasándole `estado: "presentado"`, la fecha del día y las fuentes nuevas. El
+script imprimió sus dos líneas de éxito y **no tocó la fila**: el `_index.md` seguía diciendo
+
+```
+| `CONCLUSIONES_W-02VEKE.docx` | conclusiones | actora | 2026-09-09 | … | borrador |
+```
+
+para un fichero que ya era el definitivo. Hubo que editar la fila **a mano**.
+
+**Por qué es más grave de lo que parece.** El `_index.md` es el manifiesto del que se lee «qué hay
+en esta fase del expediente», y aquí afirmaba `borrador` de un documento presentado en juicio. Es
+[[feedback-corregir-el-doc-y-no-su-indice]] con el agravante de que **el registrador es justo la
+herramienta que existe para que el índice no quede rancio**, y su idempotencia por nombre lo
+convierte en lo contrario: un no-op silencioso.
+
+**El modo de fallo, en una frase:** idempotencia por **clave** (el nombre) cuando el contenido ya
+ha cambiado, sin comparar el `sha256` ni avisar.
+
+**Remedio candidato.** Al encontrar la fila, comparar: si el `sha256` del fichero difiere del
+registrado —o si difieren `estado`/`fuentes`/`meta`—, **actualizar la fila y decirlo**
+(`[registrar_outputs] fila actualizada: CONCLUSIONES_W-02VEKE.docx (borrador → presentado)`). Si
+todo coincide, el no-op actual es correcto, pero también debería decirse. Requiere que el índice
+guarde el `sha256`, que hoy no está en la tabla: eso es parte del arreglo, no un extra.
+
+**Cómo comprobarlo sin engañarse.** Registrar dos veces el **mismo nombre con contenido
+distinto** y afirmar que la segunda deja la fila con el estado nuevo; verlo rojo contra el código
+actual. Un test que registre dos veces el mismo fichero idéntico pasa hoy.
+
+**Disparador de promoción.** Medio-alto: cualquier documento que se rehaga tras su primer
+registro —conclusiones, minutas, escritos que van por versiones— deja el índice mintiendo. Y
+`preparacion-juicio-oral` y `escritos-judiciales` **registran por nombre canónico estable**, que
+es exactamente el caso que lo dispara.
