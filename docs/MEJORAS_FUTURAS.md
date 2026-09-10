@@ -10239,3 +10239,122 @@ Se promueve solo si alguien propone paralelizar el OCR o tocar sus flags — y e
 procede es leer esta entrada, no repetir el experimento.
 
 ---
+
+## 235. El barrido de documental ajena solo mira NOMBRES, y un W-code que va dentro del documento es invisible
+
+**Medido el 2026-09-10 en W-02V48N**, retirando del expediente la documental del caso ajeno
+`W-02U9H8` que había entrado por un export de WhatsApp. Hicieron falta **cuatro tandas y 235
+ficheros** porque el criterio era el nombre:
+
+| Tanda | Ficheros | Qué se me quedó fuera y por qué |
+|---|---|---|
+| 1 | 192 | los 60 PDF del *split* en `02_Documentos`, una carpeta que no enumeré |
+| 2 | 60 | los 28 metadatos del split (`_segmentacion.json`, `indice.txt`), que describen el documento ajeno **sin nombrarlo** |
+| 3 | 28 | el justificante de transferencia, con nombre **UUID** |
+| 4 | 3 + 12 | tres fichas PBC cuyo `DATOS DEL ACTIVO` declara `IDGO W-02U9H8` **dentro** del PDF, con solo nombres de persona en el fichero |
+
+**La herramienta tiene el mismo punto ciego, y por diseño.** La señal (a) de
+`senales_gate` (`.claude/skills/organizar-sala-lectura/scripts/preclasificar.py`) construye su
+texto así:
+
+```python
+texto = f"{f.get('ruta_original', '')} {f.get('nombre_canonico', '')}"
+for m in _WCODE_RE.findall(texto):
+```
+
+Solo ruta y nombre. Un documento de otro expediente con nombre neutro **pasa el gate** y se
+copia a la sala de lectura. En este caso pasaron tres, y la sala se declaró verificada con
+ellos dentro (`verificar_sala.py` exit 0: comprueba que el manifiesto y el disco cuadran, no
+de quién es cada documento).
+
+**La frontera correcta:** un documento pertenece a un expediente por su **sujeto declarado**
+—el campo `IDGO` / `Nº de referencia` / `DATOS DEL ACTIVO`—, no por su nombre; y un derivado
+pertenece **por su padre**. El barrido tiene que leer contenido y **distinguir dos cosas que el
+nombre no distingue**: «documento DE otro caso» de «documento de este caso que MENCIONA otro».
+En W-02V48N el chat menciona el otro expediente de forma legítima y no se toca; un barrido por
+mención se lo habría llevado.
+
+**Y el defecto de método que lo dejó pasar tres veces:** mi verificación usaba **el mismo
+predicado que el borrado**, así que decía «0 restos» estando mal. Lo destapó preguntar por una
+propiedad independiente (si las carpetas del split habían quedado vacías). Cuando el criterio
+de borrado y el de verificación son el mismo, la verificación no verifica nada.
+
+**Disparador de promoción.** Un caso cuyo intake traiga documental de otro expediente con
+nombres neutros. El remedio es acotado: añadir a `senales_gate` un cruce contra el texto del
+espejo MD (que ya está en `_cobertura.json`) buscando un W-code ajeno **en campo de sujeto**, y
+emitir señal de gate. Prototipo funcionando en la sesión de W-02V48N (barrido por contenido
+sobre 65 documentos, 3 detectados, 1 correctamente descartado como mención).
+
+---
+
+## 236. `_adjunto_ref` devuelve el nombre del adjunto con el `U+200E` del export, y por eso NO casa nunca con el fichero en disco
+
+**Medido el 2026-09-10 en W-02V48N: 0 de 39 adjuntos casaban.** Con la marca normalizada,
+**31 de 39** cogen su fecha de envío (los 8 restantes son ficheros ya purgados del expediente).
+
+`core/whatsapp_export.py` resuelve bien la cabecera del mensaje —`_RE_IOS` tolera el `U+200E`
+inicial con su `^‎?\[`— pero el tag del adjunto no:
+
+```python
+_RE_ADJ_IOS = re.compile(r"<adjunto:\s*(.+?)>", re.IGNORECASE)
+```
+
+En este export la marca invisible va **dentro** del tag, delante del nombre, así que
+`_adjunto_ref` devuelve `'\u200eIMG-20240310-WA0000.jpg'` y `referencias_adjuntos()` produce
+una lista que no empareja con ningún fichero real. **`str.strip()` no la quita**: `U+200E` no
+es espacio en blanco.
+
+**La consecuencia no es cosmética.** La skill `organizar-sala-lectura` manda que la fecha de un
+anexo de WhatsApp sea la de **envío** del mensaje que lo adjunta, y que esa regla **prevalezca**
+sobre la jerarquía normal de fechas. Sin emparejamiento, esa regla no se puede aplicar: todos
+los adjuntos del chat caen a `0000-00-00` o heredan una fecha aproximada, y el *timeline* del
+caso —que es el producto de la sala de lectura— se degrada en silencio.
+
+**Ojo con la medición previa.** La propia skill declara «118 de 118 en W-02VEKE y 67 de 67 en
+W-02USSI», con control positivo. Esas dos poblaciones eran **audio y vídeo** y se midieron con
+el regex de la skill, no con `_adjunto_ref`. No se contradicen: miden instrumentos distintos.
+Lo que aquí se mide es la función del repo, sobre **todos** los adjuntos de un chat.
+
+**Remedio (una línea, y es el de mayor rendimiento del lote):** normalizar en `_adjunto_ref`
+antes de devolver, quitando `\u200e\u200f\u202a-\u202e\ufeff` además de los espacios. Con un
+test sobre un `_chat.txt` que traiga la marca — hoy ningún test la lleva, y por eso el defecto
+lleva vivo desde que existe el parser.
+
+**Disparador de promoción.** Inmediato: cualquier apertura con export de WhatsApp lo activa.
+
+---
+
+## 237. `apply_label` con `target_type: "thread"` devuelve éxito y no aplica la etiqueta
+
+**Medido el 2026-09-10** creando la etiqueta del caso W-02V48N en la cuenta de E&V con el MCP
+`gmail-multiaccount` (`plugins/gmail_mcp/server.py`).
+
+La llamada sobre el hilo devolvió:
+
+```json
+{"action": "apply", "label_id": "Label_406", "target_type": "thread", "label_ids": []}
+```
+
+`action: apply` y **`label_ids` vacío**. La búsqueda por esa etiqueta devolvió cero mensajes.
+La misma llamada con `target_type: "message"`, mensaje a mensaje, sí funcionó y devolvió
+`label_ids: ["UNREAD", "Label_406", "CATEGORY_PERSONAL", "INBOX"]`.
+
+**Por qué importa más de lo que parece:** el paso siguiente del runbook (§6 → intake de correo)
+exporta **la etiqueta**. Una etiqueta creada y «aplicada» al hilo que en realidad está vacía
+hace que `export_label` exporte cero mensajes con código 0. El fallo no se ve en el etiquetado,
+se ve tres pasos después como un expediente sin correspondencia — y para entonces parece un
+caso sin correo, no un bug.
+
+**Es un grito tragado:** la herramienta no puede devolver el otro valor. Devuelve `action:
+apply` haya aplicado algo o no, y el único indicio es el `label_ids` vacío, que hay que saber
+mirar.
+
+**Remedio.** Dos partes: (1) que la rama `thread` use `threads().modify()` de verdad o, si el
+alcance del token no lo permite, que **falle en vez de fingir**; (2) que la respuesta se
+construya desde el estado releído, de modo que `label_ids` sin la etiqueta pedida sea un error
+y no un campo decorativo.
+
+**Disparador de promoción.** La próxima apertura que etiquete un hilo. Mientras: etiquetar
+**mensaje a mensaje** y verificar que la etiqueta aparece en `label_ids`.
+
+---

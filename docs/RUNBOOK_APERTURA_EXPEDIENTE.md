@@ -611,6 +611,16 @@ sobre el listado real de etiquetas, W-02ZIIF):
   numeración de ciudad que EXTRAJUD).
 - **`mails.repositorio`**: `01. EXTRAJUDICIAL/...`.
 
+> **`[APER-69]` / W-02V48N — el `<ciudad>` de arriba NO es el nombre de la ciudad: va
+> NUMERADO y en MAYÚSCULAS.** Medido el 2026-09-10 sobre el listado real de la cuenta EV, que
+> son 2.748 líneas: las ramas de `01. EXTRAJUD` son `00. BAD DEBT`, `00. COMPLIANCE`,
+> `01. BARCELONA`, `02. MADRID`, `03. VALENCIA`, `04. COST 2O`, `05. HAMBURGO`, `05. SEVILLA`,
+> `06. BILBAO` y `07. SANTANDER`. Escribir `.../Valencia/...` **no falla**: crea una rama nueva
+> al lado de la buena, y la etiqueta del caso queda fuera del árbol donde el despacho busca.
+> Ya hay una así: conviven `01. BARCELONA` y un `Barcelona` suelto, de alguna apertura previa.
+> **Coge el nombre exacto del listado, no lo compongas** — y como `list_labels` revienta el
+> límite de tokens, vuélcalo a fichero y haz `grep` (lo dice el punto siguiente).
+
 **Colores y mecánica (W-046G2R, medido sobre 226 etiquetas reales):**
 - *leaf* de caso (activa o archivada): `{backgroundColor:"#4986e7", textColor:"#ffffff"}`.
   Carpeta de **ciudad** (nivel padre): verde `#16a765`. **No confundir nivel.**
@@ -674,7 +684,23 @@ argumentos, estrategia) con la mecánica de intake.** Para llegar aquí ya deber
 cerrado TODO el intake + atomización + sala de máquina (§3-§5) — este es el punto natural
 donde empieza la lectura real; no intercalar análisis a mitad de la mecánica de arriba.
 
-**Usa la skill canónica `organizar-sala-lectura` (v1.3, estructura PLANA).**
+**Usa la skill canónica `organizar-sala-lectura` (estructura PLANA).**
+
+> **`[APER-70]` / W-02V48N — esta sección ofrece DOS constructores y no dice cuál gobierna.**
+> Anotado el 2026-09-10. Arriba manda usar la skill; sesenta líneas más abajo, el bloque del
+> `[APER-55]` entrega `python -m scripts.sala_lectura organizar --case …`, que es el **motor
+> local**. Y ese motor se declara **`[DEPRECADO 2026-06-18]`** en la primera línea de su propio
+> módulo (`core/sala_lectura.py`: «queda SUPERSEDIDO por la skill … No ampliar»), mientras la
+> skill se declara «el **único** constructor de la sala». Las dos cosas no pueden ser verdad.
+> **Mientras no se decida: la skill gobierna.** El CLI se conserva porque su ciclo se arregló
+> (`[APER-55]`, `MEJORAS #151`) y sigue siendo el disparo rápido en local, pero lo que produce
+> **no** es la sala plana de la skill. Ojo además con que el botón «📚 Sala de lectura» de Streamlit
+> (`streamlit_app.py:1397`) llama a ese mismo motor deprecado, así que Paola y Ana pueden
+> disparar el camino declarado muerto sin saberlo.
+>
+> La versión de la skill **no se transcribe aquí**: decía `v1.3` y va por la **v1.16**. Un
+> número de versión en un documento que nada actualiza queda rancio por construcción — es el
+> mismo defecto que el conteo de la suite en `CLAUDE.md`. Se lee del `SKILL.md`.
 
 - **`[APER-60]` / W-04A6LI — La sala de lectura filtra por EXTENSIÓN y la de máquina
   identifica por BYTES: los ficheros sin extensión desaparecen del catálogo en silencio.**
