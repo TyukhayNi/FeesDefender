@@ -11263,11 +11263,16 @@ arreglo real, y hay que mirar si ese rojo cumple alguna función de «pendiente�
 tocar el estilo. (c) Nada, y documentar que el rojo de un informe sin firmar no significa nada —lo
 peor, porque obliga a saberlo.
 
-**Cerrada el 2026-09-11 por la vía (a).** Se quitó el relleno del estilo base de `E21`. Las dos
-preguntas abiertas quedaron medidas antes de tocar nada: ese rojo era la **única** celda del libro
-con relleno `FFFF0000`, ningún documento le atribuye función y `render_informe.py` declara no tocar
-`E21`/`E22`, así que no cumplía ningún papel de «pendiente». El `xf` afectado (índice 104) lo usa
-**una sola celda**, de modo que el cambio no alcanza a ninguna otra.
+**Cerrada el 2026-09-11 por la vía (a).** Se quitó el relleno del estilo base de `E21`. Lo que la
+entrada pedía mirar quedó medido antes de tocar nada: ese rojo era la **única** celda del libro con
+relleno `FFFF0000`, ningún documento del repo le atribuye función y `render_informe.py` declara no
+tocar `E21`/`E22`. El `xf` afectado (índice 104) lo usa **una sola celda**, de modo que el cambio no
+alcanza a ninguna otra.
+
+**Dicho con precisión, tras la R1 (H-07):** que nadie lo documentara no prueba que nunca cumpliera
+una función humana de «pendiente» — prueba que hoy nadie puede saberlo. Lo que decide es otra cosa:
+`FFFF0000` no está en la leyenda del semáforo (`C6EFCE`/`FFEB9C`/`FFC7CE`) y `E22` no lo tiene, así
+que dos filas vacías se veían distinto.
 
 ## 243. El filtro que produce el guion de entrevista deja **12 preguntas fuera**  [CERRADA 2026-09-11]
 
@@ -11295,11 +11300,15 @@ comportarse raro.
 **Cerrada el 2026-09-11.** `autoFilter` y `_xlnm._FilterDatabase` a `B3:M103`, los dos — el rango
 vive en dos sitios y cambiar uno solo deja el filtro a medias (tiene su propio test y su mutante).
 
-**El rango corto era un residuo, y esto es la medición que la entrada pedía:** acababa exactamente
-en la última fila de la sección 8 (Vueltas), y las secciones 9 (Team leader), 10 (Escritura) y 11
-(Reclamación) se añadieron después sin ampliarlo. Y **no protegía de las filas de sección**: ya
-había **siete** dentro del rango —29, 32, 44, 54, 58, 66 y 83—, así que las tres que entran (89, 91,
-97) no son una clase nueva de fila.
+**Lo que la entrada pedía medir —si el rango corto protegía algo— sale que NO**: ya había **ocho**
+filas de sección dentro del rango (5, 29, 32, 44, 54, 58, 66 y 83), así que las tres que entran (89,
+91, 97) no son una clase nueva de fila. Ese es el dato que decide.
+
+**Y una corrección de la R1 (H-07), porque la primera redacción vendía una inferencia como
+medición:** que el rango acabara exactamente en la última fila de la sección 8 **sugiere** que las
+secciones 9-11 se añadieron después sin ampliarlo, pero no lo acredita — las dos copias comparadas
+ya traen las once secciones, y nada en ellas fecha cuándo entraron. La cobertura del rango nuevo se
+sostiene sola: 88 IDs hasta la fila 103, y la validación de la columna M ya llega a `M6:M103`.
 
 ## 244. Tres documentos describen la plantilla de viabilidad y ninguno coincide con ella
 
@@ -11420,4 +11429,28 @@ es lo que `#227` arreglaba.
 **Lo que sí queda escrito**, en el §3.4 del diseño: la garantía de la pieza es sobre **el cuerpo**;
 sobre el frontmatter es «las claves que había siguen estando, con su valor», y estas dos son sus
 excepciones conocidas.
+## 245. La hoja `PREGUNTAS` tiene cinco `<selection>` donde el esquema OOXML admite cuatro
+
+> Medido el 2026-09-11 por la R1 de `MEJORAS #242`/`#243`, comparando los dos `.xlsx` a nivel de
+> zip. **Preexistente**: idéntico en las dos copias, el diff no lo introdujo ni lo tocó.
+
+**Qué pasa.** El `<sheetView>` de `PREGUNTAS` (`xl/worksheets/sheet2.xml`) lleva **cinco** hijos
+`<selection>` —`topRight`, `bottomLeft`, `bottomRight`, `bottomLeft`, `bottomRight`— y la secuencia
+del esquema de `SheetView` admite **como máximo cuatro**, uno por panel. Los dos últimos son
+duplicados de panel.
+
+**Por qué importa poco hoy y puede importar mañana.** `openpyxl` lo acepta sin rechistar y el
+fichero se viene abriendo sin problemas, así que no hay síntoma. Pero un validador XSD estricto, o
+un consumidor que no sea Excel ni openpyxl, puede rechazar la hoja; y el día que pase, el rastro
+será un «no me abre el informe» sin causa visible.
+
+**Lo que NO se sabe, y no se da por sabido:** si una versión concreta de Excel repara, ignora o
+rechaza esas selecciones duplicadas. Nadie lo ha abierto para mirarlo. **No se afirma que el
+fichero sea inválido para Excel.**
+
+**Vía.** Quitar las dos `<selection>` sobrantes conservando una por panel, con la misma edición
+quirúrgica a nivel de zip que usó `#243` (copiar cada entrada byte a byte y sustituir solo el
+bloque), y validar el paquete contra el esquema antes y después. **No se arregló de paso** en el PR
+de `#242`/`#243` a propósito: habría sido una cuarta modificación del binario metida dentro de una
+auditoría, sin ronda propia y sin que nadie la hubiera pedido.
 

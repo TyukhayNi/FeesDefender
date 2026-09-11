@@ -7,27 +7,36 @@
 
 - `assets/plantilla_informe_viabilidad.xlsx`: el `autoFilter` de `PREGUNTAS` pasa de `B3:M88` a
   **`B3:M103`**, y con él el nombre definido oculto `_xlnm._FilterDatabase`. Los 88 IDs llegan a la
-  fila 103: **12 preguntas** —`tl_01`, los seis `esc_*` y los cinco `rec_*`— quedaban fuera del
-  filtro que produce el guion de entrevista, así que marcar las 88 filas (la pieza P5 del mismo
-  día) servía a medias.
-- **El rango corto era un residuo, medido**: acababa exactamente en la última fila de la sección 8,
-  y las secciones 9-11 se añadieron después sin ampliarlo. No protegía las filas de sección: ya
-  había **siete** dentro del rango (29, 32, 44, 54, 58, 66, 83) y el cambio añade tres más del
-  mismo tipo.
+  fila 103: **12 preguntas** —`tl_01`, **cinco** `esc_*` y **seis** `rec_*`— quedaban fuera del filtro que
+  produce el guion de entrevista, así que marcar las 88 filas (la pieza P5 del mismo día) servía a
+  medias.
+- **El rango corto no protegía las filas de sección, y eso sí está medido**: ya había **ocho**
+  dentro del rango (5, 29, 32, 44, 54, 58, 66, 83) y el cambio añade tres más del mismo tipo (89,
+  91, 97). Que además acabe exactamente en la última fila de la sección 8 **es una inferencia**
+  sobre cómo creció la plantilla, no una medición: las dos copias comparadas ya traen las once
+  secciones y nada en ellas fecha cuándo se añadieron.
 - `E21` (JURÍDICO) pierde el relleno sólido `FFFF0000` de su estilo base. Estaba **bajo** el
   formato condicional, así que con la celda vacía no se activaba ninguna regla y quedaba el rojo:
   un informe **sin valorar** enseñaba JURÍDICO en rojo puro, que ni siquiera es el rojo del
   semáforo (`FFC7CE`). `E22` no lo tenía, así que las dos filas vacías se veían distinto.
-- **Ese rojo no cumplía ninguna función documentada**, medido: era la **única** celda del libro con
-  ese relleno, ningún documento lo menciona y `render_informe.py` declara no tocar `E21`/`E22`.
+- **Ese rojo no tiene ninguna función documentada**, y eso es lo que se midió: era la **única**
+  celda del libro con ese relleno, ningún documento del repo lo menciona y `render_informe.py`
+  declara no tocar `E21`/`E22`. Que nadie lo documentara **no prueba** que nunca cumpliera una
+  función humana de «pendiente»; prueba que hoy nadie puede saberlo. Lo que decide el cambio es
+  otra cosa: `FFFF0000` no está en la leyenda del semáforo y `E22` no lo tiene.
 - **Se cambió a nivel de zip, no con openpyxl**: cada entrada se copia byte a byte y solo se
   sustituyen tres cadenas en `sheet2.xml`, `workbook.xml` y `styles.xml`. Comprobado por lectura:
   **9 entradas idénticas, 3 modificadas**, ninguna otra. El `xf` tocado (índice 104) lo usa **una
   sola celda**, `E21`, así que el cambio no alcanza a ninguna otra; y el relleno 7 se queda en la
   tabla porque quitarlo renumeraría todos los demás.
-- 5 tests nuevos, **3 rojos antes del cambio** y **4 mutantes dirigidos, los 4 muertos**: devolver
-  el rojo, acortar el filtro, acortar **solo** el nombre definido, y apuntar `E21` al estilo 0 —que
-  quita el relleno llevándose por delante el borde y la alineación—.
+- 7 tests nuevos y el invariante del libro ampliado a **las cuatro fórmulas** de `INFORMACION`, no
+  solo `F39`: la revisión midió que cambiar la de honorarios (`H14`) por `=0` pasaba los 45 casos
+  del módulo, y es la que alimenta el importe que lee el CFO.
+- **11 mutantes dirigidos, los 11 muertos.** Cuatro míos —devolver el rojo, acortar el filtro,
+  acortar **solo** el nombre definido, apuntar `E21` al estilo 0— y **siete que la revisión midió
+  vivos** contra mi primera versión de los tests: filtro sin la columna M, filtro desde la fila
+  100, nombre definido atribuido a `INFORMACION`, protección que prohíbe filtrar, relleno
+  **tramado** en vez de sólido, `E21` de Arial 8 a Calibri 11, y la fórmula de honorarios a cero.
 
 **Sigue sin verificarse, y no lo puede hacer una máquina:** que el desplegable se despliegue en
 Excel y que la alerta salte al teclear un valor fuera de la lista.
