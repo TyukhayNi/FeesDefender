@@ -2506,6 +2506,34 @@ Usar la vía equivocada tiene un coste medido, y las dos veces fue el mismo día
   certificado» sobre uno que ya lo tenía, y **lo subió dos veces**. El duplicado se detectó por
   `sha256` idéntico de los dos binarios.
 
+### 17.4-bis El contrato vale igual para `.docx`, y la RELECTURA tiene otra forma (2026-09-11)
+
+Cuatro subidas reales sobre los expedientes judiciales 93 y 284 (el informe al cliente en castellano
+y en inglés, a la carpeta `DOCUMENTOS`, `id_carpeta` 312), con el §17.1 tal cual está escrito:
+
+- **El mime de Word funciona igual que el PDF**:
+  `application/vnd.openxmlformats-officedocument.wordprocessingml.document`. Los cuatro documentos
+  volvieron con el **sha256 idéntico** al original, comparado tras bajarlos.
+- **`id_carpeta` es global, no del expediente.** La misma carpeta `312 DOCUMENTOS` aparece en los dos
+  expedientes, igual que `309 EJECUCION` y `306 CIVIL`. Lo que ata el documento a *su* expediente es
+  el `relatedRegisters`, no la carpeta. Para averiguar el id de una carpeta por su nombre, leerlo del
+  `id_carpeta` de cualquier documento que ya esté allí (`list_gdocu_docs_rest` lo trae con su label).
+
+⚠️ **`GET /api/element_register/gdocu/{id}` devuelve una LISTA, no un `Register`.** Es la trampa que
+costó una excepción en mitad de una subida, con el documento ya creado:
+
+| Sobre | Forma de la respuesta |
+|---|---|
+| `element_register/expedientes_judiciales/{id}` | objeto `Register` → `payload["values"]["hydra:member"]` |
+| `element_register/gdocu/{id}` | **lista** de `RegisterValue` en la raíz |
+
+Un parser escrito contra el primero revienta con `AttributeError: 'list' object has no attribute
+'get'` contra el segundo. Quien relea un documento recién subido debe aceptar las **dos** formas.
+
+Y la lección operativa, que es la cara práctica del §17.4: **el verificador que se cae deja la
+escritura hecha**. Al reintentar hay que censar primero qué quedó creado y subir solo lo que falta,
+nunca relanzar el lote entero.
+
 ### 17.5 Borrar: qué se lleva cada `DELETE`
 
 - **`DELETE /api/documents/{id}`** → 200. El documento desaparece del listado filtrado, pero

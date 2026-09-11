@@ -11070,3 +11070,44 @@ segunda es la consecuencia: en una reclamación de honorarios los deudores solid
 firmantes del encargo, y un deudor que no consta en la ficha es un deudor que se queda fuera de la
 demanda. Entra con la próxima apertura cuyos deudores compartan correo, que en un matrimonio es lo
 normal.
+
+---
+
+## 240. `SudespachoClient.get_expediente` sigue pidiendo `properties[]` y recibe 500, con el workaround escrito desde julio
+
+> **Medido en vivo el 2026-09-11**, leyendo los dos expedientes judiciales de Swarovski.
+> `python -m scripts.sync_sudespacho show --expediente 278` devuelve
+> `HTTP 500: "Array to string conversion"`. **No es del registro**: el control positivo sobre el
+> expediente 642 falla igual, así que lo que está roto es la llamada, no el dato.
+
+**Qué pasa.** [`core/sync_sudespacho.py:401`](../core/sync_sudespacho.py) construye la petición como
+`params={"properties[]": [...]}`, que httpx serializa a `properties[]=a&properties[]=b`. PHP lo
+recibe como array y el backend lo concatena a string: 500.
+
+**Y esto ya estaba resuelto en otro sitio.** El `§ properties` de
+`docs/INTEGRACION_SUDESPACHO.md` documenta el workaround **desde el 2026-07-13**: la forma
+`?properties=a,b` (coma, sin corchetes) devuelve 200. Y
+[`core/sudespacho_create.py:1596`](../core/sudespacho_create.py) `get_expediente` **ya lo aplica**
+(`props = ",".join(...)`). Son dos implementaciones del mismo GET-detalle, una arreglada hace dos
+meses y la otra no. Lo que falló no fue el descubrimiento: fue que el arreglo no se propagó al
+hermano, y nadie lo notó porque nadie corría el comando.
+
+**Alcance real, comprobado por llamadores y no supuesto.** `git grep` da **un solo** consumidor:
+[`scripts/sync_sudespacho.py:128`](../scripts/sync_sudespacho.py), el comando `show`. El `pull` **no**
+pasa por `get_expediente`, así que la sincronización de expedientes no está afectada. (En la sesión
+del 2026-09-11 afirmé primero que `pull` también estaba roto; era falso y salió de no mirar los
+llamadores antes de hablar.)
+
+**El arreglo.** Una línea: `self._get_json(path, properties=",".join(props))`. Ojo con dos cosas al
+tocarlo:
+
+- `properties=a&properties=b` **repetido tampoco vale**: PHP se queda con el último y el CRM
+  devuelve 200 con **una sola** propiedad. Es el fallo silencioso de esta familia, peor que el 500,
+  porque parece que funciona. El test tiene que pedir ≥2 propiedades y comprobar que vuelven **las
+  dos**, no que el status sea 200.
+- `tests/test_sudespacho_create.py::test_get_expediente_hace_get_con_properties_y_api_key` cubre la
+  implementación **hermana**, la que ya está bien. La rota no tiene test: por eso lleva dos meses así.
+
+**Disparador de promoción.** Bajo. El comando `show` es de diagnóstico manual y hay dos rodeos
+(`element_registries` con filtro, o la implementación hermana). Entra cuando alguien lo necesite de
+verdad o cuando se toque `sync_sudespacho.py` por otra razón.
