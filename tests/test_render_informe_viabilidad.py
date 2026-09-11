@@ -15,6 +15,8 @@ temporal del proceso al serializar el libro; eso no es el árbol de producción,
 frase «siempre en tmp_path» se leía como si lo cubriera todo.)
 """
 import json
+import re
+import zipfile
 import sys
 from importlib import import_module
 from pathlib import Path
@@ -487,5 +489,116 @@ def test_la_plantilla_conserva_sus_invariantes():
                         if m.min_row in (21, 22))
         assert merges == ["B21:D21", "B22:D22", "E21:H21", "E22:F22",
                           "G22:H22"], merges
+    finally:
+        wb.close()
+
+
+# ---------------------------------------------------------------------------
+# `MEJORAS #243` — el filtro que produce el guion de entrevista
+#
+# `autoFilter` era `B3:M88` y los 88 IDs llegan a la **fila 103**: doce preguntas
+# —las de Team leader, Escritura y Reclamación— quedaban fuera del ámbito del
+# filtro. Marcar las 88 filas (la pieza P5) sirve de poco si el filtro solo
+# alcanza a 76, porque entonces el guion que sale del filtro NO es el
+# cuestionario.
+#
+# Los dos tests miden contra la plantilla, no contra un número escrito a mano: el
+# día que se añada una sección 12 tienen que ponerse rojos solos.
+# ---------------------------------------------------------------------------
+
+def _ultima_fila_del_rango(ref: str) -> int:
+    """`"B3:M103"` -> `103`."""
+    return int(re.search(r"(\d+)$", ref).group(1))
+
+
+def test_el_filtro_del_guion_alcanza_a_TODAS_las_preguntas():
+    wb = openpyxl.load_workbook(PLANTILLA)
+    try:
+        ws = wb["PREGUNTAS"]
+        filas_con_id = [r for r in range(5, ws.max_row + 1) if ws.cell(r, 3).value]
+        ref = ws.auto_filter.ref
+    finally:
+        wb.close()
+    assert ref, "PREGUNTAS perdió su autoFilter"
+    assert _ultima_fila_del_rango(ref) >= max(filas_con_id), (
+        f"el autoFilter es {ref} y hay IDs hasta la fila {max(filas_con_id)}: "
+        f"{sum(1 for f in filas_con_id if f > _ultima_fila_del_rango(ref))} preguntas "
+        "quedan fuera del filtro que produce el guion de entrevista"
+    )
+
+
+def test_el_FilterDatabase_dice_lo_MISMO_que_el_autoFilter():
+    """La otra mitad del mismo hecho, y openpyxl no la enseña.
+
+    El rango del filtro vive en DOS sitios: el `autoFilter` de la hoja y el nombre
+    definido oculto `_xlnm._FilterDatabase` del libro. `wb.defined_names` viene
+    vacío —openpyxl enseña lo que entiende—, así que esto se lee del zip.
+    """
+    wb = openpyxl.load_workbook(PLANTILLA)
+    try:
+        ref_hoja = wb["PREGUNTAS"].auto_filter.ref
+    finally:
+        wb.close()
+    with zipfile.ZipFile(PLANTILLA) as z:
+        wbx = z.read("xl/workbook.xml").decode("utf-8")
+    m = re.search(r"<definedName name=\"_xlnm\._FilterDatabase\"[^>]*>"
+                  r"'PREGUNTAS'!(\$[A-Z]+\$\d+:\$[A-Z]+\$\d+)</definedName>", wbx)
+    assert m, "no hay _xlnm._FilterDatabase para PREGUNTAS en workbook.xml"
+    assert m.group(1).replace("$", "") == ref_hoja, (
+        f"el nombre definido dice {m.group(1)} y el autoFilter {ref_hoja}: "
+        "cambiar uno y no el otro deja el filtro a medias"
+    )
+
+
+# ---------------------------------------------------------------------------
+# `MEJORAS #242` — el semáforo en blanco se veía ROJO
+#
+# `E21` tenía un relleno sólido `FFFF0000` en su estilo base, bajo el formato
+# condicional. Sin valor no se activa ninguna regla y quedaba el relleno: un
+# informe **sin valorar** enseñaba JURÍDICO en rojo puro, que ni siquiera es el
+# rojo del semáforo (`FFC7CE`). `E22` no lo tenía, así que las dos filas vacías
+# se veían distinto.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("fila", [21, 22])
+def test_el_semaforo_SIN_VALORAR_no_pinta_ningun_color(fila):
+    wb, inf = _informacion()
+    try:
+        celda = inf[f"E{fila}"]
+        assert celda.value is None, "la plantilla trae el semáforo valorado"
+        assert celda.fill.patternType != "solid", (
+            f"E{fila} tiene relleno sólido {celda.fill.start_color.rgb} en su estilo "
+            "base: sin valor no se activa ninguna regla del condicional y esa es la "
+            "que se ve, así que un informe sin valorar enseña un color que nadie puso"
+        )
+    finally:
+        wb.close()
+
+
+def test_las_dos_filas_del_semaforo_se_ven_IGUAL_estando_vacias():
+    """El defecto no era solo el rojo: era que las dos filas no coincidían."""
+    wb, inf = _informacion()
+    try:
+        a, b = inf["E21"].fill, inf["E22"].fill
+        assert (a.patternType, a.start_color.rgb) == (b.patternType, b.start_color.rgb), (
+            f"E21 {a.patternType}/{a.start_color.rgb} contra "
+            f"E22 {b.patternType}/{b.start_color.rgb}"
+        )
+    finally:
+        wb.close()
+
+
+def test_quitar_el_relleno_de_E21_no_se_llevo_su_borde_ni_su_alineacion():
+    """La mitad conservadora: el `xf` de `E21` lleva más cosas que el relleno.
+
+    Sin esto, «quitar el relleno» podría hacerse apuntando `E21` al estilo 0 y
+    llevarse por delante el recuadro del bloque VIABILIDAD sin que nada avisara.
+    """
+    wb, inf = _informacion()
+    try:
+        celda = inf["E21"]
+        assert celda.alignment.horizontal == "center", "E21 perdió su alineación"
+        assert celda.border.top.style or celda.border.left.style, "E21 perdió su borde"
+        assert celda.font.b or celda.font.sz, "E21 perdió su fuente"
     finally:
         wb.close()

@@ -3,6 +3,35 @@
 > Registro de cambios de la skill, en orden cronológico inverso (lo más reciente arriba).
 > Formato ligero: fecha (AAAA-MM-DD) + qué cambió, una línea por cambio.
 
+## 2026-09-11 — El filtro llega a las 88 preguntas y el semáforo en blanco se ve neutro (`MEJORAS #242`, `#243`)
+
+- `assets/plantilla_informe_viabilidad.xlsx`: el `autoFilter` de `PREGUNTAS` pasa de `B3:M88` a
+  **`B3:M103`**, y con él el nombre definido oculto `_xlnm._FilterDatabase`. Los 88 IDs llegan a la
+  fila 103: **12 preguntas** —`tl_01`, los seis `esc_*` y los cinco `rec_*`— quedaban fuera del
+  filtro que produce el guion de entrevista, así que marcar las 88 filas (la pieza P5 del mismo
+  día) servía a medias.
+- **El rango corto era un residuo, medido**: acababa exactamente en la última fila de la sección 8,
+  y las secciones 9-11 se añadieron después sin ampliarlo. No protegía las filas de sección: ya
+  había **siete** dentro del rango (29, 32, 44, 54, 58, 66, 83) y el cambio añade tres más del
+  mismo tipo.
+- `E21` (JURÍDICO) pierde el relleno sólido `FFFF0000` de su estilo base. Estaba **bajo** el
+  formato condicional, así que con la celda vacía no se activaba ninguna regla y quedaba el rojo:
+  un informe **sin valorar** enseñaba JURÍDICO en rojo puro, que ni siquiera es el rojo del
+  semáforo (`FFC7CE`). `E22` no lo tenía, así que las dos filas vacías se veían distinto.
+- **Ese rojo no cumplía ninguna función documentada**, medido: era la **única** celda del libro con
+  ese relleno, ningún documento lo menciona y `render_informe.py` declara no tocar `E21`/`E22`.
+- **Se cambió a nivel de zip, no con openpyxl**: cada entrada se copia byte a byte y solo se
+  sustituyen tres cadenas en `sheet2.xml`, `workbook.xml` y `styles.xml`. Comprobado por lectura:
+  **9 entradas idénticas, 3 modificadas**, ninguna otra. El `xf` tocado (índice 104) lo usa **una
+  sola celda**, `E21`, así que el cambio no alcanza a ninguna otra; y el relleno 7 se queda en la
+  tabla porque quitarlo renumeraría todos los demás.
+- 5 tests nuevos, **3 rojos antes del cambio** y **4 mutantes dirigidos, los 4 muertos**: devolver
+  el rojo, acortar el filtro, acortar **solo** el nombre definido, y apuntar `E21` al estilo 0 —que
+  quita el relleno llevándose por delante el borde y la alineación—.
+
+**Sigue sin verificarse, y no lo puede hacer una máquina:** que el desplegable se despliegue en
+Excel y que la alerta salte al teclear un valor fuera de la lista.
+
 ## 2026-09-11 — El semáforo de FINANZAS existe (`MEJORAS #228`)
 
 - `assets/plantilla_informe_viabilidad.xlsx`: `E22` gana el desplegable

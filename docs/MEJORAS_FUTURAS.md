@@ -11238,7 +11238,7 @@ La rama que ya existe para el caso legítimo —copiar y anotar `duplicado_de`�
 cambios. **La frontera, no el ejemplo:** cualquier fuente que reciba bytes que otra ya depositó
 tiene este mismo modo de fallo; el arreglo debe formularse sobre el canal, no sobre WhatsApp.
 
-## 242. El semáforo JURÍDICO **en blanco** se ve ROJO, por un estilo fijo bajo el formato condicional
+## 242. El semáforo JURÍDICO **en blanco** se ve ROJO, por un estilo fijo bajo el formato condicional  [CERRADA 2026-09-11]
 
 > Medido el 2026-09-11 por la R1 de `MEJORAS #228`, sobre la plantilla renderizada. **Preexistente:
 > idéntico antes y después de ese cambio.**
@@ -11263,7 +11263,13 @@ arreglo real, y hay que mirar si ese rojo cumple alguna función de «pendiente�
 tocar el estilo. (c) Nada, y documentar que el rojo de un informe sin firmar no significa nada —lo
 peor, porque obliga a saberlo.
 
-## 243. El filtro que produce el guion de entrevista deja **12 preguntas fuera**
+**Cerrada el 2026-09-11 por la vía (a).** Se quitó el relleno del estilo base de `E21`. Las dos
+preguntas abiertas quedaron medidas antes de tocar nada: ese rojo era la **única** celda del libro
+con relleno `FFFF0000`, ningún documento le atribuye función y `render_informe.py` declara no tocar
+`E21`/`E22`, así que no cumplía ningún papel de «pendiente». El `xf` afectado (índice 104) lo usa
+**una sola celda**, de modo que el cambio no alcanza a ninguna otra.
+
+## 243. El filtro que produce el guion de entrevista deja **12 preguntas fuera**  [CERRADA 2026-09-11]
 
 > Medido el 2026-09-11 por la R1 de `MEJORAS #228`. **Preexistente**, y toca de lleno a la pieza
 > que acababa de cerrarse.
@@ -11285,6 +11291,15 @@ Las doce son de escritura, reconocimiento y reclamación — no son las menos im
 cambio de una línea en el XML, pero **hay que medir antes si el rango corto es un residuo o
 protege algo**: la plantilla tiene filas de sección intercaladas, y un filtro que las incluya puede
 comportarse raro.
+
+**Cerrada el 2026-09-11.** `autoFilter` y `_xlnm._FilterDatabase` a `B3:M103`, los dos — el rango
+vive en dos sitios y cambiar uno solo deja el filtro a medias (tiene su propio test y su mutante).
+
+**El rango corto era un residuo, y esto es la medición que la entrada pedía:** acababa exactamente
+en la última fila de la sección 8 (Vueltas), y las secciones 9 (Team leader), 10 (Escritura) y 11
+(Reclamación) se añadieron después sin ampliarlo. Y **no protegía de las filas de sección**: ya
+había **siete** dentro del rango —29, 32, 44, 54, 58, 66 y 83—, así que las tres que entran (89, 91,
+97) no son una clase nueva de fila.
 
 ## 244. Tres documentos describen la plantilla de viabilidad y ninguno coincide con ella
 
