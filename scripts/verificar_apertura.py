@@ -56,7 +56,12 @@ def main(
     solo_problemas: bool = typer.Option(
         False, "--solo-problemas", help="Solo los fallos y pendientes"),
 ) -> None:
-    base = case_locator.buscar(case_id)
+    # `resolve_ref` y no `buscar` a secas: `buscar` casa el nombre LITERAL de la
+    # carpeta, así que `--case-id W-XXXXXX` —la forma que esta ayuda anuncia y la que
+    # se teclea— devolvía «caso no encontrado» sobre un expediente que existía. Lo midió
+    # la R1 (H-07), y no lo veía ningún test porque todos sustituían `buscar`: el test
+    # probaba el doble, no la integración.
+    base = case_locator.buscar(case_locator.resolve_ref(case_id))
     if base is None:
         typer.echo(f"[ERROR] Caso no encontrado: {case_id!r}", err=True)
         raise typer.Exit(code=2)

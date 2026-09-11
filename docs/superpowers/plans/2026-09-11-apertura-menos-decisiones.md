@@ -117,8 +117,13 @@ del expediente. El handoff contó ocho falsos «OK» en un solo día. Mientras n
 sobre el expediente, el verificador es el letrado, y eso es «estar encima».
 
 **Forma:** comando **de solo lectura**, sin mutex de escritura, que no repara nada. Cada
-comprobación emite `ok | pendiente | fallo` al `estado.json` y al evento forense. `pendiente` no
-es `fallo`: un caso a medias tiene que poder verificarse sin que el informe grite.
+comprobación devuelve `ok | pendiente | fallo`. `pendiente` no es `fallo`: un caso a medias tiene
+que poder verificarse sin que el informe grite.
+
+> **Corregido al construirlo (R1, H-12):** este párrafo decía «emite … al `estado.json` y al
+> evento forense», en presente, y **no se persiste nada** — el revisor midió cero escrituras. La
+> decisión de no escribir, con su porqué, está en el apartado (b) de abajo; lo que aquí quedaba
+> era un contrato en presente que el código no cumple. La salida es stdout, en texto o en JSON.
 
 | # | Comprobación | Contra qué se contrasta | De dónde sale |
 |---|---|---|---|
@@ -184,7 +189,7 @@ entero existe para no tener ninguna.
 | 7 | Actuación asociada | por el lado del expediente (`MEJORAS #209`) |
 | 9 | Cuantía `_caso.md` = CRM | depende de 6, y de que `MEJORAS #227` decida quién escribe la cuantía local |
 
-Las cuatro de red comparten un problema de diseño que conviene resolver **una vez**: cómo se
+Las cinco de red comparten un problema de diseño que conviene resolver **una vez**: cómo se
 inyecta el cliente para que los tests prueben la comprobación y no el doble.
 
 ## 6. Lo que no entra en esta fila

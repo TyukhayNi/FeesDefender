@@ -9,7 +9,10 @@ Así que **cada comprobación implementada tiene aquí su caso en rojo**, constr
 sobre un árbol sintético, y ese caso reproduce el defecto real que la motivó. Si alguna
 comprobación dejara de poder ponerse roja, su test lo diría.
 
-Todo se monta en `tmp_path`: ningún test escribe en el árbol de producción.
+Ningún test escribe en el árbol de producción: todo lo que estos tests crean va a
+`tmp_path`. (La R1 midió que openpyxl abre además sus propios temporales en el
+directorio temporal del proceso al serializar un libro — no es el árbol de
+producción, pero «todo en tmp_path» se leía como si lo cubriera.)
 """
 import json
 
@@ -286,7 +289,8 @@ def test_c5_ok_con_todas_marcadas(tmp_path):
     _informe_viabilidad(c, [(f"q{i}", None, "sí") for i in range(88)])
     r = _r(c, "viabilidad_completa")
     assert r.estado == va.OK, r.detalle
-    assert r.evidencia["preguntas"] == 88
+    assert r.evidencia["filas_con_id"] == 88
+    assert r.evidencia["preguntas_distintas"] == 88
 
 
 def test_c5_FALLA_con_filas_en_blanco(tmp_path):
@@ -342,31 +346,6 @@ def test_c5_FALLA_si_el_xlsx_no_tiene_hoja_PREGUNTAS(tmp_path):
     wb.close()
     r = _r(c, "viabilidad_completa")
     assert r.estado == va.FALLO and "PREGUNTAS" in r.detalle
-
-
-# --- La propiedad transversal -------------------------------------------------------
-
-
-def test_cada_comprobacion_implementada_PUEDE_decir_fallo(tmp_path):
-    """La guarda contra la guarda inerte, y el único test que de verdad protege la pieza.
-
-    Recorre las comprobaciones que dicen estar implementadas y exige que **exista en
-    este fichero** un caso que las pone en `fallo`. Si mañana alguien añade una décima
-    comprobación implementada y no le escribe su rojo, esto se pone rojo.
-
-    No comprueba la calidad del caso —eso lo hace la revisión—, sino que el instrumento
-    puede dar el otro valor. Es la lección de la guarda inerte, aplicada al instrumento
-    que existe para que un «OK» signifique algo.
-    """
-    implementadas = {r.id for r in va.verificar(_caso(tmp_path)).resultados
-                     if r.estado != va.SIN_IMPLEMENTAR}
-    fuente = __import__("pathlib").Path(__file__).read_text(encoding="utf-8")
-    sin_rojo = sorted(i for i in implementadas
-                      if f'"{i}")\n    assert r.estado == va.FALLO' not in fuente
-                      and f'_r(c, "{i}")\n    assert r.estado == va.FALLO' not in fuente)
-    assert not sin_rojo, (
-        f"comprobaciones implementadas sin un caso que las ponga en FALLO: {sin_rojo}. "
-        "Una verja que solo puede decir `ok` no verifica nada.")
 
 
 # --- El CLI --------------------------------------------------------------------------
@@ -490,3 +469,363 @@ def test_c5_FALLA_si_el_xlsx_esta_corrupto(tmp_path):
     (an / "Informe viabilidad - roto.xlsx").write_bytes(b"esto no es un zip")
     r = _r(c, "viabilidad_completa")
     assert r.estado == va.FALLO and "no se puede abrir" in r.detalle
+
+
+# ===========================================================================
+# Lo que la R1 de Codex rompió (2026-09-11) — 13 hallazgos, 13 confirmados
+# ===========================================================================
+#
+# Siete ALTOS, y todos de la misma clase: **el verificador decía `ok` de un expediente
+# roto**. Es el único defecto que invalida esta pieza entera, porque es el defecto que
+# la pieza existe para cerrar.
+#
+# La regla que salió de ahí, y que ahora gobierna el módulo: **no poder mirar NO es «no
+# hay nada que ver»**. Toda imposibilidad de leer, toda forma inválida y toda colisión
+# de tipo son `fallo`. `pendiente` queda para la ausencia legítima.
+
+
+# --- H-01: descartar basura en silencio hacía cuadrar los conteos --------------------
+
+
+@pytest.mark.parametrize("cobertura, catalogo_yaml", [
+    ([1, "broken", None], "[]"),                       # todas las filas, basura
+    ([{"slug": "a"}, 42], "- slug: a"),                # una fila buena y una basura
+])
+def test_c3_FALLA_con_entradas_que_no_son_mapas(tmp_path, cobertura, catalogo_yaml):
+    """CONTROL POSITIVO de H-01, el falso verde más caro de la ronda.
+
+    `_leer_json_lista` filtraba con `isinstance(x, dict)`: una lista con basura se
+    convertía en una lista **más corta**, y el conteo podía cuadrar con el otro lado. Un
+    `_cobertura.json` corrupto salía en VERDE. Ahora una entrada que no es un mapa es
+    forma inválida, y se dice cuántas y dónde.
+    """
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, cobertura)
+    proc = c / "01_Procesado"
+    proc.mkdir(parents=True, exist_ok=True)
+    (proc / "indice_documental.yaml").write_text(catalogo_yaml, encoding="utf-8")
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.FALLO
+    assert "no son mapas" in r.detalle and "forma inválida" in r.detalle
+
+
+def test_c3_FALLA_con_un_catalogo_de_cadenas(tmp_path):
+    """La misma forma, del lado del YAML: `- bad\\n- rows` daba `ok` contra cobertura
+    vacía."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [])
+    proc = c / "01_Procesado"
+    proc.mkdir(parents=True, exist_ok=True)
+    (proc / "indice_documental.yaml").write_text("- bad\n- rows\n", encoding="utf-8")
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.FALLO and "no son mapas" in r.detalle
+
+
+# --- H-02: cualquier `parent_slug` verdadero descontaba un documento -----------------
+
+
+@pytest.mark.parametrize("fila, senal", [
+    ({"slug": "a", "parent_slug": "a"}, "hijo de sí mismo"),
+    ({"slug": "a", "parent_slug": 17}, "no es texto"),
+    ({"slug": "a", "parent_slug": "missing"}, "no está en la cobertura"),
+])
+def test_c3_FALLA_con_un_parent_slug_que_no_apunta_a_un_bundle(tmp_path, fila, senal):
+    """CONTROL POSITIVO de H-02.
+
+    Bastaba un valor verdadero para que la fila se contara como hijo de bundle y
+    desapareciera del conteo: el documento podía faltar del catálogo y el verificador lo
+    bendecía. Un hijo solo cuenta si su padre **existe** en la propia cobertura.
+    """
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [fila])
+    _con_catalogo(c, 0)
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.FALLO
+    assert senal in r.detalle, r.detalle
+
+
+def test_c3_un_hijo_con_padre_REAL_sigue_sin_contar(tmp_path):
+    """La otra mitad: el caso legítimo tiene que seguir en verde, o la verja grita
+    sobre lo correcto y se acaba ignorando."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "bundle", "parent_slug": ""},
+                          {"slug": "s1", "parent_slug": "bundle"}])
+    _con_catalogo(c, 1)
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.OK, r.detalle
+    assert r.evidencia["hijos_de_bundle"] == 1
+
+
+# --- H-04: contar no-vacíos no es contar preguntas -----------------------------------
+
+
+def test_c5_FALLA_con_marcas_fuera_del_dominio(tmp_path):
+    """CONTROL POSITIVO de H-04. 88 filas con la columna M a `basura` daban `ok`.
+
+    El dominio es el que la plantilla declara y el generador escribe: `sí`/`si`/`no`.
+    Contar «no está vacío» convierte cualquier cadena en una marca válida.
+    """
+    c = _caso(tmp_path)
+    _informe_viabilidad(c, [(f"q{i}", None, "basura") for i in range(88)])
+    r = _r(c, "viabilidad_completa")
+    assert r.estado == va.FALLO and "fuera del dominio" in r.detalle
+
+
+def test_c5_FALLA_con_la_misma_pregunta_repetida(tmp_path):
+    """CONTROL POSITIVO de H-04, segunda mitad: 88 copias de `q0` daban `ok`.
+
+    «Las 88 preguntas» es una afirmación sobre **identidades**, no sobre filas.
+    """
+    c = _caso(tmp_path)
+    _informe_viabilidad(c, [("q0", None, "sí") for _ in range(88)])
+    r = _r(c, "viabilidad_completa")
+    assert r.estado == va.FALLO and "repetidos" in r.detalle
+    assert r.evidencia["preguntas_distintas"] == 1
+
+
+@pytest.mark.parametrize("marca", ["sí", "si", "no", "NO", " Sí "])
+def test_c5_acepta_el_dominio_del_generador(tmp_path, marca):
+    """Incluida la equivalencia de grafía `si` que `render_informe` normaliza."""
+    c = _caso(tmp_path)
+    _informe_viabilidad(c, [(f"q{i}", None, marca) for i in range(88)])
+    assert _r(c, "viabilidad_completa").estado == va.OK
+
+
+def test_c5_pendiente_con_dos_informes_de_la_misma_fecha(tmp_path):
+    """H-11: el empate de mtime se resolvía por orden alfabético, y podía **ocultar el
+    informe malo detrás del bueno**. Sin regla de vigencia, elegir es adivinar."""
+    import os
+
+    c = _caso(tmp_path)
+    a = _informe_viabilidad(c, [(f"q{i}", None, "sí") for i in range(88)])
+    an = c / "02_Analisis"
+    malo = an / "Informe viabilidad Z malo.xlsx"
+    malo.write_bytes(a.read_bytes())
+    for p in (a, malo):
+        os.utime(p, (2_000_000, 2_000_000))
+    r = _r(c, "viabilidad_completa")
+    assert r.estado == va.PENDIENTE and "misma fecha" in r.detalle
+    assert len(r.evidencia["empatados"]) == 2
+
+
+# --- H-05: no haber podido leer no es prueba de que no haya nada ---------------------
+
+
+def test_c8_FALLA_si_un_espejo_no_se_puede_leer(tmp_path, monkeypatch):
+    """CONTROL POSITIVO de H-05, el falso verde que vivía en la única línea que la
+    cobertura del diff no cubría — y que yo había declarado «defensiva de E/S».
+
+    El revisor lo midió en Windows con un handle exclusivo: mientras duraba el bloqueo,
+    la comprobación devolvía `ok`, «ninguno en 0 espejos». Aquí se inyecta el mismo
+    `PermissionError` que él observó.
+    """
+    c = _caso(tmp_path)
+    _con_espejos(c, {"ajeno.md": "W-04AAAA\n"})
+    real = type(tmp_path).read_text
+
+    def bloqueado(self, *a, **kw):
+        if self.name == "ajeno.md":
+            raise PermissionError(13, "Permission denied")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(type(tmp_path), "read_text", bloqueado)
+    r = _r(c, "wcodes_ajenos")
+    assert r.estado == va.FALLO
+    assert "NO se pueden leer" in r.detalle
+    assert "PermissionError" in r.evidencia["ilegibles"][0]
+
+
+def test_c8_mira_tambien_los_subdirectorios(tmp_path):
+    """H-05: solo recorría el primer nivel. Un espejo anidado quedaba fuera del barrido
+    y su W-code ajeno era invisible."""
+    c = _caso(tmp_path)
+    md = _con_espejos(c, {"a.md": "W-TEST01\n"})
+    (md / "nested").mkdir()
+    (md / "nested" / "b.md").write_text("W-04AAAA\n", encoding="utf-8")
+    r = _r(c, "wcodes_ajenos")
+    assert r.estado == va.FALLO and "W-04AAAA" in r.detalle
+
+
+# --- H-06: una ruta ocupada por un fichero no es «aún no ha corrido» -----------------
+
+
+def test_una_ruta_estructural_OCUPADA_es_fallo_y_no_pendiente(tmp_path):
+    """CONTROL POSITIVO de H-06.
+
+    Con `01_Procesado` siendo un **fichero**, la primera versión informaba las cuatro
+    locales en `pendiente`, cero fallos, y el CLI salía con 0. No es que falte una
+    etapa: es que la etapa **no puede** correr.
+    """
+    c = _caso(tmp_path)
+    (c / "01_Procesado").write_text("not a directory", encoding="utf-8")
+    informe = va.verificar(c)
+    fallos = {r.id for r in informe.fallos}
+    assert fallos, "un expediente estructuralmente imposible salía en verde"
+    assert "cobertura_vs_catalogo" in fallos or "artefactos_sala" in fallos
+    for r in informe.fallos:
+        assert "estructura inválida" in r.detalle or "no es un" in r.detalle
+
+
+def test_la_identidad_sobrevive_a_una_comprobacion_que_revienta(tmp_path):
+    """Al capturar la excepción se perdía el id (quedaba el nombre de la función).
+
+    Un informe donde el fallo se llama `c3_cobertura_vs_catalogo` y el resto
+    `cobertura_vs_catalogo` obliga a mirar el código para cruzarlos.
+    """
+    c = _caso(tmp_path)
+    (c / "01_Procesado").write_text("x", encoding="utf-8")
+    ids = {r.id for r in va.verificar(c).resultados}
+    assert "cobertura_vs_catalogo" in ids
+    assert not any(i.startswith("c3_") for i in ids)
+
+
+# --- H-09 y H-10: la identidad del caso y la grafía del W-code ------------------------
+
+
+def test_c8_el_wcode_propio_es_el_de_ENTRE_PARENTESIS(tmp_path):
+    """CONTROL POSITIVO de H-09.
+
+    En `Relacionado W-04AAAA - Caso (W-TEST01)` la primera versión tomaba como propio el
+    **primero que aparecía**, así que el ajeno quedaba exento del barrido. El compositor
+    del `case_id` pone el W-code entre paréntesis: ésa es la fuente.
+    """
+    c = _caso(tmp_path, nombre="Relacionado W-04AAAA - Caso (W-TEST01)")
+    _con_espejos(c, {"a.md": "W-04AAAA\n"})
+    r = _r(c, "wcodes_ajenos")
+    assert r.estado == va.FALLO
+    assert r.evidencia["propio"] == "W-TEST01"
+
+
+def test_c8_dos_wcodes_entre_parentesis_son_identidad_AMBIGUA(tmp_path):
+    """Elegir entre dos es adivinar: se declara."""
+    c = _caso(tmp_path, nombre="Caso (W-TEST01) y (W-04AAAA)")
+    _con_espejos(c, {"a.md": "texto\n"})
+    r = _r(c, "wcodes_ajenos")
+    assert r.estado == va.FALLO and "ambigua" in r.detalle
+
+
+@pytest.mark.parametrize("texto", [
+    "Documento W-\n04AAAA de otro caso",     # partido por maquetación
+    "Documento W‐04AAAA de otro caso",  # guion U+2010
+    "Documento w-04aaaa de otro caso",       # minúsculas (ya cubierto, se conserva)
+])
+def test_c8_detecta_las_variantes_de_grafia(tmp_path, texto):
+    """CONTROL POSITIVO de H-10. La extracción de texto de un PDF parte identificadores
+    por maquetación y mete guiones tipográficos; los tres son el mismo W-code."""
+    c = _caso(tmp_path)
+    _con_espejos(c, {"propio.md": "W-TEST01\n", "colado.md": texto})
+    r = _r(c, "wcodes_ajenos")
+    assert r.estado == va.FALLO and "W-04AAAA" in r.detalle
+
+
+# --- H-08: la guarda del control positivo, que ahora EJECUTA --------------------------
+#
+# La anterior buscaba una **cadena literal** en este mismo fichero. El revisor la
+# sobrevivió de tres formas legítimas —`@pytest.mark.skip`, `xfail(strict=True)`, y el
+# ejemplo dentro de un docstring— y la rompió cambiando unas comillas dobles por simples
+# en un test que seguía funcionando. Leer texto no demuestra ejecución, ni resultado, ni
+# siquiera que exista una función de test.
+#
+# Ahora el registro vive **en código** y la guarda lo **corre**.
+
+
+def _roto_cobertura(tmp_path):
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": f"d{i}", "parent_slug": ""} for i in range(21)])
+    _con_catalogo(c, 17)
+    return c
+
+
+def _roto_artefactos(tmp_path):
+    c = _caso(tmp_path)
+    _con_sala_lectura(c, artefactos=("INDICE.md", "CRONOLOGIA.md"))
+    return c
+
+
+def _roto_viabilidad(tmp_path):
+    c = _caso(tmp_path)
+    _informe_viabilidad(c, [(f"q{i}", None, "sí") for i in range(51)]
+                        + [(f"q{i}", None, None) for i in range(51, 88)])
+    return c
+
+
+def _roto_wcodes(tmp_path):
+    c = _caso(tmp_path)
+    _con_espejos(c, {"propio.md": "W-TEST01\n", "colado.md": "W-04AAAA\n"})
+    return c
+
+
+#: Un expediente roto por comprobación, que la guarda EJECUTA. No es documentación: es
+#: el instrumento. Añadir una comprobación implementada sin su entrada aquí pone la
+#: guarda en rojo, y una entrada que no produzca `fallo` de verdad también.
+CASOS_DE_FALLO = {
+    "cobertura_vs_catalogo": _roto_cobertura,
+    "artefactos_sala": _roto_artefactos,
+    "viabilidad_completa": _roto_viabilidad,
+    "wcodes_ajenos": _roto_wcodes,
+}
+
+
+def test_toda_comprobacion_implementada_se_declara_en_IMPLEMENTADAS(tmp_path):
+    """El registro del módulo y lo que el informe hace tienen que coincidir.
+
+    Si divergieran, la guarda de abajo miraría una lista y el informe otra — y una
+    comprobación podría quedar sin control positivo sin que nadie lo viera.
+    """
+    reales = {r.id for r in va.verificar(_caso(tmp_path)).resultados
+              if r.estado != va.SIN_IMPLEMENTAR}
+    assert reales == set(va.IMPLEMENTADAS)
+
+
+@pytest.mark.parametrize("ident", sorted(CASOS_DE_FALLO))
+def test_cada_comprobacion_implementada_PUEDE_decir_fallo(tmp_path, ident):
+    """La guarda contra la guarda inerte, **ejecutada**.
+
+    Construye el expediente roto de esa comprobación y exige que devuelva `fallo`. No
+    hay texto que inspeccionar ni cadena que se pueda romper con unas comillas: o el
+    caso produce el rojo, o este test cae.
+    """
+    r = _r(CASOS_DE_FALLO[ident](tmp_path), ident)
+    assert r.estado == va.FALLO, (
+        f"«{ident}» no se pone en fallo ni con su caso roto: "
+        f"estado={r.estado}, detalle={r.detalle!r}")
+
+
+def test_ninguna_implementada_se_queda_sin_su_caso_roto(tmp_path):
+    """Y el cierre: que el registro cubra **todas** las implementadas.
+
+    Sin esto, añadir una décima comprobación y olvidar su entrada dejaría la
+    parametrización de arriba sin ese id — verde por omisión, que es la forma más
+    silenciosa de que una verja deje de verificar.
+    """
+    assert set(CASOS_DE_FALLO) == set(va.IMPLEMENTADAS), (
+        "hay comprobaciones implementadas sin un caso que las ponga en FALLO, o al "
+        "revés. Una verja que solo puede decir `ok` no verifica nada.")
+
+
+def test_cli_resuelve_el_W_code_corto_que_su_ayuda_anuncia(tmp_path, monkeypatch):
+    """CONTROL POSITIVO de H-07, y el test que faltaba por mockear de más.
+
+    La ayuda dice `--case-id W-XXXXXX`, y `buscar` casa el **nombre literal** de la
+    carpeta: sobre un expediente que existía, esa forma devolvía salida 2, «caso no
+    encontrado». No lo veía ningún test porque todos sustituían `buscar` — probaban el
+    doble, no la integración.
+
+    Aquí se sustituye únicamente la **raíz** de casos, así que `resolve_ref` y `buscar`
+    corren de verdad.
+    """
+    from typer.testing import CliRunner
+
+    from core.casos import case_locator as cl
+    from scripts import verificar_apertura as cli
+
+    root = tmp_path / "CASOS"
+    caso = root / "BaRS3 - Calle (W-TEST01) - Vuelta" / "00_Input"
+    caso.mkdir(parents=True)
+    (caso / "_caso.md").write_text(
+        "---\ncase_id: x\nmeta:\n  id_go: W-TEST01\n---\n\n# Caso\n", encoding="utf-8")
+    monkeypatch.setattr(cl, "_root", lambda: root)
+
+    r = CliRunner().invoke(cli.app, ["--case-id", "W-TEST01"])
+    assert r.exit_code == 0, r.output
+    assert "W-TEST01" in r.output
