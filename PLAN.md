@@ -88,7 +88,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 >
 > | Pieza | Estado | Dónde |
 > |---|---|---|
-> | **P5** — las 88 filas de viabilidad | ✅ **CERRADA**, R1 adjudicada (9/9 confirmados, `LISTA-CON-CAMBIOS`) | PR-P5 |
+> | **P5** — las 88 filas de viabilidad | ✅ **CERRADA**, R1 adjudicada (9/9 confirmados, `LISTA-CON-CAMBIOS`) | PR **#342**, squash pendiente |
 > | **P7 · `MEJORAS #224`** — la dirección, del nombre de la carpeta | ✅ **CERRADA** | PR **#339**, squash `7fa38aa` |
 > | **P7 · `MEJORAS #227`** — `update_meta` | **DE VUELTA AL DISEÑO** tras 2 rondas `NO-SHIP` | [plan](docs/superpowers/plans/2026-09-11-identidad-sin-teclado.md) §5, con la vía (d) |
 > | **P2** — `verificar_apertura` | **diseñado, sin construir** — es el `[SIGUIENTE]` | [plan](docs/superpowers/plans/2026-09-11-apertura-menos-decisiones.md) §5 |
