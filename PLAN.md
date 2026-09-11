@@ -3456,6 +3456,15 @@ fichero contra el registro judicial):
 
 - **cerrado:** los 5 apoderamientos que faltaban se localizaron en la sede y están dados de alta con
   su certificado (`#72` completado, `#87`-`#90` nuevos). El fichero pasa de 85 a **89** registros.
+- ⚠️ **El enganche por NIF que este bloque da por clave NO se puede ejecutar hoy, y hay un caso
+  medido** (2026-09-11, alta a mano del apud-acta `7316181`): `procuradores_propios/79`
+  —el apoderado de ese certificado— tiene **`nif_cif` vacío**, así que el cruce contra el NIF que trae el certificado no casa con nada. Hubo que
+  resolverlo por **nombre completo exacto** (único entre los 79) más la plaza (el colegio que declara
+  el certificado coincide con la población de la ficha), que es justo lo que el paso 2 declara frágil.
+  Antes de construir el paso 2, **medir cuántas de las 79 fichas tienen `nif_cif` poblado**: si son
+  pocas, la clave de enganche del diseño no existe en los datos y hay que decidir si se rellenan las
+  fichas o se cambia la clave. El fichero de poderes pasa a **90** (`poderes/91`, con su certificado
+  en `gdocu/43006`).
 - **sin poderdante vinculado, y sigue pendiente** (verificado en el CRM el 2026-09-09): `#82`,
   `#85` y `#86` continúan **sin cliente asociado**, así que entrar por la ficha del cliente no los
   encuentra. El `#85` necesita una decisión previa: su otorgante **no existe** entre los clientes

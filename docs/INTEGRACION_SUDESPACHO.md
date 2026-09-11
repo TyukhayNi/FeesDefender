@@ -2,7 +2,10 @@
 
 > Conocimiento empírico acumulado sobre la API de sudespacho.net.  
 > Todo lo aquí documentado ha sido verificado contra el tenant `tnm.sudespacho.net`  
-> (commons-pro). Última actualización: **2026-08-03** (§14.2: gramática `filterGroup` corregida —la
+> (commons-pro). Última actualización: **2026-09-11** (§14.2: el `*/*` **no** da la forma plana —solo
+> `Accept: application/json` exacto—, medido en 12 celdas; §15.6: se retira su «corrección» sobre
+> `hydra:member`, que no era una forma sustituyendo a otra sino la cabecera eligiendo).
+> Anterior: 2026-08-03 (§14.2: gramática `filterGroup` corregida —la
 > documentada aquí **no filtraba**—, codificación del valor por operador, filtros sobre relación =
 > inner join, forma de respuesta dependiente de `Accept`; el código de este repo **no está afectado**).
 > Anterior: 2026-07-12 (§14: enums por API, gramática `filterGroup`, 3ª variante `tipo_operaciones_iva`).
@@ -1761,15 +1764,27 @@ sudespacho expone casi todo como "elementos" con un patrón uniforme. FeesDefend
     relación **no** incluye las filas sin relacionado, así que ANDearlo con `…id is-empty` da **0
     siempre**. Para «sin relacionado **o** relacionado que cumple X» hace falta un `filterGroups` con
     `condition=OR`.
-- **Forma de respuesta (listado) — depende de la cabecera `Accept`** (verificado 2026-08-03):
-  - `Accept: application/json` (o `*/*`) → **plana**:
+- **Forma de respuesta (listado) — depende de la cabecera `Accept`** (verificado 2026-08-03;
+  ⚠️ **corregido el 2026-09-11**, ver el aviso del final):
+  - `Accept: application/json` → **plana**:
     `{ totalItems, currentPage, itemsPerPage, items:[ { id, isPrimary, values:[ {property:{name, elementProperty?}, value, label?} ] } ] }`.
-  - `Accept: application/ld+json` **o sin cabecera `Accept`** → **hydra**:
+  - `Accept: application/ld+json`, **`*/*`, o sin cabecera `Accept`** → **hydra**:
     `{ @context, @id, @type, hydra:member:[…], hydra:totalItems, hydra:view }`, con los mismos elementos dentro.
   - Regla del cliente: **enviar siempre `Accept: application/json`** y, aun así, **tolerar las dos
     formas** al parsear (`items`/`hydra:member`, `totalItems`/`hydra:totalItems`). El fallo caro no es
     el parseo: es la **paginación**, que se corta en la página 1 en silencio si lee el total por la
     clave que no está. `id` puede venir **string** (`"20404"`).
+  - ⚠️ **Hasta el 2026-09-11 esta línea decía «`Accept: application/json` (o `*/*`) → plana», y el
+    `*/*` es FALSO.** Medido sobre 12 celdas —`poderes`, `actuaciones` y `procuradores_propios` ×
+    `application/json` / `application/ld+json` / sin cabecera / `*/*`—: **solo `application/json`
+    exacto da la plana**; las otras tres dan hydra, y el resultado es idéntico en los tres elementos.
+    **El eje es la cabecera, nunca el elemento.** Importa porque `*/*` es lo que manda `httpx` (y
+    `requests`) cuando no se pone `Accept`: un cliente que cree estar en el camino documentado recibe
+    hydra, y un parser que solo lee `items` devuelve **lista vacía con HTTP 200**, indistinguible de
+    «no hay resultados». Pasó dos veces: el 2026-09-10 sobre `actuaciones` (casi cierra un
+    `id_predefinido` como inexistente) y el 2026-09-11 sobre `poderes` (un censo anti-duplicado que
+    devolvió 0 de 89 antes de un alta). Las dos veces la regla de tolerar ambas formas ya estaba
+    escrita aquí. El control que lo destapa es el positivo: pedir algo que **sabes** que existe.
 - **`sum(campo)` NO vale en `properties[]`:** devuelve 500 («ElementProperty not found : sum(total)»),
   a pesar de lo que dice el punto de `properties[]` de arriba. El endpoint `summary/{element}` ya
   calcula las sumas por su cuenta y responde `{label, summations:[{label, name, type, value, symbol?}]}`
@@ -2107,10 +2122,16 @@ exactamente este camino.
 
 **Dos correcciones a la documentación de esta misma página:**
 
-- **La forma de la respuesta de `/api/element_registries/{element}` NO es `hydra:member`** (como
-  dice §8): es `{"totalItems", "currentPage", "itemsPerPage", "items"}`, y cada ítem trae
-  `values[]` con `{property: {name}, value}` — hay que aplanar. Lo de `hydra:` será de otra
-  versión del backend o de otro tenant.
+- ~~**La forma de la respuesta de `/api/element_registries/{element}` NO es `hydra:member`**~~
+  **⚠️ Esta «corrección» estaba mal planteada, y se retira el 2026-09-11.** No es que una forma
+  sustituya a la otra: **las dos son ciertas, y la que sale la elige la cabecera `Accept`** —
+  `application/json` da `{"totalItems", "currentPage", "itemsPerPage", "items"}`, y `ld+json`, `*/*`
+  o ninguna dan `hydra:member`. La conjetura que cerraba el punto («será de otra versión del backend
+  o de otro tenant») es falsa: mismo backend, mismo tenant, mismo elemento, distinta cabecera.
+  Medido en 12 celdas; el contrato y la regla del cliente, en **§14.2**, que es su hogar único.
+  En los dos casos, cada ítem trae `values[]` con `{property: {name}, value}` y hay que aplanar.
+  Se deja tachado en vez de borrado porque esta línea llegó a usarse como fuente y produjo dos
+  censos vacíos con HTTP 200.
 - **El operador de filtro por texto es `like`.** `contains` devuelve **404** y `search` no
   existe. `equals` y `associated` funcionan como está documentado.
 
