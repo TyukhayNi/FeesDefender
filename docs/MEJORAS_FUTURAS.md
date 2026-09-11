@@ -10369,7 +10369,7 @@ una sola pregunta del canónico, rojo. Sin la segunda mitad, el guard aprueba cu
 —que es lo que un lector diligente hace— o en cuanto el cuestionario canónico cambie. Mientras
 tanto la regla operativa es: **no regenerar la vista; usar la commiteada**, que es la que tiene el
 enrutado.
-## 224. `--direccion` es el único flag de identidad que se teclea a mano, y el nombre de la carpeta de E&V ya lo trae  [PROMOVIDO → PLAN.md 2026-09-11]
+## 224. `--direccion` es el único flag de identidad que se teclea a mano, y el nombre de la carpeta de E&V ya lo trae  [CERRADA 2026-09-11]  [PROMOVIDO → PLAN.md 2026-09-11]
 
 > **[PROMOVIDO → PLAN.md] 2026-09-11.** Disparador: decisión de Nikolai al arrancar la sesión,
 > sobre la medición de las siete aperturas del 2026-09-10. Va en la **fila #28** de `PLAN.md`
@@ -10664,7 +10664,23 @@ payload, expediente 644— y **`_caso.md` se queda con `meta.cuantia: null`** y 
 
 **Y no se repone por la vía sancionada.** Medido: `case_manager.ensure_case(case_id,
 cuantia=73140.0)` sobre un caso ya existente **no cambia nada** —ni el frontmatter ni el cuerpo—,
-porque `ensure_case` solo fija los campos cuando crea el índice. Es **la misma limitación** que el
+porque `ensure_case` solo fija los campos cuando crea el índice.
+
+> **Corregido el 2026-09-11 al construirlo: las dos citas de números estaban rancias, y una
+> apuntaba a otra entrada.** Lo comprobado releyendo `main`:
+>
+> - **`#184` no es la referencia del CRM.** La entrada 184 de este fichero es «los dos sondeos del
+>   módulo de correo están al 0 % de cobertura». La cita salió de las **cuatro renumeraciones** del
+>   2026-09-10 que la bitácora del 101º recoge; el número que este párrafo quería citar ya no es ese.
+> - **`#192` NO se cierra con `update_meta`, y conviene no apuntárselo.** El `#192` es que
+>   `abrir_caso` **inventa** `referencia_crm` copiando el `case_id` sin consultar al CRM, de modo
+>   que con `--crm skip` el campo queda **falso**. `update_meta` da la vía para corregirlo después,
+>   pero el defecto es que se escribe un valor inventado al crear, y eso sigue igual.
+>
+> O sea que la vía (a) cierra **esta** entrada, no la familia entera que el párrafo de abajo le
+> atribuía. Lo que sí es cierto del diagnóstico es la forma: `ensure_case` es un creador al que se
+> le pide que sea actualizador. `update_meta` es ese actualizador.
+ Es **la misma limitación** que el
 RUNBOOK ya documenta para `referencia_crm` (§3-bis, `MEJORAS #184`): «hay que reponerlo y también
 la línea del cuerpo, que `_actualizar_cuerpo` no regenera». Aquí hubo que hacer las dos ediciones a
 mano, bajo el mutex.
@@ -10684,6 +10700,33 @@ creador al que se le pide que sea también un actualizador, y calla cuando no pu
 - **(a) Un actualizador de verdad**: `case_manager.update_meta(case_id, **campos)` que fije el
   frontmatter y regenere las líneas del cuerpo que le corresponden —conservando lo que no es suyo,
   como ya hace el sumidero desde `MEJORAS #146`—. Cierra `#184`, `#192` y esta de una vez.
+
+  > **La vía (a) se CONSTRUYÓ el 2026-09-11 y se RETIRÓ el mismo día, tras dos rondas
+  > adversariales. Vuelve al diseño, y conviene saber por qué antes de reintentarla.**
+  >
+  > Localizar «la línea de la cuantía» dentro de un Markdown escrito a mano resultó ser el
+  > problema, no el detalle. Dos rondas encontraron **seis formas** de que la heurística se
+  > equivocara: el preámbulo se comía una sección `###`; los encabezados admiten la sangría que
+  > CommonMark permite; las cercas pueden ser de otro carácter o longitud; una cerca sin cerrar se
+  > extiende hasta el final; la inserción caía fuera del ámbito que se acababa de validar; y
+  > repetir la llamada duplicaba la línea. **Y el coste de equivocarse no es un dato mal puesto:
+  > es una nota del letrado destruida** — la R1 lo reprodujo con
+  > `- Cuantía: comprobar oferta, NO BORRAR`, que el actualizador reemplazaba mientras dejaba la
+  > línea real en «pendiente» y devolvía «hecho».
+  >
+  > **La vía (d), que no estaba en esta lista y es la que elimina la clase entera:** no
+  > **localizar**, sino **comparar**. El cuerpo canónico lo genera `_cuerpo_del_indice` desde la
+  > `meta`; si el cuerpo del fichero **es exactamente** el que ese generador produciría para la
+  > `meta` anterior, se reescribe entero sin riesgo. Si difiere en algo, **no se toca el cuerpo**:
+  > se escribe el frontmatter y se declara. Convierte un problema de *parsing* en una igualdad de
+  > cadenas, y hace imposible por construcción destruir lo que el generador no escribió. El precio
+  > —que en un `_caso.md` con notas la cuantía solo llegue al frontmatter— hay que **medirlo antes
+  > de pagarlo**: hoy el único lector de `meta.cuantia` es la línea del cuerpo.
+  >
+  > Presupuesto al retomarla: **2 rondas**, una de diseño y otra de diff. Y el dimensionado por lo
+  > que puede perderse, no por qué fichero se toca — ése fue mi error al planificarla. Las dos
+  > actas y la adjudicación completa, en
+  > `docs/superpowers/plans/2026-09-11-identidad-sin-teclado.md` §3, §4 y §5.
 - **(b) Que `ensure_case` avise** cuando recibe un campo que no va a escribir porque el índice ya
   existe. No arregla nada, pero convierte el silencio en un aviso; es la mitad barata de (a).
 - **(c) Que el alta CRM escriba la cuantía al pasar**, ya que la tiene en la mano. Tapa este caso y

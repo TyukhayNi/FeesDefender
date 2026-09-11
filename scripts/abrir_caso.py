@@ -819,7 +819,15 @@ def _direccion_de_la_carpeta(nombre_carpeta, w_code):
                    f"{nombre_carpeta!r}: no encuentro el W-code que delimita el "
                    "prefijo. Pásalo explícito.")
         return None
-    if w_code and w_carpeta and w_carpeta.upper() != str(w_code).upper():
+    # `CaseRef.normalizar` y no `.upper()`: el modelo ya define que un W-code canonico
+    # va sin espacios de borde y en mayusculas. La R1 midio que con `--w-code " W-X "`
+    # —un copia-pega con espacios— se acusaba una discrepancia FALSA y se obligaba a
+    # teclear una direccion que era derivable, que es el mismo defecto que esta pieza
+    # vino a cerrar, una vuelta mas abajo.
+    from core.casos.workspace_model import CaseRef
+
+    if (w_code and w_carpeta
+            and CaseRef.normalizar(w_carpeta) != CaseRef.normalizar(str(w_code))):
         typer.echo(f"[auto] La carpeta {nombre_carpeta!r} declara {w_carpeta}, pero "
                    f"--w-code es {w_code}: no derivo --direccion de una carpeta que "
                    "dice ser de otro expediente. Pásalo explícito (y comprueba "

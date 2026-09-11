@@ -883,6 +883,24 @@ def test_cli_drive_ev_sin_folder_id_no_intenta_derivar(drive_temporal, monkeypat
     assert "--direccion" in result.output
 
 
+def test_cli_w_code_con_espacios_no_es_una_discrepancia(drive_temporal, monkeypatch):
+    """H-06 de la R1: la comparación no normalizaba, y el copia-pega trae espacios.
+
+    `CaseRef.normalizar` ya define qué es un W-code canónico —sin espacios de borde y
+    en mayúsculas—; la primera versión comparaba con `.upper()` y acusaba de «otro
+    expediente» a la carpeta correcta, obligando a teclear una dirección derivable.
+    """
+    _carpeta_llamada(monkeypatch, "Calle Derivable - W-02Z2NR")
+    captura = {}
+    _pull_espia(monkeypatch, captura)
+
+    args = [a if a != "W-02Z2NR" else " W-02Z2NR " for a in _args_sin_direccion(crm="skip")]
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    assert "Calle Derivable" in captura["case_id"]
+
+
 # --- Intake de correo: el flag de extracción de adjuntos llega al motor (MEJORAS #68.a) ---
 
 @pytest.fixture
