@@ -109,7 +109,8 @@ funcione**.
 
 ## 5. P2 — `verificar_apertura`: el «OK» del expediente, en código
 
-**Estado: diseñada aquí, sin construir.**
+**Estado: CONSTRUIDA el 2026-09-11 — 4 de las 9 comprobaciones, y las otras 5 declaradas.**
+`core/verificar_apertura.py` + `scripts/verificar_apertura.py`.
 
 El defecto que cierra no es de una herramienta, es de todas: cada una dice «OK» de **su paso**, no
 del expediente. El handoff contó ocho falsos «OK» en un solo día. Mientras nada cierre el lazo
@@ -143,6 +144,48 @@ No arregla que `organizar` mienta ni que el barrido sea ciego al W-code de dentr
 nada: cada una de las nueve necesita un caso sintético en el que **diga `fallo`**, y ese caso va
 en el test. Es la lección de la guarda inerte, y aquí el riesgo es el máximo del repo — esta
 pieza existe precisamente para que un «OK» signifique algo.
+
+### Lo que la construcción cambió del diseño, y por qué
+
+**(a) Un cuarto estado: `sin_implementar`.** Cinco de las nueve necesitan red —rclone para el
+censo y el hash, el CRM para la ficha, la actuación y la cuantía— y no se han construido. Podrían
+haberse dejado fuera de la lista, y entonces el informe diría «9 de 9 correctas» habiendo mirado
+cuatro: **exactamente el modo de fallo que esta pieza existe para cerrar, cometido por la pieza
+misma**. Así que las nueve se enumeran siempre, `sin_implementar` **no cuenta como comprobada**, y
+el resumen dice «4 de 9». El CLI repite el aviso incluso con `--solo-problemas`, que es justo
+cuando el operador deja de ver la lista entera.
+
+Esto no es dividir el alcance por comodidad: la costura es real —red contra disco— y las cuatro
+locales ya cierran cuatro de los ocho falsos «OK» medidos el 2026-09-10 (`#221`, el `render` con
+filas en blanco, la cobertura contra el catálogo y el W-code ajeno), sin un solo doble de red que
+pudiera acabar probándose a sí mismo.
+
+**(b) No escribe en `_apertura_v1.json`,** que el diseño contrataba. Dos razones: ese fichero vive
+en `00_Input/` y escribirlo **exige el mutex** (`MEJORAS #126`), lo que convertiría un verificador
+de solo lectura en un escritor —y dejaría de poder correrse mientras algo trabaja sobre el caso,
+que es cuando más falta hace—; y **nadie lo leería**, que es la pieza construida que nadie
+encadena. Se cablea cuando exista el consumidor: la ficha de cierre de la acción 12, o V2 leyendo
+el resultado para decidir si sigue.
+
+**(c) El control positivo se guarda con un test transversal**, no solo con buena voluntad:
+`test_cada_comprobacion_implementada_PUEDE_decir_fallo` recorre las comprobaciones que dicen estar
+implementadas y exige que exista un caso que las ponga en `fallo`. **Su mutante está medido**: al
+convertir `c9` en «implementada» sin darle su rojo, el test cae con
+`assert not ['cuantia_coherente']`. Sin esa medición sería una guarda inerte más, y el fichero
+entero existe para no tener ninguna.
+
+### Las cinco que faltan, con su gate
+
+| # | Comprobación | Qué necesita antes |
+|---|---|---|
+| 1 | Censo remoto | un helper de `rclone lsf` (hoy no existe ninguno en el repo) |
+| 2 | Hash contra Drive | leer `sha256Checksum` de la Drive API — va con `MEJORAS #225`, que además decide si el hash local vale |
+| 6 | Ficha y relaciones del CRM | relectura por API; el contrato está en `INTEGRACION_SUDESPACHO §17` |
+| 7 | Actuación asociada | por el lado del expediente (`MEJORAS #209`) |
+| 9 | Cuantía `_caso.md` = CRM | depende de 6, y de que `MEJORAS #227` decida quién escribe la cuantía local |
+
+Las cuatro de red comparten un problema de diseño que conviene resolver **una vez**: cómo se
+inyecta el cliente para que los tests prueben la comprobación y no el doble.
 
 ## 6. Lo que no entra en esta fila
 
