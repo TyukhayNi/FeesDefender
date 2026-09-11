@@ -10730,6 +10730,27 @@ recuadro ejecutivo; pero el siguiente informe que se genere volverá a salir a m
 el semáforo y la protección) y tiene razón: lo que hay que hacer es **añadir** las tres reglas de
 `E22:H22`, no reconstruir las de `E21`.
 
+> **Corrección medida el 2026-09-11, al ir a construirlo: `E22:H22` no existe como bloque, y por
+> eso esto NO es «replicar E21».** Inventario de los merges de la hoja `INFORMACION`:
+>
+> | | Celdas combinadas | Validación | Formato condicional |
+> |---|---|---|---|
+> | `21` JURÍDICO | **`E21:H21`** — un bloque | `list` en `E21` | 3 reglas sobre `E21:H21` |
+> | `22` FINANZAS | `B22:D22` + **`E22:F22`** + **`G22:H22`** — dos bloques | ninguna | ninguna |
+>
+> O sea que la fila del semáforo que sí funciona tiene el valor y el color en la **misma** celda
+> combinada, y la que no funciona parte el espacio en dos. Escribir en `E22` pinta `E22:F22`, y
+> `G22:H22` se queda al lado sin colorear salvo que el rango del formato condicional cubra los dos.
+> Cuál de las dos formas es la correcta —igualar la 22 a la 21 deshaciendo el merge partido, o dar
+> al CF el rango `E22:H22` sobre los dos bloques— **es una decisión de layout de la plantilla**, no
+> un copia-pega, y va con la pregunta de diseño del párrafo siguiente.
+>
+> Por eso `#228` **no entró** en el PR de la pieza P5 (las 88 filas), que solo toca
+> `render_informe.py`: ese es código, y esto es un binario versionado que hay que reescribir con
+> openpyxl y verificar por lectura (que `E21` conserve sus tres reglas, que `PREGUNTAS` siga
+> protegida y que las seis validaciones de las cuatro hojas sigan ahí). Sigue promovida a la fila
+> #28 de `PLAN.md`, pieza P5, y espera su propio PR.
+
 **Y una pregunta de diseño que va con esto:** si FINANZAS nunca tuvo desplegable, conviene comprobar
 si alguien ha rellenado esa celda en los informes ya cerrados, y con qué literales. Si la respuesta
 es «nadie», puede que la fila sobre y lo que falte sea decidirlo, no cablearlo.

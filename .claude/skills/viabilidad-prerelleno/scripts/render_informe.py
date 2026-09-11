@@ -9,7 +9,8 @@ valores; nunca regenera el formato.
 
 Lo que ESCRIBE: cabecera, equipo, observaciones, MOTIVOS (si procede), importes
 (inputs, conservando fórmulas), 14 hitos (score+fecha), actividades, hoja PREGUNTAS
-(RESPUESTA/CITA/CONFIANZA/¿PENDIENTE?), hoja AVISOS LLM y la 1ª entrada de BITACORA.
+(RESPUESTA/CITA/CONFIANZA/¿PENDIENTE?) **de las 88 preguntas, no solo las del JSON**,
+hoja AVISOS LLM y la 1ª entrada de BITACORA.
 
 Lo que NUNCA toca: VIABILIDAD (E21/E22, siempre en blanco en el pre-relleno),
 el recuadro ejecutivo (B48, lo escribe la Skill B), las columnas fijas del cuestionario
@@ -170,16 +171,22 @@ def main():
     # --- VIABILIDAD: NO se toca (E21/E22 quedan en blanco en el pre-relleno) ---
 
     # --- PREGUNTAS: columnas del LLM ---
+    # Se recorre el cuestionario ENTERO, no solo lo que trae el JSON. Una fila sin
+    # marca en M no se lee como «pendiente»: se lee como «sin cuestionario», y el
+    # guion de entrevista se filtra justo por esa columna. Medido el 2026-09-10:
+    # 51 de 88 filas marcadas en un caso y 70 de 88 en otro (PLAN fila #28, P5).
     id_row = build_id_row_map(preg)
-    for qid, ans in (d.get("preguntas") or {}).items():
-        r = id_row.get(qid)
-        if not r:
+    respuestas = d.get("preguntas") or {}
+    for qid in respuestas:
+        if qid not in id_row:
             warn(f"pregunta '{qid}' no está en la plantilla — se ignora.")
-            continue
+    for qid, r in id_row.items():
+        ans = respuestas.get(qid) or {}
         if ans.get("respuesta") is not None: preg.cell(r, 9).value = ans["respuesta"]   # I
         if ans.get("cita") is not None:      preg.cell(r, 10).value = ans["cita"]        # J
         if ans.get("confianza"):             preg.cell(r, 11).value = ans["confianza"]   # K alta/media/baja
-        # ¿PENDIENTE ENTREVISTA? (M): default 'no' si hay respuesta documental; 'sí' si no
+        # ¿PENDIENTE ENTREVISTA? (M): 'no' si hay respuesta documental; 'sí' si no.
+        # Una pregunta que el JSON no trae está sin resolver, así que va al guion.
         pend = ans.get("pendiente")
         if pend is None:
             pend = "no" if ans.get("respuesta") not in (None, "", "pendiente") else "sí"
