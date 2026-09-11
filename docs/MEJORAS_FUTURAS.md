@@ -11132,3 +11132,44 @@ tocarlo:
 **Disparador de promoción.** Bajo. El comando `show` es de diagnóstico manual y hay dos rodeos
 (`element_registries` con filtro, o la implementación hermana). Entra cuando alguien lo necesite de
 verdad o cuando se toque `sync_sudespacho.py` por otra razón.
+
+---
+
+## 241. El dedup del intake de WhatsApp mira el sha GLOBAL del caso: un export que llegó por correo ya no se puede depositar en su rol
+
+> **Medido en vivo el 2026-09-11**, abriendo W-02UDC1. `abrir_caso --fuente whatsapp --src
+> "…/WhatsApp Chat - Ali Alfahham.zip" --rol "01_Consultor buscador"` imprimió
+> `WhatsApp: export ya importado (dedup), nada nuevo` y después `OK Caso abierto`, con código 0.
+> **No había depositado nada**: el lote `2026-09-11_whatsapp_01` contenía solo el otro chat.
+
+**Qué pasa.** [`core/whatsapp_intake.py:166`](../core/whatsapp_intake.py) corta con
+`skipped_dedup=True` cuando `IntakeManifest.lookup(zip_sha)` encuentra el hash. Pero
+[`core/intake_manifest.py:325`](../core/intake_manifest.py) indexa **por sha256, global del caso y
+sin canal**, y `core.email_export.export_label` ya había registrado ese mismo `.zip` al extraerlo
+como adjunto MIME del correo que lo remitía. El guard confunde dos cosas distintas: «este export ya
+entró **por este canal**» y «estos bytes ya están en el expediente **por cualquier canal**».
+
+**Y el corte no es cosmético: deja el chat fuera del corpus.**
+[`core/whatsapp_atomize/pipeline.py:37`](../core/whatsapp_atomize/pipeline.py) `descubrir_chats`
+solo escanea `00_Input/02_Whatsapp` (legacy) y los lotes cuya fuente casa `whatsapp` en
+`PATRON_LOTE`. Un `.zip` que se queda dentro del lote de correo es `sin_soporte` para la sala de
+máquina **y** invisible para el atomizador: el chat no acaba en ningún sitio legible. En W-02UDC1
+eran los 14 mensajes del chat con el comprador, en un caso de vuelta donde la intermediación con el
+buscador es lo que se prueba.
+
+**Lo que hace falso el síntoma.** La CLI dice «ya importado (dedup), nada nuevo» — que suena a
+idempotencia correcta— y sale con 0. Solo listando el lote se ve que no hay nada. Es otra instancia
+de verificar por resultado y no por status (`docs/INTEGRACION_SUDESPACHO.md §14.6`).
+
+**Remedio aplicado en la sesión, sin tocar código** (para que conste cómo se sale del paso):
+monkeypatch de `IntakeManifest.lookup` que devuelve `None` **solo** para ese sha, bajo
+`scripts._mutex_cli.sostener`, y `deposit_export` normal. Los bytes escritos son los originales
+—verificado: el `sha256` del `_export_original.zip` depositado coincide con el del adjunto— y el
+fichero se anota con `duplicado_de` por la vía del §6, que es justo lo que el diseño prevé para un
+ítem ya presente en otro lote.
+
+**El arreglo de raíz.** Que la idempotencia de canal pregunte por el canal: registrar el canal en
+el entry del manifest y que `deposit_export` solo corte si el sha entró **como export de WhatsApp**.
+La rama que ya existe para el caso legítimo —copiar y anotar `duplicado_de`— cubre el resto sin
+cambios. **La frontera, no el ejemplo:** cualquier fuente que reciba bytes que otra ya depositó
+tiene este mismo modo de fallo; el arreglo debe formularse sobre el canal, no sobre WhatsApp.
