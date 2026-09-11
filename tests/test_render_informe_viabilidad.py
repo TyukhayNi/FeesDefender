@@ -282,3 +282,210 @@ def test_los_ids_de_la_plantilla_son_unicos(informe_con_tres_respuestas):
            for r in range(5, ws.max_row + 1) if ws.cell(r, 3).value]
     assert len(ids) == len(set(ids)) == 88, (
         f"{len(ids)} filas con ID y {len(set(ids))} IDs distintos")
+
+
+# --- El semáforo de la plantilla (`MEJORAS #228`) -------------------------------------
+
+
+def _informacion():
+    wb = openpyxl.load_workbook(PLANTILLA)
+    try:
+        yield_ = wb["INFORMACION"]
+        return (wb, yield_)
+    except Exception:
+        wb.close()
+        raise
+
+
+@pytest.mark.parametrize("fila", [21, 22])
+def test_las_dos_filas_del_semaforo_tienen_sus_tres_colores(fila):
+    """Tres reglas, con el alfa `FF` que `modelo_xlsx.md` exige.
+
+    El rango de la 22 es `E22:H22` y cubre sus **dos** bloques combinados
+    (`E22:F22` + `G22:H22`), que es donde la 21 tiene uno solo: sin ese rango, escribir
+    en `E22` colorearía la mitad izquierda y la derecha quedaría en blanco al lado.
+    """
+    wb, inf = _informacion()
+    try:
+        bloque = next((r for r in inf.conditional_formatting
+                       if str(r.sqref) == f"E{fila}:H{fila}"), None)
+        assert bloque is not None, f"no hay formato condicional en E{fila}:H{fila}"
+        colores = {}
+        for regla in bloque.rules:
+            valor = regla.formula[0].split('"')[1]
+            colores[valor] = regla.dxf.fill.bgColor.rgb
+        assert set(colores) == {"verde", "amarillo", "rojo"}
+        assert all(str(c).upper().startswith("FF") and len(str(c)) == 8
+                   for c in colores.values()), f"alfa distinto de FF: {colores}"
+    finally:
+        wb.close()
+
+
+def test_el_prerelleno_deja_el_semaforo_en_blanco(tmp_path):
+    """La otra mitad del contrato, que el cableado no puede romper.
+
+    `modelo_xlsx.md`: «En el pre-relleno SIEMPRE se dejan en blanco» — el semáforo lo
+    firma el abogado, no el generador. Añadirle validación y color a `E22` no puede
+    hacer que el render empiece a escribir ahí.
+    """
+    salida = _generar(tmp_path, {"case_id": "W-TEST00", "preguntas": {}})
+    wb = openpyxl.load_workbook(salida)
+    try:
+        inf = wb["INFORMACION"]
+        assert inf["E21"].value is None and inf["E22"].value is None
+    finally:
+        wb.close()
+
+
+# --- Lo que la R1 rompió de estos cuatro tests ---------------------------------------
+#
+# Tres mutantes sobrevivían a los seis casos nuevos, y los tres importan:
+#
+# - Mover la validación a **`E220`** dejaba `E22` sin desplegable, y pasaba: la
+#   comprobación era `"E22" in str(sqref)`, una **subcadena**. Pertenencia geométrica,
+#   no textual.
+# - Apuntar las tres fórmulas de FINANZAS a **`$E$21`** hacía que FINANZAS se pintara
+#   según JURÍDICO, y pasaba: los tests extraían el valor entre comillas sin mirar **qué
+#   celda gobierna**.
+# - Quitar la protección de PREGUNTAS pasaba los 32 casos del módulo, pese a que el PR
+#   anunciaba «protección conservada». Anunciar una propiedad que ningún test vigila es
+#   la misma clase de «OK» que toda esta pieza persigue.
+
+
+def _regla_de(inf, fila):
+    """Las reglas de la fila, con la celda que las gobierna. No por subcadena."""
+    from openpyxl.utils import range_boundaries
+
+    bloques = [r for r in inf.conditional_formatting
+               if str(r.sqref) == f"E{fila}:H{fila}"]
+    assert len(bloques) == 1, f"esperaba UN bloque en E{fila}:H{fila}: {bloques}"
+    fuera = {}
+    for g in bloques[0].rules:
+        formula = g.formula[0]
+        fuera[formula] = g
+    return fuera, range_boundaries(f"E{fila}:H{fila}")
+
+
+@pytest.mark.parametrize("fila", [21, 22])
+def test_la_validacion_cubre_la_celda_ANCLA_del_semaforo(fila):
+    """Pertenencia geométrica, no `"E22" in sqref`.
+
+    Con la validación en `E220`, la comprobación por subcadena pasaba y la celda se
+    quedaba sin desplegable (R1, H-02).
+    """
+    from openpyxl.utils import range_boundaries
+
+    wb, inf = _informacion()
+    try:
+        cubren = []
+        for d in inf.data_validations.dataValidation:
+            for trozo in str(d.sqref).split():
+                min_c, min_r, max_c, max_r = range_boundaries(trozo)
+                if min_c <= 5 <= max_c and min_r <= fila <= max_r:   # E = columna 5
+                    cubren.append(d)
+        assert len(cubren) == 1, f"E{fila} está cubierta por {len(cubren)} validaciones"
+        assert cubren[0].type == "list"
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize("fila", [21, 22])
+def test_cada_fila_del_semaforo_se_gobierna_por_SU_PROPIA_celda(fila):
+    """CONTROL POSITIVO de H-02: las fórmulas de FINANZAS podían leer `$E$21`.
+
+    Con eso, elegir «jurídico verde, finanzas rojo» pintaba FINANZAS de verde — y los
+    tests pasaban, porque solo miraban el literal entre comillas.
+    """
+    wb, inf = _informacion()
+    try:
+        reglas, _ = _regla_de(inf, fila)
+        esperadas = {f'$E${fila}="{v}"' for v in ("verde", "amarillo", "rojo")}
+        assert set(reglas) == esperadas, (
+            f"la fila {fila} no se gobierna por E{fila}: {sorted(reglas)}")
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize("fila", [21, 22])
+def test_el_rango_del_color_cubre_la_fila_ENTERA_del_semaforo(fila):
+    """De `E` a `H`, que es lo que ocupa el semáforo.
+
+    La fila 22 tiene dos bloques combinados (`E22:F22` + `G22:H22`): con un rango que
+    cubriera solo el primero, la mitad derecha se quedaría sin pintar al lado de la
+    izquierda pintada.
+    """
+    from openpyxl.utils import range_boundaries
+
+    wb, inf = _informacion()
+    try:
+        _, (min_c, min_r, max_c, max_r) = _regla_de(inf, fila)
+        assert (min_c, max_c) == (5, 8), f"el rango va de {min_c} a {max_c}, no de E a H"
+        assert min_r == max_r == fila
+    finally:
+        wb.close()
+
+
+def test_las_dos_filas_del_semaforo_son_EL_MISMO_semaforo():
+    """Fondo **y** fuente, no solo fondo (R1, H-04).
+
+    Las reglas de `E21` llevan negrita y color de texto; las primeras que escribí para
+    `E22` solo llevaban relleno. Con `amarillo` en las dos, JURÍDICO salía en marrón y
+    negrita y FINANZAS en negro normal: mismo fondo, distinto semáforo. Un lector que ve
+    dos estilos en el mismo recuadro tiene que aprender cuál es cuál.
+    """
+    wb, inf = _informacion()
+    try:
+        def perfil(fila):
+            reglas, _ = _regla_de(inf, fila)
+            return {f.split('"')[1]: (
+                g.dxf.fill.bgColor.rgb,
+                getattr(g.dxf.font, "b", None),
+                getattr(getattr(g.dxf.font, "color", None), "rgb", None))
+                for f, g in reglas.items()}
+
+        assert perfil(21) == perfil(22)
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize("fila", [21, 22])
+def test_las_dos_validaciones_tienen_las_MISMAS_opciones(fila):
+    """CONTROL POSITIVO de H-01, que fue un error de hecho mío.
+
+    Afirmé replicar `E21` «exactamente» y puse `showErrorMessage=False` donde `E21`
+    tiene `True`: medí esa opción en la validación de la hoja PREGUNTAS y **la
+    extrapolé**. O sea que introduje la asimetría que decía estar evitando, y la
+    justifiqué con una premisa falsa.
+    """
+    wb, inf = _informacion()
+    try:
+        dv = {str(d.sqref): d for d in inf.data_validations.dataValidation}
+        assert dv["E21"].allowBlank == dv["E22"].allowBlank
+        assert dv["E21"].showErrorMessage == dv["E22"].showErrorMessage
+        assert dv[f"E{fila}"].showErrorMessage is True
+    finally:
+        wb.close()
+
+
+def test_la_plantilla_conserva_sus_invariantes():
+    """Lo que el PR anunciaba y ningún test vigilaba (R1, H-02).
+
+    Quitar la protección de `PREGUNTAS` pasaba los 32 casos del módulo. Anunciar una
+    propiedad que nadie comprueba es exactamente el «OK» que esta skill persigue en las
+    demás herramientas.
+    """
+    wb = openpyxl.load_workbook(PLANTILLA)
+    try:
+        assert wb.sheetnames == ["INFORMACION", "PREGUNTAS", "AVISOS LLM", "BITACORA"]
+        assert wb["PREGUNTAS"].protection.sheet is True, "PREGUNTAS dejó de estar protegida"
+        assert wb["INFORMACION"]["F39"].value == "=SUM(F25:G38)", "la fórmula del TOTAL cambió"
+        validaciones = {h: len(list(wb[h].data_validations.dataValidation))
+                        for h in wb.sheetnames}
+        assert validaciones == {"INFORMACION": 2, "PREGUNTAS": 2,
+                                "AVISOS LLM": 3, "BITACORA": 0}, validaciones
+        merges = sorted(str(m) for m in wb["INFORMACION"].merged_cells.ranges
+                        if m.min_row in (21, 22))
+        assert merges == ["B21:D21", "B22:D22", "E21:H21", "E22:F22",
+                          "G22:H22"], merges
+    finally:
+        wb.close()

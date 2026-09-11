@@ -10,7 +10,7 @@
 - `E11` OBSERVACIONES = etiqueta corta del tipo de caso (p. ej. `VUELTA`).
 - `H12` MOTIVOS DE IMPAGO = frase telegráfica EN MAYÚSCULAS (postura del deudor). **Regla de relleno: vacío por defecto; se rellena solo si hay postura del deudor documentada y anclada a fuente** (aplica también a VUELTA — reconcilia handoff + caso [inmueble]). Solo tiene sentido en `BAD_DEBT` y `NEGATIVA_*`; en defensivos, vacío.
 - Importes (mantener fórmulas): `H13` PRECIO · `E14` % · `H14` (fórmula) · `H15` pagos · `H16` (fórmula) · `H17` propuesta · `H18` (fórmula).
-- **VIABILIDAD**: `E21` JURÍDICO (desplegable semáforo `verde/amarillo/rojo` + formato condicional) y `E22` FINANZAS. **En el pre-relleno SIEMPRE se dejan en blanco.**
+- **VIABILIDAD**: `E21` JURÍDICO y `E22` FINANZAS, las dos con desplegable `verde/amarillo/rojo` y formato condicional. **En el pre-relleno SIEMPRE se dejan en blanco.** Ojo con el rango: la 21 tiene un solo bloque combinado (`E21:H21`) y la 22 tiene **dos** (`E22:F22` + `G22:H22`), así que su formato condicional va sobre `E22:H22` para cubrir los dos. Hasta el 2026-09-11 esta línea describía a `E22` con semáforo y **no lo tenía** (`MEJORAS #228`).
 - **DATOS OPERACIÓN**: 14 hitos `B25:B38`, score en `F` (merge `F:G`), fecha en `H`. `F39` TOTAL = `=SUM(F25:G38)` (no tocar). Ver `hitos_derivacion.md`.
 - **ACTIVIDADES**: `F42:F45` numéricos.
 - **Recuadro ejecutivo** `B48` (merge grande, borde grueso): **lo escribe la Skill B**, no la A. Dejar vacío.
