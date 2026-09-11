@@ -1128,3 +1128,25 @@ def test_cli_si_el_cuerpo_se_CONSERVA_el_aviso_llega_a_la_pantalla(drive_tempora
     assert result.exit_code == 0, result.output
     assert "NO en su cuerpo" in result.output, result.output
     assert "hay notas del letrado" in result.output, "el motivo tiene que salir tal cual"
+
+
+def test_cli_si_update_meta_NO_ESCRIBE_el_aviso_no_dice_que_escribio(drive_temporal,
+                                                                    monkeypatch):
+    """R2/H2-04: «conservado» y «sin tocar» son cosas distintas.
+
+    Agruparlos en `!= "reescrito"` imprimía «cuantía escrita en el frontmatter» seguido de
+    un motivo que dice «no se escribe nada». Un aviso que se contradice a sí mismo es peor
+    que no avisar.
+    """
+    monkeypatch.setattr(cli.case_manager, "update_meta",
+                        lambda cid, **kw: {"case_id": cid, "frontmatter": [],
+                                           "cuerpo": "sin tocar",
+                                           "motivo": "el índice no empieza por `---`"})
+
+    result = CliRunner().invoke(cli.app, _args(cuantia="73140.5"))
+
+    assert result.exit_code == 0, result.output
+    assert "cuantía escrita" not in result.output, (
+        "no se escribió nada: decir que sí manda al letrado a no revisarlo")
+    assert "NO se ha escrito" in result.output
+    assert "no coincidirá" in result.output, "tiene que decir la consecuencia, no solo el hecho"

@@ -47,12 +47,19 @@ def _caso(cm, case_id="EV-227-TEST", **kw):
 
 
 def _partes(index: Path) -> tuple[bytes, bytes]:
-    """`(bloque de frontmatter, cuerpo)` en bytes, por la misma frontera que la pieza."""
-    from core.case_manager import _FM_RE_BYTES
+    """`(bloque de frontmatter, cuerpo)` en bytes, **con un partidor independiente**.
+
+    No usa `_partir_indice` de producción a propósito: si el oráculo del test comparte la
+    frontera con el código que vigila, un error de frontera queda invisible — que es
+    exactamente lo que pasó con el regex compartido (R2/H2-01). Éste parte por la línea del
+    cierre, escrito aparte.
+    """
     crudo = index.read_bytes()
-    m = _FM_RE_BYTES.match(crudo)
-    assert m is not None, "el fichero de la prueba perdió su frontmatter"
-    return crudo[:m.end()], crudo[m.end():]
+    lineas = crudo.split(b"\n")
+    assert lineas and lineas[0].strip() == b"---", "el fichero de la prueba no empieza por ---"
+    i = next(j for j in range(1, len(lineas)) if lineas[j].strip() == b"---")
+    fin = min(len(b"\n".join(lineas[:i + 1])) + 1, len(crudo))
+    return crudo[:fin], crudo[fin:]
 
 
 def _fm(index: Path) -> dict:
@@ -163,7 +170,7 @@ def test_un_meta_que_no_reconstruye_CaseMeta_NO_SE_ESCRIBE(cm):
     fm = yaml.safe_load(fm_b.decode("utf-8").split("---", 2)[1])
     del fm["meta"]["case_id"]          # `CaseMeta` lo exige
     index.write_bytes(("---\n" + yaml.safe_dump(fm, allow_unicode=True) + "---\n").encode()
-                      + b"\n" + cuerpo_b)
+                      + cuerpo_b)
     antes = _sha(index)
 
     informe = cm.update_meta("EV-227-TEST", cuantia=9.0)
@@ -179,7 +186,7 @@ def test_una_clave_ajena_en_meta_no_impide_comparar(cm):
     fm = yaml.safe_load(fm_b.decode("utf-8").split("---", 2)[1])
     fm["meta"]["clave_de_otro"] = "NO BORRAR"
     index.write_bytes(("---\n" + yaml.safe_dump(fm, allow_unicode=True) + "---\n").encode()
-                      + b"\n" + cuerpo_b)
+                      + cuerpo_b)
 
     informe = cm.update_meta("EV-227-TEST", cuantia=7.0)
 
@@ -205,7 +212,7 @@ def test_solo_toca_sus_claves_del_frontmatter(cm, monkeypatch):
     fm = yaml.safe_load(fm_b.decode("utf-8").split("---", 2)[1])
     fm["bucket_override"] = {"algo": "ajeno"}
     index.write_bytes(("---\n" + yaml.safe_dump(fm, allow_unicode=True) + "---\n").encode()
-                      + b"\n" + _partes(index)[1])
+                      + _partes(index)[1])
     antes = _fm(index)
 
     # El reloj se fija DESPUES de crear, y a un valor distinto: si se fijara antes, el sello
@@ -239,11 +246,20 @@ def test_NO_revierte_lo_que_update_pull_state_escribio(cm):
     superior_antes = _fm(index)["sudespacho_expedientes"]
     assert superior_antes[0]["element"] == "extrajudiciales", "la premisa del test se cayó"
 
+    # El espejo se captura ANTES. La primera versión lo comparaba contra otra lectura de
+    # DESPUÉS, así que no conocía el valor previo: una mutación que copiara la lista
+    # superior al espejo —un cambio fuera de la lista blanca— dejaba el test verde
+    # (R2/H2-05.1, medido con los 213 tests del módulo en verde).
+    espejo_antes = _fm(index)["meta"]["sudespacho_expedientes"]
+    assert espejo_antes[0]["element"] == "expedientes_judiciales", (
+        "la premisa del test se cayó: el espejo tenía que estar RANCIO")
+
     cm.update_meta("EV-227-TEST", cuantia=11.0)
 
     fm = _fm(index)
     assert fm["sudespacho_expedientes"] == superior_antes, "revirtió la lista superior"
-    assert fm["meta"]["sudespacho_expedientes"] == _fm(index)["meta"]["sudespacho_expedientes"]
+    assert fm["meta"]["sudespacho_expedientes"] == espejo_antes, (
+        "tocó el espejo de `meta`, que no está en la lista blanca")
     assert fm["sudespacho_expedientes"][0]["last_sync"] == "2026-09-11"
 
 
@@ -350,7 +366,64 @@ def test_al_reescribir_SOLO_cambia_lo_que_renderiza_el_campo(cm):
     cm.update_meta("EV-227-TEST", cuantia=73140.5)
 
     despues = _partes(index)[1].decode("utf-8").splitlines()
-    quitadas = [l for l in antes if l not in despues]
-    puestas = [l for l in despues if l not in antes]
-    assert quitadas == ["- Cuantía: _(pendiente)_"], quitadas
-    assert puestas == ["- Cuantía: 73140.5"], puestas
+    # Comparación SECUENCIAL, no por pertenencia: el delta por `in` ignora orden y
+    # multiplicidad, y un mutante que borrara una línea en blanco repetida lo pasaba con
+    # los 213 tests en verde (R2/H2-05.2). Lo que se exige es que la secuencia entera sea
+    # la anterior con esa única línea sustituida.
+    esperado = ["- Cuantía: 73140.5" if l == "- Cuantía: _(pendiente)_" else l for l in antes]
+    assert despues == esperado, (
+        "el cuerpo no es el de antes con la línea de la cuantía sustituida")
+    assert antes != esperado, "la premisa se cayó: la línea de cuantía no estaba"
+
+
+# ---------------------------------------------------------------------------
+# `R2/H2-01` y `R2/H2-02` — la frontera, que era una heurística disfrazada
+# ---------------------------------------------------------------------------
+
+def test_un_frontmatter_VACIO_no_se_traga_el_cuerpo(cm):
+    """El ALTO de la R2, con el fichero exacto que lo reprodujo.
+
+    La primera versión compartía el regex de `read_md`. Ante `---\\n---\\n` ese patrón **no
+    puede** casar el cierre inmediato —necesita un salto entre apertura y cierre que no sea
+    el mismo— y **salta al siguiente `---` del fichero**: una nota que estaba en el cuerpo
+    entraba como YAML y desaparecía al serializar. Medido, con la nota destruida.
+    """
+    index = _caso(cm)
+    entrada = (b"---\n"
+               b"---\n"
+               b"meta: {case_id: EV-227-TEST, titulo: T}\n"
+               b"# NOTA DEL LETRADO NO BORRAR\n"
+               b"---\n"
+               b"Texto libre\n")
+    index.write_bytes(entrada)
+
+    informe = cm.update_meta("EV-227-TEST", cuantia=42.0)
+
+    assert index.read_bytes() == entrada, "el fichero cambió: la nota estaba en el cuerpo"
+    assert informe["cuerpo"] == "sin tocar", informe
+    assert b"NOTA DEL LETRADO NO BORRAR" in index.read_bytes()
+
+
+def test_los_blancos_que_hay_justo_tras_el_cierre_son_del_CUERPO(cm):
+    """`R2/H2-02`: el `\\s*` del regex se los comía y la cabecera nueva los sustituía."""
+    index = _caso(cm)
+    fm_b, _ = _partes(index)
+    entrada = fm_b + b"\n  \nNOTA DEL LETRADO\n"
+    index.write_bytes(entrada)
+
+    informe = cm.update_meta("EV-227-TEST", cuantia=1.0)
+
+    assert informe["cuerpo"] == "conservado"
+    assert _partes(index)[1] == b"\n  \nNOTA DEL LETRADO\n", (
+        "se comió los blancos que había justo detrás del cierre")
+
+
+def test_un_frontmatter_sin_cerrar_no_se_escribe(cm):
+    index = _caso(cm)
+    index.write_bytes(b"---\nmeta:\n  case_id: X\n\nsin cierre\n")
+    antes = _sha(index)
+
+    informe = cm.update_meta("EV-227-TEST", cuantia=1.0)
+
+    assert informe["cuerpo"] == "sin tocar"
+    assert _sha(index) == antes

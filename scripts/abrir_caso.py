@@ -782,9 +782,17 @@ def _alta_crm(
             "mano o con `case_manager.update_meta`."
         )
         return
-    if informe["cuerpo"] != "reescrito":
+    # TRES estados, no dos (R2/H2-04): `!= "reescrito"` agrupaba «conservado» con «sin
+    # tocar», y en el segundo NO se escribió ninguna clave — el mensaje decía «cuantía
+    # escrita» seguido del motivo, que dice literalmente «no se escribe nada». Un aviso que
+    # se contradice a sí mismo es peor que no avisar.
+    if informe["cuerpo"] == "conservado":
         typer.echo(f"[AVISO] cuantía escrita en el frontmatter de `_caso.md`, "
                    f"pero NO en su cuerpo: {informe['motivo']}")
+    elif informe["cuerpo"] == "sin tocar":
+        typer.echo(f"[AVISO] la cuantía NO se ha escrito en `_caso.md`: "
+                   f"{informe['motivo']}. La cuantía local sigue pendiente y no coincidirá "
+                   f"con la del CRM; repásala a mano.")
 
 
 def _autoderivar_drive_ev(

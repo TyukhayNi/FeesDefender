@@ -88,30 +88,54 @@ los campos nuevos aplicados.
   registrador, y no puede alcanzar a texto del letrado, porque cualquier carácter suyo en el cuerpo
   rompe la igualdad.
 
-### 2.3 Cómo se sustituye el frontmatter sin tocar el cuerpo
+### 2.3 Cómo se delimita el frontmatter, y por qué NO con el regex del lector
 
-La frontera **no es una heurística**: `_FM_RE` está anclada al principio del fichero y delimitada
-por `---`. Su `m.end()` es el primer carácter del cuerpo.
+**La rev. 2 decía aquí que la frontera «no es una heurística, es un delimitador», y la R2 demostró
+que lo era** (H2-01, ALTO). El regex de `read_md` —`^---\s*\n(.*?)\n---\s*\n`— necesita un salto
+entre la apertura y el cierre que no sea el mismo, así que ante un frontmatter **vacío** no puede
+casar el cierre inmediato y **salta al siguiente `---` del fichero**. Reproducido: una nota del
+letrado que estaba en el cuerpo entraba como YAML y desaparecía al serializar.
+
+`_partir_indice` delimita **por líneas**, y esa es toda la lógica:
 
 ```python
-crudo = index.read_text(encoding="utf-8")            # traducción universal de saltos
-m = _FM_RE.match(crudo)
-if m is None:                                        # índice sin frontmatter: no se escribe
-    return informe_sin_tocar(...)
-nuevo = build_frontmatter(fm_nuevo) + "\n" + crudo[m.end():]
-index.write_text(nuevo, encoding="utf-8", newline="")
+lineas = crudo.split(b"\n")
+if not lineas or lineas[0].strip() != b"---":
+    return None                      # no hay frontmatter: no se escribe nada
+for i in range(1, len(lineas)):
+    if lineas[i].strip() != b"---":
+        continue
+    fin = min(len(b"\n".join(lineas[:i + 1])) + 1, len(crudo))
+    return crudo[:fin], b"\n".join(lineas[1:i]), crudo[fin:]
+return None                          # frontmatter sin cerrar: tampoco se escribe
 ```
 
-`newline=""` es lo que impide que Python vuelva a traducir los saltos del cuerpo al escribir; sin
-él, un cuerpo leído de un fichero LF sale en CRLF y el «no lo toco» es falso. El salto intercalado
-replica lo que `write_md` pone entre el frontmatter y el cuerpo, de modo que un fichero canónico
-escrito por `write_md` y reescrito por esta vía sale idéntico.
+Tres propiedades que el regex no tenía:
 
-**La escritura sigue siendo atómica** (temporal en el mismo directorio + `os.replace`), como
-`_escribir_indice_atomico`: el cambio es qué se escribe, no cómo se reemplaza.
+- **No salta.** El cierre es la **primera** línea siguiente que sea `---`, no la que haga casar el
+  patrón entero.
+- **Reconoce el frontmatter vacío.** `---` y `---` seguidos dan YAML vacío → sin `meta` → `sin tocar`.
+- **Corta en el salto de la línea del cierre**, no después de los blancos que vengan detrás. Esos
+  bytes son del cuerpo y se conservan (H2-02).
 
-**Si el fichero no tiene frontmatter parseable, no se escribe nada** y el informe lo dice (§3.4).
-Un índice roto no se convierte en alta nueva por esta vía.
+La escritura reensambla `build_frontmatter(fm_nuevo)` con el cuerpo:
+
+- **rama conservada:** `cabecera.encode() + cuerpo_bytes`. Los bytes del cuerpo **no se decodifican
+  ni se vuelven a codificar**: pasan tal cual.
+- **rama canónica:** `cabecera.encode() + ("\n" + _cuerpo_del_indice(meta_nueva)).encode()`, con los
+  saltos del fichero (si el frontmatter venía en CRLF, sale en CRLF).
+
+El `"\n"` delante del cuerpo canónico es el separador que `write_md` pone entre frontmatter y
+cuerpo; como la frontera ya no se lo come, **forma parte de lo que se compara**.
+
+**La escritura es atómica y COMPARTE el reemplazo** con `_escribir_indice_atomico`
+(`_reemplazo_atomico`): un segundo escritor atómico añadía tres llamadas al censo de
+`tests/test_escritura_censo.py`, que es un trinquete (H2-09). Compartiendo, el diff añade **una**,
+y esa una se declara subiendo el techo — no se esconde moviéndola a un módulo que el censo no mire.
+
+**El oráculo de los tests NO usa este partidor.** El helper de `tests/` parte por su cuenta: un
+oráculo que comparte la frontera con lo que vigila no puede ver un error de frontera, que es
+exactamente cómo H2-01 pasó la R1.
 
 ### 2.4 Lo que esto NO arregla, dicho por delante
 
@@ -579,3 +603,77 @@ fronteras de arriba.
 Python de sistema no trae `pytest-randomly`), la genealogía del commit (sin `.git`), el
 comportamiento sobre los `_caso.md` reales del Drive, y la concurrencia real de procesos — su
 escenario de H-09 es una intercalación dirigida dentro de un proceso, no una carrera medida.
+
+## 11. Adjudicación de la revisión adversarial (Codex, 2026-09-11) — NO-SHIP, remediado
+
+- **Objeto revisado:** diff `b59bb49..335a7b0` — `update_meta`, su llamante y sus tests
+- **Ronda:** R2 de 2 (presupuesto agotado)
+- **Revisor:** Codex (CLI 0.153.4), dos copias `git archive` sin `.git`, solo lectura
+- **Informe recibido:** 2026-09-11, `C:/t/rev227-r2-1720/wd/INFORME.md`, 51964 bytes
+- **Hallazgos:** 9 nuevos — 1 ALTO, 5 MEDIOS, 3 BAJOS; **9 confirmados, 0 refutados**
+- **Remediado en:** este §11 y el diff de la pieza
+
+Acta con el informe literal y su digest:
+`docs/superpowers/specs/2026-09-11-cuantia-en-caso-md-comparar-no-localizar-r2-adversarial-review.md`.
+
+### H2-01, ALTO — la frontera era una heurística, y yo había escrito que no lo era
+
+Textualmente, en la rev. 2 de este documento: «La frontera **no es una heurística**: `_FM_RE` está
+anclada al principio del fichero y delimitada por `---`». **Lo es.** El `\s*` y el `(.*?)` hacen
+que, ante un frontmatter **vacío** (`---` y `---` seguidos), el patrón no pueda casar el cierre
+inmediato —necesita un salto entre apertura y cierre que no sea el mismo— y **salte al siguiente
+`---` del fichero**. Reproducido: una nota `# NOTA DEL LETRADO NO BORRAR` que estaba en el cuerpo
+entraba como YAML y **desaparecía al serializar**.
+
+**De qué frontera es esto un ejemplo, que es la pregunta:** es la **tercera** vez en esta pieza que
+el mismo error cambia de capa. R1/H-01 fue «enuncié la garantía sobre cadenas y el fichero está
+hecho de bytes». R2/H2-01 es **«llamé delimitador a un regex sin leer lo que el regex hace»**. Cada
+vez bajé un nivel y cada vez di por sentado el nivel de abajo. Y lo peor: **heredé el defecto del
+lector** (`read_md` tiene el mismo), que es exactamente lo que una pieza que existe para no
+destruir notas no puede permitirse.
+
+**Remediado**: `_partir_indice` delimita **por líneas** —primera línea `---`, y la **primera línea
+siguiente** que sea `---`—, sin saltar, sin buscar y sin depender de que el contenido parsee. El
+frontmatter vacío se reconoce y, al no traer `meta`, devuelve `sin tocar`. **Y el oráculo del test
+NO comparte esa frontera**: el helper de `tests/` parte por su cuenta, porque un oráculo que comparte
+la frontera con lo que vigila no puede ver un error de frontera.
+
+### H2-09, MEDIO — la suite estaba roja y yo no lo sabía
+
+El censo de escrituras fuera de la costura subía de **91 a 94** y su trinquete **solo puede bajar**.
+No lo vi porque **corrí los módulos tocados y no la suite**; las dos semillas que sí corrí en esa
+sesión eran de la otra pieza.
+
+**Remediado en dos movimientos.** Primero, el reemplazo atómico se **comparte** (`_reemplazo_atomico`)
+en vez de duplicarse: 94 → 92. Y el +1 restante —el `write_bytes`, que la pieza necesita por H-01—
+**se declara subiendo el techo a 92**, con su porqué escrito en el guard. **Decisión de Nikolai del
+2026-09-11**, consultada expresamente porque rompe la letra de «solo baja».
+
+**Lo que NO se hizo, y es la parte que importa:** mover esa escritura a `core/utils.py` —donde ya
+viven `write_md` y `read_md`— la habría dejado fuera del censo y el número se habría quedado en 91.
+Eso es [[feedback-trinquete-declarar-no-desplazar]]: conserva la cifra y pierde la propiedad.
+
+### Los otros siete
+
+| # | Sev. | Adjudicación | Dónde acabó |
+|---|---|---|---|
+| H2-02 | MEDIO | **CONFIRMADO**, reproducido — el `\s*` se comía los blancos de detrás del cierre, que son del cuerpo | `_partir_indice` corta en el salto de la línea del cierre; test propio |
+| H2-03 | MEDIO | **CONFIRMADO** — `!!omap`/`!!pairs` no sobreviven al roundtrip `safe_load`→`safe_dump` | **`MEJORAS #247`**: no lo cierra esta pieza |
+| H2-04 | MEDIO | **CONFIRMADO** — `!= "reescrito"` agrupaba «conservado» con «sin tocar» y anunciaba escritura sin haberla | tres ramas explícitas en `_alta_crm`, con test y mutante |
+| H2-05 | MEDIO | **CONFIRMADO** — dos oráculos míos dejaban pasar mutantes: uno comparaba **después contra después**, el otro ignoraba orden y multiplicidad | los dos reescritos; sus mutantes (M16, M17) medidos muertos |
+| H2-06 | BAJO | **CONFIRMADO** — construir un dataclass no valida sus tipos | **`MEJORAS #247`** |
+| H2-07 | BAJO | **CONFIRMADO** — el error decía «su hogar es `ensure_case`» de campos que `ensure_case` solo fija al CREAR | `_HOGAR_DE` lo distingue; el hueco va a **`MEJORAS #246`** |
+| H2-08 | BAJO | **CONFIRMADO** — el pseudocódigo del §2.3 describía otra implementación y `PLAN.md` daba la pieza por completa con un PR que no era | §2.3 reescrito conforme al código; `PLAN.md` corregido |
+
+### El dictamen de mis remediaciones de la R1: cuatro REALES, cinco INCOMPLETAS
+
+Eso es lo que más dice de la R1, y no es un reproche al revisor sino a mí: **remedié el caso del
+informe y no siempre la propiedad**. Las cinco incompletas están cerradas arriba (H-01 por
+H2-01/H2-02, H-03 por H2-07, H-05 por H2-04, H-06 por H2-05, H-08 por H2-06 → `#247`).
+
+### Lo que entra SIN VERIFICAR, dicho por delante
+
+**La remediación de esta R2 no ha pasado por ninguna ronda.** El presupuesto era de dos y está
+agotado; **Nikolai decidió el 2026-09-11 no abrir una tercera**. Lo que la acompaña es medición
+propia: **18 mutantes dirigidos, 18 muertos**, incluido **M14, que restaura literalmente el regex
+compartido** que causó H2-01 y muere contra el test del fichero que lo reprodujo.

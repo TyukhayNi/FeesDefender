@@ -323,10 +323,23 @@ def _escribir_indice_atomico(index: Path, fm: dict, cuerpo: str) -> Path:
     `MERGE_EXCLUSIONS` y en el carve-out del plugin para que un huerfano no se trate como
     contenido del expediente (R1/H-07).
     """
+    return _reemplazo_atomico(index, lambda tmp: write_md(tmp, fm, cuerpo))
+
+
+def _reemplazo_atomico(index: Path, escribir) -> Path:
+    """El cuerpo comun de las escrituras del indice: temporal + `os.replace`.
+
+    `update_meta` escribe BYTES y `_escribir_indice_atomico` escribe `(fm, cuerpo)`, pero el
+    reemplazo es el mismo y **se comparte a proposito**: un segundo escritor atomico anadia
+    tres llamadas nuevas al censo de `tests/test_escritura_censo.py`, que es un trinquete y
+    **solo puede bajar** (R2/H2-09). Compartiendo, el diff anade **una** (`write_bytes`) en
+    vez de tres, y esa una se declara en el techo del censo — no se esconde moviendola a un
+    modulo que el censo no mire, que es la trampa que mi propia regla nombra.
+    """
     # `write_md` crea el directorio padre si falta: no hace falta un `mkdir` aqui.
     tmp = index.parent / f"._caso.{os.getpid()}.tmp"
     try:
-        write_md(tmp, fm, cuerpo)
+        escribir(tmp)
         os.replace(tmp, index)
     except Exception:
         if tmp.exists():
@@ -391,11 +404,20 @@ def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
 CAMPOS_ACTUALIZABLES = frozenset({"cuantia", "referencia_crm"})
 
 # Para el mensaje de error: donde vive de verdad cada campo que se rechaza.
+# R2/H2-07: no todos son «ensure_case» en el mismo sentido. `ensure_case` SI actualiza
+# `direccion`, `id_go`, `tipo_caso` y `ciudad` sobre un caso existente; a `titulo`,
+# `cliente`, `contraparte`, `organo`, `drive_link`, `drive_remote_path` y `estado` **solo
+# los fija al CREAR**, y no tienen actualizador. Decirle al operador «su hogar es
+# ensure_case» para esos siete le manda a una puerta que no abre: se le dice la verdad.
+_SIN_ACTUALIZADOR = ("solo se fija al CREAR, con ensure_case; no tiene actualizador "
+                     "posterior — ver MEJORAS #246")
 _HOGAR_DE = {
     "direccion": "ensure_case", "id_go": "ensure_case", "tipo_caso": "ensure_case",
-    "ciudad": "ensure_case", "titulo": "ensure_case", "cliente": "ensure_case",
-    "contraparte": "ensure_case", "organo": "ensure_case", "drive_link": "ensure_case",
-    "drive_remote_path": "ensure_case", "estado": "ensure_case",
+    "ciudad": "ensure_case",
+    "titulo": _SIN_ACTUALIZADOR, "cliente": _SIN_ACTUALIZADOR,
+    "contraparte": _SIN_ACTUALIZADOR, "organo": _SIN_ACTUALIZADOR,
+    "drive_link": _SIN_ACTUALIZADOR, "drive_remote_path": _SIN_ACTUALIZADOR,
+    "estado": _SIN_ACTUALIZADOR,
     "drive_ev_team_id": "register_drive_ev", "drive_ev_folder_id": "register_drive_ev",
     "drive_ev_folder_name": "cache_drive_folder_info",
     "drive_ev_drive_id": "cache_drive_folder_info",
@@ -413,9 +435,37 @@ _HOGAR_DE = {
 # `_frontmatter_del_indice` y se pone rojo si aparece uno que no este aqui.
 _HOGARES_SUPERIORES = {"referencia_crm": "referencia_crm"}
 
-# La MISMA delimitacion que `read_md`, sobre bytes. Anclada al principio del fichero y
-# cerrada por `---`: no es una heuristica de contenido, es un delimitador.
-_FM_RE_BYTES = re.compile(rb"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+def _partir_indice(crudo: bytes) -> "tuple[bytes, bytes, bytes] | None":
+    """`(bloque de frontmatter, YAML, cuerpo)` delimitando POR LINEAS. O `None`.
+
+    **Esto NO comparte el regex de `read_md`, y esa fue la leccion de la R2** (H2-01, ALTO).
+    Yo habia escrito que `^---\\s*\\n(.*?)\\n---\\s*\\n` «no es una heuristica de contenido, es
+    un delimitador». Lo es: el `\\s*` y el `(.*?)` hacen que, ante un frontmatter VACIO
+    (`---\\n---\\n`), el patron no pueda casar el cierre inmediato —necesita un `\\n` entre
+    apertura y cierre que no sea el mismo— y **salte al SIGUIENTE `---` del fichero**,
+    tragandose el cuerpo. Reproducido: una nota `# NOTA DEL LETRADO NO BORRAR` que estaba en
+    el cuerpo entraba como YAML y **desaparecia al serializar**. Justo lo que esta pieza
+    existe para impedir, por compartir el defecto del lector en vez de delimitar.
+
+    Aqui la frontera es lo que parece: la primera linea tiene que ser `---`, y el
+    frontmatter acaba en la **primera linea siguiente** que sea `---`. Ni salta, ni busca, ni
+    depende de que el contenido parsee.
+
+    Y acaba **en el salto de esa linea**, no despues de los blancos que vengan detras
+    (H2-02): el `\\s*` del regex se comia el `\\n  \\n` que el letrado hubiera dejado ahi y la
+    cabecera nueva lo sustituia por la separacion fija del serializador. Esos bytes son del
+    cuerpo y se conservan.
+    """
+    lineas = crudo.split(b"\n")
+    if not lineas or lineas[0].strip() != b"---":
+        return None
+    for i in range(1, len(lineas)):
+        if lineas[i].strip() != b"---":
+            continue
+        # `+1` por el `\n` del cierre; si el cierre es la ultima linea, no lo hay.
+        fin = min(len(b"\n".join(lineas[:i + 1])) + 1, len(crudo))
+        return crudo[:fin], b"\n".join(lineas[1:i]), crudo[fin:]
+    return None
 
 
 def _meta_desde_frontmatter(meta_dict: dict) -> CaseMeta:
@@ -434,24 +484,7 @@ def _normalizar_saltos(texto: str) -> str:
     return texto.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _escribir_bytes_atomico(index: Path, datos: bytes) -> Path:
-    """Temporal en el mismo directorio + `os.replace`, como `_escribir_indice_atomico`.
 
-    Nombre de temporal DISTINTO del de aquella (`._caso.<pid>.upd.tmp`): con el mismo,
-    dos escritores del mismo proceso se pisarian el temporal.
-    """
-    tmp = index.parent / f"._caso.{os.getpid()}.upd.tmp"
-    try:
-        tmp.write_bytes(datos)
-        os.replace(tmp, index)
-    except Exception:
-        if tmp.exists():
-            try:
-                tmp.unlink()
-            except OSError:
-                pass
-        raise
-    return index
 
 
 def _informe(case_id: str, escritas, cuerpo: str, motivo: str | None) -> dict:
@@ -501,13 +534,14 @@ def update_meta(case_id: str, **campos) -> dict:
         raise FileNotFoundError(f"{case_id!r} no tiene 00_Input/_caso.md")
 
     crudo = index.read_bytes()
-    m = _FM_RE_BYTES.match(crudo)
-    if m is None:
+    partes = _partir_indice(crudo)
+    if partes is None:
         return _informe(case_id, [], "sin tocar",
-                        "el indice no empieza por un frontmatter parseable; no se escribe "
-                        "nada para no convertir un fichero roto en uno nuevo")
+                        "el indice no empieza por un frontmatter delimitado por `---`; no se "
+                        "escribe nada para no convertir un fichero roto en uno nuevo")
+    bloque_fm, yaml_bytes, cuerpo_bytes = partes
     try:
-        fm = yaml.safe_load(m.group(1).decode("utf-8")) or {}
+        fm = yaml.safe_load(yaml_bytes.decode("utf-8")) or {}
     except (yaml.YAMLError, UnicodeDecodeError) as exc:
         return _informe(case_id, [], "sin tocar", f"el frontmatter no se puede leer: {exc}")
     if not isinstance(fm, dict):
@@ -522,12 +556,13 @@ def update_meta(case_id: str, **campos) -> dict:
                         f"`meta` no permite reconstruir CaseMeta ({exc}): sin ella no hay "
                         "con que comparar el cuerpo")
 
-    cuerpo_bytes = crudo[m.end():]
     try:
         cuerpo = _normalizar_saltos(cuerpo_bytes.decode("utf-8"))
     except UnicodeDecodeError as exc:
         return _informe(case_id, [], "sin tocar", f"el cuerpo no es UTF-8 ({exc})")
-    canonico = _cuerpo_del_indice(meta_prev) == cuerpo
+    # El cuerpo empieza DESPUES de la linea del cierre, asi que incluye el salto que
+    # `write_md` pone entre el frontmatter y el texto. La forma canonica lo lleva delante.
+    canonico = cuerpo == "\n" + _cuerpo_del_indice(meta_prev)
 
     # --- Frontmatter: SOLO las claves propias, sobre una copia de lo leido.
     #
@@ -546,28 +581,29 @@ def update_meta(case_id: str, **campos) -> dict:
         if campo in campos:
             fm_nuevo[arriba] = campos[campo]
 
-    crlf = b"\r\n" in crudo[:m.end()]
-    cabecera = build_frontmatter(fm_nuevo) + "\n"
+    crlf = b"\r\n" in bloque_fm
+    cabecera = build_frontmatter(fm_nuevo)
     if crlf:
         cabecera = cabecera.replace("\n", "\r\n")
 
     if canonico:
         meta_new = dc_replace(meta_prev, actualizado_en=sello,
                               **{k: v for k, v in campos.items()})
-        cuerpo_nuevo = _cuerpo_del_indice(meta_new).strip() + "\n"
+        cuerpo_nuevo = "\n" + _cuerpo_del_indice(meta_new)
         if crlf:
             cuerpo_nuevo = cuerpo_nuevo.replace("\n", "\r\n")
         datos = cabecera.encode("utf-8") + cuerpo_nuevo.encode("utf-8")
         estado, motivo = "reescrito", None
     else:
-        # Los bytes del cuerpo pasan TAL CUAL. Ni `strip()`, ni traduccion de saltos.
+        # Los bytes del cuerpo pasan TAL CUAL. Ni `strip()`, ni traduccion de saltos, ni el
+        # `\n  \n` que hubiera justo detras del cierre (R2/H2-02).
         datos = cabecera.encode("utf-8") + cuerpo_bytes
         estado = "conservado"
         motivo = ("el cuerpo de `_caso.md` no es el que genera la plantilla (hay notas, "
                   "secciones o formato a mano), asi que no se toca: "
                   + ", ".join(sorted(campos)) + " solo llega al frontmatter")
 
-    _escribir_bytes_atomico(index, datos)
+    _reemplazo_atomico(index, lambda tmp: tmp.write_bytes(datos))
     return _informe(case_id, campos.keys(), estado, motivo)
 
 

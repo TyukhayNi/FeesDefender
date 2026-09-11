@@ -11356,3 +11356,53 @@ de un tercio del audio, la cabecera debería decirlo con esa cifra y no con la a
 **No cerrar esto declarando que «la diarización falla»**: falla *en esta población*, y la frontera
 a caracterizar es **a partir de qué duración y qué patrón de conversación** deja de atribuir. Eso
 se mide con dos o tres grabaciones reales del despacho, no con otro control sintético.
+## 246. Siete campos de `CaseMeta` solo se fijan al CREAR y no tienen actualizador
+
+> Medido el 2026-09-11 por la R1 y confirmado por la R2 de `MEJORAS #227` (H-03 y H2-07).
+> **Preexistente.**
+
+`ensure_case` **sí** actualiza `direccion`, `id_go`, `tipo_caso` y `ciudad` sobre un caso que ya
+existe. **No** actualiza `titulo`, `cliente`, `contraparte`, `organo`, `drive_link`,
+`drive_remote_path` ni `estado`: los fija al crear y ahí se quedan. Y ninguno tiene registrador
+propio.
+
+**El escenario, ejecutado por el revisor.** Alta con cliente y órgano pendientes —lo normal: se
+conocen al leer la documental—; `ensure_case(cliente='…', organo='…')` sobre el caso existente los
+deja en `null`. La única vía es editar `_caso.md` a mano.
+
+**Por qué NO se amplió la lista blanca de `update_meta` de paso.** Porque `#227` era la cuantía, y
+ampliar «ya que estamos» un actualizador que puede destruir notas es justo lo que sus dos rondas
+existen para impedir. Lo que sí se hizo es que el mensaje de rechazo **deje de mentir**: antes decía
+«su hogar es `ensure_case`» y mandaba al operador a una puerta que no abre.
+
+**Vía.** Decidir, campo a campo, si tiene actualizador, si es inmutable por diseño o si `ensure_case`
+debe reponerlo. No es un `**campos` abierto: cada campo que entre a `CAMPOS_ACTUALIZABLES` necesita
+saber **cuáles son sus hogares** en el frontmatter, como `referencia_crm` tiene dos.
+
+## 247. `update_meta` no valida tipos y el roundtrip YAML pierde `!!omap` y `!!pairs`
+
+> Medido el 2026-09-11 por la R2 de `MEJORAS #227` (H2-03 y H2-06), ejecutado.
+
+Dos huecos del contrato de entrada de `update_meta`, los dos de la misma familia: **la pieza
+promete conservar las claves ajenas del frontmatter, y hay formas de no conservarlas que no son
+las dos declaradas** (comentarios YAML y claves duplicadas, que borra `yaml.safe_load` antes de que
+la pieza vea nada).
+
+1. **Tipos YAML que el roundtrip cambia.** `safe_load` acepta `!!omap` y `!!pairs` y los carga como
+   listas de tuplas; `safe_dump` los emite como secuencias genéricas y al recargar son listas de
+   listas. Medido: `ordenado: !!omap [{z: 1}, {a: 2}]` pasa de `[('z', 1), ('a', 2)]` a
+   `[['z', 1], ['a', 2]]`. Es un cambio en una clave **ajena**, fuera de la lista blanca.
+2. **Construir un dataclass no valida sus tipos.** `CaseMeta(**m)` acepta `cuantia: "no-numero"`,
+   `case_id: null` o `titulo: []` y la pieza escribe. Con `sudespacho_expedientes: 42` la excepción
+   sale de `_seccion_expedientes`, fuera del bloque capturado: el fichero queda intacto —bien— pero
+   sin el informe de abstención que el contrato promete.
+
+**Por qué no se cerró en `#227`.** El primero exige decidir qué tipos YAML admite un `_caso.md`, que
+es un contrato del formato y no de esta función. El segundo, un validador de `CaseMeta` que hoy no
+existe y que tocaría a todos sus escritores. Ninguno de los dos es un fallo de la comparación, que
+es lo que `#227` arreglaba.
+
+**Lo que sí queda escrito**, en el §3.4 del diseño: la garantía de la pieza es sobre **el cuerpo**;
+sobre el frontmatter es «las claves que había siguen estando, con su valor», y estas dos son sus
+excepciones conocidas.
+
