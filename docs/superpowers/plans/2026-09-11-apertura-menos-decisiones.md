@@ -198,3 +198,68 @@ P1 (secuencia V2+V3: plan propio y dos rondas), P3 (`MEJORAS #225`, espera la de
 sobre el histórico), P4 (`[APER-70]`, espera decidir qué constructor de la sala sobrevive), P6
 (depende de P2 y de la capa base) y P8 (proceso, decisión de Nikolai). Siguen en el handoff, con
 su §8 diciendo por qué.
+
+## 7. Adjudicación de la revisión adversarial (Codex, 2026-09-11) — NO-SHIP, remediado
+
+- **Objeto revisado:** diff `0702f49..b051e96` — `verificar_apertura` (core, CLI y tests)
+- **Ronda:** R1 (única; el comando es de solo lectura y no puede destruir nada)
+- **Revisor:** Codex (CLI 0.153.4), dos copias `git archive` sin `.git`, con intérprete completo
+- **Informe recibido:** 2026-09-11, `C:/t/rev-p2-103713/wd/INFORME.md`, 34192 bytes
+- **Hallazgos:** 13 — 7 ALTOS, 4 MEDIOS, 2 BAJOS; **13 confirmados, 0 refutados**
+- **Remediado en:** este §7 y el diff de la pieza
+
+Acta con el informe literal y su digest:
+`docs/superpowers/plans/2026-09-11-apertura-menos-decisiones-p2-r1-adversarial-review.md`.
+
+**El mandato puso una sola pregunta en el centro —«¿puede este verificador decir *ok* de un
+expediente roto?»— y la respuesta fue que sí, de siete formas.** En un verificador eso no es una
+lista de defectos: es el defecto, porque es lo único que la pieza existe para impedir.
+
+### La regla que salió de la ronda
+
+**No poder mirar NO es «no hay nada que ver».** La primera versión trataba cada imposibilidad como
+ausencia benigna —un espejo ilegible, una lista con entradas corruptas, una ruta ocupada por un
+fichero— y las tres devolvían verde. Ahora toda imposibilidad de leer, toda forma inválida y toda
+colisión de tipo son `fallo`, con el motivo. `pendiente` queda para la ausencia legítima: el
+productor todavía no ha corrido.
+
+| # | Sev. | Hallazgo | Adjudicación y remedio |
+|---|---|---|---|
+| H-01 | ALTO | Los lectores descartaban en silencio lo que no fuera un mapa, y el conteo cuadraba | **CONFIRMADO**: `[1, "broken", null]` contra catálogo vacío daba `ok`. Una entrada que no es un mapa es forma inválida, y se dice cuántas y dónde |
+| H-02 | ALTO | Cualquier `parent_slug` verdadero descontaba un documento | **CONFIRMADO**: `17`, un slug inexistente o el suyo propio. Un hijo solo cuenta si su padre **existe** en la cobertura |
+| H-03 | MEDIO | Igual cardinalidad no acredita que se catalogara lo procesado | **CONFIRMADO, y es límite de los DATOS**: la cobertura identifica por `slug` y el catálogo por `id_doc`, que no comparten clave. Se conserva el alcance y **el título deja de prometer más de lo que mide** |
+| H-04 | ALTO | C5 contaba no-vacíos: 88 marcas a `basura`, o 88 copias de la misma pregunta, daban `ok` | **CONFIRMADO**. Se exige dominio (`sí`/`si`/`no`) y unicidad: «las 88 preguntas» es sobre identidades, no sobre filas |
+| H-05 | ALTO | Un espejo ilegible salía como «ninguno ajeno»; y solo se recorría el primer nivel | **CONFIRMADO**. Error de lectura → `fallo`; barrido recursivo |
+| H-06 | ALTO | `01_Procesado` ocupado por un fichero se leía como «aún no ha corrido» | **CONFIRMADO**: cuatro `pendiente`, cero fallos, salida 0. Colisión de tipo → `fallo` |
+| H-07 | ALTO | El W-code corto que la ayuda anuncia no se resolvía | **CONFIRMADO**. Ahora `resolve_ref`, y su test solo sustituye la raíz |
+| H-08 | ALTO | La guarda del control positivo leía TEXTO | **CONFIRMADO**, y es el que más importa. Ver abajo |
+| H-09 | MEDIO | El W-code propio se elegía por primera aparición | **CONFIRMADO**: en `Relacionado W-04AAAA - Caso (W-TEST01)` el ajeno quedaba exento. Se toma el de **entre paréntesis**; dos son identidad ambigua y se declara |
+| H-10 | MEDIO | W-codes partidos por maquetación o con guion Unicode, invisibles | **CONFIRMADO**. El texto se normaliza antes de buscar |
+| H-11 | MEDIO | El empate de `mtime` se resolvía por orden alfabético | **CONFIRMADO**, y podía **ocultar el informe malo detrás del bueno**. Sin regla de vigencia se declara `pendiente` |
+| H-12 | BAJO | La prosa prometía en presente una salida persistida que no existe | **CONFIRMADO** (cero escrituras medidas). Corregido, y el «cuatro de red» que eran cinco |
+| H-13 | BAJO | «Todo en tmp_path» no cubre los temporales de openpyxl | **CONFIRMADO como hecho**. La frase queda acotada |
+
+### H-08 merece su párrafo, porque es sobre el instrumento y no sobre el código
+
+Mi guarda del control positivo buscaba una **cadena literal** en el fichero de tests. El revisor la
+sobrevivió de tres formas legítimas —`@pytest.mark.skip`, `xfail(strict=True)` y el ejemplo dentro
+de un docstring— y la rompió cambiando unas comillas dobles por simples en un test que seguía
+funcionando. **Leer texto no demuestra ejecución, ni resultado, ni siquiera que exista una función
+de test.** El mutante que yo maté era real, pero insuficiente para sostener la garantía escrita.
+
+Ahora el registro de expedientes rotos vive **en código** (`CASOS_DE_FALLO`), la guarda lo
+**ejecuta** por parametrización, y un segundo test exige que cubra todas las implementadas — sin
+esto, añadir una décima comprobación y olvidar su entrada dejaría la parametrización sin ese id,
+verde por omisión, que es la forma más silenciosa de que una verja deje de verificar. **Medido:**
+el mismo ataque que tumbaba a la anterior (declarar `c9` implementada y documentarla con un test
+`@skip`) ahora cae.
+
+### Lo que sigue sin cubrir, dicho para que no se dé por hecho
+
+Que la cobertura y el catálogo contengan **los mismos documentos**, y no solo el mismo número
+(H-03): hace falta una correspondencia entre `slug` e `id_doc` que hoy los datos no llevan. Y las
+cinco comprobaciones de red, con su gate en la tabla de arriba.
+
+**Verificación:** 63 tests (eran 33), **20 rojos de control positivo** contra el código
+pre-remediación, uno por hallazgo. Suite completa con las dos semillas (777 y 31337): **5244
+tests, 5151 passed, 0 fallos**, idéntico con las dos.
