@@ -3,6 +3,25 @@
 > Registro de cambios de la skill, en orden cronológico inverso (lo más reciente arriba).
 > Formato ligero: fecha (AAAA-MM-DD) + qué cambió, una línea por cambio.
 
+## 2026-09-11 — El semáforo de FINANZAS existe (`MEJORAS #228`)
+
+- `assets/plantilla_informe_viabilidad.xlsx`: `E22` gana el desplegable
+  `verde/amarillo/rojo` y las tres reglas de formato condicional sobre **`E22:H22`**, con los
+  mismos colores y el mismo alfa `FF` que `E21`. Se **añadió**, sin regenerar nada.
+- El rango cubre los **dos** bloques combinados de la fila 22 (`E22:F22` + `G22:H22`), donde la 21
+  tiene uno solo. Con un rango más corto, la mitad derecha se habría quedado sin color al lado de
+  la izquierda pintada.
+- `references/modelo_xlsx.md`: su línea de VIABILIDAD describía `E22` **como si ya tuviera**
+  semáforo. Corregida, y con el aviso del rango.
+- *Evidencia*: el CFO lee el semáforo por el color; un `amarillo` en texto plano junto a un
+  JURÍDICO en verde se lee como «finanzas sin valorar», que es lo contrario de lo que dice.
+  Verificado por lectura del binario antes y después (hojas, validaciones, protección, merges,
+  TOTAL y las reglas de `E21`: nada cambió salvo lo añadido). 4 tests, **3 rojos de control
+  positivo** contra la plantilla anterior.
+- **No se endureció `E21`**: su validación acepta en silencio un literal fuera de la lista, y
+  `E22` replica ese comportamiento en vez de mejorarlo. El hecho queda escrito en `MEJORAS #228`.
+- **Tail: re-empaquetar y re-importar el `.skill` en Cowork** (fila #14 de `PLAN.md`).
+
 ## 2026-09-11 — El render marca las 88 filas, no solo las que trae el JSON
 
 - `scripts/render_informe.py`: la hoja `PREGUNTAS` se recorre desde `build_id_row_map(preg)` —el

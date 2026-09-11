@@ -282,3 +282,93 @@ def test_los_ids_de_la_plantilla_son_unicos(informe_con_tres_respuestas):
            for r in range(5, ws.max_row + 1) if ws.cell(r, 3).value]
     assert len(ids) == len(set(ids)) == 88, (
         f"{len(ids)} filas con ID y {len(set(ids))} IDs distintos")
+
+
+# --- El semáforo de la plantilla (`MEJORAS #228`) -------------------------------------
+
+
+def _informacion():
+    wb = openpyxl.load_workbook(PLANTILLA)
+    try:
+        yield_ = wb["INFORMACION"]
+        return (wb, yield_)
+    except Exception:
+        wb.close()
+        raise
+
+
+@pytest.mark.parametrize("fila", [21, 22])
+def test_las_dos_filas_del_semaforo_tienen_desplegable(fila):
+    """`MEJORAS #228`: FINANZAS (`E22`) no tenía ni desplegable ni color.
+
+    El CFO lee el semáforo **por el color** — para eso es un semáforo. Escribir
+    `amarillo` en una celda sin formato condicional deja texto plano junto a una celda
+    JURÍDICO en verde, y eso no se lee como «finanzas en amarillo»: se lee como
+    «finanzas sin valorar», que es lo contrario de lo que el documento dice.
+    """
+    wb, inf = _informacion()
+    try:
+        dvs = [d for d in inf.data_validations.dataValidation
+               if d.type == "list" and f"E{fila}" in str(d.sqref)]
+        assert len(dvs) == 1, f"E{fila} tiene {len(dvs)} validaciones de lista"
+        assert set(dvs[0].formula1.strip('"').split(",")) == {"verde", "amarillo", "rojo"}
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize("fila", [21, 22])
+def test_las_dos_filas_del_semaforo_tienen_sus_tres_colores(fila):
+    """Tres reglas, con el alfa `FF` que `modelo_xlsx.md` exige.
+
+    El rango de la 22 es `E22:H22` y cubre sus **dos** bloques combinados
+    (`E22:F22` + `G22:H22`), que es donde la 21 tiene uno solo: sin ese rango, escribir
+    en `E22` colorearía la mitad izquierda y la derecha quedaría en blanco al lado.
+    """
+    wb, inf = _informacion()
+    try:
+        bloque = next((r for r in inf.conditional_formatting
+                       if str(r.sqref) == f"E{fila}:H{fila}"), None)
+        assert bloque is not None, f"no hay formato condicional en E{fila}:H{fila}"
+        colores = {}
+        for regla in bloque.rules:
+            valor = regla.formula[0].split('"')[1]
+            colores[valor] = regla.dxf.fill.bgColor.rgb
+        assert set(colores) == {"verde", "amarillo", "rojo"}
+        assert all(str(c).upper().startswith("FF") and len(str(c)) == 8
+                   for c in colores.values()), f"alfa distinto de FF: {colores}"
+    finally:
+        wb.close()
+
+
+def test_las_dos_filas_del_semaforo_usan_LOS_MISMOS_colores():
+    """Que sea el mismo semáforo, no dos parecidos.
+
+    Si JURÍDICO y FINANZAS pintaran verdes distintos, el CFO vería dos códigos de
+    color en el mismo recuadro y tendría que aprender cuál es cuál.
+    """
+    wb, inf = _informacion()
+    try:
+        def colores(fila):
+            b = next(r for r in inf.conditional_formatting
+                     if str(r.sqref) == f"E{fila}:H{fila}")
+            return {g.formula[0].split('"')[1]: g.dxf.fill.bgColor.rgb for g in b.rules}
+
+        assert colores(21) == colores(22)
+    finally:
+        wb.close()
+
+
+def test_el_prerelleno_deja_el_semaforo_en_blanco(tmp_path):
+    """La otra mitad del contrato, que el cableado no puede romper.
+
+    `modelo_xlsx.md`: «En el pre-relleno SIEMPRE se dejan en blanco» — el semáforo lo
+    firma el abogado, no el generador. Añadirle validación y color a `E22` no puede
+    hacer que el render empiece a escribir ahí.
+    """
+    salida = _generar(tmp_path, {"case_id": "W-TEST00", "preguntas": {}})
+    wb = openpyxl.load_workbook(salida)
+    try:
+        inf = wb["INFORMACION"]
+        assert inf["E21"].value is None and inf["E22"].value is None
+    finally:
+        wb.close()
