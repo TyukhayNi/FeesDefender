@@ -10817,16 +10817,27 @@ es «nadie», puede que la fila sobre y lo que falte sea decidirlo, no cablearlo
 > alguien rellena esa celda en los informes cerrados. Cablearla era barato y reversible; retirar
 > la fila no lo es.
 
-### La mitad que NO se arregló, y se dice
+### Una afirmación mía que era FALSA, y cómo se corrigió
 
-La validación de `E21` lleva `showErrorMessage=False`, así que **Excel acepta en silencio** un
-`AMARILLO` en mayúsculas o un `ámbar`: el desplegable sugiere, no obliga. `E22` se cableó
-**replicando ese comportamiento**, no mejorándolo — poner `True` solo en la nueva haría que las dos
-mitades del mismo semáforo se comportaran distinto, y ponerlo en las dos es endurecer JURÍDICO, que
-es otra decisión y nadie la ha pedido.
+El primer cierre de esta entrada decía que `E21` llevaba `showErrorMessage=False` y que por eso
+`E22` se cableaba «replicando ese comportamiento». **No era cierto.** La R1 midió el XML:
 
-O sea que el semáforo sigue sin proteger del literal mal escrito, en sus dos filas. Es un defecto
-real, medido, y vive aquí en vez de arreglarse de paso.
+| Propiedad | `E21` | `E22` (mi primera versión) |
+|---|---|---|
+| `showErrorMessage` | **`True`** | `False` |
+| `dxf` de las reglas | relleno **+ fuente negrita con color** | solo relleno |
+
+De dónde salió el error: medí `showErrorMessage=False` en la validación de la hoja **PREGUNTAS**
+(`M6:M103`) y **lo extrapolé** a `E21` sin volver a mirar. O sea que no repliqué nada: **introduje
+la asimetría que decía estar evitando**, y la justifiqué con una premisa falsa.
+
+Corregido el mismo día: `E22` tiene ahora `showErrorMessage=True` y sus tres reglas llevan la
+fuente **copiada** de las de `E21` —no reescrita a mano— de modo que son el mismo semáforo y no dos
+parecidos. Con `amarillo` en las dos, antes JURÍDICO salía en marrón y negrita y FINANZAS en negro
+normal: mismo fondo, distinto aspecto.
+
+La lección, que es la de siempre: **medí una cosa y afirmé de otra**. Ver
+[[feedback-afirmacion-sin-medir-en-un-comentario]].
 
 ## 229. `poblar_sala_lectura` no tiene transacción ni exclusión: dos corridas solapadas se pisan el catálogo
 
@@ -11203,3 +11214,69 @@ el entry del manifest y que `deposit_export` solo corte si el sha entró **como 
 La rama que ya existe para el caso legítimo —copiar y anotar `duplicado_de`— cubre el resto sin
 cambios. **La frontera, no el ejemplo:** cualquier fuente que reciba bytes que otra ya depositó
 tiene este mismo modo de fallo; el arreglo debe formularse sobre el canal, no sobre WhatsApp.
+
+## 242. El semáforo JURÍDICO **en blanco** se ve ROJO, por un estilo fijo bajo el formato condicional
+
+> Medido el 2026-09-11 por la R1 de `MEJORAS #228`, sobre la plantilla renderizada. **Preexistente:
+> idéntico antes y después de ese cambio.**
+
+**Qué pasa.** La celda `E21` tiene un estilo base con relleno sólido `FFFF0000` — rojo puro. El
+formato condicional se pinta *encima* cuando la celda vale `verde`/`amarillo`/`rojo`; cuando está
+**vacía**, no se activa ninguna regla y queda el estilo fijo. Resultado: **un informe sin valorar
+enseña JURÍDICO en rojo**.
+
+**Por qué importa más de lo que parece.** El pre-relleno deja el semáforo en blanco a propósito —lo
+firma el abogado, no el generador— y la referencia lo dice. Pero «en blanco» y «se ve neutro» son
+cosas distintas, y el CFO lee el color. Un rojo puro (`#FF0000`) tampoco es el rojo del semáforo
+(`#FFC7CE`), así que quien lo mire de cerca ve un rojo que no está en la leyenda; quien lo mire de
+lejos ve una valoración que nadie ha hecho.
+
+`E22` **no** tiene ese estilo fijo, así que hoy las dos filas se ven distinto estando las dos
+vacías.
+
+**Vías.** (a) Quitar el relleno fijo de `E21` y dejar que el condicional sea el único que pinta —el
+arreglo real, y hay que mirar si ese rojo cumple alguna función de «pendiente» que nadie documentó.
+(b) Añadir una cuarta regla para la celda vacía que la pinte de neutro, que tapa el síntoma sin
+tocar el estilo. (c) Nada, y documentar que el rojo de un informe sin firmar no significa nada —lo
+peor, porque obliga a saberlo.
+
+## 243. El filtro que produce el guion de entrevista deja **12 preguntas fuera**
+
+> Medido el 2026-09-11 por la R1 de `MEJORAS #228`. **Preexistente**, y toca de lleno a la pieza
+> que acababa de cerrarse.
+
+**Qué pasa.** La hoja `PREGUNTAS` tiene `autoFilter ref="B3:M88"`, y sus **88 IDs llegan hasta la
+fila 103**. Doce preguntas quedan fuera del ámbito del filtro: `tl_01`, `esc_01`, `esc_01_fecha`,
+`esc_02`, `esc_03`, `esc_03_fecha`, `rec_02`, `rec_02_fecha`, `rec_03`, `rec_03_fecha`, `rec_04`,
+`rec_04_fecha`.
+
+**Por qué importa, y por qué es irónico.** La referencia dice «Filtra ¿PENDIENTE?=sí para el guion
+de entrevista», y eso es **el propósito** de que las 88 filas salgan marcadas — que fue justo la
+pieza P5 del 2026-09-11. Marcar las 88 sirve de poco si el filtro solo alcanza a 76: las últimas
+doce no se ocultan ni se muestran por ese criterio, así que el guion que sale del filtro **no es el
+cuestionario**.
+
+Las doce son de escritura, reconocimiento y reclamación — no son las menos importantes.
+
+**Vía.** Ampliar `autoFilter` y el nombre definido `_xlnm._FilterDatabase` a `B3:M103`. Es un
+cambio de una línea en el XML, pero **hay que medir antes si el rango corto es un residuo o
+protege algo**: la plantilla tiene filas de sección intercaladas, y un filtro que las incluya puede
+comportarse raro.
+
+## 244. Tres documentos describen la plantilla de viabilidad y ninguno coincide con ella
+
+> Medido el 2026-09-11 por la R1 de `MEJORAS #228`, en su barrido de completitud. **Preexistente.**
+
+Tres afirmaciones vivas que el artefacto no sostiene:
+
+1. `references/modelo_xlsx.md:3` dice que la Skill A **no escribe BITACORA**. La escribe: su propia
+   sección de BITACORA lo describe y `render_informe.py` rellena `B5:G5` con un JSON mínimo. Un
+   consumidor que tome la cabecera como contrato recibe una modificación que allí se niega.
+2. `docs/CONVENCIONES_DESPACHO.md:366` llama canónica a `docs/PLANTILLA_INFORME_VIABILIDAD.xlsx`,
+   que **no existe** en el repo — la que usa el generador vive en los assets de la skill.
+3. Ese mismo documento describe **unas 50 preguntas**; la plantilla real tiene **88**.
+
+**Por qué va junto y no en tres entradas.** Es un solo defecto —la plantilla tiene tres
+descripciones y ninguna es la fuente— y arreglarlo pieza a pieza deja el problema: hay que decidir
+**cuál manda** y que las otras apunten a ella. El candidato natural es `modelo_xlsx.md`, que vive
+junto al artefacto.
