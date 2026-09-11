@@ -10372,9 +10372,10 @@ enrutado.
 ## 224. `--direccion` es el único flag de identidad que se teclea a mano, y el nombre de la carpeta de E&V ya lo trae  [CERRADA 2026-09-11]  [PROMOVIDO → PLAN.md 2026-09-11]
 
 > **[PROMOVIDO → PLAN.md] 2026-09-11.** Disparador: decisión de Nikolai al arrancar la sesión,
-> sobre la medición de las siete aperturas del 2026-09-10. Va en la **fila #28** de `PLAN.md`
-> (bloque `[SIGUIENTE-APERTURA-MENOS-DECISIONES]`), pieza **P7**. El estado de ciclo de
-> vida vive allí, no aquí.
+> sobre la medición de las siete aperturas del 2026-09-10. Era la **fila #28** de `PLAN.md`
+> (bloque `[SIGUIENTE-APERTURA-MENOS-DECISIONES]`), pieza **P7**; cerrada el 2026-09-11 y
+> colapsada al ledger `## ✅ Cerrados` como `[APERTURA-MENOS-DECISIONES]`. El estado de ciclo
+> de vida vive allí, no aquí.
 
 > Medido el 2026-09-10 abriendo **W-02NHNC**: la dirección llevaba una vocal acentuada y la escribí
 > sin acento. Nadie podía avisar, porque no hay con qué comparar.
@@ -10649,9 +10650,10 @@ de ficheros en `01_Procesado/Sala lectura/`. Si no cuadra, hay documentos pisado
 ## 227. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo  [CERRADA 2026-09-11]  [PROMOVIDO → PLAN.md 2026-09-11]
 
 > **[PROMOVIDO → PLAN.md] 2026-09-11.** Disparador: decisión de Nikolai al arrancar la sesión,
-> sobre la medición de las siete aperturas del 2026-09-10. Va en la **fila #28** de `PLAN.md`
-> (bloque `[SIGUIENTE-APERTURA-MENOS-DECISIONES]`), pieza **P7**. El estado de ciclo de
-> vida vive allí, no aquí.
+> sobre la medición de las siete aperturas del 2026-09-10. Era la **fila #28** de `PLAN.md`
+> (bloque `[SIGUIENTE-APERTURA-MENOS-DECISIONES]`), pieza **P7**; cerrada el 2026-09-11 y
+> colapsada al ledger `## ✅ Cerrados` como `[APERTURA-MENOS-DECISIONES]`. El estado de ciclo
+> de vida vive allí, no aquí.
 
 > Medido el 2026-09-10 en W-02NHNC, siguiendo el orden que manda la memoria del despacho: alta CRM
 > **al final**, con `--crm skip` en todo el intake previo.
@@ -10758,9 +10760,10 @@ entra por la guarda de «CRM ya registrado» y retorna antes.
 ## 228. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color  [CERRADA 2026-09-11]  [PROMOVIDO → PLAN.md 2026-09-11]
 
 > **[PROMOVIDO → PLAN.md] 2026-09-11.** Disparador: decisión de Nikolai al arrancar la sesión,
-> sobre la medición de las siete aperturas del 2026-09-10. Va en la **fila #28** de `PLAN.md`
-> (bloque `[SIGUIENTE-APERTURA-MENOS-DECISIONES]`), pieza **P5**. El estado de ciclo de
-> vida vive allí, no aquí.
+> sobre la medición de las siete aperturas del 2026-09-10. Era la **fila #28** de `PLAN.md`
+> (bloque `[SIGUIENTE-APERTURA-MENOS-DECISIONES]`), pieza **P5**; cerrada el 2026-09-11 y
+> colapsada al ledger `## ✅ Cerrados` como `[APERTURA-MENOS-DECISIONES]`. El estado de ciclo
+> de vida vive allí, no aquí.
 
 > Medido el 2026-09-10 al firmar el semáforo de W-02NHNC sobre
 > `assets/plantilla_informe_viabilidad.xlsx` (vía el `.xlsx` que genera `render_informe.py`).
