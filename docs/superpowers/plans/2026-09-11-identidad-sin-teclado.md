@@ -116,8 +116,14 @@ conocida**, fabricando discrepancia con el CRM —que conservaba la buena—. Me
 
 El defecto original solo dejaba el dato sin escribir; éste lo destruía. **Remediado y con test**
 (`--cuantia` pasa a `None` por defecto: «el flag no vino» y «el flag vino con cero» son cosas
-distintas, y un default no es una orden de escribir). Se conserva aunque la pieza se retire, porque
-la frontera vale para cualquier flag que acabe escribiendo en el expediente.
+distintas, y un default no es una orden de escribir).
+
+> **Corrección del 2026-09-11.** Aquí decía «**se conserva aunque la pieza se retire**», y era
+> falso: la remediación se fue entera con el PR #338 cerrado, sus cinco tests incluidos. Verificado
+> por contenido — `git show origin/main:scripts/abrir_caso.py` seguía diciendo
+> `typer.Option(0.0, "--cuantia")`. No era un defecto vivo mientras no hubiera `update_meta`, pero
+> sí una mina para el segundo intento. **Vuelve con `MEJORAS #227`**, en
+> `docs/superpowers/specs/2026-09-11-cuantia-en-caso-md-comparar-no-localizar-design.md` §6.1.
 
 **H2-08 es el que habla de mi instrumento, no del código.** Tres de mis tests **pasan ejecutando la
 conducta que prohíben**, medido con mutantes dirigidos:

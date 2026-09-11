@@ -10646,7 +10646,7 @@ de ficheros en `01_Procesado/Sala lectura/`. Si no cuadra, hay documentos pisado
 - **(d) Nada.** Hoy el coste es que un caso pierde documentos de la sala sin decirlo, y quien la
   lee no tiene forma de notarlo: el `INDICE.md` los lista igual, porque lista el catálogo.
 
-## 227. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo  [PROMOVIDO → PLAN.md 2026-09-11]
+## 227. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo  [CERRADA 2026-09-11]  [PROMOVIDO → PLAN.md 2026-09-11]
 
 > **[PROMOVIDO → PLAN.md] 2026-09-11.** Disparador: decisión de Nikolai al arrancar la sesión,
 > sobre la medición de las siete aperturas del 2026-09-10. Va en la **fila #28** de `PLAN.md`
@@ -10731,6 +10731,29 @@ creador al que se le pide que sea también un actualizador, y calla cuando no pu
   existe. No arregla nada, pero convierte el silencio en un aviso; es la mitad barata de (a).
 - **(c) Que el alta CRM escriba la cuantía al pasar**, ya que la tiene en la mano. Tapa este caso y
   deja `#184` y `#192` vivos.
+
+**Cerrada el 2026-09-11, en el SEGUNDO intento y por otro diseño.** El primero (PR #338) añadía
+un `update_meta` que **localizaba** la línea a sustituir dentro del cuerpo Markdown; dos rondas
+encontraron **seis** formas de romper esa misma propiedad y Nikolai lo devolvió al diseño. El que
+entra no localiza: **compara**. Si el cuerpo es exactamente el que genera la plantilla para la
+`meta` del frontmatter, se reescribe entero; si difiere en cualquier cosa, **no se toca ni un
+byte** y se declara en el informe.
+
+**Dos cosas que la ronda de este diseño cambió, y que no estaban en la entrada:**
+
+1. La garantía se enunció sobre **cadenas** y el fichero está hecho de **bytes**: `write_md` hace
+   `body.strip()` y traduce los saltos, así que «conservar el cuerpo» pasándolo otra vez por el
+   escritor le quitaba los espacios finales a la nota del letrado. Ahora se sustituye **solo el
+   tramo del frontmatter** y el cuerpo pasa tal cual.
+2. Una **lista blanca de argumentos no acota lo que se escribe**: reutilizar la fusión de
+   `_actualizar_indice` habría revertido en silencio lo que `update_pull_state` acababa de escribir.
+
+Diseño, medición y adjudicación:
+`docs/superpowers/specs/2026-09-11-cuantia-en-caso-md-comparar-no-localizar-design.md`.
+
+**Lo que NO cierra:** `#184` y `#192` siguen abiertas; `_actualizar_cuerpo` y el contrato de
+`MEJORAS #146` no se tocan. Y queda declarado que **el reintento del alta no repone la cuantía**:
+entra por la guarda de «CRM ya registrado» y retorna antes.
 
 ## 228. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color  [CERRADA 2026-09-11]  [PROMOVIDO → PLAN.md 2026-09-11]
 

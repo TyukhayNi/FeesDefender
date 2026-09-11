@@ -478,14 +478,31 @@ todos sobre `tmp_casos_root`.
 | 8 | escribir `referencia_crm` solo en `meta` |
 | 10 | filtrar los `None` de `campos` |
 | 11 | aceptar `campos` vacío |
-| 12 | añadir `actualizado_en` al cuerpo |
+| 12, 16 | que `update_meta` añada un sello al cuerpo al reescribir |
 | 13 | devolver el default de `--cuantia` a `0.0` |
 | 14 | pasar el `None` tal cual a `crm_payload` |
 | 15 | volver a un solo `except` alrededor de las tres llamadas |
 
+16. **Al reescribir, solo cambia lo que renderiza el campo.** El teorema del §2.1, con un oráculo
+    que **no es el generador**: se compara el cuerpo contra el **anterior** y se exige que la única
+    línea que cambie sea `- Cuantía:`.
+
 Cada mutante se aplica, se corre el test, se comprueba que **se pone rojo**, y se revierte. Lo que
 no mate su mutante no acredita lo que dice acreditar. **Y la tabla se comprueba entera**: la rev. 1
 dejó un test (el 7 de entonces) sin mutante asignado y la R1 lo cazó.
+
+**Resultado: 13 mutantes, 13 muertos** — y el 13º costó descubrir algo que el diseño no decía.
+
+**El mutante de `actualizado_en` estaba MAL APUNTADO, y sobrevivía por eso.** Lo puse sobre
+`_cuerpo_del_indice`, que usan **la creación y la actualización**: con él, la línea de más aparece
+en las dos, el diff sale vacío y los 18 tests siguen verdes. Un mutante que no mata no siempre
+acusa al test — a veces acusa a la puntería. El correcto lo mete `update_meta` en su rama canónica,
+y entonces muere.
+
+**Y destapó que el oráculo del test 12 era tautológico:** comparar el cuerpo escrito contra
+`_cuerpo_del_indice` es preguntarle al generador si el generador tiene razón. De ahí el test 16,
+que compara contra el cuerpo anterior. Es [[feedback-el-arnes-de-mutacion-tiene-sus-propios-defectos]]
+otra vez, y en la forma que menos se ve: el arnés funcionaba, lo que estaba mal era dónde apuntaba.
 
 Suite completa con las **dos semillas** (777 y 31337) antes de mergear, conteo por `--junit-xml`.
 Línea base de esta sesión, medida sobre `b59bb49`: **5.313 recogidos, 0 fallos, 94 skipped**.

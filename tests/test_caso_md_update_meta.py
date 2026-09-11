@@ -331,7 +331,26 @@ def test_dos_llamadas_iguales_dejan_el_fichero_IDENTICO(cm, monkeypatch):
     cm.update_meta("EV-227-TEST", cuantia=73140.5)
 
     assert index.read_bytes() == primera, "la segunda pasada cambió el fichero"
-    meta = cm._meta_desde_frontmatter(_fm(index)["meta"])
-    cuerpo = cm._normalizar_saltos(_partes(index)[1].decode("utf-8"))
-    assert cuerpo == cm._cuerpo_del_indice(meta), (
-        "el cuerpo escrito no es el que produce la plantilla: hay texto que nadie pidió")
+
+
+def test_al_reescribir_SOLO_cambia_lo_que_renderiza_el_campo(cm):
+    """El teorema del §2.1, con un oráculo que NO es el generador.
+
+    Comparar el cuerpo escrito contra `_cuerpo_del_indice` es **tautológico**: un generador
+    que metiera texto de más se validaría a sí mismo. Medido — un mutante que añade
+    `<!-- actualizado_en -->` al cuerpo sobrevivía a esa comparación **y** al test de
+    idempotencia, porque las dos pasadas lo producen igual.
+
+    El oráculo bueno es el cuerpo **anterior**: la única línea que puede cambiar es la que
+    renderiza el campo que se escribió.
+    """
+    index = _caso(cm)
+    antes = _partes(index)[1].decode("utf-8").splitlines()
+
+    cm.update_meta("EV-227-TEST", cuantia=73140.5)
+
+    despues = _partes(index)[1].decode("utf-8").splitlines()
+    quitadas = [l for l in antes if l not in despues]
+    puestas = [l for l in despues if l not in antes]
+    assert quitadas == ["- Cuantía: _(pendiente)_"], quitadas
+    assert puestas == ["- Cuantía: 73140.5"], puestas

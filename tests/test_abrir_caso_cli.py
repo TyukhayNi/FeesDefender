@@ -978,3 +978,153 @@ def test_cli_una_barra_en_la_direccion_ABORTA_sin_crear_nada(drive_temporal):
     # Y sobre todo: NADA en disco. Si se crea el esqueleto, el arreglo llego tarde.
     assert not list(drive_temporal.rglob("*W-02Z2NR*")), (
         "se creo un caso pese al error: la validacion tiene que morder ANTES de ensure_case")
+
+
+# ---------------------------------------------------------------------------
+# `MEJORAS #227` — la cuantía llega a `_caso.md`, y sin pisar la que ya hay
+#
+# La cuantía se conoce al leer el encargo pero el alta CRM va al FINAL, así que
+# `--cuantia` iba al CRM y no al índice local. El intento anterior (PR #338,
+# cerrado) lo arregló y abrió una regresión peor: con el default `0.0` de Typer,
+# repetir el comando **sin** el flag pisaba con cero una cuantía ya conocida.
+# Medido entonces de punta a punta: `before=73140.5`, `after=0.0`.
+# ---------------------------------------------------------------------------
+
+_CASE_ID = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+
+
+def _cuantia_en_caso_md(case_id=_CASE_ID):
+    """La del FRONTMATTER, que es la que lee `c9_cuantia_coherente`."""
+    import yaml
+
+    index = case_locator.path_for(case_id) / "00_Input" / "_caso.md"
+    crudo = index.read_text(encoding="utf-8")
+    fm = yaml.safe_load(crudo.split("---", 2)[1])
+    return (fm.get("meta") or {}).get("cuantia")
+
+
+def test_cli_la_cuantia_del_flag_llega_a_caso_md(drive_temporal):
+    result = CliRunner().invoke(cli.app, _args(cuantia="73140.5"))
+    assert result.exit_code == 0, result.output
+    assert _cuantia_en_caso_md() == 73140.5
+    index = case_locator.path_for(_CASE_ID) / "00_Input" / "_caso.md"
+    assert "- Cuantía: 73140.5" in index.read_text(encoding="utf-8"), (
+        "en un `_caso.md` recién creado el cuerpo es canónico, así que se reescribe")
+
+
+def test_cli_sin_el_flag_la_cuantia_no_se_inventa(drive_temporal):
+    result = CliRunner().invoke(cli.app, _args())
+    assert result.exit_code == 0, result.output
+    assert _cuantia_en_caso_md() is None, (
+        "sin `--cuantia` no hay cuantía que escribir; un default no es una orden de escribir")
+
+
+def test_cli_repetir_SIN_el_flag_no_pisa_la_cuantia_ya_escrita(drive_temporal, monkeypatch):
+    """La regresión que abrió el intento anterior, y el test que la vigila.
+
+    **Y acredita que recorrió la frontera**: la segunda invocación tiene que llegar a la
+    guarda de «CRM ya registrado» y retornar ahí. Sin comprobarlo, restaurar el default a
+    `0.0` dejaría el test verde sin probar nada, porque la segunda pasada quizá ni mira el
+    flag (R1/H-06 del diseño).
+    """
+    r1 = CliRunner().invoke(cli.app, _args(cuantia="73140.5"))
+    assert r1.exit_code == 0, r1.output
+    assert _cuantia_en_caso_md() == 73140.5
+
+    # Se cuenta cuántas veces se escribe el índice por esta vía: si la segunda pasada
+    # escribiera, el default volvería a entrar por aquí.
+    escrituras = []
+    real = cli.case_manager.update_meta
+    monkeypatch.setattr(cli.case_manager, "update_meta",
+                        lambda cid, **kw: (escrituras.append(kw), real(cid, **kw))[1])
+
+    r2 = CliRunner().invoke(cli.app, _args() + ["--force"])
+    assert r2.exit_code == 0, r2.output
+    assert _cuantia_en_caso_md() == 73140.5, "la segunda pasada pisó la cuantía"
+    assert "CRM ya registrado" in r2.output, (
+        "la segunda pasada no llegó a la guarda de idempotencia: este test no está probando "
+        "la frontera que dice probar")
+    assert escrituras == [], f"la segunda pasada escribió en el índice: {escrituras}"
+
+
+def test_cli_el_payload_del_CRM_recibe_un_numero_aunque_no_venga_el_flag(drive_temporal,
+                                                                        monkeypatch):
+    """R1/H-04: el DTO del CRM hace aritmética con la cuantía.
+
+    `datos.cuantia + datos.costas + datos.intereses`. Propagar el `None` del flag ausente
+    reventaría un alta que hoy funciona.
+    """
+    vistos = []
+    monkeypatch.setattr("core.sudespacho_create.create_expediente",
+                        lambda dto, **kw: (vistos.append(dto.cuantia), "9999")[1])
+
+    # Tres altas SEPARADAS: el mismo caso dos veces entra por la guarda de idempotencia y
+    # no vuelve a llamar al CRM, que es justo lo que este test necesita medir.
+    for i, extra in enumerate([{}, {"cuantia": "0"}, {"cuantia": "500.5"}]):
+        args = _args(**extra)
+        args[args.index("--w-code") + 1] = f"W-02Z2N{i}"
+        args[args.index("--codigo-caso") + 1] = f"BaRS1{i}"
+        r = CliRunner().invoke(cli.app, args)
+        assert r.exit_code == 0, r.output
+
+    assert vistos and all(isinstance(v, float) for v in vistos), vistos
+    assert vistos[0] == 0.0, "el flag ausente tiene que llegar al CRM como 0.0, no como None"
+
+
+def test_cli_el_alta_hecha_y_el_registro_fallido_NO_dicen_que_fallo_el_alta(drive_temporal,
+                                                                           monkeypatch):
+    """El segundo de los cuatro desenlaces (R1/H-05).
+
+    Hasta el 2026-09-11 un solo `except` cubría el alta y el registro, así que un fallo del
+    segundo imprimía «Alta CRM falló» con el alta HECHA. El letrado reintentaba y duplicaba.
+    """
+    monkeypatch.setattr(cli.case_manager, "register_expediente",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom registro")))
+
+    result = CliRunner().invoke(cli.app, _args(cuantia="10"))
+
+    assert result.exit_code == 0, result.output
+    assert "Alta CRM falló" not in result.output, (
+        "el alta SÍ se hizo: decir que falló manda al letrado a duplicar el expediente")
+    assert "El alta en el CRM SI se hizo" in result.output
+    assert "9999" in result.output, "tiene que decir el id para poder vincularlo a mano"
+
+
+def test_cli_el_indice_fallido_es_su_PROPIO_desenlace(drive_temporal, monkeypatch):
+    """El cuarto desenlace, el que introduce esta pieza."""
+    monkeypatch.setattr(cli.case_manager, "update_meta",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("disco")))
+
+    result = CliRunner().invoke(cli.app, _args(cuantia="10"))
+
+    assert result.exit_code == 0, result.output
+    assert "OK CRM id=9999" in result.output, "el alta y el registro SÍ se hicieron"
+    assert "Alta CRM falló" not in result.output
+    assert "escribir la cuantía" in result.output
+    assert "Repetir el comando NO la repone" in result.output, (
+        "el aviso tiene que decir que el reintento no arregla esto, porque no lo arregla")
+
+
+def test_cli_si_el_cuerpo_se_CONSERVA_el_aviso_llega_a_la_pantalla(drive_temporal,
+                                                                    monkeypatch):
+    """El cableado tiene que SACAR el informe de `update_meta`, no tragárselo.
+
+    Si el cuerpo se conserva, el letrado lee `- Cuantía: _(pendiente)_` en su `_caso.md` y
+    la cuantía está solo en el frontmatter. Callarlo sería mentir por omisión.
+
+    Se falsea el **informe**, no el estado del fichero: la conservación en sí ya la prueba
+    `tests/test_caso_md_update_meta.py`, y lo que aquí se comprueba es que el llamante la
+    dice. Y no se puede montar el estado por la CLI: en un alta nueva el `_caso.md` que
+    acaba de crear `ensure_case` **es** canónico, y una segunda pasada retorna antes en la
+    guarda de «CRM ya registrado» — que es justo la limitación que el diseño declara.
+    """
+    monkeypatch.setattr(cli.case_manager, "update_meta",
+                        lambda cid, **kw: {"case_id": cid, "frontmatter": sorted(kw),
+                                           "cuerpo": "conservado",
+                                           "motivo": "hay notas del letrado"})
+
+    result = CliRunner().invoke(cli.app, _args(cuantia="73140.5"))
+
+    assert result.exit_code == 0, result.output
+    assert "NO en su cuerpo" in result.output, result.output
+    assert "hay notas del letrado" in result.output, "el motivo tiene que salir tal cual"
