@@ -363,8 +363,12 @@ spaCy (paquetes de ruso, castellano, catalán e inglés)
 
 ## 19. Informe de Viabilidad (negativas, vueltas, incumplimiento exclusiva)
 
-**Plantilla canónica.** `docs/PLANTILLA_INFORME_VIABILIDAD.xlsx`. Es el
-documento que se presenta al CFO de Engel (Ricardo) en la reunión semanal
+**Plantilla canónica.**
+`.claude/skills/viabilidad-prerelleno/assets/plantilla_informe_viabilidad.xlsx`, y su
+estructura la manda **`references/modelo_xlsx.md`**, que vive al lado — hojas, celdas,
+rangos y número de preguntas se leen ahí y no aquí (`MEJORAS #244`). Hasta el 2026-09-11
+esta línea llamaba canónica a `docs/PLANTILLA_INFORME_VIABILIDAD.xlsx`, **que no existe en
+el repo**. Es el documento que se presenta al CFO de Engel (Ricardo) en la reunión semanal
 de aprobación. Tras la reunión, sea cual sea la decisión (aprobar acción
 judicial / descartar), se firma con DocuSign. Si se aprueba, el siguiente
 paso operativo es **convertir el extrajudicial a judicial en el CRM**
@@ -374,25 +378,17 @@ paso operativo es **convertir el extrajudicial a judicial en el CRM**
 ESCRITURA / VUELTA / INCUMPLIMIENTO EXCLUSIVA. **NO** se usa en BAD DEBT
 (que tiene su propio flujo basado en el fichero de morosidad).
 
-**Estructura del fichero (dos pestañas operativas).**
-
-`INFORMACION` — datos del expediente y diagnóstico:
-
-| Bloque | Campos clave |
-|---|---|
-| Cabecera | FECHA, REF (referencia BaCS1/MaRR1/etc), DIRECTOR/ASESOR CAPTADOR, DIRECTOR/ASESOR BUSCADOR |
-| Observaciones | OBSERVACIONES, MOTIVOS DE IMPAGO |
-| Importes | PRECIO, TOTAL HONORARIOS (% × PRECIO × 1,21), PAGOS PARCIALES, TOTAL DEUDA, PROPUESTA PAGO, DIFERENCIA |
-| Viabilidad | JURÍDICO, FINANZAS (cualitativa) |
-| Datos operación (chequeo doc) | CUANTIA, ENCARGO, IDENTIFICACIÓN PROPIETARIO, TITULARIDAD, HOJA VISITA, OFERTA, IDENTIFICACIÓN BUSCADOR, ARRAS/ARRENDAMIENTO, RECONOCIMIENTO HONORARIOS-ARRAS, ESCRITURA, RECONOCIMIENTO HONORARIOS-ESCRITURA, RECLAMACIÓN JURIDICO, RESPUESTA RECLAMACIÓN, OFERTA VINCULANTE CONFIDENCIAL — 14 hitos, cada uno con valor 1/0/N/A y fecha |
-| Actividades | EXPOSES PROPIEDAD, VISITAS PROPIEDAD, EXPOSES BUSCADOR, VISITAS BUSCADOR (numérico) |
-
-`PREGUNTAS` — subset operativo del Protocolo (≈ 50 preguntas) para
-documentar la entrevista con consultores. Coincide con el protocolo de
-63 preguntas pero condensado: bloques CAPTACION, COMERCIALIZACION,
-VISITA, OFERTA / COMUNICACIÓN BUSCADOR-AGENCIA, COMUNICACIÓN INTERNA,
-COMUNICACIÓN AGENCIA-PROPIETARIO, ARRAS, TEAM LEADER. (La pestaña
-DOCUMENTOS de versiones antiguas está obsoleta y no se usa.)
+**Estructura del fichero.** **Cuatro** hojas: `INFORMACION` (la que lee el
+CFO), `PREGUNTAS` (hoja de trabajo con las **88** preguntas del
+cuestionario), `AVISOS LLM` y `BITACORA`. El mapa de celdas, los rangos y
+el reparto de quién escribe qué están en
+`.claude/skills/viabilidad-prerelleno/references/modelo_xlsx.md`, y la
+derivación de los 14 hitos de DATOS OPERACIÓN en `hitos_derivacion.md`.
+**Aquí no se repiten**, y esa es la decisión de `MEJORAS #244`: esta
+sección describía «dos pestañas operativas» y «≈ 50 preguntas» cuando hay
+cuatro hojas y 88, porque una descripción duplicada envejece sin que nadie
+la mire. (La pestaña DOCUMENTOS de versiones antiguas está obsoleta y no
+se usa.)
 
 **Flujo del Informe de Viabilidad — antes de la reunión con CFO.**
 

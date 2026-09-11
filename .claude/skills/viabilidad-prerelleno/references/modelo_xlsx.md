@@ -1,6 +1,14 @@
 # Modelo del fichero .xlsx (4 hojas) — mapa para el pre-relleno
 
-> El fichero es **uno solo por expediente** y funciona como **BITÁCORA append-only**. La Skill A escribe en `INFORMACION` (cabecera, equipo, importes, hitos, actividades), en `PREGUNTAS` (columnas del LLM) y en `AVISOS LLM`. **No escribe** VIABILIDAD, ni el recuadro ejecutivo `B48`, ni la hoja `BITACORA` (eso es Skill B / el abogado).
+> **FUENTE ÚNICA de la estructura de esta plantilla** (`MEJORAS #244`, 2026-09-11). Lo que diga
+> cualquier otro documento sobre hojas, celdas, rangos o número de preguntas **cede ante éste**,
+> que vive al lado del artefacto (`../assets/plantilla_informe_viabilidad.xlsx`). El *proceso de
+> negocio* —quién lo lee, cuándo se usa, qué pasa después— vive en `docs/CONVENCIONES_DESPACHO.md`
+> §19, y la derivación de los 14 hitos en `hitos_derivacion.md`.
+>
+> El fichero es **uno solo por expediente** y funciona como **BITÁCORA append-only**. La Skill A escribe en `INFORMACION` (cabecera, equipo, importes, hitos, actividades), en `PREGUNTAS` (columnas del LLM), en `AVISOS LLM` y en `BITACORA` **solo su primera entrada** (ver la sección de esa hoja, más abajo). **No escribe** VIABILIDAD ni el recuadro ejecutivo `B48` (eso es Skill B / el abogado).
+>
+> Hasta el 2026-09-11 esta línea decía que **no** escribía `BITACORA`, y la sección de `BITACORA` de este mismo documento decía que sí: el fichero se contradecía consigo mismo, y `render_informe.py` la escribe (`MEJORAS #244`).
 >
 > Forma de trabajar: **partir de `assets/plantilla_informe_viabilidad.xlsx`** (ya trae formato, fórmulas, semáforo condicional, validaciones y protección) y **rellenar valores con `scripts/render_informe.py`**. No reconstruir el formato desde cero (rompería el semáforo y la protección).
 
