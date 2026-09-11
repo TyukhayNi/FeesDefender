@@ -115,7 +115,7 @@ lista así (los merges del semáforo, `MEJORAS #228`) omití una entrada.
 ### H-05 — deuda preexistente, al backlog y no «de paso»
 
 `PREGUNTAS` tiene **cinco** `<selection>` en su `<sheetView>` y el esquema admite cuatro. Idéntico
-en las dos copias: ni lo introduje ni lo toqué. Va a **`MEJORAS #245`**. Arreglarlo aquí habría
+en las dos copias: ni lo introduje ni lo toqué. Va a **`MEJORAS #248`**. Arreglarlo aquí habría
 sido una cuarta modificación del binario metida dentro de una auditoría, sin ronda propia y sin que
 nadie la hubiera pedido.
 

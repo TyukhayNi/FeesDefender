@@ -11429,28 +11429,4 @@ es lo que `#227` arreglaba.
 **Lo que sí queda escrito**, en el §3.4 del diseño: la garantía de la pieza es sobre **el cuerpo**;
 sobre el frontmatter es «las claves que había siguen estando, con su valor», y estas dos son sus
 excepciones conocidas.
-## 245. La hoja `PREGUNTAS` tiene cinco `<selection>` donde el esquema OOXML admite cuatro
-
-> Medido el 2026-09-11 por la R1 de `MEJORAS #242`/`#243`, comparando los dos `.xlsx` a nivel de
-> zip. **Preexistente**: idéntico en las dos copias, el diff no lo introdujo ni lo tocó.
-
-**Qué pasa.** El `<sheetView>` de `PREGUNTAS` (`xl/worksheets/sheet2.xml`) lleva **cinco** hijos
-`<selection>` —`topRight`, `bottomLeft`, `bottomRight`, `bottomLeft`, `bottomRight`— y la secuencia
-del esquema de `SheetView` admite **como máximo cuatro**, uno por panel. Los dos últimos son
-duplicados de panel.
-
-**Por qué importa poco hoy y puede importar mañana.** `openpyxl` lo acepta sin rechistar y el
-fichero se viene abriendo sin problemas, así que no hay síntoma. Pero un validador XSD estricto, o
-un consumidor que no sea Excel ni openpyxl, puede rechazar la hoja; y el día que pase, el rastro
-será un «no me abre el informe» sin causa visible.
-
-**Lo que NO se sabe, y no se da por sabido:** si una versión concreta de Excel repara, ignora o
-rechaza esas selecciones duplicadas. Nadie lo ha abierto para mirarlo. **No se afirma que el
-fichero sea inválido para Excel.**
-
-**Vía.** Quitar las dos `<selection>` sobrantes conservando una por panel, con la misma edición
-quirúrgica a nivel de zip que usó `#243` (copiar cada entrada byte a byte y sustituir solo el
-bloque), y validar el paquete contra el esquema antes y después. **No se arregló de paso** en el PR
-de `#242`/`#243` a propósito: habría sido una cuarta modificación del binario metida dentro de una
-auditoría, sin ronda propia y sin que nadie la hubiera pedido.
-
+## 248. La hoja `PREGUNTAS` tiene cinco `<selection>` donde el esquema OOXML admite cuatro
