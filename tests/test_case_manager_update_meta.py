@@ -1,9 +1,14 @@
 """`case_manager.update_meta` — el actualizador que `ensure_case` no es (`MEJORAS #227`).
 
-`ensure_case` solo fija campos cuando **crea** el índice: sobre un caso existente acepta
-los kwargs y no escribe nada, en silencio. Es la tercera vez que ese patrón hace daño
-—`#184` la referencia del CRM, `#192` el campo, `#227` la cuantía—, y las tres veces hubo
-que editar `_caso.md` a mano, bajo el mutex.
+`ensure_case` **no repone `cuantia` ni `referencia_crm`** sobre un caso existente: los
+acepta como kwargs y no escribe nada, en silencio. Hubo que editar `_caso.md` a mano,
+bajo el mutex.
+
+Ojo con generalizarlo, porque yo lo generalicé mal y la R1 me lo corrigió (H-07): `ensure_case`
+**sí** actualiza `tipo_caso`, `direccion`, `id_go` y `ciudad` en un caso existente, y su
+propio docstring lo dice. El defecto es de esos dos campos, no de la función entera. Y la
+otra cita que traía esta cabecera también era falsa: el `MEJORAS #184` real habla de la
+cobertura de los sondeos de correo, no de la referencia del CRM.
 
 Lo que estos tests fijan no es «la cuantía se escribe»: es la **frontera**. `update_meta`
 toca solo los campos que el llamador nombra, y nada más. Todo lo demás —la nota del
@@ -51,11 +56,13 @@ def test_la_cuantia_llega_al_frontmatter_y_al_cuerpo(caso):
 
 
 def test_ensure_case_sigue_sin_poder_reponerla(caso):
-    """El control positivo de la pieza: la vía vieja **no** escribe, y hay que verlo.
+    """Test de CONSERVACIÓN, no control positivo — la R1 me corrigió el color.
 
-    Si este test se pusiera verde por sí solo, significaría que `ensure_case` cambió de
-    comportamiento y que `update_meta` sobra. Mientras siga rojo, la pieza está
-    justificada.
+    Que este test **pase** es lo que acredita que la vía vieja no repone la cuantía, y
+    con ello que `update_meta` hace falta. Si algún día se pusiera **rojo**, sería que
+    `ensure_case` cambió de comportamiento y que esta pieza sobra. La versión anterior
+    de este docstring decía justo lo contrario (H-07 de la R1): un test que pasa no
+    puede describirse como «mientras siga rojo».
     """
     case_manager.ensure_case(CASE_ID, cuantia=73140.0)
     fm, cuerpo = _leer(caso)
@@ -193,3 +200,139 @@ def test_no_toca_el_lock_de_checkout(caso):
                   "checkout_maquina", "checkout_timestamp"):
         assert despues["meta"][campo] == antes["meta"][campo], f"se perdió {campo}"
     assert despues["meta"]["estado_repositorio"] == "prestado"
+
+
+# ===========================================================================
+# Lo que la R1 de Codex rompió (2026-09-11)
+# ===========================================================================
+#
+# El revisor tumbó la primera versión de `update_meta` con escenarios que estos
+# tests no tenían. El más caro, H-01, destruía una nota del abogado — justo lo que
+# `MEJORAS #146` protege— y mi `test_no_pisa_la_nota_escrita_a_mano` no lo veía
+# porque puse la nota SIN un prefijo que coincidiera: el control positivo medía otra
+# población.
+
+
+def test_no_pisa_una_nota_QUE_EMPIEZA_IGUAL_que_la_linea(caso):
+    """H-01 de la R1, ALTO. Era una destrucción de datos, no un caso de borde.
+
+    Escenario literal del revisor: el abogado escribe en su sección
+
+        - Cuantía: comprobar oferta, NO BORRAR
+
+    y la versión anterior la reemplazaba por `- Cuantía: 42` —porque buscaba el
+    prefijo en TODO el cuerpo y se quedaba con la primera coincidencia— dejando
+    además la línea real de `## Sede` en `_(pendiente)_`. El informe decía
+    `cuerpo=['cuantia']`: un «OK» sobre un expediente mutilado.
+    """
+    fm, cuerpo = _leer(caso)
+    write_md(caso, fm, "# Notas\n- Cuantía: comprobar oferta, NO BORRAR\n\n" + cuerpo)
+
+    informe = case_manager.update_meta(CASE_ID, cuantia=42.0)
+
+    _, cuerpo2 = _leer(caso)
+    assert "- Cuantía: comprobar oferta, NO BORRAR" in cuerpo2, "destruyó la nota"
+    sede = cuerpo2.split("## Sede", 1)[1].split("\n## ", 1)[0]
+    assert "- Cuantía: 42.0" in sede, "no actualizó la línea que sí es suya"
+    assert informe["cuerpo"] == ["cuantia"]
+
+
+def test_no_confunde_un_encabezado_dentro_de_un_bloque_de_codigo(caso):
+    """H-02 de la R1: un `## Sede` dentro de ```md es un ejemplo, no una sección.
+
+    El revisor metió una cerca con `## Sede` dentro y la inserción cayó **en el
+    ejemplo**, dejando la sección real sin el dato — con `insertadas` en el informe.
+    """
+    fm, cuerpo = _leer(caso)
+    ejemplo = "# Guía\n\n```md\n## Sede\n- Cuantía: EJEMPLO\n```\n\n"
+    write_md(caso, fm, ejemplo + cuerpo)
+
+    case_manager.update_meta(CASE_ID, cuantia=42.0)
+
+    _, cuerpo2 = _leer(caso)
+    assert "- Cuantía: EJEMPLO" in cuerpo2, "escribió dentro del bloque de código"
+    real = cuerpo2.split("```", 2)[2]
+    assert "- Cuantía: 42.0" in real, "no actualizó la sección real"
+
+
+def test_dos_secciones_con_el_mismo_nombre_son_AMBIGUAS_y_no_se_adivina(caso):
+    """H-02 de la R1: elegir la primera candidata es adivinar.
+
+    El revisor construyó `## Sede` (histórica) y `## Sede` (vigente) y el dato fue a
+    la primera sin que nadie lo dijera. Ahora el campo sale en `ambiguas`, el cuerpo
+    no se toca, y el frontmatter sí se escribe: el llamador se entera.
+    """
+    fm, _ = _leer(caso)
+    write_md(caso, fm, "## Sede\n\nEjemplo histórico\n\n## Sede\n\nSede vigente\n")
+
+    informe = case_manager.update_meta(CASE_ID, cuantia=42.0)
+
+    assert informe["ambiguas"] == ["cuantia"]
+    assert informe["cuerpo"] == [] and informe["insertadas"] == []
+    fm2, cuerpo = _leer(caso)
+    assert fm2["meta"]["cuantia"] == 42.0, "el frontmatter sí se escribe"
+    assert "42.0" not in cuerpo
+
+
+def test_dos_lineas_del_mismo_campo_en_la_seccion_tambien_son_ambiguas(caso):
+    """La otra mitad de la misma frontera: dos candidatas dentro del ámbito."""
+    fm, cuerpo = _leer(caso)
+    write_md(caso, fm, cuerpo.replace("- Cuantía: _(pendiente)_",
+                                      "- Cuantía: _(pendiente)_\n- Cuantía: otra"))
+
+    informe = case_manager.update_meta(CASE_ID, cuantia=42.0)
+
+    assert informe["ambiguas"] == ["cuantia"]
+    _, cuerpo2 = _leer(caso)
+    assert "- Cuantía: otra" in cuerpo2
+
+
+@pytest.mark.parametrize("campo, valor", [
+    ("estado", "archivado"),
+    ("titulo", "Otro título"),
+    ("sudespacho_expedientes", [{"id": "20"}]),
+    ("drive_ev_folder_id", "NEW"),
+    ("checkout_nonce", "robado"),
+    ("drive_remote_path", "otro:remoto"),
+])
+def test_los_campos_con_otro_dueno_se_RECHAZAN_y_se_dice_adonde_ir(caso, campo, valor):
+    """H-03 de la R1: aceptarlos dejaba el índice incoherente sin decir nada.
+
+    Medido por el revisor: `estado='archivado'` cambiaba el frontmatter y el cuerpo
+    seguía diciendo `estado **instruccion**`; y `sudespacho_expedientes` en `meta` sin
+    tocar la lista de primer nivel, que es **la que lee `get_case_status`**.
+
+    La frontera no se arregla ampliando el alcance de este actualizador —eso lo
+    convertiría en el reconstructor que `MEJORAS #146` retiró—, sino rechazando lo que
+    no mantiene. Y rechazar **nombrando la vía sancionada** es lo que distingue una
+    frontera de un hueco.
+    """
+    with pytest.raises(KeyError) as exc:
+        case_manager.update_meta(CASE_ID, **{campo: valor})
+    assert campo in str(exc.value)
+    assert "update_meta no mantiene" in str(exc.value)
+
+
+def test_un_indice_sin_frontmatter_legible_PARA_en_vez_de_normalizarlo(caso):
+    """H-04 de la R1: normalizar un fichero roto lo convierte en otro fichero.
+
+    El revisor pasó un `_caso.md` truncado —sin el cierre del frontmatter— y la
+    versión anterior escribía un frontmatter NUEVO y dejaba el original **como
+    cuerpo**, sin el lock y sin avisar. Un actualizador que no puede leer lo que
+    actualiza para.
+    """
+    caso.write_text("---\ncase_id: C\nmeta:\n  checkout_nonce: N\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="frontmatter legible"):
+        case_manager.update_meta(CASE_ID, cuantia=42.0)
+
+    assert "checkout_nonce: N" in caso.read_text(encoding="utf-8"), "tocó el fichero roto"
+
+
+def test_un_meta_que_no_es_un_mapa_tambien_para(caso):
+    """La hermana de la anterior: `meta` con una forma que no es la suya."""
+    caso.write_text("---\ncase_id: C\nmeta:\n  - una\n  - lista\n---\n\n# Cuerpo\n",
+                    encoding="utf-8")
+
+    with pytest.raises(ValueError, match="no es un mapa"):
+        case_manager.update_meta(CASE_ID, cuantia=42.0)

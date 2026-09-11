@@ -676,6 +676,11 @@ def _alta_crm(
             f"CRM ya registrado (element={ya.get('element')}, id={ya.get('id')}), "
             "no se re-da de alta"
         )
+        # ...pero la cuantia SI se repone. La R1 midio el agujero: si la escritura
+        # local fallo tras un alta que si se completo (disco, permisos), el reintento
+        # salia por aqui y nunca volvia a intentarlo. La idempotencia es del ALTA, no
+        # de la persistencia local.
+        _persistir_cuantia_local(ident.case_id, cuantia)
         return
 
     # El chequeo de arriba mira el `_caso.md` LOCAL. Si ese registro se perdio —o el
@@ -741,20 +746,45 @@ def _alta_crm(
     try:
         exp_id = sudespacho_create.create_expediente(payload)
         case_manager.register_expediente(ident.case_id, exp_id, _ELEMENT_EXTRAJUDICIAL)
-        # `MEJORAS #227`: la cuantia se conoce al LEER el encargo, no al abrir el caso,
-        # asi que el alta va al final con `--cuantia` y hasta ahora ese dato llegaba al
-        # CRM y no a `_caso.md`, que se quedaba diciendo «_(pendiente)_» de algo que ya
-        # existia. `ensure_case` no podia reponerlo: solo fija campos al crear.
-        informe = case_manager.update_meta(ident.case_id, cuantia=cuantia)
-        if informe["sin_linea"]:
-            typer.echo(f"[AVISO] cuantia escrita en el frontmatter pero NO en el cuerpo "
-                       f"de _caso.md (sin la seccion donde va): {informe['sin_linea']}")
         typer.echo(f"OK CRM id={exp_id}")
     except Exception as exc:
         typer.echo(
             f"[AVISO] Alta CRM falló ({exc!r}): Drive+intake ya completados, "
             "referencia_crm queda pendiente + TODO."
         )
+        return
+
+    # FUERA del `try` del alta, y a proposito. La R1 midio que, con la escritura local
+    # dentro, un fallo al persistir la cuantia se anunciaba como «Alta CRM falló» —
+    # falso: el expediente se habia creado— y el reintento moria en la guarda de
+    # idempotencia sin reparar nada. Son dos resultados distintos y se dicen por
+    # separado.
+    _persistir_cuantia_local(ident.case_id, cuantia)
+
+
+def _persistir_cuantia_local(case_id: str, cuantia: float) -> None:
+    """`MEJORAS #227`: la cuantia del alta, tambien en `_caso.md`.
+
+    Se conoce al LEER el encargo y no al abrir el caso, asi que el alta va al final
+    con `--cuantia` y ese dato llegaba al CRM y no al indice local, que se quedaba
+    diciendo «_(pendiente)_» de algo que ya existia.
+
+    No propaga la excepcion: el alta en el CRM ya esta hecha y tumbar el comando aqui
+    no la deshace. Pero **lo dice**, con el remedio exacto, en vez de dejar el indice
+    mintiendo en silencio.
+    """
+    try:
+        informe = case_manager.update_meta(case_id, cuantia=cuantia)
+    except Exception as exc:
+        typer.echo(f"[AVISO] el alta CRM si se completo, pero la cuantia NO se escribio "
+                   f"en _caso.md ({exc!r}). Reponla con "
+                   f"`case_manager.update_meta(<case_id>, cuantia={cuantia})`.")
+        return
+    pendientes = informe["sin_linea"] + informe["ambiguas"]
+    if pendientes:
+        typer.echo(f"[AVISO] cuantia escrita en el frontmatter pero NO en el cuerpo de "
+                   f"_caso.md: {pendientes} (sin la seccion donde va, o con mas de una "
+                   "candidata). Revisa la linea `- Cuantia:` a mano.")
 
 
 def _autoderivar_drive_ev(
@@ -827,7 +857,14 @@ def _direccion_de_la_carpeta(nombre_carpeta, w_code):
                    f"{nombre_carpeta!r}: no encuentro el W-code que delimita el "
                    "prefijo. Pásalo explícito.")
         return None
-    if w_code and w_carpeta and w_carpeta.upper() != str(w_code).upper():
+    # `CaseRef.normalizar` y no `.upper()`: el modelo ya define que un W-code canonico
+    # va sin espacios de borde y en mayusculas. La R1 midio que con `--w-code " W-X "`
+    # —un copia-pega con espacios— se acusaba una discrepancia FALSA y se obligaba a
+    # teclear una direccion que era derivable.
+    from core.casos.workspace_model import CaseRef
+
+    if (w_code and w_carpeta
+            and CaseRef.normalizar(w_carpeta) != CaseRef.normalizar(str(w_code))):
         typer.echo(f"[auto] La carpeta {nombre_carpeta!r} declara {w_carpeta}, pero "
                    f"--w-code es {w_code}: no derivo --direccion de una carpeta que "
                    "dice ser de otro expediente. Pásalo explícito (y comprueba "

@@ -382,45 +382,89 @@ def _actualizar_indice(index: Path, fm: dict, cuerpo: str, meta: CaseMeta) -> Pa
 # `update_meta`: el ACTUALIZADOR que `ensure_case` no es (`MEJORAS #227`)
 # ---------------------------------------------------------------------------
 #
-# `ensure_case` solo fija los campos cuando CREA el indice. Sobre un caso existente
-# acepta los kwargs y no escribe nada, en silencio. Es la tercera vez que ese patron
-# hace dano: `MEJORAS #184` (la referencia del CRM), `#192` (el campo) y `#227` (la
-# cuantia, que se conoce al leer el encargo y no al alta, asi que llegaba al CRM y no
-# a `_caso.md`). La entrada del backlog lo dice mejor: es un creador al que se le pide
-# que sea tambien un actualizador, y calla cuando no puede.
+# `ensure_case` NO repone `cuantia` ni `referencia_crm` sobre un caso ya existente:
+# los acepta como kwargs y no escribe nada, en silencio. (Ojo con generalizarlo: SI
+# actualiza `tipo_caso`, `direccion`, `id_go` y `ciudad`, y su propio docstring lo
+# dice. El defecto es de esos dos campos, no de la funcion entera; la R1 corrigio esa
+# imprecision mia.) El caso que duele es la cuantia, que se conoce al LEER el encargo
+# y no al abrir el caso: llegaba al CRM y `_caso.md` se quedaba diciendo «pendiente»
+# de algo que ya existia.
 #
 # `update_meta` actualiza **solo los campos que el llamador nombra**, ni uno mas. Esa
 # es la diferencia con `_actualizar_cuerpo`, que regenera los tres fragmentos que el
-# REGISTRADOR posee. Son dos fronteras distintas y no deben compartir logica: ampliar
-# `_actualizar_cuerpo` para cubrir la cuantia haria que `register_expediente` y
-# `register_drive_ev` empezaran a pisar lineas que hoy no tocan, que es exactamente la
-# regresion que `MEJORAS #146` vino a cerrar.
+# REGISTRADOR posee. Son dos fronteras distintas y no comparten logica: ampliar aquel
+# para cubrir la cuantia haria que `register_expediente` y `register_drive_ev`
+# empezaran a pisar lineas que hoy no tocan, que es la regresion que `MEJORAS #146`
+# vino a cerrar.
 #
 # NO pide el mutex, igual que `register_expediente` y `register_drive_ev`: lo pide el
-# entrypoint (`MEJORAS #126`). `_alta_crm` ya corre bajo el mutex del caso.
+# entrypoint (`MEJORAS #126`). `_alta_crm`, su unico llamador productivo, ya corre
+# bajo el mutex del caso. **Sin esa precondicion hay actualizacion perdida**, y la R1
+# la ejecuto: dos llamadas intercaladas sin exclusion pierden la primera.
+#
+# --- Lo que la R1 de Codex cambio de este diseno (2026-09-11) ---
+#
+# La version anterior localizaba la linea con `startswith` sobre TODO el cuerpo y
+# tomaba la primera coincidencia. El revisor lo rompio en una linea: una nota del
+# abogado que empiece por `- Cuantia: comprobar oferta, NO BORRAR` se DESTRUIA, y la
+# linea real de `## Sede` se quedaba en «pendiente». O sea, el actualizador destruia
+# justo lo que `MEJORAS #146` protege, y mi test no lo veia porque puse la nota sin
+# un prefijo que coincidiera.
+#
+# La frontera no es «una linea que empieza por X»: es **una linea que empieza por X
+# DENTRO del ambito que el indice posee**. De ahi el parseo por secciones de abajo,
+# que ademas ignora los bloques cercados —el revisor metio un `## Sede` dentro de
+# ```md y la insercion cayo dentro del ejemplo— y **se abstiene ante ambiguedad** en
+# vez de elegir la primera candidata.
 
-# Campo de `CaseMeta` -> (prefijo de su linea en el cuerpo, como se pinta, seccion que
-# la aloja). El prefijo identifica la linea existente; la seccion solo se usa cuando la
-# linea no esta y hay que insertarla.
-# El cuarto elemento dice DONDE se inserta respecto de la seccion: "dentro" (al final
-# de su bloque de items) o "antes" (justo encima del encabezado). `referencia_crm` es
-# "antes" porque `_cuerpo_del_indice` la pinta entre la linea de estado y `## Partes`,
-# y ademas SOLO si el caso ya tenia referencia al crearse — que es justo lo que no pasa
-# en `MEJORAS #184`: la referencia se conoce despues del alta, asi que su linea no
-# existe y hay que crearla.
-_LINEAS_DEL_CUERPO = {
-    "referencia_crm": ("- Referencia CRM: ", lambda v: f"- Referencia CRM: **{v}**",
-                       "## Partes", "antes"),
-    "cliente": ("- Cliente: ", lambda v: f"- Cliente: {v}", "## Partes", "dentro"),
-    "contraparte": ("- Contraparte: ", lambda v: f"- Contraparte: {v}", "## Partes", "dentro"),
-    "jurisdiccion": ("- Jurisdicción: ", lambda v: f"- Jurisdicción: {v}", "## Sede", "dentro"),
-    "organo": ("- Órgano: ", lambda v: f"- Órgano: {v}", "## Sede", "dentro"),
-    "cuantia": ("- Cuantía: ", lambda v: f"- Cuantía: {v}", "## Sede", "dentro"),
-    "drive_link": ("- Drive: ", lambda v: f"- Drive: {v}", "## Fuente documental", "dentro"),
-}
-# Campos que ademas viven en el frontmatter de primer nivel, no solo dentro de `meta`.
-_CAMPOS_TOP_LEVEL = {"referencia_crm": "referencia_crm", "estado": "estado",
-                     "ciudad": "ciudad", "drive_remote_path": "drive"}
+_RE_CERCA = re.compile(r"^\s*(```|~~~)")
+_RE_ENCABEZADO_ANY = re.compile(r"^#{1,6}\s")
+
+
+def _lineas_fuera_de_cercas(lineas: list[str]) -> list[int]:
+    """Indices de las lineas que NO estan dentro de un bloque de codigo cercado.
+
+    Un `## Sede` dentro de un ```md es un ejemplo, no una seccion. La R1 lo ejecuto:
+    la insercion caia dentro del ejemplo y el informe decia `insertadas`.
+    """
+    fuera, dentro = [], False
+    for i, ln in enumerate(lineas):
+        if _RE_CERCA.match(ln):
+            dentro = not dentro
+            continue
+        if not dentro:
+            fuera.append(i)
+    return fuera
+
+
+def _ambito_de(lineas: list[str], seccion: str | None):
+    """`("ok", (ini, fin))`, `("ausente", None)` o `("ambigua", None)`.
+
+    - Con `seccion`: el cuerpo de esa seccion, desde su encabezado hasta el siguiente
+      encabezado de cualquier nivel.
+    - Sin `seccion` (el preambulo): desde el inicio hasta el primer encabezado `##`.
+      Es donde `_cuerpo_del_indice` pone la linea de `Referencia CRM`.
+
+    **Ausente y ambigua NO son lo mismo**, y fundirlas fue un error de la primera
+    remediacion: «no hay seccion donde ponerlo» se puede resolver insertando o
+    declarandolo, y «hay dos secciones con ese nombre» no se puede resolver en
+    absoluto sin adivinar. El informe las separa para que el llamador sepa cual tiene
+    delante.
+    """
+    fuera = set(_lineas_fuera_de_cercas(lineas))
+    if seccion is None:
+        fin = next((i for i in range(len(lineas))
+                    if i in fuera and lineas[i].startswith("## ")), len(lineas))
+        return ("ok", (0, fin))
+    heads = [i for i in fuera if lineas[i].strip() == seccion]
+    if not heads:
+        return ("ausente", None)
+    if len(heads) > 1:
+        return ("ambigua", None)
+    ini = heads[0]
+    fin = next((i for i in range(ini + 1, len(lineas))
+                if i in fuera and _RE_ENCABEZADO_ANY.match(lineas[i])), len(lineas))
+    return ("ok", (ini + 1, fin))
 
 
 def _pintar_linea(campo: str, valor) -> str:
@@ -428,32 +472,91 @@ def _pintar_linea(campo: str, valor) -> str:
     return pintar(valor) if valor is not None else f"{prefijo}_(pendiente)_"
 
 
-def update_meta(case_id: str, **campos) -> dict:
-    """Fija campos del indice de un caso YA creado, conservando todo lo demas.
+# Campo de `CaseMeta` -> (prefijo de su linea, como se pinta, seccion que la aloja,
+# donde se inserta si no esta). `referencia_crm` vive en el PREAMBULO —entre la linea
+# de estado y `## Partes`— y por eso su seccion es None y su insercion es "antes".
+_LINEAS_DEL_CUERPO = {
+    "referencia_crm": ("- Referencia CRM: ", lambda v: f"- Referencia CRM: **{v}**",
+                       None, "antes:## Partes"),
+    "cliente": ("- Cliente: ", lambda v: f"- Cliente: {v}", "## Partes", "dentro"),
+    "contraparte": ("- Contraparte: ", lambda v: f"- Contraparte: {v}", "## Partes", "dentro"),
+    "jurisdiccion": ("- Jurisdicción: ", lambda v: f"- Jurisdicción: {v}", "## Sede", "dentro"),
+    "organo": ("- Órgano: ", lambda v: f"- Órgano: {v}", "## Sede", "dentro"),
+    "cuantia": ("- Cuantía: ", lambda v: f"- Cuantía: {v}", "## Sede", "dentro"),
+    "drive_link": ("- Drive: ", lambda v: f"- Drive: {v}", "## Fuente documental", "dentro"),
+}
 
-    Escribe el valor en el frontmatter (dentro de `meta`, y tambien en la clave de
-    primer nivel cuando el campo tiene una) y regenera **solo** la linea del cuerpo que
-    corresponde a ese campo. Cualquier otra cosa —la nota del abogado, las claves que
-    el modelo no conoce, los wikilinks, las secciones ajenas— queda intacta, igual que
-    hace el sumidero desde `MEJORAS #146`.
+# Campos que ademas viven en el frontmatter de primer nivel, no solo dentro de `meta`.
+_CAMPOS_TOP_LEVEL = {"referencia_crm": "referencia_crm"}
+
+# Campos que este actualizador NO acepta porque tienen OTRO hogar que no mantiene, y
+# aceptarlos dejaria el indice incoherente sin decir nada. La R1 lo midio: un
+# `update_meta(estado='archivado')` cambiaba el frontmatter y dejaba el cuerpo
+# diciendo `estado **instruccion**`; y `sudespacho_expedientes` en `meta` sin tocar la
+# lista de primer nivel, que es la que lee `get_case_status`.
+#
+# Cada uno tiene su via sancionada, y el mensaje la nombra: rechazar diciendo adonde
+# ir es lo que distingue una frontera de un hueco.
+_CAMPOS_CON_OTRO_DUENO = {
+    "estado": "el cuerpo lo pinta `_linea_estado`; usa el registrador o `_write_case_index`",
+    "titulo": "es el encabezado `# ` del cuerpo, que este actualizador no toca",
+    "sudespacho_expedientes": "usa `register_expediente`: mantiene la lista de primer "
+                              "nivel que lee `get_case_status`, y su seccion del cuerpo",
+    "drive_ev_team_id": "usa `register_drive_ev`",
+    "drive_ev_folder_id": "usa `register_drive_ev`",
+    "drive_ev_folder_name": "usa `cache_drive_folder_info`",
+    "drive_ev_drive_id": "usa `cache_drive_folder_info`",
+    "drive_remote_path": "tiene linea propia en el cuerpo y clave `drive` en el "
+                         "frontmatter, que este actualizador no sincroniza",
+    "estado_repositorio": "es del lock de checkout: usa `escribir_lock`/`liberar_lock`",
+    "checkout_user": "es del lock de checkout: usa `escribir_lock`/`liberar_lock`",
+    "checkout_timestamp": "es del lock de checkout: usa `escribir_lock`/`liberar_lock`",
+    "checkout_nonce": "es del lock de checkout: usa `escribir_lock`/`liberar_lock`",
+    "checkout_maquina": "es del lock de checkout: usa `escribir_lock`/`liberar_lock`",
+    "checkout_notas": "es del lock de checkout: usa `escribir_lock`/`liberar_lock`",
+}
+
+
+def update_meta(case_id: str, **campos) -> dict:
+    """Fija campos del indice de un caso YA creado, conservando lo que no es suyo.
+
+    Escribe el valor en el frontmatter (dentro de `meta`, y en la clave de primer
+    nivel cuando el campo tiene una) y regenera **solo** la linea del cuerpo que
+    corresponde a ese campo, **dentro del ambito Markdown que esa linea ocupa**. Todo
+    lo demas —la nota del abogado, las claves que el modelo no conoce, los wikilinks,
+    las secciones ajenas, el lock de checkout— queda donde estaba.
+
+    **Que NO conserva, dicho aqui porque «todo lo demas intacto» seria falso:** el
+    serializador compartido (`utils.write_md`) reescribe el YAML, asi que los
+    **comentarios** del frontmatter y su orden original se pierden, y el cuerpo pierde
+    los espacios en blanco de los bordes. Es comportamiento heredado del escritor, no
+    de este metodo, y la R1 lo midio.
 
     Devuelve un **informe de lo que hizo**, no un booleano::
 
         {"index": Path, "frontmatter": [campos escritos],
          "cuerpo": [campos cuya linea se reescribio],
          "insertadas": [campos cuya linea hubo que crear],
-         "sin_linea": [campos sin linea en el cuerpo y sin seccion donde ponerla]}
+         "sin_linea": [campos sin linea y sin seccion donde ponerla],
+         "ambiguas": [campos cuyo ambito no es unico: dos secciones con el mismo
+                      nombre, o dos lineas con el mismo prefijo dentro de una]}
 
-    `sin_linea` existe a proposito: un cuerpo escrito a mano puede no tener la seccion,
-    y **insertar a ciegas es adivinar donde**. El llamador se entera de que el dato
+    `sin_linea` y `ambiguas` existen a proposito: insertar en un cuerpo ajeno, o
+    elegir entre dos candidatas, es **adivinar**. El llamador se entera de que el dato
     quedo en el frontmatter y no en el cuerpo, en vez de leer un «OK» que describe el
     paso y no el expediente.
 
     Raises:
-        KeyError: si algun campo no es de `CaseMeta`, o si no se pasa ninguno. Un typo
-            tiene que doler aqui, no aparecer como un dato que nunca se escribio.
+        KeyError: si algun campo no es de `CaseMeta`, si no se pasa ninguno, o si el
+            campo tiene otro dueno (`_CAMPOS_CON_OTRO_DUENO`) — el mensaje nombra la
+            via sancionada. Un typo o un campo mal dirigido tienen que doler aqui, no
+            aparecer como un indice incoherente.
         FileNotFoundError: si el caso o su `_caso.md` no existen. `update_meta`
             actualiza; crear es de `ensure_case`.
+        ValueError: si el `_caso.md` no tiene un frontmatter legible como mapa. Un
+            actualizador que no puede leer lo que actualiza **para**: normalizarlo en
+            silencio convertiria un fichero truncado en otro fichero, y el original
+            quedaria como cuerpo (medido en la R1).
     """
     from dataclasses import fields as _dc_fields
 
@@ -463,6 +566,10 @@ def update_meta(case_id: str, **campos) -> dict:
         raise KeyError(f"campos que no son de CaseMeta: {desconocidos}")
     if not campos:
         raise KeyError("update_meta sin campos: no hay nada que actualizar")
+    ajenos = sorted(set(campos) & set(_CAMPOS_CON_OTRO_DUENO))
+    if ajenos:
+        detalle = "; ".join(f"{c}: {_CAMPOS_CON_OTRO_DUENO[c]}" for c in ajenos)
+        raise KeyError(f"update_meta no mantiene estos campos ({detalle})")
 
     from core.casos.case_locator import buscar
 
@@ -474,42 +581,64 @@ def update_meta(case_id: str, **campos) -> dict:
         raise FileNotFoundError(f"el caso {case_id!r} no tiene _caso.md; usa ensure_case")
 
     fm, cuerpo = read_md(index)
-    if not isinstance(fm, dict):
-        fm = {}
-    meta_dict = dict(fm.get("meta") or {})
+    if not isinstance(fm, dict) or not fm:
+        raise ValueError(
+            f"el _caso.md de {case_id!r} no tiene un frontmatter legible como mapa "
+            "(truncado, vacio o de otra forma). update_meta no lo normaliza: eso "
+            "convertiria el fichero en otro y dejaria el original como cuerpo.")
+    meta_previo = fm.get("meta")
+    if meta_previo is not None and not isinstance(meta_previo, dict):
+        raise ValueError(f"el `meta` del _caso.md de {case_id!r} no es un mapa: "
+                         f"{type(meta_previo).__name__}")
+    meta_dict = dict(meta_previo or {})
     meta_dict.update(campos)
 
     fm_nuevo = {**fm, "meta": meta_dict}
     for campo, clave in _CAMPOS_TOP_LEVEL.items():
         if campo in campos:
             fm_nuevo[clave] = campos[campo]
-    fm_nuevo.setdefault("case_id", case_id)
 
     lineas = cuerpo.split("\n")
     informe = {"index": index, "frontmatter": sorted(campos), "cuerpo": [],
-               "insertadas": [], "sin_linea": []}
+               "insertadas": [], "sin_linea": [], "ambiguas": []}
     for campo, valor in campos.items():
         if campo not in _LINEAS_DEL_CUERPO:
-            continue                      # campo sin representacion en el cuerpo
+            continue                      # campo solo de metadatos, sin linea propia
         prefijo, _, seccion, donde = _LINEAS_DEL_CUERPO[campo]
         nueva = _pintar_linea(campo, valor)
-        i = next((k for k, ln in enumerate(lineas) if ln.startswith(prefijo)), None)
-        if i is not None:
-            lineas[i] = nueva
-            informe["cuerpo"].append(campo)
+        estado_ambito, ambito = _ambito_de(lineas, seccion)
+        if estado_ambito == "ambigua":
+            informe["ambiguas"].append(campo)
             continue
-        j = (next((k for k, ln in enumerate(lineas) if ln.strip() == seccion), None)
-             if seccion else None)
-        if j is None:
+        if estado_ambito == "ausente":
             informe["sin_linea"].append(campo)
             continue
-        if donde == "antes":
+        ini, fin = ambito
+        fuera = set(_lineas_fuera_de_cercas(lineas))
+        candidatas = [i for i in range(ini, fin)
+                      if i in fuera and lineas[i].startswith(prefijo)]
+        if len(candidatas) > 1:
+            informe["ambiguas"].append(campo)
+            continue
+        if candidatas:
+            lineas[candidatas[0]] = nueva
+            informe["cuerpo"].append(campo)
+            continue
+        if donde.startswith("antes:"):
+            destino = donde.split(":", 1)[1]
+            j = next((i for i in range(len(lineas))
+                      if i in fuera and lineas[i].strip() == destino), None)
+            if j is None:
+                informe["sin_linea"].append(campo)
+                continue
             lineas[j:j] = [nueva, ""]
         else:
-            # Tras la seccion y su linea en blanco, al final de su bloque de items.
-            k = j + 1
-            while k < len(lineas) and (not lineas[k].strip() or lineas[k].startswith("- ")):
-                k += 1
+            # Al final del bloque de items de la seccion, dentro de su ambito. Que la
+            # seccion existe ya lo garantiza `_ambito_de`: si no estuviera, el campo
+            # habria salido por `sin_linea` mas arriba.
+            k = fin
+            while k > ini and not lineas[k - 1].strip():
+                k -= 1
             lineas.insert(k, nueva)
         informe["insertadas"].append(campo)
 

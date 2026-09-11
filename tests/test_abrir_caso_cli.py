@@ -935,6 +935,83 @@ def test_cli_sin_alta_crm_la_cuantia_no_se_inventa(drive_temporal, monkeypatch):
     assert "- Cuantía: _(pendiente)_" in index.read_text(encoding="utf-8")
 
 
+# --- Lo que la R1 de Codex rompió en estas dos piezas (2026-09-11) ---
+
+
+def test_cli_w_code_con_espacios_no_es_una_discrepancia(drive_temporal, monkeypatch):
+    """H-06 de la R1: la comparación no normalizaba, y el copia-pega trae espacios.
+
+    `CaseRef.normalizar` ya define qué es un W-code canónico —sin espacios de borde y
+    en mayúsculas—; la versión anterior comparaba con `.upper()` y acusaba de «otro
+    expediente» a la carpeta correcta, obligando a teclear una dirección derivable.
+    Es el mismo defecto que la pieza vino a cerrar, una vuelta más abajo.
+    """
+    _carpeta_llamada(monkeypatch, "Calle Derivable - W-02Z2NR")
+    captura = {}
+    _pull_espia(monkeypatch, captura)
+
+    args = [a if a != "W-02Z2NR" else " W-02Z2NR " for a in _args_sin_direccion(crm="skip")]
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    assert "Calle Derivable" in captura["case_id"]
+
+
+def test_cli_si_la_cuantia_no_se_escribe_NO_se_dice_que_fallo_el_alta(
+        drive_temporal, monkeypatch):
+    """H-05 de la R1: dos resultados distintos que se anunciaban como uno.
+
+    Con la escritura local dentro del `try` del alta, un fallo al persistir la cuantía
+    salía como «Alta CRM falló» — y el expediente **sí** se había creado. El operador
+    leía que no había alta cuando la había: el peor sitio para mentir, porque el
+    remedio obvio (reintentar) crea un duplicado en el CRM del cliente.
+    """
+    monkeypatch.setattr("core.sudespacho_create.create_expediente", lambda dto, **kw: "9999")
+    def revienta(*a, **kw):
+        raise OSError("disk full")
+    monkeypatch.setattr("core.case_manager.update_meta", revienta)
+
+    result = CliRunner().invoke(cli.app, _args(cuantia="73140.50"))
+
+    assert result.exit_code == 0, result.output
+    assert "OK CRM id=9999" in result.output, "el alta sí se completó y hay que decirlo"
+    assert "Alta CRM falló" not in result.output
+    assert "la cuantia NO se escribio" in result.output
+    assert "update_meta" in result.output, "no dice cómo reponerlo"
+
+
+def test_cli_el_reintento_repone_la_cuantia_aunque_no_re_de_de_alta(
+        drive_temporal, monkeypatch):
+    """H-05, segunda mitad: la idempotencia es del ALTA, no de la escritura local.
+
+    El revisor midió que, tras un fallo local, el segundo intento salía por la guarda
+    de «CRM ya registrado» y **no volvía a intentarlo nunca**. Ahora la guarda repone.
+    """
+    monkeypatch.setattr("core.sudespacho_create.create_expediente", lambda dto, **kw: "9999")
+    real = cli.case_manager.update_meta
+    fallos = {"n": 0}
+    def falla_la_primera(case_id, **campos):
+        if fallos["n"] == 0:
+            fallos["n"] += 1
+            raise OSError("disk full")
+        return real(case_id, **campos)
+    monkeypatch.setattr("core.case_manager.update_meta", falla_la_primera)
+
+    r1 = CliRunner().invoke(cli.app, _args(cuantia="73140.50"))
+    assert r1.exit_code == 0, r1.output
+    r2 = CliRunner().invoke(cli.app, _args(cuantia="73140.50") + ["--force"])
+    assert r2.exit_code == 0, r2.output
+    assert "ya registrado" in r2.output, "no ejerció la guarda de idempotencia"
+
+    import yaml
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    index = case_locator.path_for(case_id) / "00_Input" / "_caso.md"
+    txt = index.read_text(encoding="utf-8")
+    _, fm_txt, cuerpo = txt.split("---", 2)
+    assert yaml.safe_load(fm_txt)["meta"]["cuantia"] == 73140.50
+    assert "- Cuantía: 73140.5" in cuerpo
+
+
 # --- Intake de correo: el flag de extracción de adjuntos llega al motor (MEJORAS #68.a) ---
 
 @pytest.fixture
