@@ -287,3 +287,69 @@ cinco comprobaciones de red, con su gate en la tabla de arriba.
 **Verificación:** 63 tests (eran 33), **20 rojos de control positivo** contra el código
 pre-remediación, uno por hallazgo. Suite completa con las dos semillas (777 y 31337): **5244
 tests, 5151 passed, 0 fallos**, idéntico con las dos.
+
+
+## 8. Adjudicación de la revisión adversarial (Codex, 2026-09-11) — NO-SHIP, remediado
+
+- **Objeto revisado:** diff `044798b..0c3f19c` — las cinco comprobaciones de red y su puerto
+- **Ronda:** R1 (única por presupuesto: solo lectura, no puede destruir nada)
+- **Revisor:** Codex (CLI 0.153.4), sin credenciales de los servicios reales, por mandato
+- **Informe recibido:** 2026-09-11, `C:/t/rev-p2red-113637/wd/INFORME.md`, 42777 bytes
+- **Hallazgos:** 14 — 8 ALTOS, 5 MEDIOS, 1 BAJO; **14 confirmados, 0 refutados**
+- **Remediado en:** este §8 y el diff de la pieza
+
+Acta: `docs/superpowers/plans/2026-09-11-apertura-menos-decisiones-p2red-r1-adversarial-review.md`.
+
+**Cuatro de los ocho ALTOS producían literalmente «9 ok / 0 fallos» sobre expedientes rotos.** En
+un verificador ése no es un defecto más: es *el* defecto.
+
+### El que no es técnico, y es el que más dice
+
+**H-13 — el CLI no podía usar las cinco comprobaciones que se acababan de construir.** Llamaba
+siempre sin fuentes, así que usaba el puerto cerrado y las cinco decían «no se pudo consultar»
+pasara lo que pasara. Una pieza construida que nadie podía encadenar, en la misma sesión en que
+ese patrón se había citado dos veces. Remediado con un flag `--con-red` explícito: la red sigue
+sin abrirse por defecto, que es lo correcto, pero ahora hay forma de pedirla.
+
+### Los dos de diseño
+
+| # | Qué | Remedio |
+|---|---|---|
+| H-02 | C1 y C2 pedían el censo **por separado**: con dos respuestas distintas, una validaba una foto y la otra declaraba contrastada la otra, aprobando entre las dos un expediente al que le faltaba un documento | Un `_Contexto` consulta **una vez** cada fuente y reparte. Un verificador que mira dos veces no está mirando |
+| H-08 | Con dos expedientes registrados, las tres comprobaciones del CRM preguntaban **tres veces por el primero y ninguna por el segundo** | Se comprueban **todos** los registrados |
+
+### Los falsos verdes
+
+| # | Sev. | Qué aprobaba | Remedio |
+|---|---|---|---|
+| H-01 | ALTO | Dos objetos remotos homónimos se fundían en uno, y el resultado dependía del **orden de llegada** | Multiconjuntos; el puerto conserva `file_id` |
+| H-07 | ALTO | Un expediente con una actuación y **cero partes** pasaba — y la misma actuación satisfacía «tiene partes» y «tiene actuación» | Una actuación es trabajo, no parte: bloques separados |
+| H-09 | ALTO | `NaN` daba **coincidencia**: cualquier comparación con NaN es falsa, así que `abs(nan - x) > 0.005` cae en «coinciden». Igual `1e309`. Y lo ilegible se confundía con lo ausente | Conversión estricta; los separadores ambiguos se rechazan en vez de adivinarse |
+| H-05 | ALTO | Un enlace simbólico **fuera del expediente** pasaba por copia local, con su hash | Se detecta y es `fallo` |
+| H-03 | ALTO | Un `_caso.md` corrupto se leía como «el alta no se ha hecho», con exit 0 | `_frontmatter` devuelve `(dict, error)` |
+| H-04 | ALTO | Colisión de tipo y error de enumeración tratados como ausencia — y `rglob` **suprime** los errores, así que una carpeta irrecorrible devolvía «cero ficheros» | Las dos son `fallo` |
+| H-14 | MEDIO | Un censo que el servicio declara truncado (`incompleteSearch`) se leía como «el remoto tiene menos ficheros» | Se pide el indicador y se propaga |
+| H-06 | MEDIO | Se excluía todo lo que empezara por punto a cualquier profundidad: un `.documento.pdf` real salía como **faltante** | Solo `.pulled`, y solo en la raíz, que es lo que el productor documenta |
+| H-10 | MEDIO | El adaptador aplanaba «no se pudieron leer las relaciones» a un mapa vacío, y el informe atribuía una ausencia no observada | `relaciones=None` se conserva hasta el informe |
+
+### Y dos sobre mis propios tests
+
+- **H-11** — tres mutantes del cableado **sobrevivían**: el doble respondía igual a cualquier
+  identificador, el test de «por el lado del expediente» no invocaba el adaptador, y el test de
+  contrato comparaba **nombres** de parámetros pero no su *kind*, de modo que convertirlos en
+  keyword-only rompía la llamada real y dejaba el test verde. Ahora el adaptador se ejerce con un
+  **transporte inyectado** que recorre la traducción: paginación, descenso a subcarpetas, y que el
+  id pedido sea el id devuelto.
+- **H-12** — al partir un test en dos se perdió el aserto de que un hueco declarado traiga su
+  **motivo**. Recuperado.
+
+### Lo que la ronda no pudo verificar, y sigue sin verificarse
+
+Que Drive y el CRM respondan en producción como el adaptador supone: el revisor trabajó **sin
+credenciales por mandato**. Lo cubre en parte el test de integración marcado `slow`, que consulta
+un expediente real cuando hay API key —y se salta declarándolo cuando no—, pero solo cubre el CRM:
+**la traducción de la Drive API no se ha ejercido nunca contra Drive**.
+
+**Verificación:** 119 tests (eran 93), **41 rojos de control positivo** contra el código
+pre-remediación. Suite completa con las dos semillas: **5300 tests, 5206 passed, 0 fallos**,
+idéntico con las dos.
