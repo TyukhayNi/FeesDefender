@@ -750,13 +750,17 @@ def _alta_crm(
 
 
 def _autoderivar_drive_ev(
-    *, folder_id, tipo_caso, team_id, codigo_caso, sufijo,
+    *, folder_id, tipo_caso, team_id, codigo_caso, sufijo, direccion=None, w_code=None,
 ):
-    """B5: en --fuente drive_ev, deriva team_id/codigo_caso/sufijo omitidos.
+    """B5: en --fuente drive_ev, deriva los flags de identidad omitidos.
 
     - sufijo: puro, del tipo_caso (no necesita la Drive API).
     - team_id: driveId de la carpeta (--folder-id).
     - codigo_caso: nombre de la unidad compartida -> config.codigo_de_unidad.
+    - direccion: prefijo del NOMBRE de la carpeta, con el W-code de delimitador
+      (`MEJORAS #224`). Era el único de los seis sin fuente, y el 2026-09-10 se
+      tecleó sin el acento que llevaba. El parser ya existía y ya lo consumía
+      `streamlit_app.py`: lo que faltaba era que el CLI lo llamara.
 
     Los flags explícitos SIEMPRE ganan (solo se rellena lo que viene None).
     Degrada limpio: lo que no se pueda derivar queda None y lo caza el chequeo
@@ -766,12 +770,12 @@ def _autoderivar_drive_ev(
         sufijo = config.sufijo_de_tipo_caso(tipo_caso)
         typer.echo(f"[auto] --sufijo del tipo_caso: {sufijo!r}")
 
-    if folder_id and (team_id is None or codigo_caso is None):
+    if folder_id and (team_id is None or codigo_caso is None or direccion is None):
         info = intake_drive.get_drive_folder_info(folder_id)
         if info is None:
             typer.echo("[auto] No se pudo leer la carpeta de Drive (token/red); "
                        "pasa los flags que falten explícitos.")
-            return team_id, codigo_caso, sufijo
+            return team_id, codigo_caso, sufijo, direccion
         if team_id is None and info.drive_id:
             team_id = info.drive_id
             typer.echo(f"[auto] --team-id del driveId: {team_id}")
@@ -785,7 +789,52 @@ def _autoderivar_drive_ev(
             else:
                 typer.echo(f"[auto] No pude derivar --codigo-caso de la unidad {unidad!r}; "
                            "pásalo explícito.")
-    return team_id, codigo_caso, sufijo
+        if direccion is None:
+            direccion = _direccion_de_la_carpeta(info.name, w_code)
+    return team_id, codigo_caso, sufijo, direccion
+
+
+def _direccion_de_la_carpeta(nombre_carpeta, w_code):
+    """`MEJORAS #224` vía (a): la dirección, del nombre de la carpeta de E&V.
+
+    Las carpetas se llaman ``<direccion> - <W-code> - <consultor captador>``, así que
+    el W-code es el punto de corte exacto del prefijo. Devuelve None —y dice por
+    qué— en los dos casos en que derivar sería adivinar:
+
+    1. **El nombre no trae W-code.** Hay carpetas con nombre libre bajo
+       ``PROPIEDADES/1. ACTIVAS``. Una derivación que adivine es peor que teclear.
+    2. **El W-code del nombre no es el del caso.** El parser lo devuelve, así que
+       comparar es gratis, y la comprobación vale lo que cuesta: el `case_id` se
+       propaga a la carpeta del despacho, a `Referencia_Cliente` del CRM y a la
+       etiqueta de Gmail, de modo que una dirección tomada de la carpeta de otro
+       expediente queda estampada en los tres.
+
+    No levanta error por sí misma: devolver None deja que la caza el chequeo de
+    flags de identidad, igual que el resto de B5. Así esta pieza no puede bloquear
+    ninguna invocación que hoy funcione.
+    """
+    derivada, w_carpeta = intake_drive.parse_ev_folder_name(nombre_carpeta or "")
+    if not derivada:
+        typer.echo(f"[auto] No pude derivar --direccion del nombre de la carpeta "
+                   f"{nombre_carpeta!r}: no encuentro el W-code que delimita el "
+                   "prefijo. Pásalo explícito.")
+        return None
+    # `CaseRef.normalizar` y no `.upper()`: el modelo ya define que un W-code canonico
+    # va sin espacios de borde y en mayusculas. La R1 midio que con `--w-code " W-X "`
+    # —un copia-pega con espacios— se acusaba una discrepancia FALSA y se obligaba a
+    # teclear una direccion que era derivable, que es el mismo defecto que esta pieza
+    # vino a cerrar, una vuelta mas abajo.
+    from core.casos.workspace_model import CaseRef
+
+    if (w_code and w_carpeta
+            and CaseRef.normalizar(w_carpeta) != CaseRef.normalizar(str(w_code))):
+        typer.echo(f"[auto] La carpeta {nombre_carpeta!r} declara {w_carpeta}, pero "
+                   f"--w-code es {w_code}: no derivo --direccion de una carpeta que "
+                   "dice ser de otro expediente. Pásalo explícito (y comprueba "
+                   "--folder-id).")
+        return None
+    typer.echo(f"[auto] --direccion del nombre de la carpeta: {derivada!r}")
+    return derivada
 
 
 def _derivar_team_id(folder_id):
@@ -980,9 +1029,10 @@ def main(
         ident = dataclasses.replace(ident, case_id=resolved)
     else:
         if fuente == "drive_ev":
-            team_id, codigo_caso, sufijo = _autoderivar_drive_ev(
+            team_id, codigo_caso, sufijo, direccion = _autoderivar_drive_ev(
                 folder_id=folder_id, tipo_caso=tipo_caso,
                 team_id=team_id, codigo_caso=codigo_caso, sufijo=sufijo,
+                direccion=direccion, w_code=w_code,
             )
         flags_ident_eff = [
             ("--w-code", w_code), ("--ciudad", ciudad), ("--tipo-caso", tipo_caso),

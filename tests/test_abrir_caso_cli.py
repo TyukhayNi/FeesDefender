@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from core import case_manager, intake_log
 from core.casos import case_locator
+from core.intake_drive import DriveFolderInfo as _DriveFolderInfo
 from scripts import abrir_caso as cli
 
 
@@ -734,6 +735,170 @@ def test_cli_drive_ev_team_id_no_derivable_error_limpio(drive_temporal, monkeypa
     assert result.exit_code == 1
     assert "--team-id" in result.output
     assert not isinstance(result.exception, TypeError)
+
+
+# --- B5 (cont.): `--direccion` sale del nombre de la carpeta de E&V (`MEJORAS #224`) ---
+#
+# Era el UNICO de los seis flags de identidad sin fuente: se tecleaba, y en la
+# apertura de un caso del 2026-09-10 se tecleo sin el acento que la direccion lleva.
+# El `case_id` se propaga a tres sistemas (carpeta de Drive del despacho,
+# `Referencia_Cliente` del CRM, etiqueta de Gmail), asi que corregirlo despues es el
+# renombrado cross-sistema que `[APER-04]` manda evitar.
+#
+# El parser ya existia --`intake_drive.parse_ev_folder_name`, con sus tests y ya
+# consumido por `streamlit_app.py`--; lo que faltaba era que el CLI lo llamara.
+
+
+def _args_sin_direccion(**over):
+    """Args de drive_ev sin `--direccion` NI los 3 flags auto-derivables."""
+    base = [
+        "--w-code", "W-02Z2NR", "--ciudad", "Barcelona", "--tipo-caso", "VUELTA",
+        "--folder-id", "FID", "--yes",
+    ]
+    for k, v in over.items():
+        base += [f"--{k}", v]
+    return base
+
+
+def _carpeta_llamada(monkeypatch, nombre, *, drive_id="DRIVEID"):
+    """Mockea la Drive API para que la carpeta de E&V se llame `nombre`."""
+    monkeypatch.setattr(
+        "core.intake_drive.get_drive_folder_info",
+        lambda fid: _DriveFolderInfo(name=nombre, drive_id=drive_id))
+    monkeypatch.setattr(
+        "core.intake_drive.get_shared_drive_name", lambda did: "Barcelona - S3 ")
+
+
+def _pull_espia(monkeypatch, captura):
+    def fake_pull(case_id, folder_id, team_id, *, force=False):
+        captura["case_id"] = case_id
+        dest = case_locator.path_for(case_id) / "00_Input" / "01_Drive EV"
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "a.pdf").write_bytes(b"x")
+        (dest / ".pulled").write_text("{}", encoding="utf-8")
+        from core.intake_drive import DriveIntakeResult
+        return DriveIntakeResult(case_id=case_id, team_id=team_id,
+                                 folder_id=folder_id, target_dir=dest,
+                                 files_after=1, skipped=False)
+    monkeypatch.setattr("core.intake_drive.pull_drive_ev", fake_pull)
+
+
+def _no_debe_pullear(monkeypatch, porque):
+    def boom(*a, **kw):
+        raise AssertionError(porque)
+    monkeypatch.setattr("core.intake_drive.pull_drive_ev", boom)
+
+
+def test_cli_drive_ev_autoderiva_direccion_del_nombre_de_carpeta(drive_temporal, monkeypatch):
+    """Patron canonico `<direccion> - <W-code> - <consultor>`.
+
+    El sufijo es el CONSULTOR que capto la propiedad, no el cliente: se descarta.
+    """
+    _carpeta_llamada(monkeypatch, "393. Hacienda Vadillo - W-02Z2NR - Natalia T")
+    captura = {}
+    _pull_espia(monkeypatch, captura)
+
+    result = CliRunner().invoke(cli.app, _args_sin_direccion(crm="skip"))
+
+    assert result.exit_code == 0, result.output
+    assert "BaRS3 - 393. Hacienda Vadillo (W-02Z2NR) - Vuelta" in captura["case_id"]
+    assert "Natalia" not in captura["case_id"]
+
+
+def test_cli_drive_ev_direccion_con_acento_se_conserva(drive_temporal, monkeypatch):
+    """El acento es justo lo que se perdia al teclear (medido el 2026-09-10)."""
+    _carpeta_llamada(monkeypatch, "Passeig Marítim, 30 – W-02Z2NR")
+    captura = {}
+    _pull_espia(monkeypatch, captura)
+
+    result = CliRunner().invoke(cli.app, _args_sin_direccion(crm="skip"))
+
+    assert result.exit_code == 0, result.output
+    assert "Passeig Marítim, 30" in captura["case_id"]
+
+
+def test_cli_drive_ev_carpeta_sin_w_code_pide_el_flag(drive_temporal, monkeypatch):
+    """`PROPIEDADES/1. ACTIVAS` tiene nombres libres: derivar adivinando es peor que teclear.
+
+    El error generico ``faltan flags`` ya salia antes de esta pieza, asi que por si
+    solo no acredita nada: lo que este test exige es que se DIGA de que nombre no se
+    pudo derivar. Sin esa linea el operador no sabe si el CLI llego a intentarlo.
+    """
+    _carpeta_llamada(monkeypatch, "1. ACTIVAS")
+    _no_debe_pullear(monkeypatch, "no debe llegar al pull sin direccion")
+
+    result = CliRunner().invoke(cli.app, _args_sin_direccion(crm="skip"))
+
+    assert result.exit_code == 1
+    assert "--direccion" in result.output
+    assert "1. ACTIVAS" in result.output, "no dice de que nombre no pudo derivar"
+
+
+def test_cli_drive_ev_direccion_explicita_gana(drive_temporal, monkeypatch):
+    """Como el resto de B5: el flag explicito manda sobre el derivado."""
+    _carpeta_llamada(monkeypatch, "La que trae la carpeta - W-02Z2NR")
+    captura = {}
+    _pull_espia(monkeypatch, captura)
+
+    result = CliRunner().invoke(
+        cli.app, _args_sin_direccion(**{"direccion": "La que tecleo yo", "crm": "skip"}))
+
+    assert result.exit_code == 0, result.output
+    assert "La que tecleo yo" in captura["case_id"]
+    assert "La que trae la carpeta" not in captura["case_id"]
+
+
+def test_cli_drive_ev_carpeta_de_otro_w_code_no_deriva(drive_temporal, monkeypatch):
+    """La frontera: el nombre de la carpeta tiene que hablar del MISMO expediente.
+
+    El parser devuelve el W-code ademas de la direccion, asi que comparar es gratis.
+    Si `--folder-id` apunta a la carpeta de otro caso, derivar la direccion de ahi
+    estamparia el inmueble equivocado en el `case_id` y en los tres sistemas a los que
+    se propaga. Se rinde y lo dice, sin bloquear nada que hoy funcione: el operador
+    puede seguir pasando `--direccion` explicito.
+    """
+    _carpeta_llamada(monkeypatch, "Calle de Otro Caso - W-04AAAA")
+    _no_debe_pullear(monkeypatch, "no debe pullear con la direccion de otro caso")
+
+    result = CliRunner().invoke(cli.app, _args_sin_direccion(crm="skip"))
+
+    assert result.exit_code == 1
+    assert "W-04AAAA" in result.output, "no dice que W-code declara la carpeta"
+    assert "W-02Z2NR" in result.output, "no dice contra que W-code se comparo"
+    assert "--direccion" in result.output
+
+
+def test_cli_drive_ev_sin_folder_id_no_intenta_derivar(drive_temporal, monkeypatch):
+    """Sin `--folder-id` no hay nombre de carpeta: el error es el de siempre."""
+    def boom(*a, **kw):
+        raise AssertionError("no debe llamar a la Drive API sin --folder-id")
+    monkeypatch.setattr("core.intake_drive.get_drive_folder_info", boom)
+
+    result = CliRunner().invoke(cli.app, [
+        "--w-code", "W-02Z2NR", "--ciudad", "Barcelona", "--tipo-caso", "VUELTA",
+        "--codigo-caso", "BaRS11", "--sufijo", "Vuelta", "--team-id", "TID",
+        "--crm", "skip", "--yes",
+    ])
+    assert result.exit_code == 1
+    assert "--direccion" in result.output
+
+
+def test_cli_w_code_con_espacios_no_es_una_discrepancia(drive_temporal, monkeypatch):
+    """H-06 de la R1: la comparación no normalizaba, y el copia-pega trae espacios.
+
+    `CaseRef.normalizar` ya define qué es un W-code canónico —sin espacios de borde y
+    en mayúsculas—; la primera versión comparaba con `.upper()` y acusaba de «otro
+    expediente» a la carpeta correcta, obligando a teclear una dirección derivable.
+    """
+    _carpeta_llamada(monkeypatch, "Calle Derivable - W-02Z2NR")
+    captura = {}
+    _pull_espia(monkeypatch, captura)
+
+    args = [a if a != "W-02Z2NR" else " W-02Z2NR " for a in _args_sin_direccion(crm="skip")]
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    assert "Calle Derivable" in captura["case_id"]
 
 
 # --- Intake de correo: el flag de extracción de adjuntos llega al motor (MEJORAS #68.a) ---
