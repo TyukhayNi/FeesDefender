@@ -15,12 +15,16 @@ temporal del proceso al serializar el libro; eso no es el árbol de producción,
 frase «siempre en tmp_path» se leía como si lo cubriera todo.)
 """
 import json
+import re
+import zipfile
 import sys
 from importlib import import_module
 from pathlib import Path
 
 import openpyxl
 import pytest
+from openpyxl.utils import (column_index_from_string,
+                            get_column_letter)
 
 RAIZ = Path(__file__).parent.parent
 SCRIPTS = RAIZ / ".claude" / "skills" / "viabilidad-prerelleno" / "scripts"
@@ -478,7 +482,19 @@ def test_la_plantilla_conserva_sus_invariantes():
     try:
         assert wb.sheetnames == ["INFORMACION", "PREGUNTAS", "AVISOS LLM", "BITACORA"]
         assert wb["PREGUNTAS"].protection.sheet is True, "PREGUNTAS dejó de estar protegida"
-        assert wb["INFORMACION"]["F39"].value == "=SUM(F25:G38)", "la fórmula del TOTAL cambió"
+        # Las CUATRO fórmulas del libro, no la única que a alguien se le ocurrió escribir
+        # (R1/H-04, ALTO). Con solo `F39`, cambiar `H14` por `=0` pasaba los 45 casos del
+        # módulo, y `H14` es la que calcula los honorarios que lee el CFO: con H13=100.000
+        # y E14=5 da 6.050, y el mutante da 0, propagándolo a H16 y H18.
+        formulas = {c.coordinate: c.value
+                    for fila in wb["INFORMACION"].iter_rows() for c in fila
+                    if isinstance(c.value, str) and c.value.startswith("=")}
+        assert formulas == {
+            "H14": "=H13/100*E14*1.21",     # honorarios: precio × % × IVA
+            "H16": "=H14-H15",              # pendiente tras pagos
+            "H18": "=H16-H17",              # pendiente tras la propuesta
+            "F39": "=SUM(F25:G38)",         # TOTAL del scoring de hitos
+        }, formulas
         validaciones = {h: len(list(wb[h].data_validations.dataValidation))
                         for h in wb.sheetnames}
         assert validaciones == {"INFORMACION": 2, "PREGUNTAS": 2,
@@ -489,3 +505,190 @@ def test_la_plantilla_conserva_sus_invariantes():
                           "G22:H22"], merges
     finally:
         wb.close()
+
+
+# ---------------------------------------------------------------------------
+# `MEJORAS #243` — el filtro que produce el guion de entrevista
+#
+# `autoFilter` era `B3:M88` y los 88 IDs llegan a la **fila 103**: doce preguntas
+# —las de Team leader, Escritura y Reclamación— quedaban fuera del ámbito del
+# filtro. Marcar las 88 filas (la pieza P5) sirve de poco si el filtro solo
+# alcanza a 76, porque entonces el guion que sale del filtro NO es el
+# cuestionario.
+#
+# Los dos tests miden contra la plantilla, no contra un número escrito a mano: el
+# día que se añada una sección 12 tienen que ponerse rojos solos.
+# ---------------------------------------------------------------------------
+
+def _rectangulo(ref: str) -> tuple[str, int, str, int]:
+    """`"B3:M103"` -> `("B", 3, "M", 103)`. El rango ENTERO, no su último número.
+
+    La R1 (H-01) midió que comprobar solo el último número dejaba pasar `B3:L103` —que
+    saca la columna M del filtro, y M es justo la del guion— y `B100:M103`.
+    """
+    a, b = ref.split(":")
+    ma, mb = re.fullmatch(r"([A-Z]+)(\d+)", a), re.fullmatch(r"([A-Z]+)(\d+)", b)
+    return ma.group(1), int(ma.group(2)), mb.group(1), int(mb.group(2))
+
+
+def test_el_filtro_del_guion_cubre_TODAS_las_preguntas_y_la_columna_M():
+    wb = openpyxl.load_workbook(PLANTILLA)
+    try:
+        ws = wb["PREGUNTAS"]
+        filas_con_id = [r for r in range(5, ws.max_row + 1) if ws.cell(r, 3).value]
+        ref = ws.auto_filter.ref
+    finally:
+        wb.close()
+    assert ref, "PREGUNTAS perdió su autoFilter"
+    col_ini, fila_ini, col_fin, fila_fin = _rectangulo(ref)
+
+    assert fila_ini == 3, f"el filtro no arranca en la cabecera: {ref}"
+    assert col_ini == "B", f"el filtro deja fuera la columna de SECCIÓN: {ref}"
+    fuera = [f for f in filas_con_id if not fila_ini <= f <= fila_fin]
+    assert not fuera, (
+        f"el autoFilter es {ref} y {len(fuera)} preguntas quedan fuera (filas {fuera}): "
+        "el guion que sale del filtro no sería el cuestionario")
+    assert column_index_from_string(col_fin) >= COL_PENDIENTE, (
+        f"el filtro llega hasta {col_fin} y «¿PENDIENTE ENTREVISTA?» está en la "
+        f"{get_column_letter(COL_PENDIENTE)}: el criterio que produce el guion queda fuera")
+
+
+def test_el_FilterDatabase_de_PREGUNTAS_dice_lo_MISMO_y_apunta_a_SU_hoja():
+    """La otra mitad del mismo hecho, y openpyxl no la enseña.
+
+    El rango vive en DOS sitios: el `autoFilter` de la hoja y el nombre definido oculto
+    `_xlnm._FilterDatabase`. `wb.defined_names` viene vacío —openpyxl enseña lo que
+    entiende—, así que esto se lee del zip. Y se comprueba el **ámbito**: la R1 (H-01) midió
+    que con `localSheetId="0"` el nombre pasa a INFORMACION y el test de igualdad de cadenas
+    seguía verde.
+    """
+    wb = openpyxl.load_workbook(PLANTILLA)
+    try:
+        ref_hoja = wb["PREGUNTAS"].auto_filter.ref
+        indice_preguntas = wb.sheetnames.index("PREGUNTAS")
+    finally:
+        wb.close()
+    with zipfile.ZipFile(PLANTILLA) as z:
+        wbx = z.read("xl/workbook.xml").decode("utf-8")
+    nombres = re.findall(
+        r"<definedName name=\"_xlnm\._FilterDatabase\"([^>]*)>'([^']+)'!"
+        r"(\$[A-Z]+\$\d+:\$[A-Z]+\$\d+)</definedName>", wbx)
+    propios = [(attrs, rango) for attrs, hoja, rango in nombres if hoja == "PREGUNTAS"]
+    assert len(propios) == 1, f"esperaba un _FilterDatabase de PREGUNTAS, hay {len(propios)}"
+    attrs, rango = propios[0]
+    assert rango.replace("$", "") == ref_hoja, (
+        f"el nombre definido dice {rango} y el autoFilter {ref_hoja}: "
+        "cambiar uno y no el otro deja el filtro a medias")
+    assert f'localSheetId="{indice_preguntas}"' in attrs, (
+        f"el _FilterDatabase no está en el ámbito de PREGUNTAS: {attrs}")
+    assert 'hidden="1"' in attrs, f"el nombre definido dejó de ser oculto: {attrs}"
+
+
+def test_la_hoja_protegida_SIGUE_permitiendo_usar_el_filtro():
+    """Un filtro que cubre las 88 filas y que la protección prohíbe usar no sirve de nada.
+
+    En OOXML el atributo es una **prohibición**: `autoFilter="1"` significa «protegido», o
+    sea que el usuario NO puede filtrar. La R1 (H-01) midió que ponerlo a `1` dejaba los 45
+    casos verdes.
+    """
+    with zipfile.ZipFile(PLANTILLA) as z:
+        s2 = z.read("xl/worksheets/sheet2.xml").decode("utf-8")
+    m = re.search(r"<sheetProtection[^>]*/>", s2)
+    assert m, "PREGUNTAS perdió su <sheetProtection>"
+    assert 'sheet="1"' in m.group(0), "PREGUNTAS dejó de estar protegida"
+    assert 'autoFilter="0"' in m.group(0), (
+        f"la protección prohíbe usar el autoFilter: {m.group(0)}")
+    assert 'sort="0"' in m.group(0), "la protección prohíbe ordenar"
+
+
+# ---------------------------------------------------------------------------
+# `MEJORAS #242` — el semáforo en blanco se veía ROJO
+#
+# `E21` tenía un relleno sólido `FFFF0000` en su estilo base, bajo el formato
+# condicional. Sin valor no se activa ninguna regla y quedaba el relleno: un
+# informe **sin valorar** enseñaba JURÍDICO en rojo puro, que ni siquiera es el
+# rojo del semáforo (`FFC7CE`). `E22` no lo tenía, así que las dos filas vacías
+# se veían distinto.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("fila", [21, 22])
+def test_el_semaforo_SIN_VALORAR_no_pinta_NADA(fila):
+    """«No pinta» es **sin relleno**, no «sin relleno sólido».
+
+    La R1 (H-02) midió que un `patternFill darkGrid` con primer plano rojo también pinta y
+    pasaba el aserto anterior (`patternType != "solid"`) con los 45 casos verdes.
+    """
+    wb, inf = _informacion()
+    try:
+        celda = inf[f"E{fila}"]
+        assert celda.value is None, "la plantilla trae el semáforo valorado"
+        assert celda.fill.patternType is None, (
+            f"E{fila} tiene un relleno {celda.fill.patternType!r} en su estilo base: sin "
+            "valor no se activa ninguna regla del condicional y ese relleno es el que se "
+            "ve, así que un informe sin valorar enseña un color que nadie puso")
+    finally:
+        wb.close()
+
+
+def test_el_bloque_ENTERO_de_cada_fila_del_semaforo_va_sin_relleno():
+    """No basta la celda ancla: el bloque combinado se pinta entero."""
+    wb, inf = _informacion()
+    try:
+        sin_relleno = {ref: inf[ref].fill.patternType
+                       for ref in ("E21", "F21", "G21", "H21",
+                                   "E22", "F22", "G22", "H22")}
+    finally:
+        wb.close()
+    assert set(sin_relleno.values()) == {None}, sin_relleno
+
+
+def test_las_dos_filas_del_semaforo_tienen_el_MISMO_fondo_estando_vacias():
+    """El defecto no era solo el rojo: era que las dos filas no coincidían.
+
+    Se compara el **fondo**, que es el contrato (R1/H-02): el resto del estilo de las dos
+    filas es legítimamente distinto —bordes y alineación—, y exigir igualdad total sería
+    afirmar una propiedad que esta plantilla no tiene.
+    """
+    wb, inf = _informacion()
+    try:
+        perfil = {ref: (inf[ref].fill.patternType,
+                        getattr(inf[ref].fill.start_color, "rgb", None),
+                        getattr(inf[ref].fill.end_color, "rgb", None))
+                  for ref in ("E21", "E22")}
+    finally:
+        wb.close()
+    assert perfil["E21"] == perfil["E22"], perfil
+
+
+# El estilo de `E21` tal como está MEDIDO en la plantilla, no de memoria. La última vez que
+# escribí una lista así de memoria (los merges del semáforo) omití una entrada y lo cazó el
+# rojo; el valor sale ahora del fichero.
+_ESTILO_E21 = {
+    "fuente": ("Arial", 8.0, False),
+    "bordes": {"top": "medium", "bottom": "hair", "left": "hair", "right": "medium"},
+    "alineacion": "center",
+    "formato": "General",
+}
+
+
+def test_quitar_el_relleno_de_E21_no_se_llevo_NADA_MAS_de_su_estilo():
+    """La mitad conservadora, con el perfil completo (R1/H-03).
+
+    El `xf` de `E21` lleva fuente, cuatro bordes, alineación y formato numérico. La primera
+    versión de este test decía `font.b or font.sz`, que es **verdadero con cualquier fuente**:
+    cambiar `fontId` de 1 a 0 —de Arial 8 a Calibri 11— dejaba los 45 casos verdes. Una
+    guarda que no puede dar el otro valor no vigila nada.
+    """
+    wb, inf = _informacion()
+    try:
+        c = inf["E21"]
+        medido = {
+            "fuente": (c.font.name, c.font.sz, bool(c.font.b)),
+            "bordes": {l: getattr(getattr(c.border, l), "style", None)
+                       for l in ("top", "bottom", "left", "right")},
+            "alineacion": c.alignment.horizontal,
+            "formato": c.number_format,
+        }
+    finally:
+        wb.close()
+    assert medido == _ESTILO_E21, medido

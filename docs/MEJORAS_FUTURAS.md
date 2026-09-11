@@ -11238,7 +11238,7 @@ La rama que ya existe para el caso legítimo —copiar y anotar `duplicado_de`�
 cambios. **La frontera, no el ejemplo:** cualquier fuente que reciba bytes que otra ya depositó
 tiene este mismo modo de fallo; el arreglo debe formularse sobre el canal, no sobre WhatsApp.
 
-## 242. El semáforo JURÍDICO **en blanco** se ve ROJO, por un estilo fijo bajo el formato condicional
+## 242. El semáforo JURÍDICO **en blanco** se ve ROJO, por un estilo fijo bajo el formato condicional  [CERRADA 2026-09-11]
 
 > Medido el 2026-09-11 por la R1 de `MEJORAS #228`, sobre la plantilla renderizada. **Preexistente:
 > idéntico antes y después de ese cambio.**
@@ -11263,7 +11263,18 @@ arreglo real, y hay que mirar si ese rojo cumple alguna función de «pendiente�
 tocar el estilo. (c) Nada, y documentar que el rojo de un informe sin firmar no significa nada —lo
 peor, porque obliga a saberlo.
 
-## 243. El filtro que produce el guion de entrevista deja **12 preguntas fuera**
+**Cerrada el 2026-09-11 por la vía (a).** Se quitó el relleno del estilo base de `E21`. Lo que la
+entrada pedía mirar quedó medido antes de tocar nada: ese rojo era la **única** celda del libro con
+relleno `FFFF0000`, ningún documento del repo le atribuye función y `render_informe.py` declara no
+tocar `E21`/`E22`. El `xf` afectado (índice 104) lo usa **una sola celda**, de modo que el cambio no
+alcanza a ninguna otra.
+
+**Dicho con precisión, tras la R1 (H-07):** que nadie lo documentara no prueba que nunca cumpliera
+una función humana de «pendiente» — prueba que hoy nadie puede saberlo. Lo que decide es otra cosa:
+`FFFF0000` no está en la leyenda del semáforo (`C6EFCE`/`FFEB9C`/`FFC7CE`) y `E22` no lo tiene, así
+que dos filas vacías se veían distinto.
+
+## 243. El filtro que produce el guion de entrevista deja **12 preguntas fuera**  [CERRADA 2026-09-11]
 
 > Medido el 2026-09-11 por la R1 de `MEJORAS #228`. **Preexistente**, y toca de lleno a la pieza
 > que acababa de cerrarse.
@@ -11285,6 +11296,19 @@ Las doce son de escritura, reconocimiento y reclamación — no son las menos im
 cambio de una línea en el XML, pero **hay que medir antes si el rango corto es un residuo o
 protege algo**: la plantilla tiene filas de sección intercaladas, y un filtro que las incluya puede
 comportarse raro.
+
+**Cerrada el 2026-09-11.** `autoFilter` y `_xlnm._FilterDatabase` a `B3:M103`, los dos — el rango
+vive en dos sitios y cambiar uno solo deja el filtro a medias (tiene su propio test y su mutante).
+
+**Lo que la entrada pedía medir —si el rango corto protegía algo— sale que NO**: ya había **ocho**
+filas de sección dentro del rango (5, 29, 32, 44, 54, 58, 66 y 83), así que las tres que entran (89,
+91, 97) no son una clase nueva de fila. Ese es el dato que decide.
+
+**Y una corrección de la R1 (H-07), porque la primera redacción vendía una inferencia como
+medición:** que el rango acabara exactamente en la última fila de la sección 8 **sugiere** que las
+secciones 9-11 se añadieron después sin ampliarlo, pero no lo acredita — las dos copias comparadas
+ya traen las once secciones, y nada en ellas fecha cuándo entraron. La cobertura del rango nuevo se
+sostiene sola: 88 IDs hasta la fila 103, y la validación de la columna M ya llega a `M6:M103`.
 
 ## 244. Tres documentos describen la plantilla de viabilidad y ninguno coincide con ella
 
@@ -11405,4 +11429,4 @@ es lo que `#227` arreglaba.
 **Lo que sí queda escrito**, en el §3.4 del diseño: la garantía de la pieza es sobre **el cuerpo**;
 sobre el frontmatter es «las claves que había siguen estando, con su valor», y estas dos son sus
 excepciones conocidas.
-
+## 248. La hoja `PREGUNTAS` tiene cinco `<selection>` donde el esquema OOXML admite cuatro
