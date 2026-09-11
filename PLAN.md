@@ -42,7 +42,6 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 25 | Reconocimiento de voz local (ASR + diarización) | ✅ **cerrada el 2026-09-09 (PR #308, `dbdfdc1`)** — `scripts/transcribir_audio.py`, `docs/INSTALACION_ASR.md` y 44 tests (9/9 mutantes). Venv dedicado fuera del repo. **Mergeada SIN ronda adversarial por orden expresa de Nikolai; la ausencia se declara en `INSTALACION_ASR.md §9` y la ronda sigue debiéndose.** NO incluye el cableado a la sala de máquina: un `.opus` sigue saliendo `sin_soporte` en el censo | encargo directo | — |
 | 26 | Skill `demanda-honorarios-ev` (preparar/revisar la demanda de honorarios E&V) | **spec rev. 2 + plan de 9 tareas escritos, SIN construir** (PR #311): [spec](docs/superpowers/specs/2026-09-08-demanda-honorarios-ev-design.md), [plan](docs/superpowers/plans/2026-09-09-demanda-honorarios-ev-v1.md) | ⛔ **espera el pase de Nikolai sobre la demanda de W-02USSI** → rev. 3 del spec antes de construir: el catálogo de ocho familias se sembró de una sola lectura | alto |
 | 27 | [El tipo de un documento se decide por sus BYTES (`MEJORAS #214` + `#215`)](#siguiente-tipo-por-bytes-el-tipo-de-un-documento-se-decide-por-sus-bytes-no-por-el-nombre-mejoras-214--215) | **pendiente — dos defectos medidos, sin construir** | disparador: **ya disparado** en la apertura de W-048U77 (2026-09-10), cuya carpeta de E&V traía 11 de 58 ficheros sin extensión. Hoy eso **bloquea la apertura** (`[APER-65]`) y además ensucia el expediente con duplicados en cada ronda. Promovida por decisión de Nikolai el 2026-09-10 | medio |
-| 28 | [Tres piezas para que la apertura pregunte menos (`MEJORAS #224`, `#227`, `#228`)](#siguiente-apertura-menos-decisiones-tres-piezas-para-que-la-apertura-pregunte-menos) | **✅ COMPLETA, 6 de 6: `#224` (PR #339), P5 (PR #342), P2 9/9 (PRs #343 y #344), `#228` (PR #348), la gobernanza (PR #336) y `#227` en su segundo intento, por otro diseño (PR #353). Su ronda destapó además `#242`, `#243` y `#244` sobre la plantilla, y **las tres quedaron cerradas el mismo día** (PRs #350 y #351)** | disparador: decisión de Nikolai del 2026-09-11 al arrancar la sesión, sobre la medición de las siete aperturas del 2026-09-10 (bloques 99º-105º de la bitácora). Promueve las propuestas **P5**, **P7** y **P2** de `docs/superpowers/handoffs/handoff-2026-09-10-consulta-apertura-menos-decisiones.md` | bajo (P5, P7) · medio (P2) |
 
 > **Fila 23 añadida el 2026-09-07, al final y sin reordenar, igual que las anteriores.** Es la mitad
 > de test de `MEJORAS #145`, no una promoción de la entrada: la de producción se queda donde está
@@ -79,121 +78,6 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 > Detalle de cada ítem en su bloque `[SIGUIENTE-*]` más abajo. Backlog sin
 > promover: `docs/MEJORAS_FUTURAS.md`. Ledger de cerrados: `## Cerrados` (final).
-
----
-
-## [SIGUIENTE-APERTURA-MENOS-DECISIONES] Tres piezas para que la apertura pregunte menos
-
-> **Estado al 111º cierre (2026-09-11), por pieza:**
->
-> | Pieza | Estado | Dónde |
-> |---|---|---|
-> | **P5** — las 88 filas de viabilidad | ✅ **CERRADA**, R1 adjudicada (9/9 confirmados, `LISTA-CON-CAMBIOS`) | PR **#342**, squash `0702f49` |
-> | **P7 · `MEJORAS #224`** — la dirección, del nombre de la carpeta | ✅ **CERRADA** | PR **#339**, squash `7fa38aa` |
-> | **P7 · `MEJORAS #227`** — `update_meta` | ✅ **CERRADA en el segundo intento**, por otro diseño: no localizar, **comparar**. Dos rondas más (`REQUIERE-REVISION` sobre el diseño y `NO-SHIP` sobre el diff), 18 hallazgos, los 18 confirmados. **La remediación de la R2 entra SIN VERIFICAR**, por decisión de Nikolai de no abrir una tercera | PR **#353**; [diseño](docs/superpowers/specs/2026-09-11-cuantia-en-caso-md-comparar-no-localizar-design.md), actas `-r1-` y `-r2-` |
-> | **P2** — `verificar_apertura` | ✅ **CERRADA, 9 de 9**; dos R1 adjudicadas (13/13 y 14/14, las dos `NO-SHIP`) | PRs **#343** (`044798b`) y **#344** (`2cc9a24`) |
-> | **`MEJORAS #228`** — el semáforo `E22` | ✅ **CERRADA** con su R1 (6/6). Destapó `MEJORAS #242`-`#244`, que **no** se arreglaron de paso | PR **#348**, squash `c097ce4`; [plan](docs/superpowers/plans/2026-09-11-semaforo-e22.md) |
-> | **`MEJORAS #242`, `#243` y `#244`** — la plantilla de viabilidad | ✅ **CERRADAS**, en dos piezas: el filtro del guion llega a las 88 preguntas y el semáforo en blanco se ve neutro (R1 de 7 hallazgos, 11 mutantes muertos), y `modelo_xlsx.md` pasa a **mandar** sobre la estructura. Abrieron `MEJORAS #248` | PRs **#350** y **#351**; [plan](docs/superpowers/plans/2026-09-11-plantilla-viabilidad-filtro-y-rojo.md) |
->
-> **Los dos planes y sus tres actas adversariales:**
-> [`2026-09-11-apertura-menos-decisiones.md`](docs/superpowers/plans/2026-09-11-apertura-menos-decisiones.md)
-> — P5 y P2, con la adjudicación de la R1 de P5 en su §3 — y
-> [`2026-09-11-identidad-sin-teclado.md`](docs/superpowers/plans/2026-09-11-identidad-sin-teclado.md)
-> — P7, con las adjudicaciones de sus **dos** rondas en §3 y §4. Actas hermanas:
-> `…-apertura-menos-decisiones-r1-adversarial-review.md`,
-> `…-identidad-sin-teclado-r1-adversarial-review.md` y
-> `…-identidad-sin-teclado-r2-adversarial-review.md`.
->
-> **Y una corrección de dimensionado que conviene no perder:** P7 se planificó en **1 ronda**
-> mirando qué fichero se tocaba (`_caso.md`, bajo el mutex). Eran **2**, porque `update_meta` podía
-> **destruir una nota del letrado** — el radio de daño lo fija lo que hay dentro del fichero, no el
-> fichero.
-
-**De dónde sale.** De la consulta del 2026-09-10 sobre por qué la apertura automatizada seguía
-exigiendo estar encima, medida sobre las **siete** aperturas de ese día (bloques 99º a 105º de
-`docs/bitacora/2026.md`). El diagnóstico completo y las ocho propuestas están en
-`docs/superpowers/handoffs/handoff-2026-09-10-consulta-apertura-menos-decisiones.md`; **Nikolai
-promovió tres el 2026-09-11**: P5, P7 y P2. Las otras cinco siguen en el handoff, que pasa a
-`consumido` apuntando aquí.
-
-**El hilo que une las tres.** El handoff contó que, de las doce entradas humanas de una apertura,
-**cuatro son del letrado** (tipo provisional, cuantía y base, quién es el deudor, y el veredicto
-de viabilidad) y **ocho son derivables o verificables por código**. P5 y P7 quitan tres de esas
-ocho; P2 cierra el lazo sobre las demás. Ninguna toca lo jurídico.
-
-### P5 — El generador de viabilidad escribe las 88 filas (`MEJORAS #228` de paso)
-
-`.claude/skills/viabilidad-prerelleno/scripts/render_informe.py` recorre solo `d["preguntas"]`:
-las filas que el JSON no trae se quedan **sin** la marca «¿PENDIENTE ENTREVISTA?» de la columna M,
-que es la mitad del valor de la hoja. Medido dos veces el 2026-09-10: **51 de 88** en W-048UOL y
-**70 de 88** en W-02YZO4. El arreglo es recorrer `build_id_row_map(preg)` entero y marcar `sí` en
-toda pregunta sin respuesta. `MEJORAS #228` (el semáforo `E22` FINANZAS sin desplegable ni color)
-va en la misma pieza si es un cambio acotado de la plantilla de `assets/`; si no, PR aparte.
-
-**Control positivo obligatorio:** el test sobre la plantilla real tiene que ponerse **rojo** con el
-código actual antes del arreglo. Un test de conteo que nunca vio el otro valor no prueba nada
-([[feedback-guarda-inerte-comprobar-el-otro-valor]]).
-
-**Radio de daño bajo** (no escribe en el CRM ni destruye datos del expediente): **1 ronda**
-adversarial sobre el diff. Y la deuda que deja: la skill hay que **re-empaquetarla** y el
-re-import en Cowork es acción de Nikolai (fila #14).
-
-### P7 — Identidad sin teclado (`MEJORAS #224` vía a, `#227` vía a)
-
-Dos flags de identidad que hoy se teclean o se reponen a mano:
-
-- **`#224`** — `--direccion` es el único componente del `case_id` sin fuente, y la carpeta de E&V
-  se llama `<direccion> - <W-code> - <consultor>`: el W-code da el punto de corte exacto. Se deriva
-  en `scripts/abrir_caso.py::_autoderivar_drive_ev`, **el flag explícito sigue ganando**, y la
-  derivación **se rinde pidiendo el flag** cuando el nombre no trae el W-code (hay carpetas de
-  `PROPIEDADES/1. ACTIVAS` con nombre libre). Una derivación que adivine es peor que teclear.
-- **`#227`** — la cuantía se conoce al leer el encargo, no al alta, así que llega al CRM y
-  **no a `_caso.md`**; y `ensure_case` no la repone, porque solo fija campos al crear. Es la
-  **tercera** vez que aparece el mismo patrón (`#184` la referencia, `#192` el campo, `#227` la
-  cuantía): un creador al que se le pide que sea actualizador, y que calla cuando no puede. La vía
-  (a) es `case_manager.update_meta(case_id, **campos)`, que fija el frontmatter y regenera **solo**
-  las líneas del cuerpo que le pertenecen, conservando lo ajeno como ya hace el sumidero desde
-  `MEJORAS #146`.
-
-**La frontera, no el ejemplo:** lo que se arregla no es «la cuantía no llega», es «no existe un
-actualizador del índice de caso». Si `update_meta` cierra también `#184` y `#192`, **se dice y se
-marcan**; si no las cierra, se dice igualmente y se deja escrito qué les falta.
-
-**Radio de daño:** escribe `_caso.md` bajo el mutex del caso, sin tocar el mutex ni `core/anon/`
-→ **1 ronda** sobre el diff.
-
-### P2 — `verificar_apertura`: el «OK» del expediente, en código
-
-**El defecto que cierra no es de una herramienta, es de todas:** cada una dice «OK» de **su paso**,
-no del expediente. El handoff contó **ocho** falsos «OK» en un solo día — `organizar` diciendo
-«organizada» con 2 de 4 artefactos (`#221`), `render_informe` con 51 y 70 filas sin marcar,
-`apply_label` con éxito sin aplicar (`#237`), el pull «hecho» con hashes falsos (`#225`),
-`ensure_contrario_vinculado` diciendo «existente» con el id del otro deudor (`#239`)…
-
-Comando **de solo lectura** que codifica lo que hoy comprueba el letrado a mano: censo remoto
-(`rclone lsf`) contra los ficheros locales de `01_Drive EV` sin protocolo; hash contra el
-`sha256Checksum` que declara Drive cuando existe; filas de `_cobertura.json` menos hijos de bundle
-igual a entradas del catálogo (`[APER-60]`, con la corrección del 102º); los cuatro artefactos de
-la sala presentes; 88 filas de viabilidad con respuesta o pendiente; relectura de la ficha y las
-relaciones del CRM; actuación asociada **por el lado del expediente**; cero W-codes ajenos en los
-espejos `03_MD`; cuantía de `_caso.md` igual a la del CRM. Cada comprobación sale
-`ok | pendiente | fallo` al `estado.json` y al evento forense.
-
-**Lo que esta pieza NO cierra, y por eso `#221` y `#235` no se marcan promovidas:** `verificar_apertura`
-**detecta** desde fuera que `organizar` mintió y que se coló un W-code ajeno; no arregla que
-`organizar` mienta (`#221`) ni que el barrido sea ciego al W-code de dentro del PDF (`#235`).
-Esas dos siguen en backlog con su medición.
-
-**Diseño en un plan corto antes de codificar** (no una spec: los contratos ya existen), y
-**1 ronda** sobre el diff. No depende de P1: corre hoy como comando suelto.
-
-### Orden y presupuesto
-
-P5 y P7 primero —el handoff las estima en una tarde y quitan cuatro pasos manuales—, P2 después.
-**Una rama y un PR por pieza**, `main` protegida. Presupuesto de rondas por la regla del
-2026-08-26: ninguna de las tres decide quién escribe sobre qué copia ni puede destruir datos de
-cliente, así que **1 ronda cada una**, sobre el diff. La ejecuta Codex y la adjudica Claude contra
-la fuente; si Codex no corre, revisor sustituto **declarado como tal**, nunca «Codex».
 
 ---
 
@@ -3323,6 +3207,30 @@ trabajo para que no contamine).
 > Ciclo de vida cerrado. Narrativa completa: `git log` + el spec/plan enlazado.
 > Lista plana, reciente primero. Promover a agrupación por área cuando supere ~30
 > entradas (lo avisa `session_close`).
+
+- ✅ **[APERTURA-MENOS-DECISIONES]** Tres piezas para que la apertura pregunte menos
+  (`MEJORAS #224`, `#227`, `#228`), **6 de 6**, más las tres entradas que su última ronda destapó
+  sobre la plantilla de viabilidad. PRs [#336](https://github.com/TyukhayNi/FeesDefender/pull/336) (`eb8ac09`), [#339](https://github.com/TyukhayNi/FeesDefender/pull/339) (`7fa38aa`),
+  [#342](https://github.com/TyukhayNi/FeesDefender/pull/342) (`0702f49`), [#343](https://github.com/TyukhayNi/FeesDefender/pull/343) (`044798b`), [#344](https://github.com/TyukhayNi/FeesDefender/pull/344) (`2cc9a24`),
+  [#348](https://github.com/TyukhayNi/FeesDefender/pull/348) (`c097ce4`), [#353](https://github.com/TyukhayNi/FeesDefender/pull/353) (`45950c6`), [#350](https://github.com/TyukhayNi/FeesDefender/pull/350) (`47d157f`),
+  [#351](https://github.com/TyukhayNi/FeesDefender/pull/351) (`f147b94`) y [#354](https://github.com/TyukhayNi/FeesDefender/pull/354) (`d2236c4`).
+
+  **`MEJORAS #227` cerró al SEGUNDO intento y por otro diseño**: el primero (PR #338, cerrado)
+  **localizaba** la línea dentro del cuerpo Markdown de `_caso.md` y murió con seis formas de romper
+  la misma propiedad; el que entró **compara** —si el cuerpo es exactamente el que genera la
+  plantilla, se reescribe; si difiere en cualquier cosa, no se toca ni un byte—. La vía muerta está
+  en `docs/DEAD_ENDS.md` para que nadie la reintente.
+
+  **Cuatro rondas adversariales, 25 hallazgos, 25 confirmados, 0 refutados.** Dos cosas que entran
+  declaradas: **el techo del censo de escrituras sube de 91 a 92** (decisión expresa de Nikolai,
+  porque su trinquete dice que solo baja), y **la remediación de la R2 de `#227` no pasó por ninguna
+  ronda** —presupuesto agotado, tercera no autorizada—, con 18 mutantes dirigidos como única red.
+
+  Diseño y adjudicaciones:
+  `docs/superpowers/specs/2026-09-11-cuantia-en-caso-md-comparar-no-localizar-design.md` y
+  `docs/superpowers/plans/2026-09-11-plantilla-viabilidad-filtro-y-rojo.md`. Abre `MEJORAS #246`,
+  `#247` y `#248`. **Pendiente y humano:** abrir la plantilla en Excel (desplegable + alerta) y
+  reimportar la skill `viabilidad-prerelleno` en Cowork.
 
 - ✅ **[SALA-LECTURA-PLANA]** La sala de lectura queda **plana** y una colisión de nombre deja de pisar un documento (`MEJORAS #67.b`, `#67.c`, `#36`). Destino plano con la subcarpeta del documento compuesto como única excepción, `__<sha8>` para **todos** los miembros de un grupo colisionado (nadie conserva el nombre pelado), reserva **global** de rutas, copiar-antes-de-borrar, poda del cascarón por fuente confinada y sin seguir enlaces, y `n_en_sala` en el resumen — el `COPY` contaba copias intentadas, no ficheros escritos. **Mergeado: PR [#328](https://github.com/TyukhayNi/FeesDefender/pull/328)** (`a2e6676`). Skill `organizar-sala-lectura` a **v1.17** con el literal de desambiguación corregido; **pendiente re-importar el `.skill` en Cowork**. **Dos rondas adversariales, 17 hallazgos, 17 confirmados**, y la segunda sobre la implementación hermana del mismo mecanismo encontró **3 defectos vivos en el código ya remediado por la primera**. Plan y adjudicación: `docs/superpowers/plans/2026-09-10-sala-lectura-plana.md` (§5 y §6); actas literales con su digest en `…-r1-adversarial-review.md` y `…-r2-hermana-adversarial-review.md`. **Cobertura declarada:** ninguna de las dos remediaciones pasó revisión — el techo de dos rondas estaba consumido y Nikolai declinó la tercera por radio de daño; lo acreditan 28 tests con sus controles positivos, un mutante muerto y **dos expedientes reales migrados y verificados por contenido** (W-02YZO4 26/26; W-048UOL 48 ficheros, 51/51 byte a byte, 0 huérfanos). Preexistentes NO arreglados, con su disparador: `MEJORAS #229`, `#230`, `#231`, `#232`, `#233`.
 

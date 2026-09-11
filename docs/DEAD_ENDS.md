@@ -6,6 +6,35 @@
 
 ---
 
+## Actualizar `_caso.md` LOCALIZANDO el fragmento dentro del cuerpo Markdown
+
+- **Intentado:** dar a `_caso.md` un actualizador (`update_meta`) que **encuentre** la línea a
+  sustituir dentro del cuerpo —`startswith` sobre las líneas, luego acotado a su sección, luego
+  con las cercas de código en cuenta— para escribir la cuantía, que se conoce al leer el encargo
+  pero llega después de crear el caso.
+- **Resultado:** **cuatro rondas adversariales sobre dos intentos, y la misma propiedad rota de
+  siete formas.** Preámbulo que se come una sección `###`; encabezados con la sangría que
+  CommonMark permite; cercas de distinto carácter o longitud; cercas sin cerrar; inserción fuera
+  del ámbito recién validado; duplicación de la línea al repetir; y un frontmatter vacío que hace
+  saltar el delimitador. **Cada remedio cerraba el caso del informe y no la propiedad.** El coste
+  de equivocarse no es un dato mal puesto: es **una nota del letrado destruida**, que es lo que
+  `MEJORAS #146` existe para impedir.
+- **Confirmado:** 2026-09-11, PR #338 **cerrado sin mergear** por decisión de Nikolai tras dos
+  rondas `NO-SHIP`. La rama `fix/identidad-sin-teclado` se conserva como evidencia.
+- **Lo que NO sirve:** parchear el caso que el informe describe. Es una clase de defecto con cola
+  infinita, y cada ronda encontró uno nuevo.
+- **Y una trampa dentro de la trampa:** tampoco sirve **compartir el regex de `read_md`**
+  (`^---\s*\n(.*?)\n---\s*\n`) para delimitar el frontmatter «porque eso sí es un delimitador».
+  No lo es: con un frontmatter **vacío** no puede casar el cierre inmediato y **salta al siguiente
+  `---` del fichero**, metiendo el cuerpo dentro del YAML. Medido: una nota del letrado desaparecía
+  al serializar. Compartir una primitiva no delega su defecto, lo hereda.
+- **Solución, la que entró:** **no localizar, comparar.** Si el cuerpo es exactamente el que
+  `_cuerpo_del_indice` produce para la `meta` del frontmatter, se reescribe entero; si difiere en
+  cualquier cosa, **no se toca ni un byte** y se declara en el informe. Un problema de *parsing*
+  convertido en una igualdad de cadenas, con la frontera delimitada **por líneas** y en bytes.
+  Diseño, medición y las cuatro adjudicaciones:
+  `docs/superpowers/specs/2026-09-11-cuantia-en-caso-md-comparar-no-localizar-design.md`.
+
 ## `POST relation_element` con el lado equivocado: HTTP 201 «Created!» y el vínculo no existe
 
 - **Intentado:** vincular el poderdante a un poder con el patrón del §10.6/§15.3, que funciona para
