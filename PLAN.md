@@ -88,19 +88,20 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 >
 > | Pieza | Estado | Dónde |
 > |---|---|---|
-> | **P5** — las 88 filas de viabilidad | **en PR**, R1 adjudicada (9/9 confirmados, `LISTA-CON-CAMBIOS`) | PR #337, pendiente de un `push --force-with-lease` que el entorno bloqueó |
+> | **P5** — las 88 filas de viabilidad | ✅ **CERRADA**, R1 adjudicada (9/9 confirmados, `LISTA-CON-CAMBIOS`) | PR-P5 |
 > | **P7 · `MEJORAS #224`** — la dirección, del nombre de la carpeta | ✅ **CERRADA** | PR **#339**, squash `7fa38aa` |
 > | **P7 · `MEJORAS #227`** — `update_meta` | **DE VUELTA AL DISEÑO** tras 2 rondas `NO-SHIP` | [plan](docs/superpowers/plans/2026-09-11-identidad-sin-teclado.md) §5, con la vía (d) |
-> | **P2** — `verificar_apertura` | **diseñado, sin construir** — es el `[SIGUIENTE]` | su plan viaja en el PR #337, §5 (las nueve comprobaciones con su origen en el backlog) |
+> | **P2** — `verificar_apertura` | **diseñado, sin construir** — es el `[SIGUIENTE]` | [plan](docs/superpowers/plans/2026-09-11-apertura-menos-decisiones.md) §5 |
 > | **`MEJORAS #228`** — el semáforo `E22` | fuera de P5 con la medición anotada: la fila 22 tiene dos bloques combinados donde la 21 tiene uno | su entrada del backlog |
 >
-> **Planes y actas adversariales.** El de P7 ya está en `main`:
-> [`2026-09-11-identidad-sin-teclado.md`](docs/superpowers/plans/2026-09-11-identidad-sin-teclado.md),
-> con las adjudicaciones de sus **dos** rondas en §3 y §4 y sus dos actas hermanas
-> (`…-r1-adversarial-review.md`, `…-r2-adversarial-review.md`). El de **P5 y P2** —con la
-> adjudicación de la R1 de P5 y el diseño de las nueve comprobaciones— **entra con el PR #337**:
-> no se enlaza aquí todavía porque el guard de citas exige que el fichero exista en el árbol, y
-> esa exigencia es correcta.
+> **Los dos planes y sus tres actas adversariales:**
+> [`2026-09-11-apertura-menos-decisiones.md`](docs/superpowers/plans/2026-09-11-apertura-menos-decisiones.md)
+> — P5 y P2, con la adjudicación de la R1 de P5 en su §3 — y
+> [`2026-09-11-identidad-sin-teclado.md`](docs/superpowers/plans/2026-09-11-identidad-sin-teclado.md)
+> — P7, con las adjudicaciones de sus **dos** rondas en §3 y §4. Actas hermanas:
+> `…-apertura-menos-decisiones-r1-adversarial-review.md`,
+> `…-identidad-sin-teclado-r1-adversarial-review.md` y
+> `…-identidad-sin-teclado-r2-adversarial-review.md`.
 >
 > **Y una corrección de dimensionado que conviene no perder:** P7 se planificó en **1 ronda**
 > mirando qué fichero se tocaba (`_caso.md`, bajo el mutex). Eran **2**, porque `update_meta` podía

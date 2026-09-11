@@ -8,8 +8,11 @@ pieza P5). Un informe con 37 filas en blanco no se lee como «37 pendientes»: s
 como «sin cuestionario», que es lo contrario.
 
 Los tests corren contra la **plantilla real** de `assets/` —el defecto vivía en la
-relación entre el JSON y esa plantilla, así que un fixture sintético lo rodearía— y
-escriben siempre en `tmp_path`, nunca en el árbol de producción.
+relación entre el JSON y esa plantilla, así que un fixture sintético lo rodearía—, que
+solo se **lee**. Todo lo que estos tests escriben va a `tmp_path`: nada toca el árbol de
+producción. (La R1 midió que openpyxl crea además sus propios temporales en el directorio
+temporal del proceso al serializar el libro; eso no es el árbol de producción, pero la
+frase «siempre en tmp_path» se leía como si lo cubriera todo.)
 """
 import json
 import sys
@@ -165,18 +168,117 @@ def test_una_pregunta_ajena_al_cuestionario_sigue_avisando(tmp_path, capsys):
     assert "no_existe_99" in capsys.readouterr().err
 
 
-def test_las_marcas_caben_en_la_validacion_de_la_columna(informe_con_tres_respuestas):
-    """`sí`/`no` son el dominio que la propia plantilla declara para M6:M103.
+def _validacion_de_la_columna_M(ws):
+    """La validación que la plantilla declara sobre la columna M, buscada con rigor.
 
-    La hoja PREGUNTAS trae una validación de lista `"sí,no"` sobre esa columna. Un
-    literal fuera del dominio (`SÍ`, `pendiente`, `True`) no rompe nada al escribir
-    —openpyxl no valida— y luego Excel se lo come al abrirlo: el defecto se vería en
-    la mesa del abogado, no aquí. Este test ata el generador al dominio declarado.
+    La primera versión de este helper cogía la primera validación cuyo `sqref`
+    contuviera la letra `M`, lo que casa con casi cualquier cosa. Se exige el tipo
+    `list` y que el rango sea de la columna M.
     """
+    candidatas = [d for d in ws.data_validations.dataValidation
+                  if d.type == "list" and all(str(c).startswith("M")
+                                              for c in str(d.sqref).split())]
+    assert len(candidatas) == 1, f"esperaba UNA validación de lista en M: {candidatas}"
+    return candidatas[0]
+
+
+def test_las_marcas_caben_en_la_validacion_de_la_columna(informe_con_tres_respuestas):
+    """`sí`/`no` son el dominio que la propia plantilla declara para M6:M103."""
     ws = informe_con_tres_respuestas
-    dv = next(d for d in ws.data_validations.dataValidation
-              if "M6" in str(d.sqref) or "M" in str(d.sqref))
+    dv = _validacion_de_la_columna_M(ws)
     dominio = set(dv.formula1.strip('"').split(","))
     id_row = render_informe.build_id_row_map(ws)
+    assert set(id_row.values()) <= _filas_del_rango(dv), (
+        "hay preguntas fuera del rango que la validación cubre")
     escritos = {ws.cell(r, COL_PENDIENTE).value for r in id_row.values()}
     assert escritos <= dominio, f"valores fuera de la validación {dominio}: {escritos - dominio}"
+
+
+def _filas_del_rango(dv):
+    """Filas que cubre el `sqref` de una validación de una sola columna."""
+    filas = set()
+    for trozo in str(dv.sqref).split():
+        ini, _, fin = trozo.partition(":")
+        a = int("".join(c for c in ini if c.isdigit()))
+        b = int("".join(c for c in (fin or ini) if c.isdigit()))
+        filas |= set(range(a, b + 1))
+    return filas
+
+
+# --- Lo que la R1 midió y estos tests no cubrían ---------------------------------
+#
+# El test de dominio de arriba solo veía respuestas documentales SIN `pendiente`
+# explícito. La R1 mutó el generador para escribir `FUERA_DOMINIO` ante cualquier
+# explícito y el test **siguió verde**: probaba la mitad derivada de la columna y se
+# presentaba como si cubriera la columna entera.
+
+
+@pytest.mark.parametrize("valor, marca", [
+    ("sí", "sí"), ("no", "no"),
+    ("SÍ", "sí"),          # mayúsculas: misma palabra del dominio
+    ("si", "sí"),          # sin tilde: equivalencia de GRAFÍA, no de significado
+    (" no ", "no"),        # espacios del emisor
+])
+def test_el_pendiente_explicito_valido_se_normaliza_al_dominio(tmp_path, valor, marca):
+    salida = _generar(tmp_path, {"case_id": "W-TEST00",
+                                 "preguntas": {"cap_01": {"pendiente": valor}}})
+    wb = openpyxl.load_workbook(salida)
+    try:
+        ws = wb["PREGUNTAS"]
+        assert ws.cell(render_informe.build_id_row_map(ws)["cap_01"], COL_PENDIENTE).value == marca
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize("valor", ["", "SI SEÑOR", "pendiente", True, 1, [], {"a": 1}])
+def test_un_pendiente_explicito_invalido_no_deja_la_fila_a_medias(tmp_path, valor, capsys):
+    """El agujero que la R1 midió: `{"pendiente": ""}` daba 87 de 88 y un «OK».
+
+    Es el mismo modo de fallo que esta pieza vino a cerrar, en pequeño — una fila sin
+    marca no se lee como pendiente, se lee como no valorada—, y la plantilla no
+    protege: su validación es `list "sí,no"` pero con `allowBlank=True` y
+    `showErrorMessage=False`, así que Excel se come el blanco sin decir nada.
+    """
+    salida = _generar(tmp_path, {"case_id": "W-TEST00",
+                                 "preguntas": {"cap_01": {"pendiente": valor}}})
+    assert "cap_01" in capsys.readouterr().err, "el valor inválido se aceptó en silencio"
+    wb = openpyxl.load_workbook(salida)
+    try:
+        ws = wb["PREGUNTAS"]
+        id_row = render_informe.build_id_row_map(ws)
+        sin_marcar = [q for q, r in id_row.items()
+                      if ws.cell(r, COL_PENDIENTE).value not in ("sí", "no")]
+        assert not sin_marcar, f"{len(sin_marcar)} de {len(id_row)} sin marca válida"
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize("valor", [None, False, 0, [], "una cadena suelta"])
+def test_una_entrada_que_no_es_un_objeto_avisa_en_vez_de_callar(tmp_path, valor, capsys):
+    """Antes del recorrido completo esto reventaba con `AttributeError`.
+
+    El recorrido nuevo lo normalizaba a `{}` y seguía, que es peor que el crash: un
+    productor que emita `cap_01: false` en vez de `cap_01: {"respuesta": false}`
+    generaría un informe sin esa respuesta y sin que nadie se entere. Ahora avisa.
+    """
+    _generar(tmp_path, {"case_id": "W-TEST00", "preguntas": {"cap_01": valor}})
+    err = capsys.readouterr().err
+    if valor is None:
+        assert "cap_01" not in err, "un `null` es ausencia declarada, no un error de tipo"
+    else:
+        assert "cap_01" in err, f"{valor!r} se aceptó como objeto sin decir nada"
+
+
+def test_los_ids_de_la_plantilla_son_unicos(informe_con_tres_respuestas):
+    """El «cuestionario entero» depende de que el mapa no colapse dos filas en una.
+
+    `build_id_row_map` indexa por ID en un `dict`: dos filas con el mismo ID dejarían
+    una sin marca y nadie lo diría. Se cuenta **sin** usar el helper como oráculo —la
+    R1 señaló justamente que el test del 88 se apoyaba en él— comparando las filas con
+    ID contra los IDs distintos.
+    """
+    ws = informe_con_tres_respuestas
+    ids = [str(ws.cell(r, 3).value).strip()
+           for r in range(5, ws.max_row + 1) if ws.cell(r, 3).value]
+    assert len(ids) == len(set(ids)) == 88, (
+        f"{len(ids)} filas con ID y {len(set(ids))} IDs distintos")
