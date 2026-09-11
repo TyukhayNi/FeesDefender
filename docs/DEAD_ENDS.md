@@ -906,6 +906,22 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
   topan con la topología de worktrees, y en las dos el mensaje de error apunta a un remedio peor
   que el síntoma.
 
+## Sesión remota de Claude Code: `git push --delete` de una rama devuelve 403 en el proxy, y no hay otra vía para podarla
+
+- **Intentado:** tras el squash-merge del PR #334, podar la rama remota con
+  `git push origin --delete <rama>` (dos veces), como manda `FLUJO_GIT.md §4`.
+- **Resultado:** `error: RPC failed; HTTP 403 … send-pack: unexpected disconnect`, y git remata
+  con un engañoso «Everything up-to-date». La rama sigue en `origin`. `gh` no está instalado y el
+  conector MCP de GitHub crea y lista ramas pero no las borra.
+- **Confirmado:** 2026-09-11.
+- **Conclusión:** en una sesión remota, la poda la hace el botón «Delete branch» del PR mergeado o
+  el PC. Lo que sí pasa por el proxy, medido el mismo día: el `push` normal, la creación de rama y
+  el `--force-with-lease` (rearrancar la rama ya mergeada desde `main`). `session_close` tampoco
+  puede medir la suite ahí (código 2, sin `.venv`); los guards de docs sí corren instalando
+  `python-dotenv`, `pyyaml` y `python-slugify`.
+- **Acción pendiente:** un hook `SessionStart` para sesiones web que instale `requirements.txt`
+  haría medible la suite; sin disparador todavía.
+
 ## Plantilla para nuevas entradas
 
 ```markdown
