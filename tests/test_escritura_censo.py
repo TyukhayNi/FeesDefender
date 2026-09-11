@@ -122,7 +122,29 @@ AMBIGUAS = frozenset({"replace", "copy", "dump"})
 #: la R1 de Codex lo cazo (H-04) junto con la ventana que abria (H-03: publicar antes de
 #: decidir). Condicion de bajada: cuando los derivados de la sala de maquina pasen por la
 #: costura (3B), estas tres bajan con los otros 13 de `sala_maquina`.
-TECHO_CENSO = 91
+#: **91 -> 92 el 2026-09-11 (`MEJORAS #227`), y esta subida SI es una escritura nueva de
+#: protocolo.** `update_meta` escribe `_caso.md` en BYTES —tiene que hacerlo: la R1 midio
+#: que pasar el cuerpo conservado otra vez por `write_md` le quitaba los espacios finales a
+#: la nota del letrado—, y eso anade un `write_bytes` a `core/case_manager.py` (9 -> 10).
+#:
+#: **Lo que se hizo para que sea +1 y no +3:** la primera version traia su propio escritor
+#: atomico, con su `write_bytes`, su `os.replace` y su `unlink`. La R2 lo cazo (H2-09) y el
+#: reemplazo atomico se **comparte** ahora con `_escribir_indice_atomico`
+#: (`_reemplazo_atomico`), asi que solo la escritura en si es nueva.
+#:
+#: **Y lo que NO se hizo, que es la parte que importa:** mover esa escritura a
+#: `core/utils.py` —donde ya viven `write_md` y `read_md`— la habria dejado fuera del censo
+#: y el numero se habria quedado en 91. Eso es mover el trinquete, no declararlo: conserva
+#: la cifra y pierde la propiedad que la cifra mide. El censo cuenta escrituras de
+#: protocolo que no pasan por la costura, y esta es una.
+#:
+#: **Decision de Nikolai del 2026-09-11**, consultada expresamente porque la regla de arriba
+#: dice que el censo **solo puede bajar** y esto la rompe una vez, a la vista y en el mismo
+#: commit que la causa.
+#:
+#: Condicion de bajada: cuando las escrituras del indice del caso pasen por la costura, esta
+#: baja con las otras 10 de `core/case_manager.py`.
+TECHO_CENSO = 92
 
 
 def _nombre_llamado(n: ast.Call) -> str | None:

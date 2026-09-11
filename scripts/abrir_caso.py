@@ -654,7 +654,7 @@ def _informar_v1(resultado) -> None:
 def _alta_crm(
     ident: "brain.Identidad",
     *,
-    cuantia: float,
+    cuantia: float | None,
     crm_mode: str,
     yes: bool,
     force: bool = False,
@@ -731,22 +731,68 @@ def _alta_crm(
         # `tests/test_abrir_caso_exit_bajo_mutex.py`, que me cazo a mi al cablear esto.
         raise AbortarApertura(1)
 
-    payload = brain.crm_payload(ident, cuantia=cuantia)  # lee ident.tipo_caso (fd7a39f)
+    # `None` es «el flag no vino», y el DTO del CRM hace aritmetica con este valor
+    # (`datos.cuantia + datos.costas + datos.intereses`): propagarlo reventaria un alta que
+    # hoy funciona. La ausencia se traduce a `0.0` AQUI y a «no escribir la clave» en la
+    # frontera local: son dos politicas distintas del mismo hecho (R1/H-04 de `#227`).
+    payload = brain.crm_payload(ident, cuantia=0.0 if cuantia is None else cuantia)
     typer.echo(f"CRM -> alta extrajudicial ref={payload.referencia_cliente} "
                f"posicion={payload.posicion} tags={payload.tags} cuantia={payload.cuantia}")
     if not (yes or typer.confirm("¿Dar de alta en el CRM?")):
         typer.echo("CRM omitido (declinado por el usuario): referencia pendiente + TODO")
         return
 
+    # CUATRO desenlaces, no uno. Hasta el 2026-09-11 un solo `except` cubria el alta Y el
+    # registro local, asi que un fallo del segundo imprimia «Alta CRM falló» con el alta
+    # HECHA: el letrado reintentaba, el CRM ya tenia el expediente y el reintento era
+    # esteril o duplicaba (`MEJORAS #227`, R1/H-05 del intento retirado). Y el cuarto
+    # —escribir la cuantia en el indice— lo introduce esta pieza.
     try:
         exp_id = sudespacho_create.create_expediente(payload)
-        case_manager.register_expediente(ident.case_id, exp_id, _ELEMENT_EXTRAJUDICIAL)
-        typer.echo(f"OK CRM id={exp_id}")
     except Exception as exc:
         typer.echo(
             f"[AVISO] Alta CRM falló ({exc!r}): Drive+intake ya completados, "
             "referencia_crm queda pendiente + TODO."
         )
+        return
+
+    try:
+        case_manager.register_expediente(ident.case_id, exp_id, _ELEMENT_EXTRAJUDICIAL)
+    except Exception as exc:
+        typer.echo(
+            f"[AVISO] El alta en el CRM SI se hizo (id={exp_id}), lo que falló es "
+            f"registrarla en `_caso.md` ({exc!r}). NO reintentes el alta: duplicarias el "
+            f"expediente. Vincula el existente con `register_expediente({ident.case_id!r}, "
+            f"{exp_id!r}, {_ELEMENT_EXTRAJUDICIAL!r})`."
+        )
+        return
+    typer.echo(f"OK CRM id={exp_id}")
+
+    # La cuantia se conoce al leer el encargo, pero el alta va al final: por eso llega aqui
+    # y no a `ensure_case`. Solo se escribe si el flag vino.
+    if cuantia is None:
+        return
+    try:
+        informe = case_manager.update_meta(ident.case_id, cuantia=cuantia)
+    except Exception as exc:
+        typer.echo(
+            f"[AVISO] El alta (id={exp_id}) y su registro local SI se hicieron; lo que falló "
+            f"es escribir la cuantía en `_caso.md` ({exc!r}). Repetir el comando NO la "
+            "repone —entra por la guarda de «CRM ya registrado» y retorna antes—: ponla a "
+            "mano o con `case_manager.update_meta`."
+        )
+        return
+    # TRES estados, no dos (R2/H2-04): `!= "reescrito"` agrupaba «conservado» con «sin
+    # tocar», y en el segundo NO se escribió ninguna clave — el mensaje decía «cuantía
+    # escrita» seguido del motivo, que dice literalmente «no se escribe nada». Un aviso que
+    # se contradice a sí mismo es peor que no avisar.
+    if informe["cuerpo"] == "conservado":
+        typer.echo(f"[AVISO] cuantía escrita en el frontmatter de `_caso.md`, "
+                   f"pero NO en su cuerpo: {informe['motivo']}")
+    elif informe["cuerpo"] == "sin tocar":
+        typer.echo(f"[AVISO] la cuantía NO se ha escrito en `_caso.md`: "
+                   f"{informe['motivo']}. La cuantía local sigue pendiente y no coincidirá "
+                   f"con la del CRM; repásala a mano.")
 
 
 def _autoderivar_drive_ev(
@@ -964,7 +1010,7 @@ def main(
              "sala de máquina lo OCR-ee (un adjunto que llegue SOLO por correo, sin "
              "copia en el Drive, no se procesa sin esto). ACTIVO por defecto desde la "
              "acción 6b; los logotipos de firma se filtran y el .eml sigue siendo fiel"),
-    cuantia: float = typer.Option(0.0, "--cuantia"),
+    cuantia: float | None = typer.Option(None, "--cuantia"),
     crm: str = typer.Option("api", "--crm", help="api|skip"),
     force: bool = typer.Option(False, "--force"),
     dry_run: bool = typer.Option(False, "--dry-run"),

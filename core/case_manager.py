@@ -13,6 +13,8 @@ import re
 import shutil
 import unicodedata
 from dataclasses import asdict, dataclass
+from dataclasses import fields as dc_fields
+from dataclasses import replace as dc_replace
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -35,7 +37,9 @@ from .config import (
     settings,
 )
 from .intake_utils import sanitize_filename as _sanitize_filename_util
-from .utils import now_iso, read_md, write_md
+import yaml
+
+from .utils import build_frontmatter, now_iso, read_md, write_md
 
 logger = logging.getLogger(__name__)
 
@@ -319,10 +323,23 @@ def _escribir_indice_atomico(index: Path, fm: dict, cuerpo: str) -> Path:
     `MERGE_EXCLUSIONS` y en el carve-out del plugin para que un huerfano no se trate como
     contenido del expediente (R1/H-07).
     """
+    return _reemplazo_atomico(index, lambda tmp: write_md(tmp, fm, cuerpo))
+
+
+def _reemplazo_atomico(index: Path, escribir) -> Path:
+    """El cuerpo comun de las escrituras del indice: temporal + `os.replace`.
+
+    `update_meta` escribe BYTES y `_escribir_indice_atomico` escribe `(fm, cuerpo)`, pero el
+    reemplazo es el mismo y **se comparte a proposito**: un segundo escritor atomico anadia
+    tres llamadas nuevas al censo de `tests/test_escritura_censo.py`, que es un trinquete y
+    **solo puede bajar** (R2/H2-09). Compartiendo, el diff anade **una** (`write_bytes`) en
+    vez de tres, y esa una se declara en el techo del censo — no se esconde moviendola a un
+    modulo que el censo no mire, que es la trampa que mi propia regla nombra.
+    """
     # `write_md` crea el directorio padre si falta: no hace falta un `mkdir` aqui.
     tmp = index.parent / f"._caso.{os.getpid()}.tmp"
     try:
-        write_md(tmp, fm, cuerpo)
+        escribir(tmp)
         os.replace(tmp, index)
     except Exception:
         if tmp.exists():
@@ -355,6 +372,239 @@ def _write_case_index(case_dir: Path, meta: CaseMeta) -> Path:
     expedientes = list(meta.sudespacho_expedientes or [])
     return _escribir_indice_atomico(index, _frontmatter_del_indice(meta, expedientes),
                                     _cuerpo_del_indice(meta))
+
+
+# ---------------------------------------------------------------------------
+# `update_meta` — fijar campos que se conocen DESPUES de crear el caso
+# ---------------------------------------------------------------------------
+#
+# `MEJORAS #227`, diseno rev. 2:
+# docs/superpowers/specs/2026-09-11-cuantia-en-caso-md-comparar-no-localizar-design.md
+#
+# El primer intento (PR #338, cerrado) LOCALIZABA la linea a sustituir dentro del cuerpo
+# Markdown con heuristicas. Dos rondas adversariales encontraron SEIS formas de romper esa
+# misma propiedad, y el coste de equivocarse es una nota del letrado destruida. Este no
+# localiza: COMPARA. Si el cuerpo del fichero es exactamente el que `_cuerpo_del_indice`
+# produciria para la `meta` que trae el frontmatter, se reescribe entero sin riesgo; si
+# difiere en cualquier cosa, NO SE TOCA -- ni un byte -- y se declara en el informe.
+#
+# Todo se hace en BYTES y no en cadenas, y eso no es una preferencia: la R1 midio que
+# `write_md` hace `body.strip()` y traduce los saltos de linea, de modo que "conservar el
+# cuerpo" pasandolo otra vez por el escritor le quitaba los espacios finales a la nota del
+# letrado. La garantia se enuncio sobre cadenas y el fichero esta hecho de bytes.
+
+# Los UNICOS campos que este actualizador puede fijar. No es una lista de conveniencia:
+# cada uno tiene su hogar en `CaseMeta` y NO tiene otro registrador. `direccion`, `id_go`,
+# `tipo_caso` y `ciudad` los actualiza `ensure_case` sobre un caso existente; `drive_ev_*`
+# son de `register_drive_ev` / `cache_drive_folder_info`; `sudespacho_expedientes` de
+# `register_expediente` / `update_pull_state`; los `checkout_*` de la biblioteca de casos.
+#
+# Que `cliente`, `contraparte` u `organo` tampoco tengan actualizador NO los mete aqui: la
+# lista se queda en dos por ALCANCE de `#227` (R1/H-03), y los huecos van al backlog.
+CAMPOS_ACTUALIZABLES = frozenset({"cuantia", "referencia_crm"})
+
+# Para el mensaje de error: donde vive de verdad cada campo que se rechaza.
+# R2/H2-07: no todos son «ensure_case» en el mismo sentido. `ensure_case` SI actualiza
+# `direccion`, `id_go`, `tipo_caso` y `ciudad` sobre un caso existente; a `titulo`,
+# `cliente`, `contraparte`, `organo`, `drive_link`, `drive_remote_path` y `estado` **solo
+# los fija al CREAR**, y no tienen actualizador. Decirle al operador «su hogar es
+# ensure_case» para esos siete le manda a una puerta que no abre: se le dice la verdad.
+_SIN_ACTUALIZADOR = ("solo se fija al CREAR, con ensure_case; no tiene actualizador "
+                     "posterior — ver MEJORAS #246")
+_HOGAR_DE = {
+    "direccion": "ensure_case", "id_go": "ensure_case", "tipo_caso": "ensure_case",
+    "ciudad": "ensure_case",
+    "titulo": _SIN_ACTUALIZADOR, "cliente": _SIN_ACTUALIZADOR,
+    "contraparte": _SIN_ACTUALIZADOR, "organo": _SIN_ACTUALIZADOR,
+    "drive_link": _SIN_ACTUALIZADOR, "drive_remote_path": _SIN_ACTUALIZADOR,
+    "estado": _SIN_ACTUALIZADOR,
+    "drive_ev_team_id": "register_drive_ev", "drive_ev_folder_id": "register_drive_ev",
+    "drive_ev_folder_name": "cache_drive_folder_info",
+    "drive_ev_drive_id": "cache_drive_folder_info",
+    "sudespacho_expedientes": "register_expediente / update_pull_state",
+    "estado_repositorio": "la biblioteca de casos", "checkout_user": "la biblioteca de casos",
+    "checkout_timestamp": "la biblioteca de casos", "checkout_nonce": "la biblioteca de casos",
+    "checkout_maquina": "la biblioteca de casos", "checkout_notas": "la biblioteca de casos",
+    "ultimo_checkin_timestamp": "la biblioteca de casos",
+    "ultimo_checkin_auditlog": "la biblioteca de casos",
+}
+
+# Campos de la lista blanca que ademas viven FUERA de `meta`, en el nivel superior del
+# frontmatter (ver `_frontmatter_del_indice`). Se enumeran porque son dos, no porque haya
+# una regla: `test_los_hogares_superiores_estan_todos_enumerados` recorre lo que produce
+# `_frontmatter_del_indice` y se pone rojo si aparece uno que no este aqui.
+_HOGARES_SUPERIORES = {"referencia_crm": "referencia_crm"}
+
+def _partir_indice(crudo: bytes) -> "tuple[bytes, bytes, bytes] | None":
+    """`(bloque de frontmatter, YAML, cuerpo)` delimitando POR LINEAS. O `None`.
+
+    **Esto NO comparte el regex de `read_md`, y esa fue la leccion de la R2** (H2-01, ALTO).
+    Yo habia escrito que `^---\\s*\\n(.*?)\\n---\\s*\\n` «no es una heuristica de contenido, es
+    un delimitador». Lo es: el `\\s*` y el `(.*?)` hacen que, ante un frontmatter VACIO
+    (`---\\n---\\n`), el patron no pueda casar el cierre inmediato —necesita un `\\n` entre
+    apertura y cierre que no sea el mismo— y **salte al SIGUIENTE `---` del fichero**,
+    tragandose el cuerpo. Reproducido: una nota `# NOTA DEL LETRADO NO BORRAR` que estaba en
+    el cuerpo entraba como YAML y **desaparecia al serializar**. Justo lo que esta pieza
+    existe para impedir, por compartir el defecto del lector en vez de delimitar.
+
+    Aqui la frontera es lo que parece: la primera linea tiene que ser `---`, y el
+    frontmatter acaba en la **primera linea siguiente** que sea `---`. Ni salta, ni busca, ni
+    depende de que el contenido parsee.
+
+    Y acaba **en el salto de esa linea**, no despues de los blancos que vengan detras
+    (H2-02): el `\\s*` del regex se comia el `\\n  \\n` que el letrado hubiera dejado ahi y la
+    cabecera nueva lo sustituia por la separacion fija del serializador. Esos bytes son del
+    cuerpo y se conservan.
+    """
+    lineas = crudo.split(b"\n")
+    if not lineas or lineas[0].strip() != b"---":
+        return None
+    for i in range(1, len(lineas)):
+        if lineas[i].strip() != b"---":
+            continue
+        # `+1` por el `\n` del cierre; si el cierre es la ultima linea, no lo hay.
+        fin = min(len(b"\n".join(lineas[:i + 1])) + 1, len(crudo))
+        return crudo[:fin], b"\n".join(lineas[1:i]), crudo[fin:]
+    return None
+
+
+def _meta_desde_frontmatter(meta_dict: dict) -> CaseMeta:
+    """`CaseMeta` desde el espejo del frontmatter, FILTRANDO por los campos del dataclass.
+
+    El filtrado es contrato y no detalle: el modelo promete conservar las claves que no
+    conoce, asi que `CaseMeta(**meta_dict)` peta con `TypeError` sobre un `_caso.md` que
+    las tenga (R1/H-08).
+    """
+    nombres = {f.name for f in dc_fields(CaseMeta)}
+    return CaseMeta(**{k: v for k, v in meta_dict.items() if k in nombres})
+
+
+def _normalizar_saltos(texto: str) -> str:
+    """Lo que `Path.read_text` hace por su cuenta. Aqui, explicito y sobre lo decodificado."""
+    return texto.replace("\r\n", "\n").replace("\r", "\n")
+
+
+
+
+
+def _informe(case_id: str, escritas, cuerpo: str, motivo: str | None) -> dict:
+    return {"case_id": case_id, "frontmatter": sorted(escritas),
+            "cuerpo": cuerpo, "motivo": motivo}
+
+
+def update_meta(case_id: str, **campos) -> dict:
+    """Fija campos de `CaseMeta` en `_caso.md` sin poder destruir el cuerpo.
+
+    Cada clave de `campos` SE ESCRIBE, incluido `None`: pasar una clave es la orden de
+    escribirla. El que no quiera escribir un campo NO PASA LA CLAVE -- un default no es una
+    orden de escribir (R2/H2-06 del intento retirado, donde repetir el comando sin
+    `--cuantia` pisaba con cero una cuantia ya conocida).
+
+    Devuelve el informe y **no lanza** cuando el cuerpo queda sin reescribir: eso no es un
+    error, es el caso normal de un expediente con notas. Tres estados de `cuerpo`:
+
+    - `"reescrito"`  -- era canonico, se regenero con la meta nueva
+    - `"conservado"` -- no era canonico: se escribio el frontmatter y los bytes del cuerpo
+                        quedaron IDENTICOS
+    - `"sin tocar"`  -- no se escribio nada (indice ilegible); `motivo` dice por que
+
+    **La garantia vale bajo exclusion vigente** (R1/H-09): la igualdad acredita la version
+    LEIDA, y entre la lectura y el `os.replace` cabe la escritura de otro. Esta funcion no
+    exige el mutex -- como no lo exigen `register_expediente`, `register_drive_ev` ni
+    `cache_drive_folder_info` --, asi que lo aporta el llamante. `_alta_crm` corre ya bajo
+    el mutex del caso.
+    """
+    from core.casos.case_locator import buscar
+
+    if not campos:
+        raise ValueError("update_meta sin campos que escribir: llamar sin nada es un error "
+                         "del llamante, no un no-op silencioso")
+    desconocidos = sorted(set(campos) - CAMPOS_ACTUALIZABLES)
+    if desconocidos:
+        detalle = ", ".join(f"{c!r} (su hogar es {_HOGAR_DE.get(c, 'otro registrador')})"
+                            for c in desconocidos)
+        raise ValueError(
+            f"update_meta solo escribe {sorted(CAMPOS_ACTUALIZABLES)}; rechazado: {detalle}")
+
+    base = buscar(case_id)
+    if base is None:
+        raise FileNotFoundError(f"no encuentro el caso {case_id!r}")
+    index = base / "00_Input" / "_caso.md"
+    if not index.exists():
+        raise FileNotFoundError(f"{case_id!r} no tiene 00_Input/_caso.md")
+
+    crudo = index.read_bytes()
+    partes = _partir_indice(crudo)
+    if partes is None:
+        return _informe(case_id, [], "sin tocar",
+                        "el indice no empieza por un frontmatter delimitado por `---`; no se "
+                        "escribe nada para no convertir un fichero roto en uno nuevo")
+    bloque_fm, yaml_bytes, cuerpo_bytes = partes
+    try:
+        fm = yaml.safe_load(yaml_bytes.decode("utf-8")) or {}
+    except (yaml.YAMLError, UnicodeDecodeError) as exc:
+        return _informe(case_id, [], "sin tocar", f"el frontmatter no se puede leer: {exc}")
+    if not isinstance(fm, dict):
+        return _informe(case_id, [], "sin tocar", "el frontmatter no es un mapa")
+    meta_previo = fm.get("meta")
+    if not isinstance(meta_previo, dict):
+        return _informe(case_id, [], "sin tocar", "el frontmatter no trae `meta` como mapa")
+    try:
+        meta_prev = _meta_desde_frontmatter(meta_previo)
+    except TypeError as exc:
+        return _informe(case_id, [], "sin tocar",
+                        f"`meta` no permite reconstruir CaseMeta ({exc}): sin ella no hay "
+                        "con que comparar el cuerpo")
+
+    try:
+        cuerpo = _normalizar_saltos(cuerpo_bytes.decode("utf-8"))
+    except UnicodeDecodeError as exc:
+        return _informe(case_id, [], "sin tocar", f"el cuerpo no es UTF-8 ({exc})")
+    # El cuerpo empieza DESPUES de la linea del cierre, asi que incluye el salto que
+    # `write_md` pone entre el frontmatter y el texto. La forma canonica lo lleva delante.
+    canonico = cuerpo == "\n" + _cuerpo_del_indice(meta_prev)
+
+    # --- Frontmatter: SOLO las claves propias, sobre una copia de lo leido.
+    #
+    # NO se reutiliza la fusion de `_actualizar_indice` (R1/H-02, ALTO): ademas de conservar
+    # lo ajeno, reconcilia `sudespacho_expedientes` con `_fusionar_expedientes`, y esa
+    # reconciliacion REVIERTE lo que `update_pull_state` acaba de escribir -- el espejo de
+    # `meta` va encima de la lista superior. Una lista blanca de ARGUMENTOS no acota lo que
+    # se ESCRIBE; esto si.
+    sello = now_iso()
+    fm_nuevo = copy.deepcopy(fm)
+    meta_nuevo = dict(meta_previo)
+    meta_nuevo.update(campos)
+    meta_nuevo["actualizado_en"] = sello
+    fm_nuevo["meta"] = meta_nuevo
+    for campo, arriba in _HOGARES_SUPERIORES.items():
+        if campo in campos:
+            fm_nuevo[arriba] = campos[campo]
+
+    crlf = b"\r\n" in bloque_fm
+    cabecera = build_frontmatter(fm_nuevo)
+    if crlf:
+        cabecera = cabecera.replace("\n", "\r\n")
+
+    if canonico:
+        meta_new = dc_replace(meta_prev, actualizado_en=sello,
+                              **{k: v for k, v in campos.items()})
+        cuerpo_nuevo = "\n" + _cuerpo_del_indice(meta_new)
+        if crlf:
+            cuerpo_nuevo = cuerpo_nuevo.replace("\n", "\r\n")
+        datos = cabecera.encode("utf-8") + cuerpo_nuevo.encode("utf-8")
+        estado, motivo = "reescrito", None
+    else:
+        # Los bytes del cuerpo pasan TAL CUAL. Ni `strip()`, ni traduccion de saltos, ni el
+        # `\n  \n` que hubiera justo detras del cierre (R2/H2-02).
+        datos = cabecera.encode("utf-8") + cuerpo_bytes
+        estado = "conservado"
+        motivo = ("el cuerpo de `_caso.md` no es el que genera la plantilla (hay notas, "
+                  "secciones o formato a mano), asi que no se toca: "
+                  + ", ".join(sorted(campos)) + " solo llega al frontmatter")
+
+    _reemplazo_atomico(index, lambda tmp: tmp.write_bytes(datos))
+    return _informe(case_id, campos.keys(), estado, motivo)
 
 
 def _actualizar_indice(index: Path, fm: dict, cuerpo: str, meta: CaseMeta) -> Path:

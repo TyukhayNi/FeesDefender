@@ -10646,7 +10646,7 @@ de ficheros en `01_Procesado/Sala lectura/`. Si no cuadra, hay documentos pisado
 - **(d) Nada.** Hoy el coste es que un caso pierde documentos de la sala sin decirlo, y quien la
   lee no tiene forma de notarlo: el `INDICE.md` los lista igual, porque lista el catálogo.
 
-## 227. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo  [PROMOVIDO → PLAN.md 2026-09-11]
+## 227. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo  [CERRADA 2026-09-11]  [PROMOVIDO → PLAN.md 2026-09-11]
 
 > **[PROMOVIDO → PLAN.md] 2026-09-11.** Disparador: decisión de Nikolai al arrancar la sesión,
 > sobre la medición de las siete aperturas del 2026-09-10. Va en la **fila #28** de `PLAN.md`
@@ -10731,6 +10731,29 @@ creador al que se le pide que sea también un actualizador, y calla cuando no pu
   existe. No arregla nada, pero convierte el silencio en un aviso; es la mitad barata de (a).
 - **(c) Que el alta CRM escriba la cuantía al pasar**, ya que la tiene en la mano. Tapa este caso y
   deja `#184` y `#192` vivos.
+
+**Cerrada el 2026-09-11, en el SEGUNDO intento y por otro diseño.** El primero (PR #338) añadía
+un `update_meta` que **localizaba** la línea a sustituir dentro del cuerpo Markdown; dos rondas
+encontraron **seis** formas de romper esa misma propiedad y Nikolai lo devolvió al diseño. El que
+entra no localiza: **compara**. Si el cuerpo es exactamente el que genera la plantilla para la
+`meta` del frontmatter, se reescribe entero; si difiere en cualquier cosa, **no se toca ni un
+byte** y se declara en el informe.
+
+**Dos cosas que la ronda de este diseño cambió, y que no estaban en la entrada:**
+
+1. La garantía se enunció sobre **cadenas** y el fichero está hecho de **bytes**: `write_md` hace
+   `body.strip()` y traduce los saltos, así que «conservar el cuerpo» pasándolo otra vez por el
+   escritor le quitaba los espacios finales a la nota del letrado. Ahora se sustituye **solo el
+   tramo del frontmatter** y el cuerpo pasa tal cual.
+2. Una **lista blanca de argumentos no acota lo que se escribe**: reutilizar la fusión de
+   `_actualizar_indice` habría revertido en silencio lo que `update_pull_state` acababa de escribir.
+
+Diseño, medición y adjudicación:
+`docs/superpowers/specs/2026-09-11-cuantia-en-caso-md-comparar-no-localizar-design.md`.
+
+**Lo que NO cierra:** `#184` y `#192` siguen abiertas; `_actualizar_cuerpo` y el contrato de
+`MEJORAS #146` no se tocan. Y queda declarado que **el reintento del alta no repone la cuantía**:
+entra por la guarda de «CRM ya registrado» y retorna antes.
 
 ## 228. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color  [CERRADA 2026-09-11]  [PROMOVIDO → PLAN.md 2026-09-11]
 
@@ -11333,3 +11356,53 @@ de un tercio del audio, la cabecera debería decirlo con esa cifra y no con la a
 **No cerrar esto declarando que «la diarización falla»**: falla *en esta población*, y la frontera
 a caracterizar es **a partir de qué duración y qué patrón de conversación** deja de atribuir. Eso
 se mide con dos o tres grabaciones reales del despacho, no con otro control sintético.
+## 246. Siete campos de `CaseMeta` solo se fijan al CREAR y no tienen actualizador
+
+> Medido el 2026-09-11 por la R1 y confirmado por la R2 de `MEJORAS #227` (H-03 y H2-07).
+> **Preexistente.**
+
+`ensure_case` **sí** actualiza `direccion`, `id_go`, `tipo_caso` y `ciudad` sobre un caso que ya
+existe. **No** actualiza `titulo`, `cliente`, `contraparte`, `organo`, `drive_link`,
+`drive_remote_path` ni `estado`: los fija al crear y ahí se quedan. Y ninguno tiene registrador
+propio.
+
+**El escenario, ejecutado por el revisor.** Alta con cliente y órgano pendientes —lo normal: se
+conocen al leer la documental—; `ensure_case(cliente='…', organo='…')` sobre el caso existente los
+deja en `null`. La única vía es editar `_caso.md` a mano.
+
+**Por qué NO se amplió la lista blanca de `update_meta` de paso.** Porque `#227` era la cuantía, y
+ampliar «ya que estamos» un actualizador que puede destruir notas es justo lo que sus dos rondas
+existen para impedir. Lo que sí se hizo es que el mensaje de rechazo **deje de mentir**: antes decía
+«su hogar es `ensure_case`» y mandaba al operador a una puerta que no abre.
+
+**Vía.** Decidir, campo a campo, si tiene actualizador, si es inmutable por diseño o si `ensure_case`
+debe reponerlo. No es un `**campos` abierto: cada campo que entre a `CAMPOS_ACTUALIZABLES` necesita
+saber **cuáles son sus hogares** en el frontmatter, como `referencia_crm` tiene dos.
+
+## 247. `update_meta` no valida tipos y el roundtrip YAML pierde `!!omap` y `!!pairs`
+
+> Medido el 2026-09-11 por la R2 de `MEJORAS #227` (H2-03 y H2-06), ejecutado.
+
+Dos huecos del contrato de entrada de `update_meta`, los dos de la misma familia: **la pieza
+promete conservar las claves ajenas del frontmatter, y hay formas de no conservarlas que no son
+las dos declaradas** (comentarios YAML y claves duplicadas, que borra `yaml.safe_load` antes de que
+la pieza vea nada).
+
+1. **Tipos YAML que el roundtrip cambia.** `safe_load` acepta `!!omap` y `!!pairs` y los carga como
+   listas de tuplas; `safe_dump` los emite como secuencias genéricas y al recargar son listas de
+   listas. Medido: `ordenado: !!omap [{z: 1}, {a: 2}]` pasa de `[('z', 1), ('a', 2)]` a
+   `[['z', 1], ['a', 2]]`. Es un cambio en una clave **ajena**, fuera de la lista blanca.
+2. **Construir un dataclass no valida sus tipos.** `CaseMeta(**m)` acepta `cuantia: "no-numero"`,
+   `case_id: null` o `titulo: []` y la pieza escribe. Con `sudespacho_expedientes: 42` la excepción
+   sale de `_seccion_expedientes`, fuera del bloque capturado: el fichero queda intacto —bien— pero
+   sin el informe de abstención que el contrato promete.
+
+**Por qué no se cerró en `#227`.** El primero exige decidir qué tipos YAML admite un `_caso.md`, que
+es un contrato del formato y no de esta función. El segundo, un validador de `CaseMeta` que hoy no
+existe y que tocaría a todos sus escritores. Ninguno de los dos es un fallo de la comparación, que
+es lo que `#227` arreglaba.
+
+**Lo que sí queda escrito**, en el §3.4 del diseño: la garantía de la pieza es sobre **el cuerpo**;
+sobre el frontmatter es «las claves que había siguen estando, con su valor», y estas dos son sus
+excepciones conocidas.
+
