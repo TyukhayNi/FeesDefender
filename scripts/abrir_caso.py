@@ -654,7 +654,7 @@ def _informar_v1(resultado) -> None:
 def _alta_crm(
     ident: "brain.Identidad",
     *,
-    cuantia: float,
+    cuantia: float | None,
     crm_mode: str,
     yes: bool,
     force: bool = False,
@@ -676,11 +676,20 @@ def _alta_crm(
             f"CRM ya registrado (element={ya.get('element')}, id={ya.get('id')}), "
             "no se re-da de alta"
         )
-        # ...pero la cuantia SI se repone. La R1 midio el agujero: si la escritura
-        # local fallo tras un alta que si se completo (disco, permisos), el reintento
-        # salia por aqui y nunca volvia a intentarlo. La idempotencia es del ALTA, no
-        # de la persistencia local.
-        _persistir_cuantia_local(ident.case_id, cuantia)
+        # ...y la cuantia se repone SOLO si el operador la ha dado en ESTA invocacion.
+        # La R1 midio el agujero que esto cierra: si la escritura local fallo tras un
+        # alta que si se completo, el reintento salia por aqui sin reparar nada — la
+        # idempotencia es del ALTA, no de la persistencia local.
+        #
+        # Pero la R2 midio lo que abrio mi primera version de este arreglo, y era peor:
+        # `--cuantia` tiene default 0.0 en Typer, asi que **repetir el comando sin el
+        # flag sobrescribia con CERO una cuantia ya conocida** y fabricaba discrepancia
+        # con el CRM. Remediar el ejemplo y abrir una regresion mas grave.
+        #
+        # De ahi el centinela: «el flag no vino» y «el flag vino con 0» son cosas
+        # distintas, y un default no es una orden de escribir.
+        if cuantia is not None:
+            _persistir_cuantia_local(ident.case_id, cuantia)
         return
 
     # El chequeo de arriba mira el `_caso.md` LOCAL. Si ese registro se perdio —o el
@@ -736,7 +745,7 @@ def _alta_crm(
         # `tests/test_abrir_caso_exit_bajo_mutex.py`, que me cazo a mi al cablear esto.
         raise AbortarApertura(1)
 
-    payload = brain.crm_payload(ident, cuantia=cuantia)  # lee ident.tipo_caso (fd7a39f)
+    payload = brain.crm_payload(ident, cuantia=cuantia if cuantia is not None else 0.0)  # lee ident.tipo_caso (fd7a39f)
     typer.echo(f"CRM -> alta extrajudicial ref={payload.referencia_cliente} "
                f"posicion={payload.posicion} tags={payload.tags} cuantia={payload.cuantia}")
     if not (yes or typer.confirm("¿Dar de alta en el CRM?")):
@@ -759,7 +768,8 @@ def _alta_crm(
     # falso: el expediente se habia creado— y el reintento moria en la guarda de
     # idempotencia sin reparar nada. Son dos resultados distintos y se dicen por
     # separado.
-    _persistir_cuantia_local(ident.case_id, cuantia)
+    if cuantia is not None:
+        _persistir_cuantia_local(ident.case_id, cuantia)
 
 
 def _persistir_cuantia_local(case_id: str, cuantia: float) -> None:
@@ -1001,7 +1011,10 @@ def main(
              "sala de máquina lo OCR-ee (un adjunto que llegue SOLO por correo, sin "
              "copia en el Drive, no se procesa sin esto). ACTIVO por defecto desde la "
              "acción 6b; los logotipos de firma se filtran y el .eml sigue siendo fiel"),
-    cuantia: float = typer.Option(0.0, "--cuantia"),
+    # `None` y no `0.0`: hace falta distinguir «no dio el flag» de «dio cero», porque
+    # la rama de reintento del alta escribe en `_caso.md` y un default no es una orden
+    # de escribir (R2, H2-06). El CRM sigue recibiendo 0.0 cuando no se da, como antes.
+    cuantia: float | None = typer.Option(None, "--cuantia"),
     crm: str = typer.Option("api", "--crm", help="api|skip"),
     force: bool = typer.Option(False, "--force"),
     dry_run: bool = typer.Option(False, "--dry-run"),

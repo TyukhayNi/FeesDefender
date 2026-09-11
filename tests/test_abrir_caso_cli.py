@@ -1089,3 +1089,33 @@ def test_cli_una_barra_en_la_direccion_ABORTA_sin_crear_nada(drive_temporal):
     # Y sobre todo: NADA en disco. Si se crea el esqueleto, el arreglo llego tarde.
     assert not list(drive_temporal.rglob("*W-02Z2NR*")), (
         "se creo un caso pese al error: la validacion tiene que morder ANTES de ensure_case")
+
+
+def test_cli_repetir_sin_cuantia_NO_pisa_la_que_ya_hay(drive_temporal, monkeypatch):
+    """H2-06 de la R2: la regresión que abrió mi propio arreglo de H-05.
+
+    `--cuantia` tenía default `0.0` en Typer, así que repetir el comando sin el flag
+    entraba por la guarda de idempotencia, llamaba a la reposición con ese cero y
+    **sobrescribía una cuantía ya conocida**, fabricando discrepancia con el CRM —que
+    conservaba la buena—. El defecto original solo dejaba el dato sin escribir; esto
+    lo destruía.
+
+    La frontera: «el flag no vino» y «el flag vino con cero» son cosas distintas, y un
+    default no es una orden de escribir.
+    """
+    import yaml
+
+    monkeypatch.setattr("core.sudespacho_create.create_expediente", lambda dto, **kw: "9999")
+    r1 = CliRunner().invoke(cli.app, _args(cuantia="73140.50"))
+    assert r1.exit_code == 0, r1.output
+
+    r2 = CliRunner().invoke(cli.app, _args() + ["--force"])
+    assert r2.exit_code == 0, r2.output
+    assert "ya registrado" in r2.output, "no ejerció la guarda de idempotencia"
+
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    index = case_locator.path_for(case_id) / "00_Input" / "_caso.md"
+    txt = index.read_text(encoding="utf-8")
+    _, fm_txt, cuerpo = txt.split("---", 2)
+    assert yaml.safe_load(fm_txt)["meta"]["cuantia"] == 73140.50, "la pisó con el default"
+    assert "- Cuantía: 73140.5" in cuerpo
