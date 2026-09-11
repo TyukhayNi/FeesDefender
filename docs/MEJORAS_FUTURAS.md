@@ -11310,7 +11310,7 @@ secciones 9-11 se añadieron después sin ampliarlo, pero no lo acredita — las
 ya traen las once secciones, y nada en ellas fecha cuándo entraron. La cobertura del rango nuevo se
 sostiene sola: 88 IDs hasta la fila 103, y la validación de la columna M ya llega a `M6:M103`.
 
-## 244. Tres documentos describen la plantilla de viabilidad y ninguno coincide con ella
+## 244. Tres documentos describen la plantilla de viabilidad y ninguno coincide con ella  [CERRADA 2026-09-11]
 
 > Medido el 2026-09-11 por la R1 de `MEJORAS #228`, en su barrido de completitud. **Preexistente.**
 
@@ -11327,6 +11327,25 @@ Tres afirmaciones vivas que el artefacto no sostiene:
 descripciones y ninguna es la fuente— y arreglarlo pieza a pieza deja el problema: hay que decidir
 **cuál manda** y que las otras apunten a ella. El candidato natural es `modelo_xlsx.md`, que vive
 junto al artefacto.
+
+**Cerrada el 2026-09-11, decidiendo cuál manda antes de corregir nada.** Manda
+`references/modelo_xlsx.md`, que vive al lado del artefacto y ahora lo dice en su primera línea.
+`CONVENCIONES_DESPACHO.md` §19 conserva lo que solo está ahí —quién lo lee, cuándo se usa, la firma
+con DocuSign, los cinco inputs previos a la reunión con el CFO y el mapeo del intake YAML— y
+**deja de describir la estructura**: apunta.
+
+Las tres afirmaciones, verificadas una a una contra el artefacto antes de tocarlas:
+
+1. `modelo_xlsx.md` se contradecía **consigo mismo**: su cabecera negaba que la Skill A escriba
+   `BITACORA` y su propia sección de `BITACORA` dice que añade la primera entrada — que es lo que
+   hace `render_informe.py:257`. Corregida la cabecera, no la sección.
+2. `docs/PLANTILLA_INFORME_VIABILIDAD.xlsx` **no existe**. La canónica es el asset de la skill.
+3. «≈ 50 preguntas» y «dos pestañas operativas»: son **88** y **cuatro hojas**, medido sobre el
+   fichero.
+
+**Y una precisión sobre el título de esta entrada:** los documentos que describían mal la plantilla
+eran **dos** (`modelo_xlsx.md` y `CONVENCIONES_DESPACHO.md`), con tres afirmaciones entre ellos.
+`SKILL.md` ya decía 88 preguntas y cuatro hojas: estaba bien.
 
 ---
 

@@ -3,6 +3,18 @@
 > Registro de cambios de la skill, en orden cronológico inverso (lo más reciente arriba).
 > Formato ligero: fecha (AAAA-MM-DD) + qué cambió, una línea por cambio.
 
+## 2026-09-11 — `modelo_xlsx.md` manda sobre la estructura de la plantilla (`MEJORAS #244`)
+
+- `references/modelo_xlsx.md` se declara **fuente única de la estructura** de la plantilla en su
+  primera línea. Lo que diga cualquier otro documento sobre hojas, celdas, rangos o número de
+  preguntas cede ante él.
+- Y deja de **contradecirse consigo mismo**: su cabecera negaba que la Skill A escriba `BITACORA`
+  mientras su propia sección de esa hoja dice que añade la primera entrada — que es lo que hace
+  `render_informe.py`.
+- `docs/CONVENCIONES_DESPACHO.md` §19 conserva el proceso de negocio y **apunta** a este documento
+  en vez de describir la estructura: llamaba canónica a una ruta que no existe y hablaba de «dos
+  pestañas operativas» y «≈ 50 preguntas» cuando hay **cuatro hojas** y **88**.
+
 ## 2026-09-11 — El filtro llega a las 88 preguntas y el semáforo en blanco se ve neutro (`MEJORAS #242`, `#243`)
 
 - `assets/plantilla_informe_viabilidad.xlsx`: el `autoFilter` de `PREGUNTAS` pasa de `B3:M88` a

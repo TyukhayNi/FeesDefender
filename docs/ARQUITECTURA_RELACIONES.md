@@ -23,6 +23,7 @@ un test que impide el *drift*.
 | Auth/API sudespacho | `../ElContable/docs/REFERENCIA_SUDESPACHO_API_PERMISOS.md` | `docs/INTEGRACION_SUDESPACHO.md §14` | — | — |
 | Higiene de datos y secretos | `docs/SEGURIDAD_DATOS.md` (doctrina) | `CLAUDE.md §Reglas`, `GOBERNANZA §4` (enlazan) | — | `pre-commit` + CI de escaneo de fugas |
 | **Copia operativa de un expediente** (¿sobre qué copia se trabaja y qué está permitido?) | `core/casos/workspace_resolver.CaseWorkspaceResolver` | los entrypoints que la consumen (`scripts/sala_maquina`, y en la Fase 3 la vertical de correo) | — | `tests/test_workspace_resolver.py` + `tests/_matriz_contractual.py` (§14.1 en los cuatro planos) |
+| **Estructura de la plantilla de viabilidad** (hojas, celdas, rangos, nº de preguntas) | `.claude/skills/viabilidad-prerelleno/references/modelo_xlsx.md` | `docs/CONVENCIONES_DESPACHO.md` §19 (apunta; conserva el proceso de negocio) | — | `tests/test_render_informe_viabilidad.py` |
 | **Dónde está un expediente en el canon** (catálogo) | `core/casos/case_locator` + `core/casos/case_catalog` | — | — | `tests/test_case_locator.py`, `tests/test_workspace_catalog.py`, `tests/test_guard_localizador.py` |
 
 ## 1. Código — arquitectura de 3 capas
