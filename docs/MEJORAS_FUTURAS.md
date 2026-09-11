@@ -11280,3 +11280,56 @@ Tres afirmaciones vivas que el artefacto no sostiene:
 descripciones y ninguna es la fuente— y arreglarlo pieza a pieza deja el problema: hay que decidir
 **cuál manda** y que las otras apunten a ella. El candidato natural es `modelo_xlsx.md`, que vive
 junto al artefacto.
+
+---
+
+## 245. La diarización colapsa en audios largos de dos voces, y el `--beam` NO es la palanca (medido y refutado)
+
+> **Medido el 2026-09-11** sobre la grabación de la reunión de estudio de viabilidad de W-02UDC1
+> (**52:29**, dos hablantes, `large-v3-turbo`, `--diarizar --hablantes 2`). El `.md` sale con
+> `estado: ok`, idioma `es` (p=0.99) y 5.034 palabras de texto **correcto y aprovechable**. Lo que
+> no sirve es **quién dice qué**.
+
+**El síntoma, con números.** `sherpa-onnx` detecta **702 turnos** y los anota en la cabecera. El
+cuerpo del `.md` sale con **5**:
+
+| `[00:00–12:37]` | `[12:56–12:57]` | `[12:57–15:55]` | `[15:55–15:58]` | `[15:58–50:54]` |
+|---|---|---|---|---|
+| HABLANTE_01 | HABLANTE_02 | HABLANTE_01 | HABLANTE_02 | **HABLANTE_01** |
+
+El último bloque son **35 minutos** bajo una sola etiqueta, y dentro se lee el diálogo de los dos:
+«¿Tú hablaste con él por teléfono?» seguido de «Por teléfono, sí». No es un error de frontera: es
+una etiqueta que cubre a las dos personas durante dos tercios de la reunión.
+
+**Lo que se refutó, para que nadie lo repita.** La hipótesis natural —el ASR trocea grueso, súbele
+el `beam` y la diarización tendrá con qué trabajar— **es falsa**. Se corrió entera, con `--forzar`:
+
+| | `--beam 1` | `--beam 5` |
+|---|---|---|
+| `segmentos` del ASR | 92 | **92** |
+| turnos en el cuerpo | 5 | **5**, con los MISMOS timestamps |
+| tiempo de proceso | 35,7 min | 41,2 min |
+
+Idéntico salvo en lo que tardó. **El `beam` es del decodificador y no toca el troceado**, que es
+donde está el problema: 92 segmentos para 3.150 s son ~34 s por segmento, y la agrupación por racha
+de palabras no puede partir lo que llega ya fundido. La palanca, si existe, está **aguas arriba**
+—los parámetros de VAD que deciden dónde corta `faster-whisper`, o `condition_on_previous_text`—,
+no en el `beam`. **Coste de descubrirlo: 41,2 minutos de CPU.** Está escrito aquí para que la
+próxima persona no los gaste otra vez.
+
+**Por qué el control de 2026-09-09 no lo vio, que es la lección transferible.** Aquel control decía
+«12 turnos de 12 bien atribuidos» y sostiene la nota de fiabilidad de la cabecera. Se midió sobre
+un **control sintético de 3 hablantes**, con turnos cortos y alternancia limpia. Esta grabación es
+otra población: **2 hablantes, 52 minutos, solapes, mala conexión y monólogos largos**. El
+instrumento medía bien — medía otra cosa. Mismo modo de fallo que la memoria
+`feedback-el-control-positivo-mide-otra-poblacion`.
+
+**Qué hacer mientras no se arregle.** La cabecera ya avisa de que las etiquetas son provisionales;
+**el aviso se queda corto para este caso** y conviene endurecerlo: cuando un solo turno cubra más
+de un tercio del audio, la cabecera debería decirlo con esa cifra y no con la advertencia genérica
+—es una señal barata, calculable sin re-transcribir, y convierte un «revisar antes de citar» en un
+«esta atribución no es utilizable»—. El texto corrido sigue siendo válido y es lo que hay que leer.
+
+**No cerrar esto declarando que «la diarización falla»**: falla *en esta población*, y la frontera
+a caracterizar es **a partir de qué duración y qué patrón de conversación** deja de atribuir. Eso
+se mide con dos o tres grabaciones reales del despacho, no con otro control sintético.
