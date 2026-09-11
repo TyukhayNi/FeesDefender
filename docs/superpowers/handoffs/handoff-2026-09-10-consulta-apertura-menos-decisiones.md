@@ -1,9 +1,10 @@
 ---
 tipo: handoff
-estado: activo
+estado: consumido
 creado: 2026-09-10
 origen: sesión de consulta del 2026-09-10 (Claude Code remoto, sin acceso a los transcripts) — lectura de los siete bloques de apertura de la bitácora de ese día (99º a 105º), de `MEJORAS #209`-`#239`, del runbook, de las filas 15 y 21 de `PLAN.md`, del §21 y §24 de la spec de apertura integral y del código de `scripts/abrir_caso.py` y `core/apertura_v1.py`
 destino: Nikolai (decide el orden y las tres decisiones del §6) y la sesión de Claude Code que ejecute las piezas; lo durable se promueve a `PLAN.md` con su disparador y este fichero pasa a `consumido`
+consumido_por: "PLAN.md fila #28 / bloque [SIGUIENTE-APERTURA-MENOS-DECISIONES] (promueve P5, P7 y P2 el 2026-09-11; P1, P3, P4, P6 y P8 siguen aquí sin promover)"
 ---
 
 # Handoff — La apertura automatizada, medida sobre las siete aperturas del 2026-09-10, y cómo hacerla menos dependiente de las decisiones del letrado
@@ -248,3 +249,23 @@ No reserva números de backlog ni promueve filas: cada `MEJORAS #NNN` citado ya 
 `main`. No hay ronda adversarial: es prosa y su radio de daño sobre el repo es nulo. Y no ha
 leído los transcripts de las sesiones, que no están en el repo: si en ellos hay una fricción que
 la bitácora no recogió, no está aquí.
+
+## 8. Qué se promovió de este handoff (añadido al consumirlo, 2026-09-11)
+
+Nikolai promovió **tres** de las ocho propuestas al arrancar la sesión del 2026-09-11. Van a la
+**fila #28** de `PLAN.md`, bloque `[SIGUIENTE-APERTURA-MENOS-DECISIONES]`, que es desde ahora su
+hogar autoritativo de estado:
+
+| Propuesta | Promovida | Backlog marcado `[PROMOVIDO → PLAN.md]` |
+|---|---|---|
+| P5 — las 88 filas de viabilidad | **sí** | `MEJORAS #228` |
+| P7 — identidad sin teclado | **sí** | `MEJORAS #224`, `#227` |
+| P2 — `verificar_apertura` | **sí** | ninguno: `#221` y `#235` **no** se marcan, porque P2 las **detecta** desde fuera y no las cierra |
+| P1 — secuencia V2+V3 | no | necesita plan propio y dos rondas |
+| P3 — capa base (`#225`, `#214`, `#215`) | no | espera la decisión de Nikolai sobre el histórico |
+| P4 — sala sin parada, un constructor | no | espera decidir `[APER-70]` |
+| P6 — ficha CRM y actuación sin YAML | no | depende de P2 y de la capa base |
+| P8 — proceso | no | decisión de Nikolai, no es código |
+
+Lo no promovido **no caduca con este fichero**: cada `MEJORAS #NNN` que cita sigue vivo en
+`docs/MEJORAS_FUTURAS.md` con su medición, y las tres decisiones del §6 siguen abiertas.

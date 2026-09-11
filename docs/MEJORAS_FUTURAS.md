@@ -10369,7 +10369,12 @@ una sola pregunta del canónico, rojo. Sin la segunda mitad, el guard aprueba cu
 —que es lo que un lector diligente hace— o en cuanto el cuestionario canónico cambie. Mientras
 tanto la regla operativa es: **no regenerar la vista; usar la commiteada**, que es la que tiene el
 enrutado.
-## 224. `--direccion` es el único flag de identidad que se teclea a mano, y el nombre de la carpeta de E&V ya lo trae
+## 224. `--direccion` es el único flag de identidad que se teclea a mano, y el nombre de la carpeta de E&V ya lo trae  [PROMOVIDO → PLAN.md 2026-09-11]
+
+> **[PROMOVIDO → PLAN.md] 2026-09-11.** Disparador: decisión de Nikolai al arrancar la sesión,
+> sobre la medición de las siete aperturas del 2026-09-10. Va en la **fila #28** de `PLAN.md`
+> (bloque `[SIGUIENTE-APERTURA-MENOS-DECISIONES]`), pieza **P7**. El estado de ciclo de
+> vida vive allí, no aquí.
 
 > Medido el 2026-09-10 abriendo **W-02NHNC**: la dirección llevaba una vocal acentuada y la escribí
 > sin acento. Nadie podía avisar, porque no hay con qué comparar.
@@ -10641,7 +10646,12 @@ de ficheros en `01_Procesado/Sala lectura/`. Si no cuadra, hay documentos pisado
 - **(d) Nada.** Hoy el coste es que un caso pierde documentos de la sala sin decirlo, y quien la
   lee no tiene forma de notarlo: el `INDICE.md` los lista igual, porque lista el catálogo.
 
-## 227. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo
+## 227. `--cuantia` en la llamada del alta CRM va al CRM y no a `_caso.md`, y `ensure_case` no puede reponerlo  [PROMOVIDO → PLAN.md 2026-09-11]
+
+> **[PROMOVIDO → PLAN.md] 2026-09-11.** Disparador: decisión de Nikolai al arrancar la sesión,
+> sobre la medición de las siete aperturas del 2026-09-10. Va en la **fila #28** de `PLAN.md`
+> (bloque `[SIGUIENTE-APERTURA-MENOS-DECISIONES]`), pieza **P7**. El estado de ciclo de
+> vida vive allí, no aquí.
 
 > Medido el 2026-09-10 en W-02NHNC, siguiendo el orden que manda la memoria del despacho: alta CRM
 > **al final**, con `--crm skip` en todo el intake previo.
@@ -10679,7 +10689,12 @@ creador al que se le pide que sea también un actualizador, y calla cuando no pu
 - **(c) Que el alta CRM escriba la cuantía al pasar**, ya que la tiene en la mano. Tapa este caso y
   deja `#184` y `#192` vivos.
 
-## 228. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color
+## 228. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color  [PROMOVIDO → PLAN.md 2026-09-11]
+
+> **[PROMOVIDO → PLAN.md] 2026-09-11.** Disparador: decisión de Nikolai al arrancar la sesión,
+> sobre la medición de las siete aperturas del 2026-09-10. Va en la **fila #28** de `PLAN.md`
+> (bloque `[SIGUIENTE-APERTURA-MENOS-DECISIONES]`), pieza **P5**. El estado de ciclo de
+> vida vive allí, no aquí.
 
 > Medido el 2026-09-10 al firmar el semáforo de W-02NHNC sobre
 > `assets/plantilla_informe_viabilidad.xlsx` (vía el `.xlsx` que genera `render_informe.py`).
