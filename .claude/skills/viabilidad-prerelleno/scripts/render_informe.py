@@ -9,7 +9,8 @@ valores; nunca regenera el formato.
 
 Lo que ESCRIBE: cabecera, equipo, observaciones, MOTIVOS (si procede), importes
 (inputs, conservando fórmulas), 14 hitos (score+fecha), actividades, hoja PREGUNTAS
-(RESPUESTA/CITA/CONFIANZA/¿PENDIENTE?), hoja AVISOS LLM y la 1ª entrada de BITACORA.
+(RESPUESTA/CITA/CONFIANZA/¿PENDIENTE?) **de las 88 preguntas, no solo las del JSON**,
+hoja AVISOS LLM y la 1ª entrada de BITACORA.
 
 Lo que NUNCA toca: VIABILIDAD (E21/E22, siempre en blanco en el pre-relleno),
 el recuadro ejecutivo (B48, lo escribe la Skill B), las columnas fijas del cuestionario
@@ -71,6 +72,49 @@ def set_cell(ws, coord, value):
         warn(f"{ws.title}!{coord} es celda combinada no-ancla; no se escribe.")
         return
     cell.value = value
+
+
+def set_rc(ws, row, col, value):
+    """Como :func:`set_cell`, direccionando por fila/columna.
+
+    El bloque de PREGUNTAS escribía con ``ws.cell(r, c).value = …``, que sobre una
+    celda combinada no-ancla lanza ``AttributeError`` en vez de avisar y saltar como
+    hace el resto del script. Con el recorrido completo del cuestionario eso dejó de
+    ser teórico: ahora se escribe la columna M de las 88, no solo la de las que el
+    JSON traía.
+    """
+    set_cell(ws, ws.cell(row, col).coordinate, value)
+
+
+# La columna M la filtra quien prepara la entrevista, así que su dominio es cerrado.
+# `si` sin tilde entra como equivalencia de GRAFÍA: normalizar la escritura de un
+# valor que ya es del dominio no es inferir su significado.
+_MARCAS_PENDIENTE = {"sí": "sí", "si": "sí", "no": "no"}
+
+
+def marca_pendiente(qid, ans):
+    """El valor de «¿PENDIENTE ENTREVISTA?»: `sí`, `no`, y nunca otra cosa.
+
+    `sí` = va al guion de entrevista; `no` = resuelta en la documental. Un
+    `pendiente` explícito del JSON manda, **si es del dominio**; cualquier otra cosa
+    se avisa y se deriva de la respuesta.
+
+    La plantilla NO protege de un valor inválido, y conviene no confiarse: su
+    validación es una lista `"sí,no"` sobre `M6:M103`, pero con ``allowBlank=True`` y
+    ``showErrorMessage=False``, así que Excel acepta en silencio un blanco, un `SI` o
+    un booleano. Medido el 2026-09-11: con `{"pendiente": ""}` la hoja salía con
+    **87 de 88** filas marcadas y el comando decía «OK» — el mismo modo de fallo que
+    esta pieza vino a cerrar, en pequeño. Derivar ante lo inválido es lo único que
+    deja la hoja completa **por construcción** y no por confianza en el emisor.
+    """
+    pend = ans.get("pendiente")
+    if pend is not None:
+        literal = _MARCAS_PENDIENTE.get(str(pend).strip().lower())
+        if literal:
+            return literal
+        warn(f"pregunta '{qid}': ¿PENDIENTE ENTREVISTA? = {pend!r} no es 'sí' ni 'no'; "
+             "se deriva de la respuesta.")
+    return "no" if ans.get("respuesta") not in (None, "", "pendiente") else "sí"
 
 
 def build_id_row_map(ws_preg):
@@ -170,20 +214,31 @@ def main():
     # --- VIABILIDAD: NO se toca (E21/E22 quedan en blanco en el pre-relleno) ---
 
     # --- PREGUNTAS: columnas del LLM ---
+    # Se recorre el cuestionario ENTERO, no solo lo que trae el JSON. Una fila sin
+    # marca en M no se lee como «pendiente»: se lee como «sin cuestionario», y el
+    # guion de entrevista se filtra justo por esa columna. Medido el 2026-09-10:
+    # 51 de 88 filas marcadas en un caso y 70 de 88 en otro (PLAN fila #28, P5).
     id_row = build_id_row_map(preg)
-    for qid, ans in (d.get("preguntas") or {}).items():
-        r = id_row.get(qid)
-        if not r:
+    respuestas = d.get("preguntas") or {}
+    for qid in respuestas:
+        if qid not in id_row:
             warn(f"pregunta '{qid}' no está en la plantilla — se ignora.")
-            continue
-        if ans.get("respuesta") is not None: preg.cell(r, 9).value = ans["respuesta"]   # I
-        if ans.get("cita") is not None:      preg.cell(r, 10).value = ans["cita"]        # J
-        if ans.get("confianza"):             preg.cell(r, 11).value = ans["confianza"]   # K alta/media/baja
-        # ¿PENDIENTE ENTREVISTA? (M): default 'no' si hay respuesta documental; 'sí' si no
-        pend = ans.get("pendiente")
-        if pend is None:
-            pend = "no" if ans.get("respuesta") not in (None, "", "pendiente") else "sí"
-        preg.cell(r, 13).value = pend
+    for qid, r in id_row.items():
+        ans = respuestas.get(qid)
+        if ans is None:
+            ans = {}
+        elif not isinstance(ans, dict):
+            # Antes esto reventaba con AttributeError. Tragárselo en silencio sería
+            # peor que el crash: un productor que emita `cap_01: false` en vez de
+            # `cap_01: {"respuesta": false}` generaría un informe sin esa respuesta y
+            # sin que nadie se entere. Se avisa y se sigue.
+            warn(f"pregunta '{qid}': se esperaba un objeto y llegó "
+                 f"{type(ans).__name__} ({ans!r}); se trata como sin respuesta.")
+            ans = {}
+        if ans.get("respuesta") is not None: set_rc(preg, r, 9, ans["respuesta"])    # I
+        if ans.get("cita") is not None:      set_rc(preg, r, 10, ans["cita"])        # J
+        if ans.get("confianza"):             set_rc(preg, r, 11, ans["confianza"])   # K
+        set_rc(preg, r, 13, marca_pendiente(qid, ans))                               # M
 
     # --- AVISOS LLM (capa de trabajo) ---
     avisos = d.get("avisos") or []

@@ -82,7 +82,8 @@ El tipo condiciona:
 Lee `references/cuestionario_viabilidad.yaml` (vista generada desde el canónico del repo: 11 secciones, 88 preguntas — 58 documentales / 30 testificales — con su `clase_fuente`, `hito` y `fuente_probable`). Para cada pregunta:
 
 - Si un documento la responde → escribe `RESPUESTA` (col I), `CITA/FUENTE` (col J, rastro `[doc: fichero] "cita"`), `CONFIANZA` (col K) y `¿PENDIENTE?` (col M) = `no`.
-- Si ningún documento la resuelve (o es `clase_fuente: testifical`) → deja respuesta vacía y `¿PENDIENTE?` = `sí`. Esa fila es guion de entrevista.
+- Si ningún documento la resuelve (o es `clase_fuente: testifical`) → **no hace falta que la enumeres en el JSON**: `render_informe.py` recorre las 88 y marca `¿PENDIENTE?` = `sí` en toda pregunta que no traiga respuesta. Esa fila es guion de entrevista. Si quieres forzar `no` sin respuesta documental (por ejemplo, «no aplica a este tipo de caso»), pasa `{"pendiente": "no"}` y eso gana.
+  > Hasta el 2026-09-11 el marcado dependía de que el JSON enumerase las 88, y no lo hacía: salieron **51 de 88** y **70 de 88** en dos casos del 2026-09-10. El generador ya no delega la exhaustividad en quien redacta el JSON.
 - `clase_fuente` es solo un **default**: una pregunta "documental" cuyo documento no aparece también pasa a `pendiente`. Nunca rellenes por inferencia.
 - **No toques** las columnas fijas (SECCIÓN, ID, PREGUNTA, OBJETIVO, TIPO, FUENTE, HITO) ni NOTAS LETRADO.
 
@@ -127,8 +128,7 @@ El script **parte de `assets/plantilla_informe_viabilidad.xlsx`** (formato, fór
   "actividades": {"exposes_propiedad": null, "visitas_propiedad": 2,
                   "exposes_buscador": 25, "visitas_buscador": 4},
   "preguntas": {
-    "cap_08": {"respuesta": "Sí", "cita": "[doc: 01_encargo] \"firmado por DocuSign\"", "confianza": "alta", "pendiente": "no"},
-    "vue_01": {"pendiente": "sí"}
+    "cap_08": {"respuesta": "Sí", "cita": "[doc: 01_encargo] \"firmado por DocuSign\"", "confianza": "alta", "pendiente": "no"}
   },
   "avisos": [
     {"tipo": "Prueba débil", "aviso": "Firma del encargo sin cotejar con DNI (cap_08d).",
@@ -137,6 +137,13 @@ El script **parte de `assets/plantilla_informe_viabilidad.xlsx`** (formato, fór
   ]
 }
 ```
+
+> En `preguntas` van **solo** las que resuelves, o aquellas cuyo `pendiente` quieres forzar.
+> Las demás salen con `¿PENDIENTE?` = `sí` sin escribirlas: el JSON no tiene que enumerar las 88.
+> El ejemplo no lleva ninguna testifical a propósito — `vue_01` («¿Sabes si intervino otra
+> agencia?») se resuelve en entrevista, y enseñarla aquí con `{"pendiente": "no"}` enseñaría a
+> sacarla del guion. `pendiente` solo admite `sí` o `no`: cualquier otro valor se avisa por
+> `stderr` y la marca se deriva de la respuesta.
 
 Claves de hito admitidas: `CUANTIA, ENCARGO, IDENT_PROPIETARIO, TITULARIDAD, HOJA_VISITA, OFERTA, IDENT_BUSCADOR, ARRAS_ARRENDAMIENTO, RECON_HON_ARRAS, ESCRITURA, RECON_HON_ESCRITURA, RECLAMACION_JURIDICO, RESPUESTA_RECLAMACION, OFERTA_VINCULANTE_CONFIDENCIAL` (el script también acepta los rótulos de pantalla). Un hito sin score, o con `"pendiente"`, queda **vacío** (no `0`).
 
