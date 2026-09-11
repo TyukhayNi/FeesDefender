@@ -15,6 +15,7 @@ directorio temporal del proceso al serializar un libro — no es el árbol de
 producción, pero «todo en tmp_path» se leía como si lo cubriera.)
 """
 import json
+import os
 
 import pytest
 import yaml
@@ -1167,3 +1168,43 @@ def test_cli_resuelve_el_W_code_corto_que_su_ayuda_anuncia(tmp_path, monkeypatch
     r = CliRunner().invoke(cli.app, ["--case-id", "W-TEST01"])
     assert r.exit_code == 0, r.output
     assert "W-TEST01" in r.output
+
+
+# --- Integración real, que es lo único que un doble no puede acreditar ---------------
+
+_REQUIERE_CRM = pytest.mark.skipif(
+    not (os.getenv("SUDESPACHO_API_KEY") or "").strip(),
+    reason="sin SUDESPACHO_API_KEY: la integración con el CRM queda SIN VERIFICAR")
+
+
+@pytest.mark.slow
+@_REQUIERE_CRM
+def test_integracion_el_adaptador_real_habla_con_el_CRM():
+    """El hueco que H-07 dejó abierto, cerrado con una medición en vez de una promesa.
+
+    Todo lo demás de estas cinco comprobaciones se prueba con dobles, y un doble que yo
+    escribo **no puede** acreditar que el CRM responda con la forma que aquí se parsea.
+    Esto sí: consulta un expediente real, en solo lectura.
+
+    **No afirma nada sobre el contenido** del expediente —su cuantía, sus partes, cuántas
+    actuaciones tiene—, porque esos datos cambian y un test que dependa de ellos se
+    rompe sin que nada esté mal. Afirma lo que es contrato:
+
+    1. Que el adaptador devuelve un `ExpedienteCRM` y no `None` ni una excepción.
+    2. Que **`actuaciones` es un bloque de `related_register`**, que es de lo que depende
+       leer la actuación *por el lado del expediente* (`MEJORAS #209`). Si el CRM dejara
+       de exponerlo ahí, C7 empezaría a decir «ninguna actuación» sobre expedientes que
+       sí la tienen — un falso rojo que nadie sabría explicar.
+
+    Se salta sin API key, y entonces la integración queda **SIN VERIFICAR** y así se
+    declara: es marcada `slow`, así que solo corre con `--runslow`.
+    """
+    from core.verificar_apertura_fuentes import DeLaRed, ExpedienteCRM
+
+    exp = DeLaRed().expediente_crm("644", "extrajudiciales")
+    assert isinstance(exp, ExpedienteCRM), "el adaptador no devolvió la forma del puerto"
+    assert exp.encontrado, "el expediente de referencia ya no está en el CRM"
+    assert "actuaciones" in exp.relaciones, (
+        "`actuaciones` ya no viene como bloque de `related_register`: C7 dejaría de "
+        "poder leerlas por el lado del expediente")
+    assert isinstance(exp.actuaciones, list)

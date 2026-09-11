@@ -109,8 +109,8 @@ funcione**.
 
 ## 5. P2 — `verificar_apertura`: el «OK» del expediente, en código
 
-**Estado: CONSTRUIDA el 2026-09-11 — 4 de las 9 comprobaciones, y las otras 5 declaradas.**
-`core/verificar_apertura.py` + `scripts/verificar_apertura.py`.
+**Estado: CONSTRUIDA el 2026-09-11 — las 9 comprobaciones.**
+`core/verificar_apertura.py` + `core/verificar_apertura_fuentes.py` + `scripts/verificar_apertura.py`.
 
 El defecto que cierra no es de una herramienta, es de todas: cada una dice «OK» de **su paso**, no
 del expediente. El handoff contó ocho falsos «OK» en un solo día. Mientras nada cierre el lazo
@@ -152,8 +152,10 @@ pieza existe precisamente para que un «OK» signifique algo.
 
 ### Lo que la construcción cambió del diseño, y por qué
 
-**(a) Un cuarto estado: `sin_implementar`.** Cinco de las nueve necesitan red —rclone para el
-censo y el hash, el CRM para la ficha, la actuación y la cuantía— y no se han construido. Podrían
+**(a) Un cuarto estado: `sin_implementar`.** *(Escrito cuando cinco comprobaciones seguían sin
+construir; hoy no queda ninguna, pero el estado se conserva y su propiedad tiene test con una
+comprobación sintética — una guarda sin caso que la ejerza es una guarda inerte.)* Cinco de las
+nueve necesitaban red y no se habían construido. Podrían
 haberse dejado fuera de la lista, y entonces el informe diría «9 de 9 correctas» habiendo mirado
 cuatro: **exactamente el modo de fallo que esta pieza existe para cerrar, cometido por la pieza
 misma**. Así que las nueve se enumeran siempre, `sin_implementar` **no cuenta como comprobada**, y
@@ -179,18 +181,40 @@ convertir `c9` en «implementada» sin darle su rojo, el test cae con
 `assert not ['cuantia_coherente']`. Sin esa medición sería una guarda inerte más, y el fichero
 entero existe para no tener ninguna.
 
-### Las cinco que faltan, con su gate
+### Las cinco de red, construidas el mismo día — y cómo se resolvió su gate
 
-| # | Comprobación | Qué necesita antes |
-|---|---|---|
-| 1 | Censo remoto | un helper de `rclone lsf` (hoy no existe ninguno en el repo) |
-| 2 | Hash contra Drive | leer `sha256Checksum` de la Drive API — va con `MEJORAS #225`, que además decide si el hash local vale |
-| 6 | Ficha y relaciones del CRM | relectura por API; el contrato está en `INTEGRACION_SUDESPACHO §17` |
-| 7 | Actuación asociada | por el lado del expediente (`MEJORAS #209`) |
-| 9 | Cuantía `_caso.md` = CRM | depende de 6, y de que `MEJORAS #227` decida quién escribe la cuantía local |
+El gate era uno y de diseño: **cómo se inyecta el cliente para que los tests prueben la
+comprobación y no el doble.** Es el defecto H-07 de la R1, donde los tests del CLI sustituían
+`case_locator.buscar` y por eso no vieron que una forma de invocación anunciada llevaba tiempo
+rota.
 
-Las cinco de red comparten un problema de diseño que conviene resolver **una vez**: cómo se
-inyecta el cliente para que los tests prueben la comprobación y no el doble.
+La respuesta, en `core/verificar_apertura_fuentes.py`: un **puerto estrecho** (`Fuentes`, dos
+métodos), un adaptador **tonto** que solo traduce (`DeLaRed`), y un puerto **cerrado** (`SinRed`)
+que es **el default**. Sin fuentes explícitas, las cinco salen en `fallo` diciendo que no se pudo
+consultar — un verificador cuyo modo por defecto fuera «no preguntar y aprobar» sería peor que no
+tenerlo.
+
+**Tres cosas se midieron antes de escribirlas**, y el atlas del CRM las tenía todas (consultarlo
+antes de sondear es regla de la casa, y esta vez ahorró el sondeo entero):
+
+| Lo que había que saber | Lo medido |
+|---|---|
+| Cómo se llama la propiedad de la cuantía | **`cuantia`**, en los dos elementos. Llega como **cadena**, no como número → C9 compara números, porque `73140` y `73140.00` son la misma cuantía |
+| Si la actuación se puede leer por el lado del expediente | **`actuaciones` es hijo** de `extrajudiciales` y `expedientes_judiciales`, así que viene en `related_register`. Confirmado además contra el CRM real |
+| Qué forma tiene la respuesta | `element_registries/extrajudiciales` responde con **`items`**, no `hydra:member`. La documentación se contradice en su §15.6 y su §2110 contra su propia recomendación de aceptar las dos; se aceptan las dos |
+
+C2 usa la **Drive API** y no `rclone lsf`: el hash es la mitad de lo que hace falta (`MEJORAS
+#225`) y `rclone` no lo publica por esa vía. Una consulta da censo Y hash; dos darían dos fotos de
+momentos distintos.
+
+**Lo que un doble no puede acreditar, y por eso hay un test de integración.** Que el CRM responda
+con la forma que aquí se parsea solo lo prueba una consulta real:
+`test_integracion_el_adaptador_real_habla_con_el_CRM` la hace, en solo lectura, marcada `slow` y
+saltada sin `SUDESPACHO_API_KEY` —y entonces la integración queda **SIN VERIFICAR** y así se
+declara—. No afirma nada sobre el **contenido** del expediente, que cambia: afirma que el
+adaptador devuelve la forma del puerto y que `actuaciones` sigue siendo un bloque de
+`related_register`. Si dejara de serlo, C7 empezaría a decir «ninguna actuación» sobre
+expedientes que sí la tienen, y nadie sabría por qué.
 
 ## 6. Lo que no entra en esta fila
 
