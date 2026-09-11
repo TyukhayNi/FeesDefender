@@ -18,8 +18,17 @@
   Verificado por lectura del binario antes y después (hojas, validaciones, protección, merges,
   TOTAL y las reglas de `E21`: nada cambió salvo lo añadido). 4 tests, **3 rojos de control
   positivo** contra la plantilla anterior.
-- **No se endureció `E21`**: su validación acepta en silencio un literal fuera de la lista, y
-  `E22` replica ese comportamiento en vez de mejorarlo. El hecho queda escrito en `MEJORAS #228`.
+- **`E22` replica `E21` de verdad**, y eso costó una corrección: la primera versión puso
+  `showErrorMessage=False` afirmando que replicaba a `E21`, cuando `E21` tiene **`True`** — medí
+  esa opción en la validación de la hoja PREGUNTAS y la extrapolé sin volver a mirar. También le
+  faltaba la **fuente** (negrita con color) que llevan los `dxf` de `E21`, así que con `amarillo`
+  en las dos, JURÍDICO salía en marrón y negrita y FINANZAS en negro normal. Las dos cosas
+  corregidas el mismo día, con la fuente **copiada** del original en vez de reescrita.
+- **Dos defectos preexistentes que la revisión destapó y NO se arreglan aquí**: `E21` en blanco se
+  ve **rojo puro** por un estilo fijo bajo el condicional (`MEJORAS #242`), y el `autoFilter` de
+  PREGUNTAS es `B3:M88` mientras los IDs llegan a la fila 103, así que el filtro que produce el
+  guion de entrevista **deja 12 preguntas fuera** (`MEJORAS #243`) — lo que le quita la mitad del
+  sentido a marcar las 88.
 - **Tail: re-empaquetar y re-importar el `.skill` en Cowork** (fila #14 de `PLAN.md`).
 
 ## 2026-09-11 — El render marca las 88 filas, no solo las que trae el JSON
