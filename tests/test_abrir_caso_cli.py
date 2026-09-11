@@ -883,6 +883,58 @@ def test_cli_drive_ev_sin_folder_id_no_intenta_derivar(drive_temporal, monkeypat
     assert "--direccion" in result.output
 
 
+# --- La cuantia del alta CRM llega tambien a `_caso.md` (`MEJORAS #227`) ---
+
+
+def test_cli_alta_crm_escribe_la_cuantia_en_caso_md(drive_temporal, monkeypatch):
+    """El cableado, no solo el actualizador.
+
+    La cuantia se conoce al LEER el encargo, asi que el alta va al final con
+    `--cuantia`. Hasta `MEJORAS #227` ese dato llegaba al CRM y `_caso.md` se
+    quedaba diciendo `_(pendiente)_` de algo que ya existia — dos hogares para el
+    mismo hecho y el local mintiendo. Hubo que reponerlo a mano, bajo el mutex.
+
+    Se comprueba **leyendo el artefacto**, no el «OK» del comando: el frontmatter y
+    la linea del cuerpo del `_caso.md` que la corrida deja en disco.
+    """
+    import yaml
+
+    monkeypatch.setattr("core.sudespacho_create.create_expediente",
+                        lambda dto, **kw: "9999")
+
+    result = CliRunner().invoke(cli.app, _args(cuantia="73140.50"))
+    assert result.exit_code == 0, result.output
+
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    index = case_locator.path_for(case_id) / "00_Input" / "_caso.md"
+    txt = index.read_text(encoding="utf-8")
+    _, fm_txt, cuerpo = txt.split("---", 2)
+
+    assert yaml.safe_load(fm_txt)["meta"]["cuantia"] == 73140.50
+    assert "- Cuantía: 73140.5" in cuerpo
+    assert "- Cuantía: _(pendiente)_" not in cuerpo
+
+
+def test_cli_sin_alta_crm_la_cuantia_no_se_inventa(drive_temporal, monkeypatch):
+    """La otra mitad del instrumento: con `--crm skip` no hay alta, y no se escribe.
+
+    Sin este caso, el test de arriba no distingue «lo escribio el cableado nuevo» de
+    «lo escribia ya `ensure_case` al crear». Con `--crm skip` la corrida crea el caso
+    con la misma `--cuantia` y la linea tiene que seguir en `_(pendiente)_`: eso
+    demuestra que quien escribe es el cableado del alta y no la creacion.
+    """
+    def boom(*a, **kw):
+        raise AssertionError("con --crm skip no debe darse de alta")
+    monkeypatch.setattr("core.sudespacho_create.create_expediente", boom)
+
+    result = CliRunner().invoke(cli.app, _args(crm="skip", cuantia="73140.50"))
+    assert result.exit_code == 0, result.output
+
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    index = case_locator.path_for(case_id) / "00_Input" / "_caso.md"
+    assert "- Cuantía: _(pendiente)_" in index.read_text(encoding="utf-8")
+
+
 # --- Intake de correo: el flag de extracción de adjuntos llega al motor (MEJORAS #68.a) ---
 
 @pytest.fixture

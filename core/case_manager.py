@@ -378,6 +378,145 @@ def _actualizar_indice(index: Path, fm: dict, cuerpo: str, meta: CaseMeta) -> Pa
     return _escribir_indice_atomico(index, fm_nuevo, _actualizar_cuerpo(cuerpo, meta_render))
 
 
+# ---------------------------------------------------------------------------
+# `update_meta`: el ACTUALIZADOR que `ensure_case` no es (`MEJORAS #227`)
+# ---------------------------------------------------------------------------
+#
+# `ensure_case` solo fija los campos cuando CREA el indice. Sobre un caso existente
+# acepta los kwargs y no escribe nada, en silencio. Es la tercera vez que ese patron
+# hace dano: `MEJORAS #184` (la referencia del CRM), `#192` (el campo) y `#227` (la
+# cuantia, que se conoce al leer el encargo y no al alta, asi que llegaba al CRM y no
+# a `_caso.md`). La entrada del backlog lo dice mejor: es un creador al que se le pide
+# que sea tambien un actualizador, y calla cuando no puede.
+#
+# `update_meta` actualiza **solo los campos que el llamador nombra**, ni uno mas. Esa
+# es la diferencia con `_actualizar_cuerpo`, que regenera los tres fragmentos que el
+# REGISTRADOR posee. Son dos fronteras distintas y no deben compartir logica: ampliar
+# `_actualizar_cuerpo` para cubrir la cuantia haria que `register_expediente` y
+# `register_drive_ev` empezaran a pisar lineas que hoy no tocan, que es exactamente la
+# regresion que `MEJORAS #146` vino a cerrar.
+#
+# NO pide el mutex, igual que `register_expediente` y `register_drive_ev`: lo pide el
+# entrypoint (`MEJORAS #126`). `_alta_crm` ya corre bajo el mutex del caso.
+
+# Campo de `CaseMeta` -> (prefijo de su linea en el cuerpo, como se pinta, seccion que
+# la aloja). El prefijo identifica la linea existente; la seccion solo se usa cuando la
+# linea no esta y hay que insertarla.
+# El cuarto elemento dice DONDE se inserta respecto de la seccion: "dentro" (al final
+# de su bloque de items) o "antes" (justo encima del encabezado). `referencia_crm` es
+# "antes" porque `_cuerpo_del_indice` la pinta entre la linea de estado y `## Partes`,
+# y ademas SOLO si el caso ya tenia referencia al crearse — que es justo lo que no pasa
+# en `MEJORAS #184`: la referencia se conoce despues del alta, asi que su linea no
+# existe y hay que crearla.
+_LINEAS_DEL_CUERPO = {
+    "referencia_crm": ("- Referencia CRM: ", lambda v: f"- Referencia CRM: **{v}**",
+                       "## Partes", "antes"),
+    "cliente": ("- Cliente: ", lambda v: f"- Cliente: {v}", "## Partes", "dentro"),
+    "contraparte": ("- Contraparte: ", lambda v: f"- Contraparte: {v}", "## Partes", "dentro"),
+    "jurisdiccion": ("- Jurisdicción: ", lambda v: f"- Jurisdicción: {v}", "## Sede", "dentro"),
+    "organo": ("- Órgano: ", lambda v: f"- Órgano: {v}", "## Sede", "dentro"),
+    "cuantia": ("- Cuantía: ", lambda v: f"- Cuantía: {v}", "## Sede", "dentro"),
+    "drive_link": ("- Drive: ", lambda v: f"- Drive: {v}", "## Fuente documental", "dentro"),
+}
+# Campos que ademas viven en el frontmatter de primer nivel, no solo dentro de `meta`.
+_CAMPOS_TOP_LEVEL = {"referencia_crm": "referencia_crm", "estado": "estado",
+                     "ciudad": "ciudad", "drive_remote_path": "drive"}
+
+
+def _pintar_linea(campo: str, valor) -> str:
+    prefijo, pintar, _, _ = _LINEAS_DEL_CUERPO[campo]
+    return pintar(valor) if valor is not None else f"{prefijo}_(pendiente)_"
+
+
+def update_meta(case_id: str, **campos) -> dict:
+    """Fija campos del indice de un caso YA creado, conservando todo lo demas.
+
+    Escribe el valor en el frontmatter (dentro de `meta`, y tambien en la clave de
+    primer nivel cuando el campo tiene una) y regenera **solo** la linea del cuerpo que
+    corresponde a ese campo. Cualquier otra cosa —la nota del abogado, las claves que
+    el modelo no conoce, los wikilinks, las secciones ajenas— queda intacta, igual que
+    hace el sumidero desde `MEJORAS #146`.
+
+    Devuelve un **informe de lo que hizo**, no un booleano::
+
+        {"index": Path, "frontmatter": [campos escritos],
+         "cuerpo": [campos cuya linea se reescribio],
+         "insertadas": [campos cuya linea hubo que crear],
+         "sin_linea": [campos sin linea en el cuerpo y sin seccion donde ponerla]}
+
+    `sin_linea` existe a proposito: un cuerpo escrito a mano puede no tener la seccion,
+    y **insertar a ciegas es adivinar donde**. El llamador se entera de que el dato
+    quedo en el frontmatter y no en el cuerpo, en vez de leer un «OK» que describe el
+    paso y no el expediente.
+
+    Raises:
+        KeyError: si algun campo no es de `CaseMeta`, o si no se pasa ninguno. Un typo
+            tiene que doler aqui, no aparecer como un dato que nunca se escribio.
+        FileNotFoundError: si el caso o su `_caso.md` no existen. `update_meta`
+            actualiza; crear es de `ensure_case`.
+    """
+    from dataclasses import fields as _dc_fields
+
+    known = {f.name for f in _dc_fields(CaseMeta)}
+    desconocidos = sorted(set(campos) - known)
+    if desconocidos:
+        raise KeyError(f"campos que no son de CaseMeta: {desconocidos}")
+    if not campos:
+        raise KeyError("update_meta sin campos: no hay nada que actualizar")
+
+    from core.casos.case_locator import buscar
+
+    base = buscar(case_id)
+    if base is None:
+        raise FileNotFoundError(f"caso no encontrado: {case_id!r}")
+    index = base / "00_Input" / "_caso.md"
+    if not index.exists():
+        raise FileNotFoundError(f"el caso {case_id!r} no tiene _caso.md; usa ensure_case")
+
+    fm, cuerpo = read_md(index)
+    if not isinstance(fm, dict):
+        fm = {}
+    meta_dict = dict(fm.get("meta") or {})
+    meta_dict.update(campos)
+
+    fm_nuevo = {**fm, "meta": meta_dict}
+    for campo, clave in _CAMPOS_TOP_LEVEL.items():
+        if campo in campos:
+            fm_nuevo[clave] = campos[campo]
+    fm_nuevo.setdefault("case_id", case_id)
+
+    lineas = cuerpo.split("\n")
+    informe = {"index": index, "frontmatter": sorted(campos), "cuerpo": [],
+               "insertadas": [], "sin_linea": []}
+    for campo, valor in campos.items():
+        if campo not in _LINEAS_DEL_CUERPO:
+            continue                      # campo sin representacion en el cuerpo
+        prefijo, _, seccion, donde = _LINEAS_DEL_CUERPO[campo]
+        nueva = _pintar_linea(campo, valor)
+        i = next((k for k, ln in enumerate(lineas) if ln.startswith(prefijo)), None)
+        if i is not None:
+            lineas[i] = nueva
+            informe["cuerpo"].append(campo)
+            continue
+        j = (next((k for k, ln in enumerate(lineas) if ln.strip() == seccion), None)
+             if seccion else None)
+        if j is None:
+            informe["sin_linea"].append(campo)
+            continue
+        if donde == "antes":
+            lineas[j:j] = [nueva, ""]
+        else:
+            # Tras la seccion y su linea en blanco, al final de su bloque de items.
+            k = j + 1
+            while k < len(lineas) and (not lineas[k].strip() or lineas[k].startswith("- ")):
+                k += 1
+            lineas.insert(k, nueva)
+        informe["insertadas"].append(campo)
+
+    _escribir_indice_atomico(index, fm_nuevo, "\n".join(lineas))
+    return informe
+
+
 def register_expediente(
     case_id: str,
     expediente_id: str,

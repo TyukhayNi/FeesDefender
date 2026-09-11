@@ -741,6 +741,14 @@ def _alta_crm(
     try:
         exp_id = sudespacho_create.create_expediente(payload)
         case_manager.register_expediente(ident.case_id, exp_id, _ELEMENT_EXTRAJUDICIAL)
+        # `MEJORAS #227`: la cuantia se conoce al LEER el encargo, no al abrir el caso,
+        # asi que el alta va al final con `--cuantia` y hasta ahora ese dato llegaba al
+        # CRM y no a `_caso.md`, que se quedaba diciendo «_(pendiente)_» de algo que ya
+        # existia. `ensure_case` no podia reponerlo: solo fija campos al crear.
+        informe = case_manager.update_meta(ident.case_id, cuantia=cuantia)
+        if informe["sin_linea"]:
+            typer.echo(f"[AVISO] cuantia escrita en el frontmatter pero NO en el cuerpo "
+                       f"de _caso.md (sin la seccion donde va): {informe['sin_linea']}")
         typer.echo(f"OK CRM id={exp_id}")
     except Exception as exc:
         typer.echo(

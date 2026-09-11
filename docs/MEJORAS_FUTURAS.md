@@ -10664,7 +10664,23 @@ payload, expediente 644— y **`_caso.md` se queda con `meta.cuantia: null`** y 
 
 **Y no se repone por la vía sancionada.** Medido: `case_manager.ensure_case(case_id,
 cuantia=73140.0)` sobre un caso ya existente **no cambia nada** —ni el frontmatter ni el cuerpo—,
-porque `ensure_case` solo fija los campos cuando crea el índice. Es **la misma limitación** que el
+porque `ensure_case` solo fija los campos cuando crea el índice.
+
+> **Corregido el 2026-09-11 al construirlo: las dos citas de números estaban rancias, y una
+> apuntaba a otra entrada.** Lo comprobado releyendo `main`:
+>
+> - **`#184` no es la referencia del CRM.** La entrada 184 de este fichero es «los dos sondeos del
+>   módulo de correo están al 0 % de cobertura». La cita salió de las **cuatro renumeraciones** del
+>   2026-09-10 que la bitácora del 101º recoge; el número que este párrafo quería citar ya no es ese.
+> - **`#192` NO se cierra con `update_meta`, y conviene no apuntárselo.** El `#192` es que
+>   `abrir_caso` **inventa** `referencia_crm` copiando el `case_id` sin consultar al CRM, de modo
+>   que con `--crm skip` el campo queda **falso**. `update_meta` da la vía para corregirlo después,
+>   pero el defecto es que se escribe un valor inventado al crear, y eso sigue igual.
+>
+> O sea que la vía (a) cierra **esta** entrada, no la familia entera que el párrafo de abajo le
+> atribuía. Lo que sí es cierto del diagnóstico es la forma: `ensure_case` es un creador al que se
+> le pide que sea actualizador. `update_meta` es ese actualizador.
+ Es **la misma limitación** que el
 RUNBOOK ya documenta para `referencia_crm` (§3-bis, `MEJORAS #184`): «hay que reponerlo y también
 la línea del cuerpo, que `_actualizar_cuerpo` no regenera». Aquí hubo que hacer las dos ediciones a
 mano, bajo el mutex.
