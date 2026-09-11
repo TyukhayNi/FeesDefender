@@ -436,3 +436,57 @@ def test_cli_caso_inexistente_sale_con_2(tmp_path, monkeypatch):
     monkeypatch.setattr(cl, "buscar", lambda cid: None)
     r = CliRunner().invoke(cli.app, ["--case-id", "W-NADA0"])
     assert r.exit_code == 2
+
+
+# --- Las ramas de fallo que la cobertura destapó sin control positivo -----------------
+#
+# La medición del diff las señaló como líneas nuevas sin cubrir. En un módulo cualquiera
+# eso sería una nota; aquí son **ramas que devuelven `fallo`**, y una rama de fallo que
+# nadie ha visto disparar es indistinguible de una que no puede disparar.
+
+
+def test_c3_FALLA_con_un_catalogo_ilegible(tmp_path):
+    """CONTROL POSITIVO de la otra mitad de C3: el YAML roto, no el JSON."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""}])
+    proc = c / "01_Procesado"
+    proc.mkdir(parents=True, exist_ok=True)
+    (proc / "indice_documental.yaml").write_text("[[[ no soy yaml", encoding="utf-8")
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.FALLO and "ilegible" in r.detalle
+
+
+def test_c3_pendiente_si_falta_el_catalogo_pero_hay_cobertura(tmp_path):
+    """La sala de máquina corrió y la de lectura no: a medias, no roto."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""}])
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.PENDIENTE and "catálogo" in r.detalle
+
+
+def test_c3_un_catalogo_VACIO_no_es_ilegible(tmp_path):
+    """Un catálogo sin entradas es un dato, no un error de lectura — y con cobertura
+    no vacía tiene que salir en FALLO, que es lo que de verdad pasó cuando `poblar`
+    dejó la sala sin poblar."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""}])
+    proc = c / "01_Procesado"
+    proc.mkdir(parents=True, exist_ok=True)
+    (proc / "indice_documental.yaml").write_text("", encoding="utf-8")
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.FALLO
+    assert r.evidencia["entradas_catalogo"] == 0
+
+
+def test_c5_FALLA_si_el_xlsx_esta_corrupto(tmp_path):
+    """CONTROL POSITIVO: un `.xlsx` que openpyxl no puede abrir.
+
+    Pasa de verdad — un informe copiado a medias por rclone —, y la diferencia entre
+    `fallo` y una excepción sin capturar es que el operador ve las otras ocho.
+    """
+    c = _caso(tmp_path)
+    an = c / "02_Analisis"
+    an.mkdir(parents=True)
+    (an / "Informe viabilidad - roto.xlsx").write_bytes(b"esto no es un zip")
+    r = _r(c, "viabilidad_completa")
+    assert r.estado == va.FALLO and "no se puede abrir" in r.detalle

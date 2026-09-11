@@ -376,11 +376,9 @@ def _leer_json_lista(p: Path) -> list[dict] | None:
         d = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return None
-    if isinstance(d, dict):                 # algunos volcados envuelven en una clave
-        for clave in ("cobertura", "docs", "filas"):
-            if isinstance(d.get(clave), list):
-                d = d[clave]
-                break
+    # Deliberadamente SIN tolerancia a volcados envueltos en una clave (`{"cobertura":
+    # [...]}`): no se ha visto ninguno, y una rama que nadie ha visto es una rama que
+    # nadie prueba. Si aparece, se añade con el volcado real que la motive delante.
     return [x for x in d if isinstance(x, dict)] if isinstance(d, list) else None
 
 
