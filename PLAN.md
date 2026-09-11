@@ -42,7 +42,7 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 25 | Reconocimiento de voz local (ASR + diarización) | ✅ **cerrada el 2026-09-09 (PR #308, `dbdfdc1`)** — `scripts/transcribir_audio.py`, `docs/INSTALACION_ASR.md` y 44 tests (9/9 mutantes). Venv dedicado fuera del repo. **Mergeada SIN ronda adversarial por orden expresa de Nikolai; la ausencia se declara en `INSTALACION_ASR.md §9` y la ronda sigue debiéndose.** NO incluye el cableado a la sala de máquina: un `.opus` sigue saliendo `sin_soporte` en el censo | encargo directo | — |
 | 26 | Skill `demanda-honorarios-ev` (preparar/revisar la demanda de honorarios E&V) | **spec rev. 2 + plan de 9 tareas escritos, SIN construir** (PR #311): [spec](docs/superpowers/specs/2026-09-08-demanda-honorarios-ev-design.md), [plan](docs/superpowers/plans/2026-09-09-demanda-honorarios-ev-v1.md) | ⛔ **espera el pase de Nikolai sobre la demanda de W-02USSI** → rev. 3 del spec antes de construir: el catálogo de ocho familias se sembró de una sola lectura | alto |
 | 27 | [El tipo de un documento se decide por sus BYTES (`MEJORAS #214` + `#215`)](#siguiente-tipo-por-bytes-el-tipo-de-un-documento-se-decide-por-sus-bytes-no-por-el-nombre-mejoras-214--215) | **pendiente — dos defectos medidos, sin construir** | disparador: **ya disparado** en la apertura de W-048U77 (2026-09-10), cuya carpeta de E&V traía 11 de 58 ficheros sin extensión. Hoy eso **bloquea la apertura** (`[APER-65]`) y además ensucia el expediente con duplicados en cada ronda. Promovida por decisión de Nikolai el 2026-09-10 | medio |
-| 28 | [Tres piezas para que la apertura pregunte menos (`MEJORAS #224`, `#227`, `#228`)](#siguiente-apertura-menos-decisiones-tres-piezas-para-que-la-apertura-pregunte-menos) | **`#224` ✅ CERRADA (PR #339, `7fa38aa`); P5 en PR #337 con su R1 adjudicada; `#227` DE VUELTA AL DISEÑO tras 2 rondas `NO-SHIP`; P2 diseñado, sin construir** | disparador: decisión de Nikolai del 2026-09-11 al arrancar la sesión, sobre la medición de las siete aperturas del 2026-09-10 (bloques 99º-105º de la bitácora). Promueve las propuestas **P5**, **P7** y **P2** de `docs/superpowers/handoffs/handoff-2026-09-10-consulta-apertura-menos-decisiones.md` | bajo (P5, P7) · medio (P2) |
+| 28 | [Tres piezas para que la apertura pregunte menos (`MEJORAS #224`, `#227`, `#228`)](#siguiente-apertura-menos-decisiones-tres-piezas-para-que-la-apertura-pregunte-menos) | **5 de 6 piezas ✅ CERRADAS: `#224` (PR #339), P5 (PR #342), P2 9/9 (PRs #343 y #344), `#228` (PR #348) y la gobernanza (PR #336). Queda `#227`, DE VUELTA AL DISEÑO tras 2 rondas `NO-SHIP`** | disparador: decisión de Nikolai del 2026-09-11 al arrancar la sesión, sobre la medición de las siete aperturas del 2026-09-10 (bloques 99º-105º de la bitácora). Promueve las propuestas **P5**, **P7** y **P2** de `docs/superpowers/handoffs/handoff-2026-09-10-consulta-apertura-menos-decisiones.md` | bajo (P5, P7) · medio (P2) |
 
 > **Fila 23 añadida el 2026-09-07, al final y sin reordenar, igual que las anteriores.** Es la mitad
 > de test de `MEJORAS #145`, no una promoción de la entrada: la de producción se queda donde está
@@ -84,15 +84,15 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 ## [SIGUIENTE-APERTURA-MENOS-DECISIONES] Tres piezas para que la apertura pregunte menos
 
-> **Estado al 108º cierre (2026-09-11), por pieza:**
+> **Estado al 111º cierre (2026-09-11), por pieza:**
 >
 > | Pieza | Estado | Dónde |
 > |---|---|---|
-> | **P5** — las 88 filas de viabilidad | ✅ **CERRADA**, R1 adjudicada (9/9 confirmados, `LISTA-CON-CAMBIOS`) | PR **#342**, squash pendiente |
+> | **P5** — las 88 filas de viabilidad | ✅ **CERRADA**, R1 adjudicada (9/9 confirmados, `LISTA-CON-CAMBIOS`) | PR **#342**, squash `0702f49` |
 > | **P7 · `MEJORAS #224`** — la dirección, del nombre de la carpeta | ✅ **CERRADA** | PR **#339**, squash `7fa38aa` |
-> | **P7 · `MEJORAS #227`** — `update_meta` | **DE VUELTA AL DISEÑO** tras 2 rondas `NO-SHIP` | [plan](docs/superpowers/plans/2026-09-11-identidad-sin-teclado.md) §5, con la vía (d) |
-> | **P2** — `verificar_apertura` | **diseñado, sin construir** — es el `[SIGUIENTE]` | [plan](docs/superpowers/plans/2026-09-11-apertura-menos-decisiones.md) §5 |
-> | **`MEJORAS #228`** — el semáforo `E22` | fuera de P5 con la medición anotada: la fila 22 tiene dos bloques combinados donde la 21 tiene uno | su entrada del backlog |
+> | **P7 · `MEJORAS #227`** — `update_meta` | **DE VUELTA AL DISEÑO** tras 2 rondas `NO-SHIP` — **es el `[SIGUIENTE]`** | [plan](docs/superpowers/plans/2026-09-11-identidad-sin-teclado.md) §5, con la vía (d) |
+> | **P2** — `verificar_apertura` | ✅ **CERRADA, 9 de 9**; dos R1 adjudicadas (13/13 y 14/14, las dos `NO-SHIP`) | PRs **#343** (`044798b`) y **#344** (`2cc9a24`) |
+> | **`MEJORAS #228`** — el semáforo `E22` | ✅ **CERRADA** con su R1 (6/6). Destapó `MEJORAS #242`-`#244`, que **no** se arreglaron de paso | PR **#348**, squash `c097ce4`; [plan](docs/superpowers/plans/2026-09-11-semaforo-e22.md) |
 >
 > **Los dos planes y sus tres actas adversariales:**
 > [`2026-09-11-apertura-menos-decisiones.md`](docs/superpowers/plans/2026-09-11-apertura-menos-decisiones.md)
