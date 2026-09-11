@@ -117,6 +117,12 @@ def test_un_hueco_NO_contaria_como_comprobado(tmp_path, monkeypatch):
     assert len(informe.resultados) == 9
     assert len(informe.comprobadas) == 8, "el hueco se contó como comprobado"
     assert "8 de 9" in informe.resumen
+    # Recuperado al partir el test (R1, H-12): el conteo y el aviso se conservaron, y
+    # este aserto —que un hueco traiga su MOTIVO— se había perdido por el camino. Un
+    # hueco sin motivo no es una declaración, es una omisión con etiqueta.
+    declarado = next(r for r in informe.resultados if r.estado == va.SIN_IMPLEMENTAR)
+    assert declarado.detalle.strip(), "un hueco sin motivo no es una declaración"
+    assert "no construida" in declarado.detalle
 
 
 def test_un_estado_inventado_revienta_al_construir(tmp_path):
@@ -803,10 +809,16 @@ from core import verificar_apertura_fuentes as vaf
 class _FuentesDobles:
     """Un puerto con respuestas fijas. `None` significa «no se pudo consultar»."""
 
-    def __init__(self, censo=None, expediente=None):
+    def __init__(self, censo=None, expediente=None, completo=True):
+        # Se acepta una lista por comodidad y se envuelve: lo que el puerto devuelve es
+        # un `CensoRemoto`, que además declara si la enumeración fue completa.
+        if isinstance(censo, list):
+            censo = vaf.CensoRemoto(ficheros=censo, completo=completo)
         self._censo, self._expediente = censo, expediente
+        self.llamadas_censo = 0
 
     def censo_drive(self, team_id, folder_id):
+        self.llamadas_censo += 1
         return self._censo
 
     def expediente_crm(self, exp_id, element):
@@ -948,13 +960,15 @@ def test_c2_lo_que_Drive_no_hashea_queda_SIN_comprobar_y_se_dice(tmp_path):
     r = _rr(c, "hash_drive", f)
     assert r.estado == va.PENDIENTE
     assert "SIN comprobar" in r.detalle and r.evidencia["sin_hash_remoto"] == 1
+    assert r.evidencia["contrastados"] == 1, "cuenta lo contrastado, no lo disponible"
 
 
 # --- C6, C7 y C9: el CRM ------------------------------------------------------------
 
 
 def _exp(**kw):
-    base = {"encontrado": True, "referencia": "BaRS3 - X (W-TEST01) - Vuelta",
+    base = {"encontrado": True, "exp_id": "644",
+            "referencia": "BaRS3 - X (W-TEST01) - Vuelta",
             "relaciones": {"colaboradores": [{"id": "1"}]}}
     base.update(kw)
     return vaf.ExpedienteCRM(**base)
@@ -968,8 +982,8 @@ def test_c6_FALLA_si_el_CRM_no_encuentra_lo_que_caso_md_registra(tmp_path):
     """
     c = _caso(tmp_path)
     _con_caso_md(c, _expedientes=[{"id": "644", "element": "extrajudiciales"}])
-    r = _rr(c, "crm_ficha", _FuentesDobles(expediente=vaf.ExpedienteCRM(encontrado=False)))
-    assert r.estado == va.FALLO and "no lo encuentra" in r.detalle
+    r = _rr(c, "crm_ficha", _FuentesDobles(expediente=vaf.ExpedienteCRM(encontrado=False, exp_id="644")))
+    assert r.estado == va.FALLO and "no encuentra" in r.detalle
 
 
 def test_c6_FALLA_si_el_expediente_no_tiene_ninguna_parte(tmp_path):
@@ -1005,7 +1019,7 @@ def test_c7_lee_las_actuaciones_POR_EL_LADO_DEL_EXPEDIENTE(tmp_path):
     exp = _exp(relaciones={"colaboradores": [{"id": "1"}],
                            "actuaciones": [{"id": "9001"}, {"id": "9002"}]})
     r = _rr(c, "crm_actuacion", _FuentesDobles(expediente=exp))
-    assert r.estado == va.OK and r.evidencia["actuaciones"] == 2
+    assert r.estado == va.OK and r.evidencia["actuaciones"] == {"644": 2}
 
 
 def test_c9_FALLA_si_el_CRM_tiene_cuantia_y_caso_md_no(tmp_path):
@@ -1085,6 +1099,357 @@ def _roto_red(tmp_path):
                  _expedientes=[{"id": "644", "element": "extrajudiciales"}])
     _con_drive_ev(c, {"a.pdf": b"x"})
     return c
+
+
+# ===========================================================================
+# Lo que la R1 de las cinco de red rompió — 14 hallazgos, 14 confirmados
+# ===========================================================================
+#
+# Ocho ALTOS, y cuatro de ellos producían **9 ok / 0 fallos sobre expedientes rotos**:
+# el defecto capital de un verificador. La lista de formas de engañarlo es larga porque
+# el revisor construyó expedientes rotos que yo no había previsto, que es exactamente
+# lo que se le pidió.
+
+
+def test_c1_dos_objetos_remotos_con_el_MISMO_nombre_no_son_uno(tmp_path):
+    """CONTROL POSITIVO de H-01, y era un falso verde completo.
+
+    En Drive pueden existir dos objetos distintos con el mismo nombre. El `set` de rutas
+    los fundía en uno y el diccionario de hashes se quedaba con el último, así que con
+    **dos** ficheros remotos y **uno** local el informe salía 9 ok / 0 fallos — y encima
+    el resultado dependía del orden en que llegaran.
+    """
+    import hashlib
+
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    _con_drive_ev(c, {"a.pdf": b"x"})
+    f = _FuentesDobles(censo=[
+        vaf.FicheroRemoto("a.pdf", sha256="0" * 64, file_id="id1"),
+        vaf.FicheroRemoto("a.pdf", sha256=hashlib.sha256(b"x").hexdigest(), file_id="id2")])
+    r = _rr(c, "censo_remoto", f)
+    assert r.estado == va.FALLO, "dos objetos remotos contaron como uno"
+    assert r.evidencia["remoto"] == 2 and r.evidencia["local"] == 1
+
+
+def test_c2_cuenta_lo_CONTRASTADO_y_no_lo_disponible(tmp_path):
+    """CONTROL POSITIVO de H-02. Con **cero** ficheros locales y uno remoto con hash,
+    la primera versión decía «los 1 ficheros coinciden» sin haber abierto ninguno, y su
+    evidencia llegaba a declarar `sin_hash_remoto=-1`."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    (c / "00_Input" / "01_Drive EV").mkdir(parents=True)
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("a.pdf", sha256="0" * 64)])
+    r = _rr(c, "hash_drive", f)
+    assert r.estado != va.OK, "aprobó sin contrastar ni un fichero"
+    assert r.evidencia["contrastados"] == 0
+    assert r.evidencia["sin_hash_remoto"] >= 0, "conteo negativo"
+
+
+def test_las_comprobaciones_comparten_UNA_SOLA_foto_del_remoto(tmp_path):
+    """CONTROL POSITIVO de la fuga de H-02, que era de diseño y no de detalle.
+
+    C1 y C2 pedían el censo por separado. Con dos respuestas distintas —un fichero
+    aparece en la segunda y no en la primera— C1 validaba una foto y C2 declaraba
+    contrastada la otra: **9 ok / 0 fallos** sobre un expediente al que le faltaba un
+    documento. Un verificador que mira dos veces no está mirando, está promediando.
+    """
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    _con_drive_ev(c, {"a.pdf": b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("a.pdf")])
+    va.verificar(c, f)
+    assert f.llamadas_censo == 1, (
+        f"el remoto se consultó {f.llamadas_censo} veces: dos fotos distintas pueden "
+        "aprobarse entre ellas")
+
+
+def test_c1_FALLA_si_el_remoto_declara_su_censo_incompleto(tmp_path):
+    """CONTROL POSITIVO de H-14. `incompleteSearch` de la Drive API: un censo truncado
+    se leía como «el remoto tiene menos ficheros», y un expediente al que le faltaba
+    media carpeta salía en verde."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    _con_drive_ev(c, {"a.pdf": b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("a.pdf")], completo=False)
+    r = _rr(c, "censo_remoto", f)
+    assert r.estado == va.FALLO and "INCOMPLETA" in r.detalle
+
+
+@pytest.mark.parametrize("contenido, senal", [
+    ("---\nmeta: [\n---\n", "no es YAML válido"),
+    ("sin delimitador\n", "no empieza por el delimitador"),
+    ("---\n- una\n- lista\n---\n", "no es un mapa"),
+])
+def test_un_caso_md_CORRUPTO_no_es_una_apertura_pendiente(tmp_path, contenido, senal):
+    """CONTROL POSITIVO de H-03, y es la misma frontera que la ronda anterior cerró en
+    los lectores locales, reabierta en `_frontmatter`.
+
+    Un `_caso.md` ilegible se leía como «el alta no se ha hecho»: las cinco de red
+    salían `pendiente` y el CLI terminaba en **exit 0** sobre un expediente corrupto.
+    """
+    c = _caso(tmp_path)
+    (c / "00_Input" / "_caso.md").write_text(contenido, encoding="utf-8")
+    r = _rr(c, "crm_ficha", vaf.SinRed())
+    assert r.estado == va.FALLO, "la corrupción pasó por ausencia"
+    assert senal in r.detalle
+
+
+def test_una_lista_de_expedientes_corrupta_es_FALLO(tmp_path):
+    """H-03, segunda mitad: entradas sin `id` o que no son mapas."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, _expedientes=["texto", None, {"element": "extrajudiciales"}])
+    r = _rr(c, "crm_ficha", vaf.SinRed())
+    assert r.estado == va.FALLO and "corrupta" in r.detalle
+
+
+def test_c1_FALLA_si_01_Drive_EV_no_es_un_directorio(tmp_path):
+    """CONTROL POSITIVO de H-04: una colisión de tipo no es «el pull no ha corrido»."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    (c / "00_Input" / "01_Drive EV").write_text("no soy un directorio", encoding="utf-8")
+    r = _rr(c, "censo_remoto", _FuentesDobles(censo=[]))
+    assert r.estado == va.FALLO and "no es un directorio" in r.detalle
+
+
+def test_c1_FALLA_si_no_se_puede_recorrer_la_carpeta(tmp_path, monkeypatch):
+    """CONTROL POSITIVO de H-04, segunda mitad, y es sutil: `rglob` **suprime** los
+    errores de enumeración, así que un directorio que no se puede recorrer devolvía
+    «cero ficheros» y el censo salía en verde contra un remoto vacío."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    _con_drive_ev(c, {"a.pdf": b"x"})
+    real = type(tmp_path).rglob
+
+    def revienta(self, patron):
+        if self.name == "01 Drive EV".replace(" ", "_") or self.name == "01_Drive EV":
+            raise PermissionError(13, "Permission denied")
+        return real(self, patron)
+
+    monkeypatch.setattr(type(tmp_path), "rglob", revienta)
+    r = _rr(c, "censo_remoto", _FuentesDobles(censo=[]))
+    assert r.estado == va.FALLO and "no se puede recorrer" in r.detalle
+
+
+def test_c1_FALLA_con_un_enlace_que_sale_del_expediente(tmp_path):
+    """CONTROL POSITIVO de H-05.
+
+    `is_file()` y la apertura **siguen** el enlace, mientras `relative_to` mira solo el
+    nombre. Un enlace a un fichero de fuera del caso pasaba por copia local, con su hash
+    y todo: el expediente parecía completo y no contenía el documento.
+    """
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    raiz = c / "00_Input" / "01_Drive EV"
+    raiz.mkdir(parents=True)
+    fuera = tmp_path / "fuera.pdf"
+    fuera.write_bytes(b"x")
+    try:
+        (raiz / "a.pdf").symlink_to(fuera)
+    except (OSError, NotImplementedError):
+        pytest.skip("este sistema no permite crear enlaces simbólicos")
+    r = _rr(c, "censo_remoto", _FuentesDobles(censo=[vaf.FicheroRemoto("a.pdf")]))
+    assert r.estado == va.FALLO and "enlace simbólico" in r.detalle
+
+
+def test_c1_un_documento_que_empieza_por_punto_NO_se_ignora(tmp_path):
+    """CONTROL POSITIVO de H-06.
+
+    Se excluía cualquier nombre que empezara por punto, a cualquier profundidad. El
+    propio productor dice que fuera de la raíz esos nombres pueden ser documentos de
+    E&V: un `.documento.pdf` presente en los dos lados salía como **faltante**.
+    """
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    _con_drive_ev(c, {".documento.pdf": b"x"})
+    r = _rr(c, "censo_remoto",
+            _FuentesDobles(censo=[vaf.FicheroRemoto(".documento.pdf")]))
+    assert r.estado == va.OK, r.detalle
+
+
+def test_c1_un_pulled_en_una_SUBcarpeta_no_se_ignora(tmp_path):
+    """H-06, la asimetría: `.pulled` solo es protocolo en la RAÍZ."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    _con_drive_ev(c, {"sub/.pulled": b"documento ajeno"})
+    r = _rr(c, "censo_remoto", _FuentesDobles(censo=[]))
+    assert r.estado == va.FALLO and "sub/.pulled" in str(r.evidencia["sobran_en_local"])
+
+
+def test_c6_una_ACTUACION_no_es_una_parte(tmp_path):
+    """CONTROL POSITIVO de H-07, y era un 9 ok / 0 fallos.
+
+    C6 contaba todos los bloques de relaciones, así que un expediente con una actuación
+    y **cero partes vinculadas** pasaba — y la misma actuación satisfacía a la vez «tiene
+    partes» y «tiene actuación». Una actuación es trabajo, no una parte.
+    """
+    c = _caso(tmp_path)
+    _con_caso_md(c, _expedientes=[{"id": "644", "element": "extrajudiciales"}])
+    exp = _exp(relaciones={"actuaciones": [{"id": "9"}]})
+    r = _rr(c, "crm_ficha", _FuentesDobles(expediente=exp))
+    assert r.estado == va.FALLO and "NINGUNA parte" in r.detalle
+
+
+def test_c6_FALLA_si_no_se_pudieron_LEER_las_relaciones(tmp_path):
+    """CONTROL POSITIVO de H-10: el adaptador aplanaba «no se pudo leer» a `{}`, y el
+    informe atribuía al expediente una ausencia que nadie había observado."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, _expedientes=[{"id": "644", "element": "extrajudiciales"}])
+    r = _rr(c, "crm_ficha", _FuentesDobles(expediente=_exp(relaciones=None)))
+    assert r.estado == va.FALLO and "no se pudieron leer" in r.detalle
+
+
+def test_todos_los_expedientes_registrados_se_comprueban(tmp_path):
+    """CONTROL POSITIVO de H-08, y es de los que más sorprende.
+
+    Con dos expedientes registrados —uno válido y uno fantasma— las tres comprobaciones
+    del CRM preguntaban **tres veces por el primero y ninguna por el segundo**. Una
+    apertura con un expediente inexistente dentro salía aprobada.
+    """
+    c = _caso(tmp_path)
+    _con_caso_md(c, _expedientes=[{"id": "644", "element": "extrajudiciales"},
+                                  {"id": "999", "element": "expedientes_judiciales"}])
+
+    class _PorId:
+        def censo_drive(self, t, f):
+            return None
+
+        def expediente_crm(self, exp_id, element):
+            return (_exp() if exp_id == "644"
+                    else vaf.ExpedienteCRM(encontrado=False, exp_id=exp_id))
+
+    r = _rr(c, "crm_ficha", _PorId())
+    assert r.estado == va.FALLO and "999" in r.detalle
+
+
+@pytest.mark.parametrize("crm, esperado, senal", [
+    ("NaN", va.FALLO, "no es un número"),
+    ("1e309", va.FALLO, "no es un número"),
+    ("roto", va.FALLO, "no es un número"),
+    ("1.234,56", va.FALLO, "ambiguo"),
+])
+def test_c9_una_cuantia_ILEGIBLE_no_es_una_coincidencia(tmp_path, crm, esperado, senal):
+    """CONTROL POSITIVO de H-09, y `NaN` era el peor: **cualquier** comparación con NaN
+    es falsa, así que `abs(nan - x) > 0.005` caía en la rama de «coinciden» y el
+    expediente salía 9 ok / 0 fallos.
+
+    Y un valor ilegible devolvía `None` igual que la ausencia, de modo que el informe
+    decía «ninguno declara cuantía» sobre dos que sí lo hacían.
+    """
+    c = _caso(tmp_path)
+    _con_caso_md(c, cuantia=100,
+                 _expedientes=[{"id": "644", "element": "extrajudiciales"}])
+    r = _rr(c, "cuantia_coherente", _FuentesDobles(expediente=_exp(cuantia=crm)))
+    assert r.estado == esperado, r.detalle
+    assert senal in r.detalle
+
+
+# --- H-11: el cableado del adaptador, ejercido ---------------------------------------
+#
+# Tres mutantes del cableado sobrevivían: invertir los argumentos al llamar al puerto,
+# convertirlos en keyword-only, y pedir las relaciones del elemento equivocado. El doble
+# respondía igual a cualquier identificador y el test de contrato solo comparaba nombres
+# de parámetros. Ahora el adaptador se ejerce con un transporte doble, que es lo único
+# que recorre la traducción de verdad.
+
+
+def test_el_adaptador_pide_el_expediente_QUE_SE_LE_PIDE(tmp_path):
+    """El id y el elemento llegan a la URL y al filtro, no a cualquier sitio."""
+    visto = {}
+
+    def transporte(url, params):
+        visto["url"], visto["params"] = url, params
+        return {"items": [{"id": "644", "values": [
+            {"property": {"name": "Referencia_Cliente"}, "value": "REF"},
+            {"property": {"name": "cuantia"}, "value": "100"}]}]}
+
+    exp = vaf.DeLaRed(transporte=transporte).expediente_crm("644", "extrajudiciales")
+    assert "/element_registries/extrajudiciales" in visto["url"]
+    assert visto["params"]["filterGroup[filterGroups][0][filters][0][value]"] == "644"
+    assert exp is not None and exp.referencia == "REF" and exp.cuantia == "100"
+
+
+def test_el_adaptador_RECHAZA_un_item_cuyo_id_no_es_el_pedido(tmp_path):
+    """H-07: leer `items[0]` da por supuesto que el servidor aplicó el filtro.
+
+    La identidad no se confía: se comprueba. Si el servidor devolviera otro expediente,
+    el adaptador no puede presentarlo como el que se pidió.
+    """
+    def transporte(url, params):
+        return {"items": [{"id": "999", "values": []}]}
+
+    assert vaf.DeLaRed(transporte=transporte).expediente_crm("644", "extrajudiciales") is None
+
+
+def test_el_adaptador_recorre_subcarpetas_y_pagina(tmp_path):
+    """La paginación y el descenso son traducción pura, y el doble del puerto no los
+    recorría: un `nextPageToken` mal manejado perdería ficheros en silencio."""
+    paginas = [
+        {"files": [{"id": "d1", "name": "sub",
+                    "mimeType": "application/vnd.google-apps.folder"},
+                   {"id": "f1", "name": "a.pdf", "sha256Checksum": "aa"}],
+         "nextPageToken": "p2"},
+        {"files": [{"id": "f2", "name": "b.pdf"}]},
+        {"files": [{"id": "f3", "name": "c.pdf", "sha256Checksum": "cc"}]},
+    ]
+
+    def transporte(url, params):
+        return paginas.pop(0) if paginas else {"files": []}
+
+    censo = vaf.DeLaRed(transporte=transporte).censo_drive("T", "F")
+    rutas = sorted(f.ruta for f in censo.ficheros)
+    assert rutas == ["a.pdf", "b.pdf", "sub/c.pdf"], rutas
+    assert censo.completo
+
+
+def test_el_adaptador_propaga_el_censo_INCOMPLETO(tmp_path):
+    def transporte(url, params):
+        return {"files": [], "incompleteSearch": True}
+
+    assert vaf.DeLaRed(transporte=transporte).censo_drive("T", "F").completo is False
+
+
+# --- H-13: el CLI podía no usar lo que se había construido ---------------------------
+
+
+def test_cli_sin_con_red_NO_sale_a_la_red(tmp_path, monkeypatch):
+    """Y lo dice: las cinco informan «no se pudo consultar», que es la verdad."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    _con_drive_ev(c, {"a.pdf": b"x"})
+    r = _cli(tmp_path, monkeypatch, c)
+    assert "no se pudo consultar" in r.output
+
+
+def test_cli_con_red_USA_el_adaptador_real(tmp_path, monkeypatch):
+    """CONTROL POSITIVO de H-13, y era el hallazgo más embarazoso de la ronda.
+
+    Las cinco comprobaciones de red se construyeron y **el comando no tenía forma de
+    activarlas**: llamaba siempre sin fuentes, así que usaba el puerto cerrado y las
+    cinco decían «no se pudo consultar» pasara lo que pasara. Una pieza construida que
+    nadie podía encadenar.
+    """
+    from typer.testing import CliRunner
+
+    from core.casos import case_locator as cl
+    from scripts import verificar_apertura as cli
+
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    _con_drive_ev(c, {"a.pdf": b"x"})
+    monkeypatch.setattr(cl, "buscar", lambda cid: c)
+    monkeypatch.setattr(cl, "resolve_ref", lambda cid: cid)
+    usado = {"n": 0}
+
+    class _Espia(vaf.SinRed):
+        def censo_drive(self, t, f):
+            usado["n"] += 1
+            return vaf.CensoRemoto(ficheros=[vaf.FicheroRemoto("a.pdf")])
+
+    monkeypatch.setattr("core.verificar_apertura_fuentes.DeLaRed", _Espia)
+    r = CliRunner().invoke(cli.app, ["--case-id", "W-TEST01", "--con-red"])
+    assert usado["n"] == 1, "`--con-red` no llegó a usar el adaptador"
+    assert r.exit_code in (0, 1), r.output
 
 
 #: Un expediente roto por comprobación, que la guarda EJECUTA. No es documentación: es

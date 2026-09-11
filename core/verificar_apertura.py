@@ -438,123 +438,200 @@ def c8_sin_wcodes_ajenos(case_dir: Path) -> Resultado:
 
 # --- Las cinco de red ---------------------------------------------------------------
 #
-# Todas comparten la misma disciplina: preguntan a `Fuentes` y traducen `None` a
-# `fallo`. **Ninguna aprueba por no haber podido preguntar**, que es la regla que la R1
-# arrancó del resto del módulo.
+# Todas comparten la misma disciplina: preguntan al **contexto** —no al puerto— y
+# traducen «no se pudo consultar» a `fallo`. Ninguna aprueba por no haber podido
+# preguntar.
 #
-# Y todas necesitan saber a qué expediente preguntar. Esos identificadores viven en el
-# `_caso.md` del propio expediente, así que su ausencia es `pendiente` —el caso aún no
-# se ha dado de alta— y no `fallo`.
+# **Una sola foto, y por qué importa.** El contexto consulta cada fuente UNA vez y
+# reparte el resultado. La primera versión dejaba que C1 y C2 pidieran el censo por
+# separado, y la R1 lo midió: con dos respuestas distintas —un fichero aparece en la
+# segunda y no en la primera— C1 validaba una foto y C2 declaraba contrastada la otra,
+# y el informe salía **9 ok / 0 fallos** sobre un expediente al que le faltaba un
+# documento. Un verificador que mira dos veces no está mirando: está promediando.
+
+
+class _Contexto:
+    """Las fuentes, consultadas una vez y repartidas. No decide nada."""
+
+    def __init__(self, case_dir: Path, fuentes: "Fuentes") -> None:
+        self.case_dir = Path(case_dir)
+        self._f = fuentes
+        self._censo: Any = _NO_PEDIDO
+        self._exps: dict[tuple[str, str], Any] = {}
+
+    def censo(self):
+        if self._censo is _NO_PEDIDO:
+            team_id, folder_id = _ids_drive(self.case_dir)
+            self._censo = (self._f.censo_drive(team_id, folder_id)
+                           if folder_id else _SIN_IDS)
+        return self._censo
+
+    def expediente(self, exp_id: str, element: str):
+        clave = (exp_id, element)
+        if clave not in self._exps:
+            self._exps[clave] = self._f.expediente_crm(exp_id, element)
+        return self._exps[clave]
+
+
+_NO_PEDIDO = object()
+_SIN_IDS = object()
 
 
 def _ids_drive(case_dir: Path) -> tuple[str, str]:
-    """`(team_id, folder_id)` del frontmatter, o `("", "")`."""
-    fm = _frontmatter(case_dir)
+    fm, _ = _frontmatter(case_dir)
     meta = fm.get("meta") if isinstance(fm.get("meta"), dict) else {}
     return (str(meta.get("drive_ev_team_id") or ""),
             str(meta.get("drive_ev_folder_id") or ""))
 
 
-def _expediente_registrado(case_dir: Path) -> tuple[str, str]:
-    """`(exp_id, element)` del primer expediente del CRM registrado, o `("", "")`."""
-    fm = _frontmatter(case_dir)
+def _expedientes_registrados(case_dir: Path) -> tuple[list[tuple[str, str]], str]:
+    """`([(exp_id, element), ...], error)`.
+
+    **Todos**, no el primero. La R1 midió que con dos expedientes registrados —uno
+    válido y uno inexistente— las tres comprobaciones del CRM preguntaban tres veces por
+    el primero y **ninguna** por el segundo: el informe aprobaba una apertura con un
+    expediente fantasma dentro (H-08).
+
+    Una lista corrupta devuelve `error`, no lista vacía: «no se puede leer lo que hay»
+    y «no hay nada» son cosas distintas (H-03).
+    """
+    fm, err = _frontmatter(case_dir)
+    if err:
+        return [], err
     exps = fm.get("sudespacho_expedientes")
+    if exps is None:
+        return [], ""
     if not isinstance(exps, list):
-        return "", ""
+        return [], f"`sudespacho_expedientes` no es una lista sino {type(exps).__name__}"
+    fuera: list[tuple[str, str]] = []
+    malas = 0
     for e in exps:
-        if isinstance(e, dict) and e.get("id"):
-            return str(e["id"]), str(e.get("element") or "")
-    return "", ""
-
-
-#: Ficheros de PROTOCOLO que el pull deposita en `01_Drive EV` y que no son documentos
-#: del expediente: no están en el remoto y compararlos daría un descuadre permanente.
-_PROTOCOLO = (".pulled", ".partial", "desktop.ini", "Thumbs.db")
-
-
-def _locales_de_drive_ev(case_dir: Path) -> list[str] | None:
-    raiz = case_dir / "00_Input" / "01_Drive EV"
-    if not raiz.is_dir():
-        return None
-    out = []
-    for p in sorted(raiz.rglob("*")):
-        if not p.is_file() or p.name in _PROTOCOLO or p.name.startswith("."):
+        if not isinstance(e, dict) or not str(e.get("id") or "").strip():
+            malas += 1
             continue
-        out.append(p.relative_to(raiz).as_posix())
-    return out
+        fuera.append((str(e["id"]).strip(), str(e.get("element") or "").strip()))
+    if malas:
+        return fuera, (f"{malas} entrada(s) de `sudespacho_expedientes` sin `id` "
+                       "utilizable: la lista está corrupta")
+    return fuera, ""
+
+
+#: Lo ÚNICO que el pull deposita en la RAÍZ de `01_Drive EV` y no es documento. La
+#: primera versión excluía cuatro nombres a cualquier profundidad y todo lo que
+#: empezara por punto — y la R1 midió que así un `.documento.pdf` real, presente en los
+#: dos lados, salía como faltante, y que un `sub/.pulled` con contenido ajeno se
+#: colaba. El propio productor dice que fuera de la raíz esos nombres pueden ser
+#: documentos de E&V (H-06).
+_PROTOCOLO_RAIZ = frozenset({".pulled"})
+
+
+def _locales_de_drive_ev(case_dir: Path) -> tuple[list[str], str]:
+    """`(rutas, error)`. Un error NO es una lista vacía."""
+    raiz = case_dir / "00_Input" / "01_Drive EV"
+    if not raiz.exists():
+        return [], ""
+    if not raiz.is_dir():
+        return [], "`00_Input/01_Drive EV` existe y no es un directorio"
+    out: list[str] = []
+    try:
+        for p in sorted(raiz.rglob("*")):
+            rel = p.relative_to(raiz).as_posix()
+            if p.is_symlink():
+                # Sigue el enlace y podría estar fuera del expediente: `is_file()` y la
+                # apertura lo siguen, mientras `relative_to` mira solo el nombre. Un
+                # enlace a un fichero de fuera pasaba por copia local (H-05).
+                return [], f"`{rel}` es un enlace simbólico: no acredita una copia local"
+            if not p.is_file():
+                continue
+            if rel in _PROTOCOLO_RAIZ:
+                continue
+            out.append(rel)
+    except OSError as exc:
+        # `rglob` suprime errores de enumeración: sin este control, un directorio que
+        # no se puede recorrer devolvía «cero ficheros» y el censo salía en verde (H-04).
+        return [], f"no se puede recorrer `01_Drive EV`: {type(exc).__name__}"
+    return out, ""
 
 
 @_de_red
-def c1_censo_remoto(case_dir: Path, fuentes: "Fuentes") -> Resultado:
+def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
     """Lo que el remoto declara contra lo que hay en `01_Drive EV`.
 
-    `[APER-65]`: en una apertura del 2026-09-10, 11 de 58 ficheros llegaron con el
-    nombre cambiado por el montaje de Drive Desktop y el pull los re-copió en cada
-    ronda, dejando 7 duplicados. El censo independiente es lo que lo destapó, hecho a
-    mano con `rclone lsf`. Esto es ese censo, en código.
+    `[APER-65]`: en una apertura del 2026-09-10, 11 de 58 ficheros llegaron renombrados
+    por el montaje y el pull los re-copió en cada ronda, dejando 7 duplicados. El censo
+    independiente es lo que lo destapó, a mano.
+
+    Se comparan **multiconjuntos** y no conjuntos: dos objetos remotos con el mismo
+    nombre son dos ficheros, y el `set` de la primera versión los fundía en uno (H-01).
     """
     titulo = "Censo remoto de E&V contra los ficheros locales"
-    locales = _locales_de_drive_ev(case_dir)
-    if locales is None:
+    locales, err = _locales_de_drive_ev(case_dir)
+    if err:
+        return Resultado("censo_remoto", titulo, FALLO, err)
+    raiz = case_dir / "00_Input" / "01_Drive EV"
+    if not raiz.exists():
         return Resultado("censo_remoto", titulo, PENDIENTE,
                          "no hay `00_Input/01_Drive EV`: el pull no ha corrido")
-    team_id, folder_id = _ids_drive(case_dir)
-    if not folder_id:
+    censo = ctx.censo()
+    if censo is _SIN_IDS:
         return Resultado("censo_remoto", titulo, PENDIENTE,
                          "`_caso.md` no registra la carpeta de E&V")
-    remotos = fuentes.censo_drive(team_id, folder_id)
-    if remotos is None:
+    if censo is None:
         return Resultado("censo_remoto", titulo, FALLO,
                          "no se pudo consultar el remoto (token, red o permisos): no "
                          "se puede afirmar que el pull esté completo")
+    if not censo.completo:
+        return Resultado("censo_remoto", titulo, FALLO,
+                         "el remoto declara su propia enumeración INCOMPLETA: el censo "
+                         "no sirve para comparar")
 
-    en_remoto = {f.ruta for f in remotos}
-    en_local = set(locales)
-    faltan = sorted(en_remoto - en_local)
-    sobran = sorted(en_local - en_remoto)
-    ev = {"remoto": len(en_remoto), "local": len(en_local),
+    from collections import Counter
+
+    c_remoto, c_local = Counter(f.ruta for f in censo.ficheros), Counter(locales)
+    faltan = sorted((c_remoto - c_local).elements())
+    sobran = sorted((c_local - c_remoto).elements())
+    ev = {"remoto": sum(c_remoto.values()), "local": sum(c_local.values()),
           "faltan_en_local": faltan[:8], "sobran_en_local": sobran[:8]}
     if faltan or sobran:
         return Resultado("censo_remoto", titulo, FALLO,
                          f"{len(faltan)} fichero(s) del remoto que no están en local y "
                          f"{len(sobran)} en local que no están en el remoto", ev)
     return Resultado("censo_remoto", titulo, OK,
-                     f"los {len(en_remoto)} ficheros del remoto están en local, y "
-                     "ninguno de más", ev)
+                     f"los {sum(c_remoto.values())} ficheros del remoto están en local, "
+                     "y ninguno de más", ev)
 
 
 @_de_red
-def c2_hash_contra_drive(case_dir: Path, fuentes: "Fuentes") -> Resultado:
+def c2_hash_contra_drive(case_dir: Path, ctx: "_Contexto") -> Resultado:
     """El sha256 local contra el `sha256Checksum` que declara Drive (`MEJORAS #225`).
 
     El pull guardaba los documentos **rellenados con ceros** a múltiplo de 512, así que
-    su sha256 dejaba de ser el del original: el hash forense era falso, el dedup se
-    rompía y el OCR se repetía. Un fichero correcto y uno relleno tienen el mismo
-    nombre y el mismo tamaño aparente; solo el hash los distingue.
+    su sha256 dejaba de ser el del original. Mismo nombre y mismo tamaño aparente; solo
+    el hash los distingue.
 
-    Drive **no publica `sha256Checksum` para todo** (los Google Docs nativos no lo
-    tienen). Un fichero sin hash remoto no se cuenta como discrepancia: se cuenta como
-    no comprobable, y se dice cuántos son — porque «12 de 58 sin verificar» y «58
-    verificados» no son lo mismo.
+    Se cuenta lo **contrastado**, no lo disponible. La primera versión informaba «los N
+    ficheros coinciden» usando el número de hashes que el remoto publicaba, de modo que
+    con cero ficheros locales decía `ok` sin haber abierto ninguno (H-02).
     """
     titulo = "Hash local contra el sha256Checksum que declara Drive"
     raiz = case_dir / "00_Input" / "01_Drive EV"
-    locales = _locales_de_drive_ev(case_dir)
-    if locales is None:
+    locales, err = _locales_de_drive_ev(case_dir)
+    if err:
+        return Resultado("hash_drive", titulo, FALLO, err)
+    if not raiz.exists():
         return Resultado("hash_drive", titulo, PENDIENTE,
                          "no hay `00_Input/01_Drive EV`: el pull no ha corrido")
-    team_id, folder_id = _ids_drive(case_dir)
-    if not folder_id:
+    censo = ctx.censo()
+    if censo is _SIN_IDS:
         return Resultado("hash_drive", titulo, PENDIENTE,
                          "`_caso.md` no registra la carpeta de E&V")
-    remotos = fuentes.censo_drive(team_id, folder_id)
-    if remotos is None:
+    if censo is None:
         return Resultado("hash_drive", titulo, FALLO,
                          "no se pudo consultar el remoto: no se puede acreditar "
                          "ningún hash")
 
-    con_hash = {f.ruta: f.sha256 for f in remotos if f.sha256}
-    discrepan, ilegibles = [], []
+    con_hash = {f.ruta: f.sha256 for f in censo.ficheros if f.sha256}
+    contrastados, discrepan, ilegibles = 0, [], []
     for rel in locales:
         esperado = con_hash.get(rel)
         if not esperado:
@@ -564,11 +641,13 @@ def c2_hash_contra_drive(case_dir: Path, fuentes: "Fuentes") -> Resultado:
         except OSError as exc:
             ilegibles.append(f"{rel} ({type(exc).__name__})")
             continue
+        contrastados += 1
         if real.lower() != esperado.lower():
             discrepan.append(rel)
-    ev = {"locales": len(locales), "con_hash_remoto": len(con_hash),
-          "sin_hash_remoto": len(locales) - len(con_hash),
-          "discrepan": discrepan[:8], "ilegibles": ilegibles[:8]}
+    sin_contrastar = len(locales) - contrastados - len(ilegibles)
+    ev = {"locales": len(locales), "contrastados": contrastados,
+          "sin_hash_remoto": sin_contrastar, "discrepan": discrepan[:8],
+          "ilegibles": ilegibles[:8]}
     if ilegibles:
         return Resultado("hash_drive", titulo, FALLO,
                          f"{len(ilegibles)} fichero(s) local(es) que no se pueden "
@@ -577,144 +656,213 @@ def c2_hash_contra_drive(case_dir: Path, fuentes: "Fuentes") -> Resultado:
         return Resultado("hash_drive", titulo, FALLO,
                          f"{len(discrepan)} fichero(s) cuyo sha256 NO es el que Drive "
                          f"declara: {', '.join(discrepan[:3])}", ev)
-    if not con_hash:
+    if contrastados == 0:
         return Resultado("hash_drive", titulo, PENDIENTE,
-                         f"Drive no publica sha256 para ninguno de los {len(locales)} "
-                         "ficheros: no hay nada que contrastar", ev)
-    comprobados = len(con_hash)
-    if comprobados < len(locales):
+                         f"ninguno de los {len(locales)} ficheros locales tiene hash "
+                         "en Drive con el que contrastar", ev)
+    if sin_contrastar:
         return Resultado("hash_drive", titulo, PENDIENTE,
-                         f"{comprobados} de {len(locales)} coinciden; los otros "
-                         f"{len(locales) - comprobados} no tienen hash en Drive y "
-                         "quedan SIN comprobar", ev)
+                         f"{contrastados} de {len(locales)} contrastados y coinciden; "
+                         f"los otros {sin_contrastar} no tienen hash en Drive y quedan "
+                         "SIN comprobar", ev)
     return Resultado("hash_drive", titulo, OK,
-                     f"los {comprobados} ficheros coinciden con el hash de Drive", ev)
+                     f"los {contrastados} ficheros contrastados coinciden con el hash "
+                     "de Drive", ev)
+
+
+def _cada_expediente(case_dir: Path, ctx: "_Contexto", ident: str, titulo: str):
+    """Resuelve la parte común de C6/C7/C9: los expedientes y sus fichas.
+
+    Devuelve `(fichas, resultado_de_corte)`. Si hay corte, la comprobación lo devuelve
+    tal cual: no hay nada que comparar.
+    """
+    exps, err = _expedientes_registrados(case_dir)
+    if err:
+        return None, Resultado(ident, titulo, FALLO, err)
+    if not exps:
+        return None, Resultado(ident, titulo, PENDIENTE,
+                               "`_caso.md` no registra ningún expediente del CRM: el "
+                               "alta no se ha hecho")
+    fichas = []
+    for exp_id, element in exps:
+        ficha = ctx.expediente(exp_id, element)
+        if ficha is None:
+            return None, Resultado(ident, titulo, FALLO,
+                                   f"no se pudo consultar el CRM para el expediente "
+                                   f"{exp_id}: no se puede acreditar nada de él")
+        fichas.append((exp_id, element, ficha))
+    ausentes = [e for e, _, f in fichas if not f.encontrado]
+    if ausentes:
+        return None, Resultado(ident, titulo, FALLO,
+                               f"el CRM no encuentra {len(ausentes)} expediente(s) que "
+                               f"`_caso.md` registra: {', '.join(ausentes)}",
+                               {"ausentes": ausentes})
+    return fichas, None
 
 
 @_de_red
-def c6_ficha_y_relaciones_crm(case_dir: Path, fuentes: "Fuentes") -> Resultado:
+def c6_ficha_y_relaciones_crm(case_dir: Path, ctx: "_Contexto") -> Resultado:
     """La ficha del CRM, releída por API — no el status del alta (`MEJORAS #239`).
 
     `ensure_contrario_vinculado` devolvía «existente» con el id de **otro** deudor que
-    compartía correo, y el alta decía OK. La única forma de saber qué hay en el CRM es
-    volver a preguntárselo.
+    compartía correo, y el alta decía OK.
+
+    Se exigen **partes**, no «alguna relación». La primera versión contaba todos los
+    bloques, de modo que un expediente con una actuación y **cero partes vinculadas**
+    pasaba en verde (H-07) — y una actuación no es una parte: es trabajo.
     """
     titulo = "Ficha y relaciones del CRM, releídas por API"
-    exp_id, element = _expediente_registrado(case_dir)
-    if not exp_id:
-        return Resultado("crm_ficha", titulo, PENDIENTE,
-                         "`_caso.md` no registra ningún expediente del CRM: el alta "
-                         "no se ha hecho")
-    exp = fuentes.expediente_crm(exp_id, element)
-    if exp is None:
-        return Resultado("crm_ficha", titulo, FALLO,
-                         f"no se pudo consultar el CRM para el expediente {exp_id}: "
-                         "no se puede acreditar que la ficha exista")
-    if not exp.encontrado:
-        return Resultado("crm_ficha", titulo, FALLO,
-                         f"el expediente {exp_id} está registrado en `_caso.md` y el "
-                         "CRM no lo encuentra", {"exp_id": exp_id, "element": element})
+    fichas, corte = _cada_expediente(case_dir, ctx, "crm_ficha", titulo)
+    if corte:
+        return corte
 
-    partes = {k: len(v) for k, v in sorted(exp.relaciones.items()) if v}
-    ev = {"exp_id": exp_id, "element": element, "referencia": bool(exp.referencia),
-          "relaciones": partes}
-    if not partes:
+    sin_leer, sin_partes, detalle = [], [], {}
+    for exp_id, _el, f in fichas:
+        partes = f.partes
+        if partes is None:
+            sin_leer.append(exp_id)
+        elif not partes:
+            sin_partes.append(exp_id)
+        else:
+            detalle[exp_id] = partes
+    ev = {"expedientes": [e for e, _, _ in fichas], "partes": detalle}
+    if sin_leer:
         return Resultado("crm_ficha", titulo, FALLO,
-                         f"el expediente {exp_id} existe pero no tiene NINGUNA parte "
-                         "vinculada", ev)
+                         f"no se pudieron leer las relaciones de {', '.join(sin_leer)}: "
+                         "no se puede afirmar que tengan partes", ev)
+    if sin_partes:
+        return Resultado("crm_ficha", titulo, FALLO,
+                         f"{len(sin_partes)} expediente(s) sin NINGUNA parte vinculada: "
+                         f"{', '.join(sin_partes)}", ev)
+    total = sum(sum(p.values()) for p in detalle.values())
     return Resultado("crm_ficha", titulo, OK,
-                     f"expediente {exp_id} con {sum(partes.values())} vínculo(s) en "
-                     f"{len(partes)} elemento(s)", ev)
+                     f"{len(fichas)} expediente(s) con {total} parte(s) vinculada(s)", ev)
 
 
 @_de_red
-def c7_actuacion_asociada(case_dir: Path, fuentes: "Fuentes") -> Resultado:
+def c7_actuacion_asociada(case_dir: Path, ctx: "_Contexto") -> Resultado:
     """Una actuación asociada, leída **por el lado del expediente** (`MEJORAS #209`).
 
     El matiz del lado no es retórico: preguntar al elemento «actuaciones» por las suyas
-    devuelve las del despacho, no las de este caso. `actuaciones` es **hijo** de
-    `extrajudiciales` y de `expedientes_judiciales` (atlas), así que aparece en
-    `related_register/{element}/{exp_id}` — y eso sí acredita la asociación.
+    devuelve las del despacho. `actuaciones` es **hijo** de `extrajudiciales` y de
+    `expedientes_judiciales` (atlas), así que aparece en `related_register` — y eso sí
+    acredita la asociación.
     """
     titulo = "Actuación asociada, por el lado del expediente"
-    exp_id, element = _expediente_registrado(case_dir)
-    if not exp_id:
-        return Resultado("crm_actuacion", titulo, PENDIENTE,
-                         "`_caso.md` no registra ningún expediente del CRM")
-    exp = fuentes.expediente_crm(exp_id, element)
-    if exp is None:
+    fichas, corte = _cada_expediente(case_dir, ctx, "crm_actuacion", titulo)
+    if corte:
+        return corte
+
+    sin_leer, sin_actuacion, cuenta = [], [], {}
+    for exp_id, _el, f in fichas:
+        act = f.actuaciones
+        if act is None:
+            sin_leer.append(exp_id)
+        elif not act:
+            sin_actuacion.append(exp_id)
+        else:
+            cuenta[exp_id] = len(act)
+    ev = {"actuaciones": cuenta}
+    if sin_leer:
         return Resultado("crm_actuacion", titulo, FALLO,
-                         f"no se pudo consultar el CRM para el expediente {exp_id}")
-    if not exp.encontrado:
+                         f"no se pudieron leer las relaciones de {', '.join(sin_leer)}",
+                         ev)
+    if sin_actuacion:
         return Resultado("crm_actuacion", titulo, FALLO,
-                         f"el CRM no encuentra el expediente {exp_id}")
-    n = len(exp.actuaciones)
-    ev = {"exp_id": exp_id, "actuaciones": n}
-    if n == 0:
-        return Resultado("crm_actuacion", titulo, FALLO,
-                         f"el expediente {exp_id} no tiene ninguna actuación asociada: "
-                         "la apertura no quedó registrada como trabajo", ev)
+                         f"{len(sin_actuacion)} expediente(s) sin ninguna actuación "
+                         f"asociada: {', '.join(sin_actuacion)}. La apertura no quedó "
+                         "registrada como trabajo", ev)
     return Resultado("crm_actuacion", titulo, OK,
-                     f"{n} actuación(es) asociada(s) al expediente {exp_id}", ev)
+                     f"{sum(cuenta.values())} actuación(es) asociada(s)", ev)
 
 
 @_de_red
-def c9_cuantia_coherente(case_dir: Path, fuentes: "Fuentes") -> Resultado:
-    """La cuantía de `_caso.md` y la del CRM, que son dos hogares del mismo hecho.
+def c9_cuantia_coherente(case_dir: Path, ctx: "_Contexto") -> Resultado:
+    """La cuantía de `_caso.md` y la del CRM, dos hogares del mismo hecho.
 
     `MEJORAS #227`: la cuantía se conoce al leer el encargo, así que el alta va al final
-    y el dato llegaba al CRM y no al índice local, que se quedaba diciendo «pendiente»
-    de algo que ya existía. Esta comprobación es la que lo habría dicho.
+    y el dato llegaba al CRM y no al índice local.
 
-    La cuantía del CRM llega como **cadena** (medido), así que se comparan números y no
-    textos: `73140` y `73140.00` son la misma cuantía.
+    La conversión es **estricta** (ver `_a_numero`). La permisiva de la primera versión
+    dejaba pasar `NaN` como coincidencia —porque `abs(nan - x) > 0.005` es falso— y
+    confundía «no hay cuantía» con «la cuantía no se puede leer» (H-09).
     """
     titulo = "Cuantía de `_caso.md` igual a la del CRM"
-    exp_id, element = _expediente_registrado(case_dir)
-    if not exp_id:
-        return Resultado("cuantia_coherente", titulo, PENDIENTE,
-                         "`_caso.md` no registra ningún expediente del CRM")
-    fm = _frontmatter(case_dir)
-    meta = fm.get("meta") if isinstance(fm.get("meta"), dict) else {}
-    local = meta.get("cuantia")
-    exp = fuentes.expediente_crm(exp_id, element)
-    if exp is None:
-        return Resultado("cuantia_coherente", titulo, FALLO,
-                         f"no se pudo consultar el CRM para el expediente {exp_id}")
-    if not exp.encontrado:
-        return Resultado("cuantia_coherente", titulo, FALLO,
-                         f"el CRM no encuentra el expediente {exp_id}")
+    fichas, corte = _cada_expediente(case_dir, ctx, "cuantia_coherente", titulo)
+    if corte:
+        return corte
 
-    n_local, n_crm = _a_numero(local), _a_numero(exp.cuantia)
-    ev = {"exp_id": exp_id, "local_declarada": local is not None,
-          "crm_declarada": exp.cuantia not in (None, "")}
-    if n_local is None and n_crm is None:
+    fm, err = _frontmatter(case_dir)
+    if err:
+        return Resultado("cuantia_coherente", titulo, FALLO, err)
+    meta = fm.get("meta") if isinstance(fm.get("meta"), dict) else {}
+    local_crudo = meta.get("cuantia")
+    n_local, err_local = _a_numero(local_crudo)
+    if err_local:
+        return Resultado("cuantia_coherente", titulo, FALLO,
+                         f"la cuantía de `_caso.md` no es un número: {err_local}")
+
+    problemas, ev = [], {"local": n_local, "expedientes": {}}
+    for exp_id, _el, f in fichas:
+        n_crm, err_crm = _a_numero(f.cuantia)
+        ev["expedientes"][exp_id] = {"crm_declarada": f.cuantia not in (None, ""),
+                                     "legible": not err_crm}
+        if err_crm:
+            problemas.append(f"{exp_id}: la cuantía del CRM no es un número ({err_crm})")
+        elif n_local is None and n_crm is None:
+            continue
+        elif n_local is None:
+            problemas.append(f"{exp_id}: el CRM tiene cuantía y `_caso.md` dice "
+                             "«pendiente». El dato existe y el índice local miente")
+        elif n_crm is None:
+            problemas.append(f"{exp_id}: `_caso.md` tiene cuantía y el CRM no")
+        elif abs(n_local - n_crm) > 0.005:
+            # Medio céntimo: el alta mandaba la cuantía como entero y los céntimos se
+            # perdían (`MEJORAS #218`); por debajo de eso es el redondeo conocido.
+            problemas.append(f"{exp_id}: la cuantía local y la del CRM no coinciden")
+    if problemas:
+        return Resultado("cuantia_coherente", titulo, FALLO, "; ".join(problemas[:3]), ev)
+    if n_local is None:
         return Resultado("cuantia_coherente", titulo, PENDIENTE,
                          "ni `_caso.md` ni el CRM declaran cuantía", ev)
-    if n_local is None:
-        return Resultado("cuantia_coherente", titulo, FALLO,
-                         "el CRM tiene cuantía y `_caso.md` dice «pendiente»: el dato "
-                         "existe y el índice local miente", ev)
-    if n_crm is None:
-        return Resultado("cuantia_coherente", titulo, FALLO,
-                         "`_caso.md` tiene cuantía y el CRM no", ev)
-    if abs(n_local - n_crm) > 0.005:
-        # Medio céntimo: el alta mandaba la cuantía como entero y los céntimos se
-        # perdían (`MEJORAS #218`), así que una diferencia por debajo de eso no sería
-        # una discrepancia sino el redondeo conocido.
-        return Resultado("cuantia_coherente", titulo, FALLO,
-                         "la cuantía de `_caso.md` y la del CRM no coinciden", ev)
     return Resultado("cuantia_coherente", titulo, OK,
                      "la cuantía local coincide con la del CRM", ev)
 
 
-def _a_numero(v: Any) -> float | None:
+def _a_numero(v: Any) -> tuple[float | None, str]:
+    """`(numero, error)`. `(None, "")` = ausente. Estricta a propósito.
+
+    Tres cosas que la versión permisiva hacía mal (H-09):
+
+    - `float("NaN")` pasaba, y **cualquier** comparación con NaN es falsa, así que
+      `abs(nan - x) > 0.005` daba «coinciden». Un `NaN` en el CRM aprobaba el caso.
+    - `1e309` se convierte a infinito y `inf - inf` es NaN: mismo final.
+    - Un valor **ilegible** (`'roto'`, `'1.234,56'`) devolvía `None`, igual que la
+      ausencia, y el informe decía «ninguno declara cuantía» sobre dos que sí lo hacían.
+    """
+    import math
+
     if v is None or (isinstance(v, str) and not v.strip()):
-        return None
-    try:
-        return float(str(v).replace(",", ".").replace(" ", ""))
-    except ValueError:
-        return None
+        return None, ""
+    if isinstance(v, bool):
+        return None, f"{v!r} es un booleano"
+    if isinstance(v, (int, float)):
+        n = float(v)
+    else:
+        s = str(v).strip().replace(" ", "")
+        # Separador decimal: solo se acepta una forma no ambigua. `1.234,56` y
+        # `1,234.56` significan lo mismo con convenciones opuestas, y adivinar cuál usa
+        # el emisor es inventarse un dato de dinero.
+        if "," in s and "." in s:
+            return None, f"{v!r} usa dos separadores: es ambiguo"
+        s = s.replace(",", ".")
+        try:
+            n = float(s)
+        except ValueError:
+            return None, f"{v!r} no es un número"
+    if math.isnan(n) or math.isinf(n):
+        return None, f"{v!r} no es un número finito"
+    return n, ""
 
 
 def _sha256(p: Path) -> str:
@@ -727,21 +875,36 @@ def _sha256(p: Path) -> str:
     return h.hexdigest()
 
 
-def _frontmatter(case_dir: Path) -> dict:
-    """El frontmatter de `_caso.md`, o `{}`. No lanza: es una consulta."""
+def _frontmatter(case_dir: Path) -> tuple[dict, str]:
+    """`(frontmatter, error)`. Un error NO es un frontmatter vacío.
+
+    La primera versión devolvía `{}` ante cualquier problema —fichero ilegible, YAML
+    roto, raíz que no es un mapa—, así que un `_caso.md` corrupto se leía como «el alta
+    no se ha hecho» y las cinco de red salían `pendiente` con exit 0 (H-03). Es la misma
+    frontera que la ronda anterior cerró en los lectores locales.
+    """
     index = case_dir / "00_Input" / "_caso.md"
+    if not index.exists():
+        return {}, ""
     if not index.is_file():
-        return {}
+        return {}, "`00_Input/_caso.md` existe y no es un fichero"
+    try:
+        texto = index.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return {}, f"`_caso.md` no se puede leer: {type(exc).__name__}"
+    if not texto.startswith("---"):
+        return {}, "`_caso.md` no empieza por el delimitador del frontmatter"
     try:
         import yaml
 
-        texto = index.read_text(encoding="utf-8")
-        if not texto.startswith("---"):
-            return {}
         d = yaml.safe_load(texto.split("---", 2)[1])
-        return d if isinstance(d, dict) else {}
-    except Exception:                                      # noqa: BLE001
-        return {}
+    except Exception as exc:                               # noqa: BLE001
+        return {}, f"el frontmatter de `_caso.md` no es YAML válido ({type(exc).__name__})"
+    if d is None:
+        return {}, ""
+    if not isinstance(d, dict):
+        return {}, f"el frontmatter de `_caso.md` no es un mapa sino {type(d).__name__}"
+    return d, ""
 
 
 #: Las nueve, en el orden del diseño. La lista se recorre SIEMPRE entera: un informe que
@@ -782,10 +945,14 @@ def verificar(case_dir: Path | str, fuentes: "Fuentes | None" = None) -> Informe
         from core.verificar_apertura_fuentes import SinRed
 
         fuentes = SinRed()
+    # UNA consulta por fuente, repartida. Dos comprobaciones que preguntan por separado
+    # pueden recibir dos fotos distintas y aprobar entre las dos un expediente al que le
+    # falta un documento — medido (R1, H-02).
+    ctx = _Contexto(case_dir, fuentes)
     resultados = []
     for fn in COMPROBACIONES:
         try:
-            resultados.append(_llamar(fn, case_dir, fuentes))
+            resultados.append(_llamar(fn, case_dir, ctx))
         except _ColisionDeTipo as exc:
             resultados.append(Resultado(
                 id=_id_de(fn), titulo=_id_de(fn), estado=FALLO,
@@ -797,7 +964,7 @@ def verificar(case_dir: Path | str, fuentes: "Fuentes | None" = None) -> Informe
     return Informe(case_dir=str(case_dir), resultados=resultados)
 
 
-def _llamar(fn: Callable, case_dir: Path, fuentes: "Fuentes") -> Resultado:
+def _llamar(fn: Callable, case_dir: Path, ctx: "_Contexto") -> Resultado:
     """Las locales toman solo `case_dir`; las de red, también `fuentes`.
 
     Se decide por una **marca explícita** (`@_de_red`) y no contando parámetros con
@@ -808,7 +975,7 @@ def _llamar(fn: Callable, case_dir: Path, fuentes: "Fuentes") -> Resultado:
     fichero de tests — y falla igual.
     """
     if getattr(fn, "_necesita_fuentes", False):
-        return fn(case_dir, fuentes)
+        return fn(case_dir, ctx)
     return fn(case_dir)
 
 
