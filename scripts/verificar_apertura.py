@@ -24,6 +24,13 @@ al evento forense». No se ha hecho, y se dice en vez de dejarlo a medias:
 Cuando exista el consumidor —la ficha de cierre de la acción 12, o V2 leyendo el
 resultado para decidir si sigue—, se cablea entonces, con su mutex y su test.
 
+## Las comprobaciones que salen a la red van detrás de `--con-red`
+
+Cinco de las nueve consultan Drive o el CRM. **No se hacen por defecto**: un verificador
+que abre conexiones sin que se lo pidan sorprende, y en una máquina sin credenciales
+tardaría en fallar. Sin el flag, esas cinco informan «no se pudo consultar», que es
+exactamente lo que ha pasado — no una aprobación.
+
 ## El código de salida
 
 `0` si no hay ningún `fallo`; `1` si lo hay. `pendiente` **no** es fallo: un expediente a
@@ -55,6 +62,9 @@ def main(
     json_out: bool = typer.Option(False, "--json", help="Informe en JSON"),
     solo_problemas: bool = typer.Option(
         False, "--solo-problemas", help="Solo los fallos y pendientes"),
+    con_red: bool = typer.Option(
+        False, "--con-red",
+        help="Consultar Drive y el CRM (si no, esas cinco salen «no se pudo consultar»)"),
 ) -> None:
     # `resolve_ref` y no `buscar` a secas: `buscar` casa el nombre LITERAL de la
     # carpeta, así que `--case-id W-XXXXXX` —la forma que esta ayuda anuncia y la que
@@ -66,7 +76,16 @@ def main(
         typer.echo(f"[ERROR] Caso no encontrado: {case_id!r}", err=True)
         raise typer.Exit(code=2)
 
-    informe = va.verificar(base)
+    # Sin `--con-red` el comando NO sale a la red, y las cinco comprobaciones remotas
+    # dicen «no se pudo consultar» — que es la verdad, no una aprobación. Este flag
+    # faltaba: las cinco se construyeron y **el comando no tenía forma de usarlas**, así
+    # que eran una pieza que nadie podía encadenar (R1, H-13).
+    fuentes = None
+    if con_red:
+        from core.verificar_apertura_fuentes import DeLaRed
+
+        fuentes = DeLaRed()
+    informe = va.verificar(base, fuentes)
 
     if json_out:
         typer.echo(json.dumps(
