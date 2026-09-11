@@ -10732,7 +10732,7 @@ creador al que se le pide que sea también un actualizador, y calla cuando no pu
 - **(c) Que el alta CRM escriba la cuantía al pasar**, ya que la tiene en la mano. Tapa este caso y
   deja `#184` y `#192` vivos.
 
-## 228. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color  [PROMOVIDO → PLAN.md 2026-09-11]
+## 228. El semáforo de la plantilla de viabilidad está cableado a medias: FINANZAS no tiene ni desplegable ni color  [CERRADA 2026-09-11]  [PROMOVIDO → PLAN.md 2026-09-11]
 
 > **[PROMOVIDO → PLAN.md] 2026-09-11.** Disparador: decisión de Nikolai al arrancar la sesión,
 > sobre la medición de las siete aperturas del 2026-09-10. Va en la **fila #28** de `PLAN.md`
@@ -10797,6 +10797,36 @@ el semáforo y la protección) y tiene razón: lo que hay que hacer es **añadir
 **Y una pregunta de diseño que va con esto:** si FINANZAS nunca tuvo desplegable, conviene comprobar
 si alguien ha rellenado esa celda en los informes ya cerrados, y con qué literales. Si la respuesta
 es «nadie», puede que la fila sobre y lo que falte sea decidirlo, no cablearlo.
+
+> **CERRADA el 2026-09-11.** Se **añadió** —sin regenerar nada, como `modelo_xlsx.md` exige— la
+> validación de lista en `E22` y las tres reglas de formato condicional sobre **`E22:H22`**, con
+> los mismos colores y el mismo alfa `FF` que `E21`.
+>
+> **Por qué `E22:H22` y no otro rango.** La fila 22 tiene **dos** bloques combinados
+> (`E22:F22` + `G22:H22`) donde la 21 tiene uno (`E21:H21`). El rango cubre los dos: con solo
+> `E22:F22`, escribir en `E22` habría coloreado la mitad izquierda y la derecha se habría quedado
+> en blanco al lado — un semáforo a medias es peor que ninguno, porque parece que dice algo.
+>
+> **Verificado por lectura, no por el «OK» del script**: antes y después se inventarían hojas,
+> validaciones de las cuatro hojas, protección, merges de las filas 21 y 22, la fórmula del TOTAL
+> y las reglas de `E21`. Nada cambió salvo lo añadido. Cuatro tests nuevos lo vigilan, con **3
+> rojos de control positivo** contra la plantilla anterior; los de la fila 21 pasan en las dos,
+> que es el reparto correcto.
+>
+> **La pregunta de diseño de arriba sigue abierta** y no la cierra esto: no se ha medido si
+> alguien rellena esa celda en los informes cerrados. Cablearla era barato y reversible; retirar
+> la fila no lo es.
+
+### La mitad que NO se arregló, y se dice
+
+La validación de `E21` lleva `showErrorMessage=False`, así que **Excel acepta en silencio** un
+`AMARILLO` en mayúsculas o un `ámbar`: el desplegable sugiere, no obliga. `E22` se cableó
+**replicando ese comportamiento**, no mejorándolo — poner `True` solo en la nueva haría que las dos
+mitades del mismo semáforo se comportaran distinto, y ponerlo en las dos es endurecer JURÍDICO, que
+es otra decisión y nadie la ha pedido.
+
+O sea que el semáforo sigue sin proteger del literal mal escrito, en sus dos filas. Es un defecto
+real, medido, y vive aquí en vez de arreglarse de paso.
 
 ## 229. `poblar_sala_lectura` no tiene transacción ni exclusión: dos corridas solapadas se pisan el catálogo
 
