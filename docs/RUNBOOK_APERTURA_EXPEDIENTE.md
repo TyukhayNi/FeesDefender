@@ -764,9 +764,15 @@ donde empieza la lectura real; no intercalar análisis a mitad de la mecánica d
     cuando la firma el comprador. Hoy la identidad y la titularidad van a `01. ACTIVACIÓN`,
     la hoja de visita y la ficha de comprador a `03. OFERTAS`, y en `06. PBC` quedan **solo**
     los Anexos 1 y 2 (más `pbc`/`blanqueo` explícitos). Medido sobre los 1.352 documentos de
-    los diez expedientes con catálogo: **59 documentos** se mueven de `06. PBC` a
-    `01. ACTIVACIÓN`. Un test congelaba el error (`"Nota simple registral.pdf" → "06. PBC"`)
-    y se corrigió contra este runbook, que es la fuente.
+    los diez expedientes con catálogo, **87 documentos cambian de categoría**, y el desglose
+    importa porque no todo es el mismo hecho: **59** se mueven de `06. PBC` a
+    `01. ACTIVACIÓN` (la corrección de `[APER-61]`), **26** salen del residuo hacia una
+    categoría —24 a `06. PBC`, que son Anexos 1 y 2 que la tabla vieja no reconocía, y 2 a
+    `03. OFERTAS`—, y **2** entran al residuo: son los dos falsos positivos de substring que
+    el límite de palabra elimina (`Companies…` casaba `nie`, `carrasco` casaba `arras`). El
+    residuo baja de 770 a 746 sobre 1.352. Un test congelaba el error
+    (`"Nota simple registral.pdf" → "06. PBC"`) y se corrigió contra este runbook, que es la
+    fuente.
   - **La tabla no sabe de qué parte es un documento**, y no puede: el nombre rara vez lo
     dice. Enruta al lado del **vendedor**, que es la mayoría, y deja al comprador lo que solo
     él firma. Un KYC de comprador cuyo nombre no lo diga seguirá cayendo en `01. ACTIVACIÓN`,
