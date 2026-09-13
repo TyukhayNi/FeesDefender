@@ -942,6 +942,63 @@ def _informar_v1(resultado) -> None:
         typer.echo(f"  PENDIENTE {p.codigo}: {p.detalle}")
 
 
+def _verificar_expediente(case_dir: Path, case_id: str, *,
+                          con_red: bool = True) -> None:
+    """Corre `verificar_apertura` sobre el caso e imprime su informe. **No escribe nada.**
+
+    Import local a propósito: `verificar_apertura_fuentes` arrastra las dependencias de
+    red, y este módulo se importa también para caminos que no salen a Internet.
+    """
+    from core import verificar_apertura as va
+
+    fuentes = None
+    if con_red:
+        from core.verificar_apertura_fuentes import DeLaRed
+
+        fuentes = DeLaRed()
+    informe = va.verificar(case_dir, fuentes)
+    typer.echo("")
+    typer.echo("=== Verificacion del EXPEDIENTE (no del paso) ===")
+    for r in informe.resultados:
+        if r.estado == va.OK:
+            continue                       # el informe completo, en el comando dedicado
+        typer.echo(f"  [{r.estado:>15}] {r.titulo}")
+        typer.echo(f"                    {r.detalle}")
+    typer.echo(f"  {informe.resumen}")
+    # El `case_id` se RECIBE, no se deduce del nombre de la carpeta: sacarlo de los
+    # paréntesis funciona hasta el primer caso cuya carpeta no siga el patrón, y entonces
+    # imprime una orden que no se puede copiar.
+    typer.echo("  detalle completo: python -m scripts.verificar_apertura "
+               f"--case-id {case_id} --con-red")
+
+
+def _informar_v1_y_verificar(resultado, case_dir: Path, case_id: str) -> None:
+    """Informa la ronda de V1 y, acto seguido, verifica el EXPEDIENTE (`MEJORAS #252`).
+
+    **Por qué aquí y no como etapa.** `verificar_apertura` se construyó el 2026-09-11 y
+    hasta el 2026-09-13 **no lo disparaba nadie**: ni V1, ni este CLI, ni el runbook. Una
+    red que hay que acordarse de lanzar no atrapa nada, y la pieza existe precisamente
+    porque «estar encima» no escala. Pero no puede ser una etapa: correría **bajo el
+    mutex**, y ese módulo lo evita a propósito para poder usarse mientras otra cosa
+    trabaja sobre el caso. Va donde solo se informa —fuera del bloque de exclusión— y
+    **no toca el código de salida**: los bytes ya están depositados y el trabajo hecho.
+
+    Y si la verificación misma revienta —token caducado, red caída—, se **dice** y se
+    sigue. Un verificador que tumba lo que verifica es peor que no tenerlo; uno que se
+    cae en silencio es peor todavía, porque deja creer que miró.
+    """
+    _informar_v1(resultado)
+    try:
+        _verificar_expediente(case_dir, case_id)
+    except Exception as exc:  # noqa: BLE001 — informar no puede tumbar la apertura
+        typer.echo("")
+        typer.echo(f"[AVISO] no se pudo verificar el expediente: {exc}", err=True)
+        typer.echo("        el estado del EXPEDIENTE queda SIN COMPROBAR (la apertura "
+                   "sí terminó); repítelo con "
+                   "`python -m scripts.verificar_apertura --case-id <W> --con-red`",
+                   err=True)
+
+
 def _alta_crm(
     ident: "brain.Identidad",
     *,
@@ -1576,7 +1633,7 @@ def main(
         raise typer.Exit(code=0)
 
     if resultado_v1 is not None:
-        _informar_v1(resultado_v1)
+        _informar_v1_y_verificar(resultado_v1, case_dir, ident.case_id)
         raise typer.Exit(code=codigo_de_salida(resultado_v1.estado))
 
     typer.echo(f"OK Caso abierto: {ident.case_id}")

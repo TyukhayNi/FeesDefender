@@ -1573,3 +1573,226 @@ def test_integracion_el_adaptador_real_habla_con_el_CRM():
         "`actuaciones` ya no viene como bloque de `related_register`: C7 dejaría de "
         "poder leerlas por el lado del expediente")
     assert isinstance(exp.actuaciones, list)
+
+
+# ===========================================================================
+# C1/C2 — la clave con la que se cruzan el censo remoto y el disco (`MEJORAS #251`)
+#
+# **Dos cadenas que se imprimen idénticas pueden no ser iguales, y entonces la red de
+# verificación acusa a un fichero que está.** Medido el 2026-09-13 con una sonda sobre
+# estas dos comprobaciones: el mismo documento, declarado por Drive en NFD y guardado en
+# `G:` en NFC, hacía que C1 dijera «1 falta en local y 1 sobra en local» —con las dos
+# rutas indistinguibles a la vista— y que C2 dijera «ninguno de los 1 ficheros locales
+# tiene hash en Drive con el que contrastar»: **dejaba de verificarlo y lo presentaba
+# como si el remoto no publicase checksum.** Un «no lo sé» disfrazado de «no hay».
+#
+# El hallazgo no nace aquí: lo midió `intake_drive_hash`, escrito el 2026-09-10 y nunca
+# commiteado (rescate de la fila #29), sobre W-02V48N — donde el falso hallazgo **tapaba
+# una discrepancia real de +326 bytes**. C1/C2 se construyeron un día después y heredaron
+# el defecto sin saberlo.
+# ===========================================================================
+
+import unicodedata as _ud
+
+_ACENTUADO = _ud.normalize("NFC", "FR_Elena_Álvarez_Firmado.pdf")
+
+
+def _sha(b: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(b).hexdigest()
+
+
+def _caso_drive(tmp_path, ficheros):
+    c = _caso(tmp_path)
+    _con_caso_md(c, drive_ev_team_id="T", drive_ev_folder_id="F")
+    _con_drive_ev(c, ficheros)
+    return c
+
+
+def test_n1_c1_no_acusa_a_un_fichero_que_solo_difiere_en_la_FORMA_unicode(tmp_path):
+    """El defecto medido. El documento está, es el mismo, y C1 decía `fallo` nombrando
+    dos veces la misma ruta."""
+    c = _caso_drive(tmp_path, {_ACENTUADO: b"contenido"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto(_ud.normalize("NFD", _ACENTUADO))])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+
+
+def test_n2_c2_CONTRASTA_ese_fichero_en_vez_de_decir_que_no_puede(tmp_path):
+    """Lo caro de los dos. C2 no daba `fallo`: daba `pendiente` con un mensaje que suena a
+    «el remoto no publica hash». El hash estaba ahí; lo que falló fue el cruce de la clave,
+    y el fichero **dejó de verificarse en silencio**."""
+    c = _caso_drive(tmp_path, {_ACENTUADO: b"contenido"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto(_ud.normalize("NFD", _ACENTUADO),
+                                                sha256=_sha(b"contenido"))])
+
+    r = _rr(c, "hash_drive", f)
+
+    assert r.evidencia["contrastados"] == 1, r.evidencia
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+
+
+def test_n3_y_una_discrepancia_REAL_bajo_ese_mismo_nombre_sigue_saliendo(tmp_path):
+    """CONTROL POSITIVO, y es el que impide que el remedio sea «tragarse el hallazgo»: con
+    las claves ya cruzadas, un contenido distinto tiene que salir como discrepancia. En
+    W-02V48N el falso hallazgo tapaba una diferencia real de +326 bytes."""
+    c = _caso_drive(tmp_path, {_ACENTUADO: b"contenido ALTERADO"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto(_ud.normalize("NFD", _ACENTUADO),
+                                                sha256=_sha(b"contenido"))])
+
+    r = _rr(c, "hash_drive", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["contrastados"] == 1
+    assert len(r.evidencia["discrepan"]) == 1
+
+
+def test_n4_un_nombre_que_EMPIEZA_POR_ESPACIO_cruza_con_el_del_remoto(tmp_path):
+    """El segundo defecto de la misma clase. Las carpetas de E&V traen ficheros cuyo nombre
+    empieza por un espacio; el sistema de ficheros virtual de Drive Desktop los rechaza, y
+    `rclone` escribe en disco `␠NIE.jpg` (U+2420, el «Left Space» de su `--local-encoding`,
+    que el pull ya usa). Drive lo sigue llamando ` NIE.jpg`, así que C1 contaba uno que
+    falta y uno que sobra — otra vez con dos rutas que a la vista son la misma."""
+    c = _caso_drive(tmp_path, {"␠NIE Pasaporte.jpg": b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto(" NIE Pasaporte.jpg")])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+
+
+def test_n5_un_caracter_PROHIBIDO_en_windows_tambien_cruza(tmp_path):
+    """La misma clase, cerrada entera y no por ejemplos. `rclone` sustituye en disco los
+    caracteres que Windows no admite en un nombre por su forma **fullwidth**: `?` pasa a
+    `？` (U+FF1F). Sin deshacerlo, un documento de E&V con una interrogación en el nombre
+    sale acusado dos veces.
+
+    **Declarado:** NFC y el espacio inicial están MEDIDOS sobre casos reales; el resto del
+    mapa sale del `--local-encoding` que el pull ya pasa a rclone, y **no se ha visto
+    todavía en un expediente de este repo**.
+    """
+    c = _caso_drive(tmp_path, {"Nota simple？.pdf": b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("Nota simple?.pdf")])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+
+
+def test_n6_dos_ficheros_del_remoto_que_colapsan_a_la_MISMA_clave_se_declaran(tmp_path):
+    """El defecto por el otro lado, y el que impide que el remedio esconda una pérdida.
+
+    Si el remoto trae dos ficheros que solo se distinguen por su forma Unicode, en un
+    sistema de ficheros Windows **no caben los dos**: uno falta de verdad. Cruzar por clave
+    canónica los funde, y sin declararlo el censo diría que todo cuadra.
+    """
+    c = _caso_drive(tmp_path, {_ACENTUADO: b"uno"})
+    f = _FuentesDobles(censo=[
+        vaf.FicheroRemoto(_ud.normalize("NFD", _ACENTUADO), file_id="A"),
+        vaf.FicheroRemoto(_ud.normalize("NFC", _ACENTUADO), file_id="B")])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.FALLO, f"{r.detalle} · {r.evidencia}"
+    # El aserto mira la LISTA, no si la clave existe: `colisiones_de_clave` esta siempre
+    # en la evidencia —vacia o no—, asi que un `in` sobre el dict serializado lo
+    # satisfacia un mutante que hubiera dejado de detectarlas (M04 del arnes). Es el
+    # mismo defecto que la R1 anterior encontro en A18, cometido otra vez.
+    assert r.evidencia["colisiones_de_clave"], r.evidencia
+    assert "colision" in r.detalle.lower()
+
+
+def test_n7_c2_CONFIRMA_el_relleno_de_225_rehasheando_sin_la_cola_de_ceros(tmp_path):
+    """`MEJORAS #225`: los ficheros del pull llegaban rellenados con ceros hasta el
+    siguiente múltiplo de 512. Un `discrepan` a secas no distingue ese defecto **conocido**
+    de una alteración cualquiera, y para un expediente son cosas muy distintas.
+
+    El módulo huérfano solo podía llamarlo «compatible con», porque miraba el tamaño y su
+    propio docstring admitía que no comprobaba la cola de ceros —«exige abrir el fichero»—.
+    **C2 ya abre el fichero para hashearlo**, así que aquí no hay que conformarse con una
+    sospecha: se rehashea el prefijo sin la cola de ceros y, si cuadra con el sha256 que
+    declara Drive, **está probado** que el contenido es el del original con relleno detrás.
+    """
+    original = b"contenido del encargo"
+    relleno = original + b"\0" * (512 - len(original))
+    c = _caso_drive(tmp_path, {"encargo.pdf": relleno})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("encargo.pdf", sha256=_sha(original))])
+
+    r = _rr(c, "hash_drive", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["relleno_225_confirmado"] == ["encargo.pdf"], r.evidencia
+    assert "encargo.pdf" in str(r.evidencia["discrepan"])
+
+
+def test_n8_una_alteracion_que_NO_es_el_relleno_no_se_etiqueta_como_tal(tmp_path):
+    """CONTROL POSITIVO del anterior: etiquetar toda discrepancia como «el relleno
+    conocido» volvería inútil la etiqueta y haría pasar por defecto conocido una
+    alteración que no lo es. Aquí los bytes son otros, no hay cola de ceros, y C2 tiene
+    que decir que **no** es el relleno."""
+    c = _caso_drive(tmp_path, {"encargo.pdf": b"contenido MANIPULADO"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("encargo.pdf",
+                                                sha256=_sha(b"contenido del encargo"))])
+
+    r = _rr(c, "hash_drive", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["relleno_225_confirmado"] == [], r.evidencia
+
+
+def test_n9_un_fichero_que_ACABA_EN_CEROS_de_verdad_no_se_da_por_confirmado(tmp_path):
+    """El caso que separa «probado» de «se le parece»: si el contenido legítimo ya
+    terminaba en ceros, quitar la cola entera se lleva bytes del original y el re-hash NO
+    cuadra. Eso tiene que salir como discrepancia **sin** confirmar — mejor un hallazgo sin
+    etiqueta que una etiqueta falsa sobre un expediente."""
+    original = b"PDF con ceros propios\0\0\0"
+    relleno = original + b"\0" * (512 - len(original))
+    c = _caso_drive(tmp_path, {"encargo.pdf": relleno})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("encargo.pdf", sha256=_sha(original))])
+
+    r = _rr(c, "hash_drive", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["relleno_225_confirmado"] == [], r.evidencia
+    assert "encargo.pdf" in str(r.evidencia["discrepan"])
+
+
+def test_n10_el_relleno_NO_se_confirma_sin_rehashear_de_verdad(tmp_path):
+    """Mata al mutante que devuelve «confirmado» sin comprobar nada (M06).
+
+    `test_n8` no lo alcanzaba: su fichero mide 20 bytes, así que salía por la guarda del
+    múltiplo de 512 **antes** de llegar al re-hash, y el mutante no se ejercitaba. Aquí el
+    fichero tiene la FORMA del relleno —512 bytes justos, cola de ceros— pero su contenido
+    no es el del original: la forma sola no puede bastar para afirmar procedencia.
+    """
+    contenido = b"ESTO NO ES EL ORIGINAL" + b"\0" * (512 - 22)
+    c = _caso_drive(tmp_path, {"encargo.pdf": contenido})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("encargo.pdf",
+                                                sha256=_sha(b"contenido del encargo"))])
+
+    r = _rr(c, "hash_drive", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["relleno_225_confirmado"] == [], r.evidencia
+
+
+def test_n11_un_tamano_que_NO_es_multiplo_de_512_no_es_el_relleno_de_225(tmp_path):
+    """Mata al mutante que deja de exigir el múltiplo de 512 (M07).
+
+    El relleno de `MEJORAS #225` lleva **al siguiente múltiplo de 512**: esa es su firma,
+    no un adorno. Un fichero con ceros al final cuyo tamaño no cae en un múltiplo llegó
+    ahí por otra vía, y etiquetarlo como el defecto conocido sería dar por explicada una
+    alteración que no lo está — sobre un expediente probatorio.
+    """
+    original = b"contenido del encargo"
+    contenido = original + b"\0" * 7            # 28 bytes: ceros al final, no 512-align
+    c = _caso_drive(tmp_path, {"encargo.pdf": contenido})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("encargo.pdf", sha256=_sha(original))])
+
+    r = _rr(c, "hash_drive", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["relleno_225_confirmado"] == [], r.evidencia

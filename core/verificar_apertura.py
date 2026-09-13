@@ -46,6 +46,7 @@ productor todavía no ha corrido.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import re
 import unicodedata
@@ -553,6 +554,48 @@ def _locales_de_drive_ev(case_dir: Path) -> tuple[list[str], str]:
     return out, ""
 
 
+#: Lo que `rclone` escribe EN DISCO en lugar de un carácter que Windows no admite en un
+#: nombre de fichero, con el `--local-encoding` que el pull ya le pasa. Se deshace aquí para
+#: cruzar contra el nombre que Drive declara.
+#:
+#: **`/` no está y eso es deliberado:** `／` (U+FF0F) dentro de un segmento vendría de un
+#: fichero remoto con una barra en el nombre, y traducirlo crearía un separador de ruta
+#: falso. Ese caso queda fuera, declarado, porque es ambiguo en el origen.
+_DESHACER_ENCODING_RCLONE = str.maketrans({
+    "＊": "*", "＜": "<", "＞": ">", "？": "?",
+    "：": ":", "｜": "|", "＂": '"', "＼": "\\",
+    "␠": " ",      # «Left/Right Space»: el caso MEDIDO (ficheros de E&V con espacio)
+    "．": ".",      # «Left/Right Period»
+})
+
+
+def clave_de_cruce(ruta: str) -> str:
+    """La clave con la que se cruza el censo remoto contra el disco.
+
+    **Dos cadenas que se imprimen idénticas pueden no ser iguales, y entonces esta red
+    acusa a un fichero que está.** Medido el 2026-09-13 sobre C1 y C2, y antes —el
+    2026-09-10, en W-02V48N— por el módulo `intake_drive_hash`, donde el falso hallazgo
+    **tapaba una discrepancia real de +326 bytes**. Dos causas, la misma clase:
+
+    1. **Forma Unicode.** Drive publica `Á` **descompuesta** (`A` + U+0301, NFD) y en `G:`
+       está **precompuesta** (U+00C1, NFC). C1 decía «1 falta y 1 sobra» nombrando dos
+       veces la misma ruta; C2, peor, decía «ninguno tiene hash en Drive con el que
+       contrastar» — o sea **dejaba de verificarlo** y lo presentaba como si el remoto no
+       publicase checksum. Un «no lo sé» disfrazado de «no hay».
+    2. **El `--local-encoding` de rclone.** Las carpetas de E&V traen ficheros cuyo nombre
+       empieza por un espacio; el sistema de ficheros virtual de Drive Desktop los rechaza,
+       así que el pull los escribe como `␠NIE.jpg` (U+2420) mientras Drive los sigue
+       llamando ` NIE.jpg`.
+
+    **Qué está medido y qué no**, porque la diferencia importa: NFC y el espacio inicial
+    salen de casos reales; el resto del mapa de arriba viene del `--local-encoding` que el
+    pull ya usa y **no se ha visto todavía en un expediente de este repo**.
+
+    Se conserva siempre la ruta original para mostrarla: lo que se canonicaliza es la clave.
+    """
+    return unicodedata.normalize("NFC", ruta).translate(_DESHACER_ENCODING_RCLONE)
+
+
 @_de_red
 def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
     """Lo que el remoto declara contra lo que hay en `01_Drive EV`.
@@ -587,11 +630,34 @@ def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
 
     from collections import Counter
 
-    c_remoto, c_local = Counter(f.ruta for f in censo.ficheros), Counter(locales)
-    faltan = sorted((c_remoto - c_local).elements())
-    sobran = sorted((c_local - c_remoto).elements())
+    # Se cruza por `clave_de_cruce` y se MUESTRA la ruta original: el nombre que el
+    # operador tiene que buscar es el que ve, no una forma canónica que no existe en
+    # ningún sitio.
+    c_remoto = Counter(clave_de_cruce(f.ruta) for f in censo.ficheros)
+    c_local = Counter(clave_de_cruce(r) for r in locales)
+    muestra = {clave_de_cruce(f.ruta): f.ruta for f in censo.ficheros}
+    muestra.update({clave_de_cruce(r): r for r in locales})
+    faltan = sorted(muestra.get(k, k) for k in (c_remoto - c_local).elements())
+    sobran = sorted(muestra.get(k, k) for k in (c_local - c_remoto).elements())
+
+    # Dos ficheros del remoto que colapsan a la misma clave NO son el mismo fichero: en
+    # un sistema de ficheros Windows **no caben los dos**, así que uno falta de verdad.
+    # Fundirlos en silencio sería el defecto simétrico del que este cruce viene a
+    # arreglar — un descuadre real presentado como «todo cuadra».
+    vistas: dict[str, list[str]] = {}
+    for f in censo.ficheros:
+        vistas.setdefault(clave_de_cruce(f.ruta), []).append(f.ruta)
+    colisiones = sorted(k for k, rutas in vistas.items() if len(rutas) > 1)
+
     ev = {"remoto": sum(c_remoto.values()), "local": sum(c_local.values()),
-          "faltan_en_local": faltan[:8], "sobran_en_local": sobran[:8]}
+          "faltan_en_local": faltan[:8], "sobran_en_local": sobran[:8],
+          "colisiones_de_clave": [vistas[k] for k in colisiones][:8]}
+    if colisiones:
+        return Resultado("censo_remoto", titulo, FALLO,
+                         f"{len(colisiones)} colision(es) de clave en el remoto: dos "
+                         "ficheros que solo se distinguen por su forma Unicode o por un "
+                         "carácter que Windows no admite, y que en local no caben los dos",
+                         ev)
     if faltan or sobran:
         return Resultado("censo_remoto", titulo, FALLO,
                          f"{len(faltan)} fichero(s) del remoto que no están en local y "
@@ -599,6 +665,55 @@ def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
     return Resultado("censo_remoto", titulo, OK,
                      f"los {sum(c_remoto.values())} ficheros del remoto están en local, "
                      "y ninguno de más", ev)
+
+
+#: Tope de la cola de ceros que se examina. El relleno de `MEJORAS #225` lleva al SIGUIENTE
+#: múltiplo de 512, así que por construcción mide menos de 512 bytes.
+_MAX_COLA_RELLENO = 512
+
+
+def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
+    """¿Los bytes de `p` son los del original CON la cola de ceros de `MEJORAS #225` detrás?
+
+    **Prueba, no parecido**, y esa es la diferencia con el intento anterior. El módulo
+    `intake_drive_hash` (2026-09-10) se quedaba en «compatible con el relleno» —tamaño
+    múltiplo de 512 y mayor que el origen— y su propio docstring admitía por qué: la otra
+    mitad de la firma es la cola de ceros, «que exige abrir el fichero». **C2 ya lo abre
+    para hashearlo**, así que aquí no hay que conformarse con una sospecha: se quita la
+    cola de ceros y se rehashea. Si el resultado es el `sha256` que Drive declara, está
+    demostrado que el contenido es el del original con relleno detrás.
+
+    Falla cerrado a propósito. Si el documento legítimo YA terminaba en ceros, quitar la
+    cola entera se lleva bytes suyos y el re-hash no cuadra: sale `False`, la discrepancia
+    se reporta **sin etiqueta**, y eso es lo correcto. Mejor un hallazgo sin explicar que
+    una explicación falsa sobre un expediente probatorio.
+
+    **Se lee en streaming y solo cuando ya hay discrepancia.** Un expediente lleva vídeos y
+    audios de cientos de MB; cargarlos enteros para comprobar una cola de ceros sería
+    cambiar un defecto de custodia por uno de memoria.
+    """
+    try:
+        tam = p.stat().st_size
+        if tam == 0 or tam % 512 != 0:
+            return False
+        with p.open("rb") as f:
+            f.seek(max(0, tam - _MAX_COLA_RELLENO))
+            cola = f.read()
+            ceros = len(cola) - len(cola.rstrip(b"\0"))
+            if ceros == 0 or ceros >= tam:
+                return False
+            h = hashlib.sha256()
+            f.seek(0)
+            por_leer = tam - ceros
+            while por_leer > 0:
+                trozo = f.read(min(1024 * 1024, por_leer))
+                if not trozo:
+                    return False                 # el fichero encogió: no se afirma nada
+                h.update(trozo)
+                por_leer -= len(trozo)
+    except OSError:
+        return False                             # no poder mirar no es haber visto
+    return h.hexdigest().lower() == sha_remoto.lower()
 
 
 @_de_red
@@ -630,10 +745,13 @@ def c2_hash_contra_drive(case_dir: Path, ctx: "_Contexto") -> Resultado:
                          "no se pudo consultar el remoto: no se puede acreditar "
                          "ningún hash")
 
-    con_hash = {f.ruta: f.sha256 for f in censo.ficheros if f.sha256}
-    contrastados, discrepan, ilegibles = 0, [], []
+    # Por `clave_de_cruce`, no por la ruta cruda: si no, un nombre con tilde salía por la
+    # rama «no tiene hash en Drive» y **dejaba de verificarse en silencio**, que es lo peor
+    # que puede hacer una red de custodia (medido el 2026-09-13; ver `clave_de_cruce`).
+    con_hash = {clave_de_cruce(f.ruta): f.sha256 for f in censo.ficheros if f.sha256}
+    contrastados, discrepan, ilegibles, relleno_225 = 0, [], [], []
     for rel in locales:
-        esperado = con_hash.get(rel)
+        esperado = con_hash.get(clave_de_cruce(rel))
         if not esperado:
             continue
         try:
@@ -644,10 +762,12 @@ def c2_hash_contra_drive(case_dir: Path, ctx: "_Contexto") -> Resultado:
         contrastados += 1
         if real.lower() != esperado.lower():
             discrepan.append(rel)
+            if _es_el_relleno_de_225(raiz / rel, esperado):
+                relleno_225.append(rel)
     sin_contrastar = len(locales) - contrastados - len(ilegibles)
     ev = {"locales": len(locales), "contrastados": contrastados,
           "sin_hash_remoto": sin_contrastar, "discrepan": discrepan[:8],
-          "ilegibles": ilegibles[:8]}
+          "ilegibles": ilegibles[:8], "relleno_225_confirmado": relleno_225[:8]}
     if ilegibles:
         return Resultado("hash_drive", titulo, FALLO,
                          f"{len(ilegibles)} fichero(s) local(es) que no se pueden "
@@ -866,8 +986,6 @@ def _a_numero(v: Any) -> tuple[float | None, str]:
 
 
 def _sha256(p: Path) -> str:
-    import hashlib
-
     h = hashlib.sha256()
     with p.open("rb") as f:
         for trozo in iter(lambda: f.read(1024 * 1024), b""):
