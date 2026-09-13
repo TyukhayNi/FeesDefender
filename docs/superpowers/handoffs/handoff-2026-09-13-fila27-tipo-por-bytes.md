@@ -162,6 +162,25 @@ La carrera se monta en `tmp_path` parcheando la lectura para que renombre en el 
 montaje de Drive for Desktop renombrando— no se reproduce ni en Linux ni sin `G:`**: eso solo se
 comprueba en una apertura real, y hasta entonces queda declarado como no verificado.
 
+## 3.7. La misma frontera sigue abierta en la otra sala, y conviene verlo antes de cerrar la fila
+
+`CLAUDE.md` manda preguntar «¿de qué frontera es esto un ejemplo?» **antes** de remediar, porque es
+lo que ahorró rondas en el mutex. La frontera de la pieza B es **«el tipo de un documento lo dicen
+sus bytes, no su nombre»**, y la pieza B la cierra solo en la **sala de máquina**.
+
+En la **sala de lectura** sigue abierta, y está medida: `core/inventory.py:95` descarta a `skipped`
+todo lo que no case `_RELEVANT_EXTS`, comparando `path.suffix.lower()` — o sea, el **nombre**. Un
+fichero sin extensión desaparece del catálogo aunque la sala de máquina ya sepa qué es y le haya
+escrito espejo. Eso es `MEJORAS #190` (`[APER-60]`), con dos mediciones: **4 documentos reales** del
+Drive de E&V el 2026-09-09 (un certificado municipal de tributos y tres de suministros, todos con
+texto útil) y, en W-02O7E2, **los cuatro DNI de quien firmó el encargo y un vídeo**.
+
+**No se ha construido aquí y no hace falta un número nuevo:** `#190` ya existe con su medición. Lo
+que esta sesión aporta es que ahora hay una pieza de la que colgarlo —`_sniff_ext_por_contenido`
+recibe una ruta y responde por contenido— así que el remedio de `#190` deja de ser «escribir un
+detector» y pasa a ser «llamar al que ya hay». Decidirlo es de Nikolai: cabe en esta fila como
+pieza C o va aparte.
+
 ## 4. Cabos que esta sesión deja atados y sueltos
 
 - **Atado:** el diff de la pieza B, sus 16 tests y el re-premisado de D9 + D9c.
