@@ -17,24 +17,41 @@ def test_clasificar_ruta_por_extension():
     assert sm.clasificar_ruta(".mp4") == "sin_soporte"
 
 
-def test_sniff_ext_por_contenido_pdf():
-    assert sm._sniff_ext_por_contenido(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3") == ".pdf"
+def _fichero(tmp_path: Path, nombre: str, data: bytes) -> Path:
+    """Un fichero suelto en `tmp_path`. El sniff recibe RUTAS desde `MEJORAS #215`:
+    un contenedor no se puede decidir con 16 bytes."""
+    ruta = tmp_path / nombre
+    ruta.write_bytes(data)
+    return ruta
 
 
-def test_sniff_ext_por_contenido_jpeg():
-    assert sm._sniff_ext_por_contenido(b"\xff\xd8\xff\xe0\x00\x10JFIF") == ".jpg"
+def test_sniff_ext_por_contenido_pdf(tmp_path: Path):
+    assert sm._sniff_ext_por_contenido(
+        _fichero(tmp_path, "x", b"%PDF-1.4\n%\xe2\xe3\xcf\xd3")) == ".pdf"
 
 
-def test_sniff_ext_por_contenido_png():
-    assert sm._sniff_ext_por_contenido(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR") == ".png"
+def test_sniff_ext_por_contenido_jpeg(tmp_path: Path):
+    assert sm._sniff_ext_por_contenido(
+        _fichero(tmp_path, "x", b"\xff\xd8\xff\xe0\x00\x10JFIF")) == ".jpg"
 
 
-def test_sniff_ext_por_contenido_desconocido_devuelve_none():
-    assert sm._sniff_ext_por_contenido(b"cualquier texto plano sin firma") is None
+def test_sniff_ext_por_contenido_png(tmp_path: Path):
+    assert sm._sniff_ext_por_contenido(
+        _fichero(tmp_path, "x", b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")) == ".png"
 
 
-def test_sniff_ext_por_contenido_bytes_vacios_devuelve_none():
-    assert sm._sniff_ext_por_contenido(b"") is None
+def test_sniff_ext_por_contenido_desconocido_devuelve_none(tmp_path: Path):
+    assert sm._sniff_ext_por_contenido(
+        _fichero(tmp_path, "x", b"cualquier texto plano sin firma")) is None
+
+
+def test_sniff_ext_por_contenido_bytes_vacios_devuelve_none(tmp_path: Path):
+    assert sm._sniff_ext_por_contenido(_fichero(tmp_path, "x", b"")) is None
+
+
+def test_sniff_ext_por_contenido_fichero_que_no_existe_devuelve_none(tmp_path: Path):
+    """No lanza: el inventario conserva entonces la extensión del nombre."""
+    assert sm._sniff_ext_por_contenido(tmp_path / "no-existe") is None
 
 
 def test_inventariar_detecta_extension_por_contenido_cuando_falta(tmp_path: Path):
