@@ -9882,9 +9882,38 @@ apertura**. El punto 2 sube con él, que es lo que convierte «no bloquea» en �
 por BYTES»): el mismo fichero sin extensión, dos defectos distintos y un mismo origen — E&V sube
 ficheros sin extensión y la cadena entera supone que el nombre lleva el tipo.
 
-## 215. `_MAGIC_BYTES` solo conoce firmas planas: un `.docx` sin extensión es `sin_soporte` y nadie lo lee
+## 215. `_MAGIC_BYTES` solo conoce firmas planas: un `.docx` sin extensión es `sin_soporte` y nadie lo lee  [CERRADA 2026-09-13]
 
 **[PROMOVIDO → PLAN.md]** fila #27, junto con `#214`, el 2026-09-10.
+
+> **CERRADA el 2026-09-13** (PR [#356](https://github.com/TyukhayNi/FeesDefender/pull/356), `a3bfd49`).
+> `_sniff_ext_por_contenido` recibe la **ruta** y abre el índice del contenedor: `word/document.xml`,
+> `xl/workbook.xml`, `ppt/presentation.xml` y el `mimetype` de ODF (leído acotado a 128 bytes, porque
+> lo escribe un fichero de fuera). El sniff **nombra** y `clasificar_ruta` **decide**, así que un
+> `.ods` o un `.zip` reconocidos siguen siendo `sin_soporte` pero con su nombre real; y una cabecera
+> `PK` que no se deja abrir devuelve `None`, no `.zip`. 16 tests con las tres ramas que esta entrada
+> exigía, más dos mutantes.
+>
+> **Dos afirmaciones de esta entrada resultaron falsas al medirlas, y se dejan dichas en vez de
+> corregirse en silencio:**
+>
+> 1. **«no llega a la ruta `ofimatica` que desde `MEJORAS #61` sabe leerlo»** — no es así.
+>    `clasificar_ruta` manda `.docx` y `.xlsx` a **`nativo`**, que tiene extractor determinista propio
+>    (`_try_docx`), y su docstring dice que cambiarles la ruta cambiaría el MD de casos ya hechos. Lo
+>    que había que cerrar era sacarlos de `sin_soporte`, no llevarlos a `ofimatica`.
+> 2. **El párrafo «De qué frontera es esto un ejemplo» numera mal sus propios ejemplos:** dice
+>    «Drive Desktop renombra al vuelo (#213), el sniff no conoce contenedores (#214)», y son `#214`
+>    y `#215` respectivamente. El listado de tres defectos es correcto; las referencias, no.
+>
+> **La frontera NO queda cerrada, y eso es lo que importa de esta entrada.** `MEJORAS #190` sigue
+> viva: `core/inventory.py:95` descarta por `path.suffix.lower()`, o sea por el nombre, así que un
+> fichero sin extensión no entra al catálogo de la **sala de lectura** aunque la de máquina ya sepa
+> qué es. Lo que cambia es que ahora hay pieza de la que colgarlo: el detector ya responde por
+> contenido y recibe una ruta.
+>
+> **Mergeada SIN ronda adversarial y SIN la verja de las dos semillas**, por decisión expresa de
+> Nikolai del 2026-09-13. Las dos ausencias se declaran también en el mensaje de merge y en la
+> fila #27 de `PLAN.md`. La cobertura de revisión queda **ausente, no refutada**.
 
 **Qué pasa.** `_sniff_ext_por_contenido` (`core/sala_maquina.py:76`) es el último recurso cuando el
 nombre no trae extensión reconocible, y su tabla `_MAGIC_BYTES` tiene **seis** entradas, todas
