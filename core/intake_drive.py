@@ -115,6 +115,12 @@ class DriveIntakeResult:
     skipped: bool          # True si .pulled existía y no se forzó
     rclone_returncode: int = 0
     errors: list[str] = field(default_factory=list)
+    #: Ficheros del destino que el recorrido de custodia **no pudo leer** (`MEJORAS #214`).
+    #: **Lo rellena la custodia, no el pull**: `scripts/abrir_caso._intake_drive_ev` lo
+    #: adjunta tras hashear el destino. Un `()` que venga de `pull_drive_ev` a pelo
+    #: significa «nadie lo ha verificado», no «todo cuadró» — quien lo lea sin pasar por
+    #: la custodia está leyendo un campo que nadie ha rellenado.
+    custodia_sin_verificar: tuple = ()
 
 
 # ---------------------------------------------------------------------------

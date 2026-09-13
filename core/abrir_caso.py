@@ -227,6 +227,42 @@ def plan_intake(inventario: list[dict], log_existente: list[dict], fuente: str,
 
 
 @dataclass(frozen=True)
+class FicheroSinVerificar:
+    """Un fichero del destino que el recorrido **no pudo leer**, y por qué.
+
+    Existe porque la alternativa es peor: sin él, un fichero ilegible sale del recorrido
+    como una ausencia, y una ausencia se lee como «no estaba». **No poder mirar no es
+    haber visto** — y en un ledger forense la diferencia es la que separa un hueco
+    declarado de una afirmación falsa sobre el expediente.
+    """
+
+    #: Clave tal como se LISTÓ (`01_Drive EV/…`), no la que pudiera tener ahora.
+    clave: str
+    #: Texto del error, tal cual. No se normaliza: el motivo es la prueba.
+    motivo: str
+
+
+@dataclass(frozen=True)
+class ArbolLocal:
+    """Lo que un recorrido de custodia midió, y lo que NO pudo medir.
+
+    `hashes` es el contrato de siempre (`{"<prefijo>/<relpath>": sha256hex}`) y sigue
+    siendo lo único que entra en el plan de intake. Los otros dos campos son la parte
+    que antes se perdía:
+
+    - `sin_verificar`: ficheros o directorios que el recorrido no pudo leer. Un
+      `hashes` corto **no** significa que el destino tenga menos ficheros.
+    - `renombrados`: `(clave listada, clave efectiva)` de lo que cambió de nombre entre
+      el listado y la apertura. El montaje de Drive for Desktop lo hace (`MEJORAS #214`),
+      y sin anotarlo el ledger afirmaría un nombre que en disco ya no existe.
+    """
+
+    hashes: dict[str, str]
+    sin_verificar: tuple[FicheroSinVerificar, ...] = ()
+    renombrados: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
 class Reconciliacion:
     ok: bool
     faltantes: tuple[str, ...]

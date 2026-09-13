@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import os
 import zipfile
 from pathlib import Path
 
@@ -75,25 +76,135 @@ class AbortarApertura(Exception):
         self.codigo = codigo
 
 
-def hash_tree_local(root: Path, *, prefijo: str) -> dict[str, str]:
-    """SHA-256 recursivo de todos los ficheros bajo root.
+def hash_tree_local(root: Path, *, prefijo: str) -> brain.ArbolLocal:
+    """SHA-256 recursivo de todos los ficheros bajo root, **declarando lo que no pudo leer**.
 
-    Devuelve {"<prefijo>/<relpath posix>": sha256hex}. Si root no existe, {}.
+    Devuelve un `ArbolLocal`: `hashes` es el `{"<prefijo>/<relpath posix>": sha256hex}` de
+    siempre; `sin_verificar` y `renombrados` son lo que antes se perdía. Si root no
+    existe, todo vacío — no hay nada que verificar, y eso sí es un cero honesto.
+
+    **Por qué no basta con listar y abrir** (`MEJORAS #214`, medido el 2026-09-10 en
+    W-048U77). El montaje de Google Drive for Desktop *presenta* una extensión inferida
+    del content-type para los ficheros que en Drive no la llevan, poco después de que
+    `rclone` haya escrito el nombre pelado. Entre el listado y la apertura, `X` pasa a ser
+    `X.jpg`: la función moría con `FileNotFoundError` sobre un fichero que está, y la
+    etapa `drive` de V1 quedaba `bloqueado` con el pull ya hecho.
+
+    Tres propiedades, y las tres son la misma:
+
+    1. **La enumeración no se traga los errores.** `rglob` los **suprime**: una carpeta
+       irrecorrible devuelve «cero ficheros» y nadie se entera. Es la clase H-04 que la
+       R1 de `verificar_apertura` midió el 2026-09-11, un nivel más abajo. Con
+       `os.walk(onerror=…)` cada directorio que no se deja recorrer sale declarado.
+    2. **La lectura es tolerante por fichero.** Ante un `FileNotFoundError` se **relee el
+       directorio** buscando el mismo nombre *más* una extensión, que es lo que hace el
+       montaje. Exactamente un candidato nuevo → se hashea bajo su clave **efectiva** y
+       se anota. Cero, o dos o más → `sin_verificar`: **la ambigüedad no se resuelve
+       adivinando**.
+    3. **Nada falta en silencio.** Cualquier otro `OSError` deja también el fichero en
+       `sin_verificar`. Un fichero que no se pudo leer **no ha medido cero**.
+
+    **Vive en `scripts/` y no en `core/` a propósito.** Parece que debería mudarse —la
+    casa manda que la lógica viva en el core— y rompería un guard:
+    `tests/test_abrir_caso_exit_bajo_mutex.py` recorre el AST de este módulo y exige que
+    esta función esté en el cierre transitivo del bloque del mutex. Moverla obligaría a
+    debilitar el guard, que es justo lo que la casa prohíbe. Los TIPOS sí están en
+    `core.abrir_caso`, junto a `Reconciliacion`, porque son vocabulario de custodia.
     """
     if not root.is_dir():
-        return {}
+        return brain.ArbolLocal(hashes={})
+
     out: dict[str, str] = {}
-    for p in sorted(root.rglob("*")):
-        if not p.is_file():
-            continue
-        rel = p.relative_to(root).as_posix()
-        # Protocolo por UBICACIÓN (MEJORAS #149): con `prefijo="01_Drive EV"` solo queda
-        # fuera `01_Drive EV/.pulled`. Un `_inventory.json` de E&V en esa carpeta es un
-        # fichero del cliente y ENTRA en el ledger forense.
-        if es_fichero_de_protocolo(f"{prefijo}/{rel}"):
-            continue
-        out[f"{prefijo}/{rel}"] = file_sha256(p)
-    return out
+    sin_verificar: list[brain.FicheroSinVerificar] = []
+    renombrados: list[tuple[str, str]] = []
+
+    def _clave(p: Path) -> str:
+        return f"{prefijo}/{p.relative_to(root).as_posix()}"
+
+    def _anotar_dir_ilegible(err: OSError) -> None:
+        # `os.walk` llama aquí cuando `scandir` falla sobre un directorio. Sin esto el
+        # subárbol entero desaparece del recorrido sin dejar rastro.
+        #
+        # La raíz se nombra por el prefijo y no `"<prefijo>/."`, que es lo que devuelve un
+        # `relative_to` de la raíz consigo misma: el caso peor del recorrido —la carpeta
+        # del pull entera ilegible— es justo el que tiene que leerse sin descifrar.
+        ruta = Path(err.filename) if err.filename else root
+        clave = prefijo if ruta == root else _clave(ruta)
+        sin_verificar.append(brain.FicheroSinVerificar(clave=clave, motivo=repr(err)))
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=_anotar_dir_ilegible):
+        dirnames.sort()                          # recorrido determinista
+        d = Path(dirpath)
+        # Claves del sistema de ficheros, no POSIX: se comparan contra `str(q)`
+        # de un `iterdir()`, y en Windows ese separador es `\`.
+        listadas = {str(d / n) for n in filenames}
+        for nombre in sorted(filenames):
+            p = d / nombre
+            clave = _clave(p)
+            # Protocolo por UBICACIÓN (MEJORAS #149): con `prefijo="01_Drive EV"` solo
+            # queda fuera `01_Drive EV/.pulled`. Un `_inventory.json` de E&V en esa
+            # carpeta es un fichero del cliente y ENTRA en el ledger forense.
+            if es_fichero_de_protocolo(clave):
+                continue
+            try:
+                out[clave] = file_sha256(p)
+            except FileNotFoundError as err:
+                efectivo = _reaparecido(p, listadas)
+                if efectivo is None:
+                    sin_verificar.append(brain.FicheroSinVerificar(
+                        clave=clave, motivo=repr(err)))
+                    continue
+                if isinstance(efectivo, str):    # ambigüedad: el motivo lo explica
+                    sin_verificar.append(brain.FicheroSinVerificar(
+                        clave=clave, motivo=efectivo))
+                    continue
+                clave_efectiva = _clave(efectivo)
+                renombrados.append((clave, clave_efectiva))
+                # El protocolo se decide sobre la clave EFECTIVA: si el montaje lo
+                # rebautizó a algo que en esta carpeta es protocolo, adoptarlo lo
+                # colaría en el ledger forense.
+                if es_fichero_de_protocolo(clave_efectiva):
+                    continue
+                try:
+                    out[clave_efectiva] = file_sha256(efectivo)
+                except OSError as err2:
+                    sin_verificar.append(brain.FicheroSinVerificar(
+                        clave=clave_efectiva, motivo=repr(err2)))
+            except OSError as err:
+                sin_verificar.append(brain.FicheroSinVerificar(
+                    clave=clave, motivo=repr(err)))
+
+    return brain.ArbolLocal(
+        hashes=out,
+        sin_verificar=tuple(sin_verificar),
+        renombrados=tuple(renombrados),
+    )
+
+
+def _reaparecido(p: Path, listadas: set[str]) -> Path | str | None:
+    """¿El contenido de `p` reapareció bajo otro nombre? `Path` sí, `str` ambiguo, `None` no.
+
+    El montaje añade una extensión al nombre **completo** (`X` → `X.jpg`), así que el
+    candidato es un fichero cuyo `stem` es el nombre de `p` y que **no estaba en el
+    listado original** de ese directorio: uno que ya se había listado es otro documento,
+    y adoptarlo contaría un fichero dos veces perdiendo el otro.
+
+    Con dos o más candidatos **no se elige**. Cuál de los dos es el documento no lo sabe
+    nadie, y resolverlo por orden alfabético sería inventarse la custodia.
+    """
+    try:
+        hermanos = sorted(q for q in p.parent.iterdir() if q.is_file())
+    except OSError as err:
+        return f"no se pudo releer el directorio tras el renombrado: {err!r}"
+    candidatos = [q for q in hermanos
+                  if q.stem == p.name and str(q) not in listadas]
+    if not candidatos:
+        return None
+    if len(candidatos) > 1:
+        return ("ambiguedad: el contenido reaparecio bajo "
+                f"{len(candidatos)} nombres ({', '.join(q.name for q in candidatos)}); "
+                "no se elige ninguno")
+    return candidatos[0]
 
 
 _FUENTES_CLI = ("drive_ev", "manual", "whatsapp", "email")
@@ -123,6 +234,8 @@ def _inventario_desde_hashes(raiz: Path, base: str, hashes: dict[str, str]) -> l
 def _intake_generico(
     case_dir: Path, case_id: str, fuente: str, hashes: dict[str, str], *, base: str,
     dry_run: bool, raiz_hashes: Path | None = None,
+    sin_verificar: tuple[brain.FicheroSinVerificar, ...] = (),
+    renombrados: tuple[tuple[str, str], ...] = (),
 ) -> None:
     """Camino de custodia orquestado (drive_ev, manual): plan → (dry-run) →
     reconcile → append_event. `hashes` cubre SOLO lo recién depositado.
@@ -140,6 +253,12 @@ def _intake_generico(
     deliberado: `_intake_log.jsonl` es fila #13 del §25, clase protocolo, exenta del
     desvío. Es también donde el guard deja su propio `pendiente_checkin`, así que las dos
     mitades de la historia quedan en el mismo sitio y en orden.
+
+    `sin_verificar` y `renombrados` vienen del recorrido de custodia (`ArbolLocal`) y
+    **se declaran en voz alta y en el evento** (`MEJORAS #214`). No condicionan el éxito:
+    los bytes ya están depositados y `reconcile` sigue decidiendo lo suyo. Lo que impiden
+    es que el registro **mienta por omisión** — `count` cuenta solo lo verificado, así que
+    sin esa lista un pull con ficheros ilegibles se lee como «todo cuadró».
     """
     inventario = _inventario_desde_hashes(
         raiz_hashes if raiz_hashes is not None else case_dir / "00_Input", base, hashes)
@@ -153,6 +272,16 @@ def _intake_generico(
     n_zero = sum(1 for i in plan.items if i.zero)
     typer.echo(f"Intake: {len(plan.depositables)} depositables, "
                f"{n_dup} duplicados omitidos, {n_zero} de 0 bytes omitidos")
+    for viejo, nuevo in renombrados:
+        typer.echo(f"[aviso] el destino renombró {viejo!r} → {nuevo!r}; "
+                   f"se hasheó bajo el nombre efectivo")
+    if sin_verificar:
+        # A stderr: no es un aviso decorativo. El expediente tiene ficheros de los que
+        # esta corrida NO puede decir nada, y quien lea la salida tiene que verlo.
+        typer.echo(f"[AVISO] {len(sin_verificar)} fichero(s) SIN VERIFICAR (no se pudieron "
+                   f"leer); no han medido cero, no se han medido:", err=True)
+        for f in sin_verificar:
+            typer.echo(f"  - {f.clave}: {f.motivo}", err=True)
     rec = brain.reconcile(plan, hashes)
     if not rec.ok:
         typer.echo(f"[ERROR] Reconciliación falló: faltan={rec.faltantes} "
@@ -161,8 +290,16 @@ def _intake_generico(
     if plan.con_sha:
         # B0-1: `_intake_generico` ya tiene el `case_dir`, asi que el evento cae
         # junto a los documentos que acaba de ingerir.
+        details = {"count": len(plan.con_sha), "files": plan.con_sha}
+        # Las claves solo aparecen cuando hay algo que decir: escribir `[]` en todos los
+        # eventos llenaría el ledger de ruido y volvería invisible el caso que importa.
+        if sin_verificar:
+            details["sin_verificar"] = [
+                {"clave": f.clave, "motivo": f.motivo} for f in sin_verificar]
+        if renombrados:
+            details["renombrados"] = [list(par) for par in renombrados]
         intake_log.append_event(case_dir, brain.FUENTE_A_EVENTO[fuente], case_id=case_id,
-                                details={"count": len(plan.con_sha), "files": plan.con_sha})
+                                details=details)
 
 
 def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *,
@@ -189,28 +326,45 @@ def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *,
         parcial = getattr(exc, "result", None)
         destino = getattr(parcial, "target_dir", None)
         if destino is not None:
-            hashes = hash_tree_local(destino, prefijo=brain.SUBDIR_DRIVE_EV)
+            # El recorrido tolerante también aquí, y no por simetría: este camino corre
+            # sobre el MISMO montaje, así que tiene la MISMA carrera (`MEJORAS #214`). Si
+            # aquí se tragara el fallo, la custodia que quedaría muda sería justo la del
+            # caso peor —el pull roto—, que es donde más falta hace saber qué llegó.
+            arbol = hash_tree_local(destino, prefijo=brain.SUBDIR_DRIVE_EV)
+            details = {"status": "fallo", "count": len(arbol.hashes),
+                       "files": [{"path": k, "sha256": v} for k, v in arbol.hashes.items()],
+                       "rclone_returncode": getattr(parcial, "rclone_returncode", None)}
+            if arbol.sin_verificar:
+                details["sin_verificar"] = [
+                    {"clave": f.clave, "motivo": f.motivo} for f in arbol.sin_verificar]
+            if arbol.renombrados:
+                details["renombrados"] = [list(par) for par in arbol.renombrados]
             intake_log.append_event(
-                case_dir, "pull_drive_ev", case_id=ident.case_id,
-                details={"status": "fallo", "count": len(hashes),
-                         "files": [{"path": k, "sha256": v} for k, v in hashes.items()],
-                         "rclone_returncode": getattr(parcial, "rclone_returncode", None)})
+                case_dir, "pull_drive_ev", case_id=ident.case_id, details=details)
+            sufijo = (f" y {len(arbol.sin_verificar)} sin verificar"
+                      if arbol.sin_verificar else "")
             typer.echo(
-                f"[ERROR] el pull falló y quedaron {len(hashes)} ficheros parciales; "
-                f"registrados en el log con status=fallo antes de abortar", err=True)
+                f"[ERROR] el pull falló y quedaron {len(arbol.hashes)} ficheros "
+                f"parciales{sufijo}; registrados en el log con status=fallo antes de "
+                f"abortar", err=True)
         raise
 
     subdir = brain.SUBDIR_DRIVE_EV
     # `target_dir` es `<algo>/00_Input/01_Drive EV`, así que su padre es la raíz bajo la
     # que resuelven las claves `01_Drive EV/...`. Con el caso disponible es el `00_Input`
     # del caso; con el caso prestado, el de la bandeja.
-    hashes = hash_tree_local(res.target_dir, prefijo=subdir)
-    _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, base=subdir,
-                     dry_run=dry_run, raiz_hashes=res.target_dir.parent)
+    arbol = hash_tree_local(res.target_dir, prefijo=subdir)
+    _intake_generico(case_dir, ident.case_id, "drive_ev", arbol.hashes, base=subdir,
+                     dry_run=dry_run, raiz_hashes=res.target_dir.parent,
+                     sin_verificar=arbol.sin_verificar, renombrados=arbol.renombrados)
     # Lo devuelve para que el secuenciador de V1 pueda informar sin rodear esta funcion:
     # la custodia (hashes del destino EFECTIVO, reconciliacion y el registro de los bytes
     # parciales de un pull fallido) vive aqui, y un adaptador que la esquive la deroga.
-    return res
+    #
+    # **Y viaja con lo que la custodia no pudo leer.** `DriveIntakeResult` es el canal que
+    # ya existe entre esta funcion y `etapa_drive`; adjuntarlo aqui es lo que permite que
+    # V1 lo convierta en un `Pendiente` en vez de que se pierda entre las dos.
+    return dataclasses.replace(res, custodia_sin_verificar=arbol.sin_verificar)
 
 
 def _inventario_local(src: Path) -> list[dict]:
@@ -412,9 +566,21 @@ def etapa_drive(ident, case_dir: Path, *, folder_id, team_id, intake=None):
         return av1.EtapaResultado(
             nombre="drive", estado="hecha",
             detalle=f"consultado, pero no se pudo contar el destino: {exc}")
+    # La custodia declaro ficheros que no pudo leer: la etapa **no se tumba** —los bytes
+    # estan depositados y el pull fue bien— pero tampoco puede decir «hecha, N documentos»
+    # a secas, porque ese N cuenta solo lo verificado (`MEJORAS #214`).
+    pendientes = ()
+    if res.custodia_sin_verificar:
+        claves = ", ".join(f.clave for f in res.custodia_sin_verificar)
+        pendientes = (av1.Pendiente(
+            codigo="custodia_sin_verificar",
+            detalle=f"{len(res.custodia_sin_verificar)} fichero(s) del destino no se "
+                    f"pudieron leer y quedan SIN VERIFICAR: {claves}. No han medido "
+                    f"cero: no se han medido."),)
     return av1.EtapaResultado(
         nombre="drive", estado="hecha",
-        detalle=f"consulta remota hecha; {total} documento(s) en el destino")
+        detalle=f"consulta remota hecha; {total} documento(s) en el destino",
+        pendientes=pendientes)
 
 
 #: Vocabulario cerrado de ramas del CRM. `_ELEMENT_EXTRAJUDICIAL` ya existe arriba y lo

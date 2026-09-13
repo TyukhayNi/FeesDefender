@@ -218,7 +218,7 @@ def test_t1_el_adjunto_homonimo_entra_y_el_de_la_raiz_no(tmp_casos_root):
     assert adjunto in rels and "_ficha_crm.yaml" not in rels
     assert "01_Drive EV/sub/_ficha_crm.yaml" in rels and "01_Drive EV/.pulled" not in rels
     # ledger forense del pull
-    hashes = hash_tree_local(drive, prefijo="01_Drive EV")
+    hashes = hash_tree_local(drive, prefijo="01_Drive EV").hashes
     assert "01_Drive EV/sub/_ficha_crm.yaml" in hashes and "01_Drive EV/.pulled" not in hashes
 
 
