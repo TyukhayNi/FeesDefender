@@ -707,8 +707,15 @@ tiene que venir de fuera.
 
 *Fila #14. Acción manual de Nikolai en Cowork; ningún test la cubre y ningún guard la detecta.*
 
-**El disparador:** `organizar-sala-lectura` está en **v1.14 en `.claude/skills/`** y el equipo
-—Paola, Ana, Sergio— sigue ejecutando la **v1.12**. Construido ≠ desplegado, y el único tramo que
+**El disparador, remedido el 2026-09-14 — el anterior estaba desmentido.** Decía
+«`organizar-sala-lectura` está en v1.14 y el equipo sigue ejecutando la v1.12»: hoy la fuente y lo
+instalado son **las dos v1.17**, importada el 2026-09-13 a las 23:51. Construido ≠ desplegado sigue
+siendo el problema; ese ejemplo ya no lo ilustra.
+
+**Lo que de verdad falta hoy** (medido por contenido, no por fecha): `organizar-sala-maquina`
+instalada en **1.3** contra **1.6** en fuente —le faltan la ruta `ofimatica` y el dedup
+un-fichero-un-espejo—, `viabilidad-prerelleno` sin los dos cambios del 2026-09-11, y
+`engel-volkers` **v1.1**. Los `.skill` de los tres están en `dist/skills/`. El único tramo que
 falta es manual.
 
 **Censo de re-imports pendientes en este mismo fichero** (2026-08-03), por bloque y no por
@@ -724,8 +731,23 @@ número de línea, que aquí se desplaza solo: `[SIGUIENTE-SALA-HILOS]` (v1.14),
 nunca desde un worktree que luego se poda (el `.skill` acaba en un `dist/` que desaparece), y
 **verificar la versión dentro del zip**, no la del repo.
 
+**Cómo se comprueba qué hay instalado — esto SÍ consta, y esta ficha decía que no.** La app de
+escritorio materializa el árbol completo de las skills del servidor en
+`%APPDATA%\Claude\local-agent-mode-sessions\skills-plugin\<uuid>\<uuid>\skills\` (hay varios
+directorios de sesión: sirve el de `mtime` más reciente). **No es un listado: son los bytes**, así
+que se compara fichero a fichero contra `.claude/skills/` normalizando `CRLF`→`LF`, que es la única
+comparación que distingue un cambio real del ruido. Acredita que es el espejo del servidor y no un
+caché de este repo el que traiga skills que no salen de aquí (`cierre-mensual-conciliacion`,
+`emision-factura-cliente`, las de Anthropic). **Límite:** ve lo que la app ha materializado; un
+`AUSENTE` es «no materializado», que en el caso medido coincidió con «no instalado».
+
+**Segunda excepción a la trampa de arriba:** «verificar la versión dentro del zip» **no se le puede
+aplicar a `viabilidad-prerelleno`**, que no declara `version` en su frontmatter (defecto de
+conformidad ya anotado en la matriz de este fichero). Para esa, el marcador es el `sha256` del
+`.skill` o la fecha de la primera entrada de su `CHANGELOG.md`.
+
 **Al cerrar:** marcar `[x]` las seis entradas en sus bloques y anotar aquí la versión que quedó
-efectivamente en Cowork — que es el dato que hoy no consta en ninguna parte.
+efectivamente en Cowork, **comprobada contra el espejo de arriba** — no la que se creyó importar.
 
 ---
 
