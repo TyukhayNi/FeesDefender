@@ -942,9 +942,15 @@ def _informar_v1(resultado) -> None:
         typer.echo(f"  PENDIENTE {p.codigo}: {p.detalle}")
 
 
-def _verificar_expediente(case_dir: Path, case_id: str, *,
+def _verificar_expediente(case_dir: Path, w_code: str, *,
                           con_red: bool = True) -> None:
-    """Corre `verificar_apertura` sobre el caso e imprime su informe. **No escribe nada.**
+    """Corre `verificar_apertura` sobre el caso e imprime su informe.
+
+    **No escribe en el EXPEDIENTE**, y la precision es de la R1 (H-06): el modulo es de
+    solo lectura, pero salir a la red por `DeLaRed` puede renovar el token de rclone y
+    **reescribir su fichero de configuracion**. Eso esta fuera del expediente y del repo,
+    y lo documenta su propio productor en `core/intake_drive.py`; la promesa absoluta de
+    «no escribe nada» era demasiado ancha.
 
     Import local a propósito: `verificar_apertura_fuentes` arrastra las dependencias de
     red, y este módulo se importa también para caminos que no salen a Internet.
@@ -968,11 +974,15 @@ def _verificar_expediente(case_dir: Path, case_id: str, *,
     # El `case_id` se RECIBE, no se deduce del nombre de la carpeta: sacarlo de los
     # paréntesis funciona hasta el primer caso cuya carpeta no siga el patrón, y entonces
     # imprime una orden que no se puede copiar.
+    # El **W-code**, no el `case_id` (R1/H-08): `ident.case_id` es el nombre completo
+    # del caso —`BaRS3 - Calle de Prueba 1 (W-TEST01) - Vuelta`—, asi que la orden salia
+    # con espacios y parentesis sin comillas y **no se podia copiar**. `Identidad` ya trae
+    # `w_code` aparte; usarlo era gratis.
     typer.echo("  detalle completo: python -m scripts.verificar_apertura "
-               f"--case-id {case_id} --con-red")
+               f"--case-id {w_code} --con-red")
 
 
-def _informar_v1_y_verificar(resultado, case_dir: Path, case_id: str) -> None:
+def _informar_v1_y_verificar(resultado, case_dir: Path, w_code: str) -> None:
     """Informa la ronda de V1 y, acto seguido, verifica el EXPEDIENTE (`MEJORAS #252`).
 
     **Por qué aquí y no como etapa.** `verificar_apertura` se construyó el 2026-09-11 y
@@ -989,7 +999,7 @@ def _informar_v1_y_verificar(resultado, case_dir: Path, case_id: str) -> None:
     """
     _informar_v1(resultado)
     try:
-        _verificar_expediente(case_dir, case_id)
+        _verificar_expediente(case_dir, w_code)
     except Exception as exc:  # noqa: BLE001 — informar no puede tumbar la apertura
         typer.echo("")
         typer.echo(f"[AVISO] no se pudo verificar el expediente: {exc}", err=True)
@@ -1633,7 +1643,7 @@ def main(
         raise typer.Exit(code=0)
 
     if resultado_v1 is not None:
-        _informar_v1_y_verificar(resultado_v1, case_dir, ident.case_id)
+        _informar_v1_y_verificar(resultado_v1, case_dir, ident.w_code)
         raise typer.Exit(code=codigo_de_salida(resultado_v1.estado))
 
     typer.echo(f"OK Caso abierto: {ident.case_id}")

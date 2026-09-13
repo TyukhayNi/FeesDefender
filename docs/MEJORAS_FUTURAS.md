@@ -9774,6 +9774,74 @@ se haga hay un expediente vivo no buscable por dirección. Para (a), medio: sube
 burofax desde plantilla —el flujo que `#212` quiere encapsular— o con el primer expediente cuya
 referencia del CRM divirja del nombre de la carpeta por sufijo.
 
+## 251. C1 y C2 cruzaban los nombres por la cadena cruda: un fichero con tilde salía acusado, y otro dejaba de verificarse  [CERRADA 2026-09-13]
+
+> Medido el 2026-09-13 con una sonda sobre `core/verificar_apertura.py`, al rescatar la
+> fila #29. **El hallazgo no nace aquí:** lo trajo `intake_drive_hash`, el módulo escrito
+> el 2026-09-10 y nunca commiteado, que lo había medido sobre **W-02V48N** — donde el
+> falso hallazgo **tapaba una discrepancia real de +326 bytes**.
+
+**Qué pasaba.** El mismo documento, declarado por Drive con la `Á` **descompuesta** (`A` +
+U+0301, NFD) y guardado en `G:` **precompuesta** (U+00C1, NFC). Las dos cadenas se imprimen
+idénticas y no son iguales:
+
+| | Antes | Lo correcto |
+|---|---|---|
+| **C1** (censo remoto) | `fallo`: «1 fichero del remoto que no está en local y 1 en local que no está en el remoto», **con las dos rutas indistinguibles a la vista** | `ok`: es el mismo fichero |
+| **C2** (hash contra Drive) | `pendiente`: «ninguno de los 1 ficheros locales tiene hash en Drive con el que contrastar» | contrastar 1 de 1 |
+
+**Lo de C2 es lo caro.** No decía «no cuadra»: decía **no puedo**, y con un motivo que
+suena a limitación del remoto. El hash estaba ahí; lo que falló fue el cruce de la clave. El
+fichero **dejó de verificarse en silencio**, sobre la pieza cuyo único trabajo es acreditar
+custodia. Es «no lo sé» colapsado en «no hay», otra vez.
+
+**Y la segunda causa, de la misma clase.** Las carpetas de E&V traen ficheros cuyo nombre
+empieza por un espacio; el sistema de ficheros virtual de Drive Desktop los rechaza, así que
+el pull los escribe con el `--local-encoding` de rclone como `␠NIE.jpg` (U+2420) mientras
+Drive los sigue llamando ` NIE.jpg`.
+
+**El dato que más escuece: la instrucción ya estaba escrita.** `RUNBOOK_APERTURA_EXPEDIENTE.md`
+`[APER-65]`, del 2026-09-10, manda al operador que hace el censo **a mano**: «normaliza a
+**NFC** antes de comparar, o un topónimo acentuado da falsos positivos». C1 se construyó **al
+día siguiente** para automatizar ese mismo censo, y no la aplicó. Un hecho escrito que nadie
+aplica no es conocimiento del repo: es documentación.
+
+**Remedio (PR #360):** `clave_de_cruce` —NFC + deshacer el mapa de `--local-encoding`— en las
+dos comprobaciones, y el defecto **simétrico** que el cruce canónico abre: dos ficheros del
+remoto que colapsan a la misma clave **no caben los dos** en un sistema Windows, así que uno
+falta de verdad; se declaran en vez de fundirse. `／` (U+FF0F) queda fuera del mapa a
+propósito: traducirlo dentro de un segmento crearía un separador de ruta falso, y el caso es
+ambiguo en el origen.
+
+**Declarado:** NFC y el espacio inicial están **medidos** sobre casos reales; el resto del
+mapa sale del `--local-encoding` que el pull ya usa y **no se ha visto en un expediente de
+este repo**.
+
+**De qué frontera es esto un ejemplo.** De la misma que `MEJORAS #214`: **el nombre de un
+fichero no es una cadena, es un identificador de un sistema que decide qué cuenta como
+igual**. En `#214` era la caja (`X.PDF` y `x.pdf` son el mismo fichero en Windows); aquí es
+la forma Unicode y el encoding de rclone. Las dos veces, comparar con `==` produjo los dos
+errores simétricos: acusar a lo que está y no reconocer lo que es.
+
+## 252. `verificar_apertura` existía y no lo disparaba nadie  [CERRADA 2026-09-13]
+
+> Medido el 2026-09-13: `grep` de llamadores sobre `scripts/`, `core/` y `streamlit_app.py`.
+
+La pieza se construyó el 2026-09-11 (fila #28, P2) como «el OK del EXPEDIENTE, no el del
+paso», con nueve comprobaciones y 119 tests. **Y su único llamador era su propio CLI.** Ni
+la secuencia V1, ni `abrir_caso`, ni el runbook la mencionaban.
+
+**Por qué importa más de lo que parece.** Esa pieza nació porque ocho herramientas dijeron
+«OK» de su paso mientras el expediente estaba a medias — el argumento entero era que «estar
+encima» no escala. Una red que hay que acordarse de lanzar **es exactamente estar encima**,
+con un paso más.
+
+**Remedio (PR #360):** V1 la corre al terminar. Con tres límites deliberados: **fuera del
+bloque del mutex** —el módulo lo evita a propósito para poder usarse mientras otra cosa
+trabaja sobre el caso—, **sin tocar el código de salida** de la apertura, y si la
+verificación misma revienta se **dice** y se sigue. Un verificador que tumba lo que verifica
+es peor que no tenerlo; uno que se cae callado es peor todavía, porque deja creer que miró.
+
 ## 214. Drive for Desktop renombra bajo los pies: la custodia recorre y abre, y el pull duplica en cada ronda  [PUNTO 1 CERRADO 2026-09-13]
 
 **[PROMOVIDO → PLAN.md]** fila #27, junto con `#215`, el 2026-09-10.

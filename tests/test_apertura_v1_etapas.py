@@ -437,3 +437,49 @@ def _resultado_v1():
 
     return av1.ResultadoV1(estado=av1.EstadoV1.COMPLETO, etapas=(), pendientes=(),
                            parada=None, no_ejecutadas=())
+
+
+def test_r1_h07_main_LLAMA_al_verificador_y_lo_hace_FUERA_del_mutex():
+    """H-07 (MEDIO), mutación U1 del revisor: quitar la llamada en `main` y dejar el
+    `_informar_v1` de siempre. **Los tres tests `e1`-`e3` seguían verdes**, porque prueban
+    el helper y no su cableado — el mismo defecto que la ronda anterior encontró en la
+    pieza A (`A19`), cometido otra vez una pieza después.
+
+    Se comprueba sobre el AST, y se contratan **dos** propiedades, no una:
+
+    1. que `main` llame a `_informar_v1_y_verificar` — si alguien vuelve a poner ahí
+       `_informar_v1` a secas, la verificación deja de correr y nadie se entera;
+    2. que esa llamada **no esté dentro de ningún `with`**. El punto es el mutex:
+       `verificar_apertura` evita pedirlo a propósito para poder usarse mientras otra cosa
+       trabaja sobre el caso, así que meterlo bajo exclusión derogaría esa decisión en
+       silencio.
+
+    **Su límite, declarado:** esto prueba que el cableado existe, no que se ejecute. Lo
+    segundo necesita una apertura real, y eso queda SIN VERIFICAR.
+    """
+    import ast
+    import inspect
+
+    arbol = ast.parse(inspect.getsource(cli).replace("\r\n", "\n"))
+    main = next(n for n in ast.walk(arbol)
+                if isinstance(n, ast.FunctionDef) and n.name == "main")
+
+    llamadas = [n for n in ast.walk(main)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
+    nombres = {n.func.id for n in llamadas}
+    assert "_informar_v1_y_verificar" in nombres, (
+        "main ya no encadena la verificación del expediente")
+    assert "_informar_v1" not in nombres, (
+        "main llama al informe pelado: la verificación se quedó sin disparar")
+
+    # Ninguna de esas llamadas puede colgar de un `with` (el mutex es un `with`).
+    bajo_with = {
+        id(c)
+        for w in ast.walk(main) if isinstance(w, (ast.With, ast.AsyncWith))
+        for c in ast.walk(w) if isinstance(c, ast.Call)
+    }
+    for c in llamadas:
+        if c.func.id == "_informar_v1_y_verificar":
+            assert id(c) not in bajo_with, (
+                "la verificación quedó DENTRO de un `with`: si ese `with` es el mutex, "
+                "deroga que el módulo no lo pida")

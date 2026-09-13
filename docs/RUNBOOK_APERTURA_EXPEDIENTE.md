@@ -269,7 +269,10 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
     los sobrantes **por diferencia contra el remoto, nunca por patrón `(N)`** — en W-048U77 seis
     documentos legítimos traían el `(N)` de origen, uno de ellos con `(1) (1) (1)` — y solo tras
     verificar por `sha256` que cada sobrante tiene gemelo idéntico; normaliza a **NFC** antes de
-    comparar, o un topónimo acentuado da falsos positivos. (4) Cierra la custodia aparte, sin re-tirar del pull:
+    comparar, o un topónimo acentuado da falsos positivos — **y esa advertencia la ignoró el
+    código durante dos días**: `verificar_apertura` C1/C2 se construyó el 2026-09-11 cruzando
+    las rutas crudas, con este párrafo ya escrito encima (`MEJORAS #251`, cerrada el
+    2026-09-13). (4) Cierra la custodia aparte, sin re-tirar del pull:
     `hash_tree_local(target_dir, prefijo=brain.SUBDIR_DRIVE_EV)` + `_intake_generico(...,
     raiz_hashes=target_dir.parent)` bajo `scripts._mutex_cli.sostener`. (5) Sigue por §5 con
     `sala_maquina apply` a mano. Diagnóstico completo y las tres vías de arreglo: `MEJORAS #214`.

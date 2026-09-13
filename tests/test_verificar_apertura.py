@@ -1592,6 +1592,7 @@ def test_integracion_el_adaptador_real_habla_con_el_CRM():
 # el defecto sin saberlo.
 # ===========================================================================
 
+import unicodedata
 import unicodedata as _ud
 
 _ACENTUADO = _ud.normalize("NFC", "FR_Elena_Álvarez_Firmado.pdf")
@@ -1648,38 +1649,6 @@ def test_n3_y_una_discrepancia_REAL_bajo_ese_mismo_nombre_sigue_saliendo(tmp_pat
     assert r.estado == va.FALLO
     assert r.evidencia["contrastados"] == 1
     assert len(r.evidencia["discrepan"]) == 1
-
-
-def test_n4_un_nombre_que_EMPIEZA_POR_ESPACIO_cruza_con_el_del_remoto(tmp_path):
-    """El segundo defecto de la misma clase. Las carpetas de E&V traen ficheros cuyo nombre
-    empieza por un espacio; el sistema de ficheros virtual de Drive Desktop los rechaza, y
-    `rclone` escribe en disco `␠NIE.jpg` (U+2420, el «Left Space» de su `--local-encoding`,
-    que el pull ya usa). Drive lo sigue llamando ` NIE.jpg`, así que C1 contaba uno que
-    falta y uno que sobra — otra vez con dos rutas que a la vista son la misma."""
-    c = _caso_drive(tmp_path, {"␠NIE Pasaporte.jpg": b"x"})
-    f = _FuentesDobles(censo=[vaf.FicheroRemoto(" NIE Pasaporte.jpg")])
-
-    r = _rr(c, "censo_remoto", f)
-
-    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
-
-
-def test_n5_un_caracter_PROHIBIDO_en_windows_tambien_cruza(tmp_path):
-    """La misma clase, cerrada entera y no por ejemplos. `rclone` sustituye en disco los
-    caracteres que Windows no admite en un nombre por su forma **fullwidth**: `?` pasa a
-    `？` (U+FF1F). Sin deshacerlo, un documento de E&V con una interrogación en el nombre
-    sale acusado dos veces.
-
-    **Declarado:** NFC y el espacio inicial están MEDIDOS sobre casos reales; el resto del
-    mapa sale del `--local-encoding` que el pull ya pasa a rclone, y **no se ha visto
-    todavía en un expediente de este repo**.
-    """
-    c = _caso_drive(tmp_path, {"Nota simple？.pdf": b"x"})
-    f = _FuentesDobles(censo=[vaf.FicheroRemoto("Nota simple?.pdf")])
-
-    r = _rr(c, "censo_remoto", f)
-
-    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
 
 
 def test_n6_dos_ficheros_del_remoto_que_colapsan_a_la_MISMA_clave_se_declaran(tmp_path):
@@ -1796,3 +1765,166 @@ def test_n11_un_tamano_que_NO_es_multiplo_de_512_no_es_el_relleno_de_225(tmp_pat
 
     assert r.estado == va.FALLO
     assert r.evidencia["relleno_225_confirmado"] == [], r.evidencia
+
+
+# ===========================================================================
+# La R1 de Codex sobre esta misma pieza (2026-09-13): 8 hallazgos, 8 confirmados
+#
+# El remedio de la primera versión —una tabla plana que deshacía el
+# `--local-encoding` de rclone— resultó **inseguro**, y esa es la lección: cambiaba
+# falsos descuadres (ruidosos) por **falsos verdes** (callados), que en una red de
+# custodia es exactamente el intercambio prohibido.
+#
+# Acta: docs/superpowers/plans/2026-09-13-fila29-r1-adversarial-review.md
+# ===========================================================================
+
+
+def test_r1_h01_no_se_cruzan_dos_nombres_que_rclone_NUNCA_habria_escrito_asi(tmp_path):
+    """H-01 (ALTO). `str.translate` es **posicionalmente ciego** y las reglas de rclone no
+    lo son: `LeftSpace`/`RightSpace` codifican el espacio **al principio o al final** del
+    segmento, no en medio. Con la tabla plana, un remoto `a b.txt` y un local `a␠b.txt`
+    —que rclone jamás habría escrito así— se cruzaban como el mismo fichero y C1/C2 daban
+    `ok`. Eso es **aceptar como presente un objeto de identidad distinta**: un falso verde
+    sobre la pieza cuyo trabajo es acreditar custodia.
+    """
+    c = _caso_drive(tmp_path, {"a␠b.txt": b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("a b.txt", sha256=_sha(b"x"))])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.FALLO, f"{r.detalle} · {r.evidencia}"
+
+
+def test_r1_h02_un_descuadre_con_marcas_de_rclone_se_EXPLICA_en_vez_de_confundir(tmp_path):
+    """H-02 (ALTO), y el remedio de fondo. La tabla no cubría `SquareBracket` ni `Ctl` —los
+    dos activos en el `--local-encoding` del pull— ni el **escape** `‛` de rclone, así que
+    la clase no estaba cerrada: seguía habiendo descuadres cuyo mensaje («no tiene hash en
+    Drive») no dice lo que pasa.
+
+    **Ampliar la tabla no era el remedio**: implementar un decodificador posicional con
+    escape es reescribir el encoder de rclone, y hacerlo a medias produce falsos verdes
+    (H-01). Lo que sí se puede hacer sin inventar equivalencias es **decirlo**: cuando un
+    descuadre involucra nombres con las marcas del encoding, el detalle lo señala para que
+    el operador no persiga un fantasma.
+    """
+    c = _caso_drive(tmp_path, {"a［1］.txt": b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("a[1].txt", sha256=_sha(b"x"))])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["con_marcas_de_encoding_rclone"], r.evidencia
+    assert "rclone" in r.detalle.lower()
+
+
+def test_r1_h02b_un_descuadre_LIMPIO_no_se_disfraza_de_problema_de_encoding(tmp_path):
+    """CONTROL POSITIVO del anterior: si la explicación saliera siempre, dejaría de
+    explicar nada y encima daría una coartada a un fichero que de verdad falta."""
+    c = _caso_drive(tmp_path, {"a.pdf": b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("a.pdf"), vaf.FicheroRemoto("falta.pdf")])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["con_marcas_de_encoding_rclone"] == [], r.evidencia
+    assert "rclone" not in r.detalle.lower()
+
+
+def test_r1_h03_la_clave_no_depende_del_orden_normalizar_traducir(tmp_path):
+    """H-03 (MEDIO). Con la tabla, `<` + U+0338 se componía a `≮` en el remoto mientras el
+    local `＜` + U+0338 se traducía DESPUÉS de normalizar y ya no se recomponía: dos claves
+    distintas para el mismo carácter. Sin traducción el problema desaparece — y este test
+    queda como contrato de que no vuelve por la puerta de atrás."""
+    nombre = "≮.txt"                      # `<` + combining long solidus
+    c = _caso_drive(tmp_path, {unicodedata.normalize("NFC", nombre): b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto(unicodedata.normalize("NFD", nombre),
+                                                sha256=_sha(b"x"))])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+
+
+def test_r1_h04_c2_no_atribuye_a_un_fichero_el_checksum_de_OTRO(tmp_path):
+    """H-04 (MEDIO), y es una REGRESIÓN que introdujo la primera versión. El índice
+    `{clave: sha}` es un dict: ante dos remotos que colapsan a la misma clave **gana el
+    último**, así que C2 contrastaba contra el hash equivocado y devolvía `ok` donde la
+    versión anterior daba `fallo`. El resultado dependía del orden del censo.
+
+    Detectar las colisiones en C1 y no en C2 fue remediar el ejemplo y no la frontera.
+    """
+    c = _caso_drive(tmp_path, {"a.b.txt": b"bad"})
+    f = _FuentesDobles(censo=[
+        vaf.FicheroRemoto(unicodedata.normalize("NFD", "a.b.txt"), sha256=_sha(b"good"),
+                          file_id="A"),
+        vaf.FicheroRemoto(unicodedata.normalize("NFC", "a.b.txt"), sha256=_sha(b"bad"),
+                          file_id="B")])
+
+    r = _rr(c, "hash_drive", f)
+
+    assert r.estado == va.FALLO, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["colisiones_de_clave"], r.evidencia
+
+
+def test_r1_h05_el_relleno_no_se_confirma_si_el_fichero_CAMBIA_mientras_se_lee(tmp_path):
+    """H-05 (MEDIO). La versión anterior leía la cola, volvía al principio y rehasheaba:
+    dos lecturas de un fichero que puede cambiar en medio. El revisor construyó el caso —la
+    cola de una versión y el prefijo de otra— y la función decía «confirmado» sobre una
+    combinación que **no existió nunca en disco**.
+
+    Es la MISMA carrera de `MEJORAS #214` un nivel más abajo, dentro del remedio que la
+    persigue: el fichero no es estable entre dos lecturas. Ahora se lee de una pasada y se
+    comprueba que el tamaño no cambió."""
+    original = b"contenido del encargo"
+    p = _caso_drive(tmp_path, {"encargo.pdf": original + b"\0" * (512 - len(original))})
+    destino = p / "00_Input" / "01_Drive EV" / "encargo.pdf"
+
+    import core.verificar_apertura as _va
+    assert _va._es_el_relleno_de_225(destino, _sha(original)) is True
+
+    # El fichero cambia de tamaño entre el `stat` y la lectura: no se afirma nada.
+    destino.write_bytes(b"otra cosa mas corta")
+    assert _va._es_el_relleno_de_225(destino, _sha(original)) is False
+
+
+def test_r1_h05b_la_cola_examinada_no_pasa_del_bloque_que_el_comentario_promete(tmp_path):
+    """H-05, segunda parte. El comentario prometía una cola «menor de 512 bytes por
+    construcción» y el código aceptaba 512 ceros o más —`512 x + 512 ceros` daba
+    «confirmado»—. El relleno de `MEJORAS #225` lleva al SIGUIENTE múltiplo de 512: una
+    cola de 512 o más no es ese defecto, y etiquetarla como tal da por explicada una
+    alteración que no lo está."""
+    import core.verificar_apertura as _va
+
+    p = _caso_drive(tmp_path, {"x.pdf": b"x" * 512 + b"\0" * 512})
+    destino = p / "00_Input" / "01_Drive EV" / "x.pdf"
+
+    assert _va._es_el_relleno_de_225(destino, _sha(b"x" * 512)) is False
+
+
+def test_r1_h07_el_relleno_se_rehashea_ENTERO_aunque_pase_de_un_bloque(tmp_path):
+    """H-07 (MEDIO), la mutación U2 del revisor: cambiar el `while` del streaming por un
+    `if` solo rehashea el primer MiB, y **ningún test tenía un fichero mayor**. Un
+    expediente lleva escaneos y vídeos de varios MB: el hueco se abría justo en los
+    documentos grandes."""
+    import core.verificar_apertura as _va
+
+    original = b"P" * (1024 * 1024 + 17)             # más de un bloque de lectura
+    relleno = original + b"\0" * (512 - len(original) % 512)
+    p = _caso_drive(tmp_path, {"grande.pdf": relleno})
+    destino = p / "00_Input" / "01_Drive EV" / "grande.pdf"
+
+    assert _va._es_el_relleno_de_225(destino, _sha(original)) is True
+
+
+def test_r1_h08_la_orden_que_se_imprime_lleva_el_W_CODE_no_el_case_id(tmp_path, capsys):
+    """H-08 (BAJO). `ident.case_id` **no** es el W-code: es
+    `BaRS3 - Calle de Prueba 1 (W-TEST01) - Vuelta`. La orden impresa salía con espacios y
+    paréntesis sin comillas, o sea **no se podía copiar**. `Identidad` ya trae `w_code`
+    aparte; usarlo era gratis."""
+    from scripts import abrir_caso as _cli
+
+    _cli._verificar_expediente(tmp_path, "W-TEST01", con_red=False)
+
+    salida = capsys.readouterr().out
+    assert "--case-id W-TEST01" in salida
+    assert "(" not in salida.split("--case-id")[1].split("\n")[0]
