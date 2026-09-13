@@ -1,13 +1,24 @@
 ---
 tipo: handoff
-estado: activo
+estado: consumido
 creado: 2026-09-13
 origen: sesión remota de Claude Code (contenedor Linux, sin Windows, sin `G:`/`H:`, sin rclone, sin CRM, sin OCR). Decisión de Nikolai del 2026-09-13 al cerrar la fila #28: el siguiente paso del plan de «apertura con menos decisiones» es **P3**, y su mitad sin gates es la fila #27
 destino: la sesión LOCAL de Claude Code que continúe la fila #27 por la pieza A
+consumido_por: "docs/superpowers/plans/2026-09-13-fila27-pieza-a-custodia-tolerante.md (pieza A construida y revisada, PR #358, 2026-09-13)"
 rama: `claude/trusting-mayer-9fe7lg`
 ---
 
 # Handoff — Fila #27 (`MEJORAS #214` + `#215`): pieza B cerrada, pieza A diseñada y sin construir
+
+> **CONSUMIDO el 2026-09-13.** La pieza A se construyó (PR #358) y la R1 de Codex corrió
+> sobre su diff: **NO-SHIP, 12 hallazgos, 12 confirmados**. Dos de las tres averiguaciones
+> que el §3 daba por cerradas quedaron **acotadas** por esa ronda, y conviene leerlas con
+> la corrección delante: (a) el §3.3 afirma que «`extras` es siempre vacío porque
+> `reconcile` cuadra consigo mismo» — deja de ser cierto en cuanto el inventario y los
+> hashes pueden diferir, que es justo lo que produce tolerar el `stat`; y (b) el §3.1 dice
+> que mudar `hash_tree_local` a `core/` «obligaría a debilitar el guard» — obliga a
+> **rehacerlo**, que no es lo mismo. Hogar de la decisión, con la adjudicación:
+> `docs/superpowers/plans/2026-09-13-fila27-pieza-a-custodia-tolerante.md`.
 
 **Andamio efímero, no fuente de verdad** (`GOBERNANZA_FUENTES_VERDAD §5`). El estado de ciclo de
 vida del ítem vive en `PLAN.md` fila #27; aquí solo va lo que la sesión local necesita para no

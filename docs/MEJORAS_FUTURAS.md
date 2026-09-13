@@ -9774,9 +9774,30 @@ se haga hay un expediente vivo no buscable por dirección. Para (a), medio: sube
 burofax desde plantilla —el flujo que `#212` quiere encapsular— o con el primer expediente cuya
 referencia del CRM divirja del nombre de la carpeta por sufijo.
 
-## 214. Drive for Desktop renombra bajo los pies: la custodia recorre y abre, y el pull duplica en cada ronda
+## 214. Drive for Desktop renombra bajo los pies: la custodia recorre y abre, y el pull duplica en cada ronda  [PUNTO 1 CERRADO 2026-09-13]
 
 **[PROMOVIDO → PLAN.md]** fila #27, junto con `#215`, el 2026-09-10.
+
+> **CERRADO el punto 1 (el recorrido tolerante) — PR #358, 2026-09-13.** `hash_tree_local`
+> devuelve `ArbolLocal(hashes, sin_verificar, renombrados)`: enumera con
+> `os.walk(onerror=…)`, adopta el renombrado del montaje bajo la clave **efectiva** y
+> **declara** lo que no pudo leer, en el resultado, en el evento forense y en un
+> `Pendiente` de V1 que **no tumba la etapa**. La R1 de Codex (NO-SHIP, 12 hallazgos, 12
+> confirmados) cerró además el `stat()` de `_inventario_desde_hashes`, que este mismo
+> texto nombraba abajo entre los cuatro recorridos-y-abre. Plan y adjudicación:
+> [`2026-09-13-fila27-pieza-a-custodia-tolerante.md`](superpowers/plans/2026-09-13-fila27-pieza-a-custodia-tolerante.md)
+>
+> **Siguen abiertos los puntos 2 y 3, con su premisa corregida.** El 2 —reconciliar
+> contra el remoto— **ya está construido fuera del pull**, en `verificar_apertura`
+> C1/C2 (fila #28, P2): no se duplica dentro del intake, y meter red ahí cambiaría el
+> modo por defecto. El 3 —persistir el mapa junto al `.pulled`— es diferible **y su
+> justificación cojea**: hoy no elegimos qué pedir, porque `pull_drive_ev` lanza
+> `rclone copy` sobre la carpeta entera y es rclone quien compara contra el montaje; un
+> mapa no cambia eso sin `--files-from` o una poda posterior contra el censo remoto.
+>
+> **Y de los cuatro recorridos-y-abre que enumera «De qué frontera es esto un ejemplo»,
+> quedan dos:** el inventario de la sala de máquina y el `hash_tree` del MCP. Son otro
+> módulo y otro momento del flujo; van a `#249` y `#250`, no se cuelan en esta pieza.
 
 **Qué pasa.** Un fichero que en el Drive de E&V **no tiene extensión** rompe el pull de dos
 maneras distintas, y las dos salieron a la vez al abrir W-048U77 el 2026-09-10. La carpeta traía
@@ -9881,6 +9902,49 @@ apertura**. El punto 2 sube con él, que es lo que convierte «no bloquea» en �
 **Vecina de `MEJORAS #190`** («la sala de lectura filtra por EXTENSIÓN y la de máquina identifica
 por BYTES»): el mismo fichero sin extensión, dos defectos distintos y un mismo origen — E&V sube
 ficheros sin extensión y la cadena entera supone que el nombre lleva el tipo.
+
+## 249. El inventario de la sala de máquina recorre y abre: la misma carrera de `MEJORAS #214`, otro módulo
+
+> Salida del cierre del punto 1 de `MEJORAS #214` (PR #358, 2026-09-13). No es un defecto
+> nuevo: es la **tercera** de las cuatro instancias que el propio `#214` enumeró en su
+> apartado «De qué frontera es esto un ejemplo», y que se dejaron fuera del alcance de esa
+> pieza a propósito para no remediar por anticipación.
+
+**La frontera, repetida:** el árbol de intake se trata como estable entre **listar** y
+**abrir**, y en `G:` no lo es. Drive for Desktop reescribe nombres después de la escritura.
+`hash_tree_local` y `_inventario_desde_hashes` ya lo toleran y lo **declaran**
+(`core.abrir_caso.ArbolLocal`); `core/sala_maquina.py::inventariar` no.
+
+**Qué falta por medir antes de construir nada.** El intake y la sala de máquina corren en
+**momentos distintos**, y el renombrado del montaje ocurre poco después de que `rclone`
+escriba: no está medido que la carrera siga viva minutos u horas más tarde, cuando la sala de
+máquina recorre. Puede que la ventana ya esté cerrada — y entonces esto no es un defecto, es
+una simetría cosmética. **Medirlo es el primer paso, no construir la tolerancia.**
+
+**Disparador de promoción.** Una apertura real en la que la sala de máquina falle o pierda un
+documento por un nombre que cambió. Sin eso, backlog.
+
+**Pieza de la que colgarlo, si se dispara:** `ArbolLocal` y `FicheroSinVerificar` ya existen
+en `core.abrir_caso`, así que el remedio sería reutilizar vocabulario, no inventarlo.
+
+## 250. El `hash_tree` del MCP `expedientes-xl` recorre y abre sobre el mismo montaje
+
+> Hermana de `#249` y cuarta instancia de la frontera de `MEJORAS #214`. Mismo origen y
+> misma fecha (PR #358, 2026-09-13).
+
+`hash_tree` del MCP «Drive como disco» recorre `G:`/`H:` y hashea. Comparte el montaje y por
+tanto la carrera, con dos diferencias que **bajan** la prioridad y hay que decirlas:
+
+1. **Vive en otro artefacto** (`.dxt`, `core/mcp_expedientes/`), con su propio ciclo de
+   despliegue: un arreglo aquí no llega a Cowork hasta reempaquetar e importar. El precedente
+   de que un guard verde no acredita lo desplegado está medido —
+   `feedback-el-guard-no-ve-lo-desplegado`.
+2. **No alimenta el ledger forense del expediente.** Un hueco suyo no produce una afirmación
+   falsa en `_intake_log.jsonl`; produce un error visible en la sesión que lo llamó, que es un
+   modo de fallo ruidoso y no silencioso — justo lo contrario del caso de `#214`.
+
+**Disparador de promoción.** Que alguien lo use para acreditar custodia, o un fallo real en
+una corrida de Cowork. **No se toca por simetría.**
 
 ## 215. `_MAGIC_BYTES` solo conoce firmas planas: un `.docx` sin extensión es `sin_soporte` y nadie lo lee  [CERRADA 2026-09-13]
 
