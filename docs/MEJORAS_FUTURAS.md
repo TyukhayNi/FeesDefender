@@ -10571,7 +10571,7 @@ con nombres libres— así que la derivación tiene que **rendirse y pedir el fl
 encuentre el W-code en el nombre, igual que hace `codigo_de_unidad` con una unidad comercial. Una
 derivación que adivine es peor que teclear.
 
-## 225. El pull de Drive E&V guarda los documentos RELLENADOS con ceros a múltiplo de 512, y su sha256 deja de ser el del original
+## 225. El pull de Drive E&V guarda los documentos RELLENADOS con ceros a múltiplo de 512, y su sha256 deja de ser el del original  [DECIDIDA 2026-09-13 — declarada, NO cerrada: la causa sigue viva]
 
 > Medido el 2026-09-10 en la apertura de **W-02NHNC**. Salió a la luz por un síntoma que no era
 > este: el encargo se OCR-eó **dos veces** (77,7 s de los 165,8 s de la segunda pasada) porque el
@@ -10709,6 +10709,55 @@ mano NO admite otro `--fuente drive_ev`.** rclone decide qué transferir por mod
 modtime de la reposición, distinto del de origen: el re-pull los vuelve a traer y los vuelve a
 rellenar, deshaciendo la reparación sin decir nada. En W-02NHNC eso descarta la vía cómoda de
 lanzar el alta CRM con `--fuente drive_ev`.
+
+## DECIDIDO por Nikolai el 2026-09-13: se DECLARA la limitación; la reposición va por disparador
+
+**La decisión, en una línea:** se asume por escrito que **el `sha256` de la documental que
+entró por `rclone` no acredita procedencia**, se construye la vía (a) para que el defecto sea
+**visible**, y el histórico **no se repone en barrido** — solo cuando un caso concreto lo
+necesite.
+
+**Y la limitación NO es solo del pasado, que es lo que costaría entender mal.** Los tres flags
+que la causan siguen puestos (`core/intake_drive.py`: `--ignore-size --ignore-checksum
+--inplace`), así que **un pull de hoy sigue rellenando**. Lo que cambió el 2026-09-13 es que
+**ahora se ve**: `verificar_apertura` C2 contrasta contra el `sha256Checksum` de Drive, y
+cuando una discrepancia tiene la forma del relleno **lo confirma rehasheando sin la cola de
+ceros** (`relleno_225_confirmado`) en vez de dejar un hallazgo mudo. Y `MEJORAS #252` hace que
+V1 lo corra al terminar, así que ya no depende de que alguien se acuerde. Detalle:
+`docs/superpowers/plans/2026-09-13-fila29-clave-de-cruce.md`.
+
+**Por qué no se repone el histórico ahora, con el argumento que decidió:** reponer **antes** de
+cerrar la causa es trabajo que **caduca solo**. El aviso operativo de más arriba lo dice — un
+caso repuesto a mano no admite otro `--fuente drive_ev`, porque `rclone` decide por modtime y
+el re-pull lo vuelve a rellenar sin avisar. Reponer 242 + 171 crudos **más sus copias en la
+sala de lectura** para que el siguiente pull lo deshaga no es prudencia: es gasto.
+
+**Qué se hace en su lugar, y es la parte accionable:**
+
+1. **Se declara.** Hoy no se puede acreditar por hash la procedencia de la documental de E&V de
+   ningún expediente abierto antes de la corrección. Si un asunto necesita esa acreditación, se
+   dice y se repone **ese** expediente, no el corpus.
+2. **La reposición tiene receta probada** (W-02NHNC, 15 ficheros): reponer el crudo **y
+   regenerar lo derivado** — la sala de lectura guarda su propia copia, así que el histórico a
+   reponer es del orden del doble. Tras hacerlo quedaron **0 ficheros con la firma** en
+   `00_Input/01_Drive EV`, en `Sala lectura` y en `02_Sala de máquina`.
+3. **Lo que NO rompe sigue sin romperse:** el contenido. Los lectores de PDF ignoran la cola
+   tras `%%EOF`, el OCR salió `ok` en los 9 medidos y el texto extraído es el del original.
+   Esto es un defecto de **integridad y de identidad**, no de legibilidad, y por eso se puede
+   declarar en vez de parar todo.
+
+**Disparadores de la reposición, que es lo que convierte esto en una regla y no en un olvido:**
+
+- un expediente en el que haya que **acreditar la procedencia de un documento de E&V** (pericial,
+  impugnación de autenticidad, requerimiento judicial sobre la cadena de custodia);
+- un caso en el que el **dedup entre fuentes** esté costando OCR repetido de forma medible
+  (`MEJORAS #225` lo midió: encargo, nota simple y hoja de visita procesados dos veces);
+- o decisión expresa de Nikolai.
+
+**La vía (b) queda en backlog con su propio disparador, no en la cola.** Cerrar la causa exige
+volver a medir los falsos «corrupted on transfer» **contra `G:`** —el control 2 se hizo contra
+NTFS, y esa asimetría es justo lo que no se ha medido—. Sube cuando la reposición de algún caso
+deje de ser barata, o cuando el aviso de C2 salga en aperturas seguidas.
 
 **Vías.**
 

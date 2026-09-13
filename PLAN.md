@@ -75,8 +75,9 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 > anteriores.** Es la promoción de **tres de las ocho** propuestas del handoff de la consulta
 > sobre la apertura (P5, P7 y P2), por decisión de Nikolai al arrancar la sesión. Las otras
 > cinco **no** se promueven, y se dice por qué: **P1** (secuencia V2+V3) necesita plan propio y
-> dos rondas; **P3** espera su decisión sobre el histórico del relleno con ceros (`MEJORAS
-> #225`); **P4** espera decidir qué constructor de la sala de lectura sobrevive (`[APER-70]`);
+> dos rondas; **P3** ya no espera nada: su decisión (`MEJORAS #225`) se tomó el
+> 2026-09-13 —se **declara** la limitación y la reposición va por disparador— y sus dos
+> entradas construibles se cerraron como filas #27 y #29; **P4** espera decidir qué constructor de la sala de lectura sobrevive (`[APER-70]`);
 > **P6** depende de P2 y de la capa base; **P8** es proceso, no código.
 
 > **Filas 29, 30 y 31 añadidas el 2026-09-13, al final y sin reordenar la cola**, por el mismo

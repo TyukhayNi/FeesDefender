@@ -276,6 +276,13 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
     `hash_tree_local(target_dir, prefijo=brain.SUBDIR_DRIVE_EV)` + `_intake_generico(...,
     raiz_hashes=target_dir.parent)` bajo `scripts._mutex_cli.sostener`. (5) Sigue por §5 con
     `sala_maquina apply` a mano. Diagnóstico completo y las tres vías de arreglo: `MEJORAS #214`.
+  - **Y el relleno con ceros (`MEJORAS #225`) sigue vivo, declarado:** los tres flags del
+    pull (`--ignore-size --ignore-checksum --inplace`) no se han quitado, así que el
+    `sha256` de lo que entra por `rclone` **no es el del original**. Desde el 2026-09-13
+    **se ve**: `verificar_apertura` C2 lo detecta y confirma la firma rehasheando sin la
+    cola de ceros, y V1 lo corre al terminar. La reposición del histórico va **por
+    disparador**, no en barrido — decisión de Nikolai del 2026-09-13, con sus disparadores
+    en `MEJORAS #225`.
 - **`[APER-34]` Auto-derivación (B5):** en `--fuente drive_ev`, si se omiten,
   `--team-id` (driveId), `--codigo-caso` (nombre de la unidad compartida vía Drive API) y
   `--sufijo` (del `tipo_caso` canónico) se **auto-derivan** desde `--folder-id`. Los flags
