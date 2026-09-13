@@ -90,7 +90,7 @@ def test_save_catalog_roundtrip(tmp_casos_root):
     # "06. PBC" y congelaba el defecto que el runbook describe (06. PBC con 28
     # documentos y 03. OFERTAS con 1). Se corrige contra la fuente, no contra el codigo.
     ("Nota simple registral.pdf", "01. ACTIVACIÓN"),
-    ("Anexo 1 formulario PBC.pdf", "06. PBC"),
+    ("Anexo 1 formulario.pdf", "06. PBC"),   # sin «PBC» dentro: R1/H-06
     ("Documento sin pistas.pdf", None),
 ])
 def test_clasificar_por_keyword(nombre, esperado):

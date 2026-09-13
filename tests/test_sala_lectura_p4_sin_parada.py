@@ -20,8 +20,9 @@ Dos piezas separables, las dos sobre `core/sala_lectura.py`:
    verja.
 
 **Lo que esto NO es, y conviene no confundirlo** (medido sobre esos 1.352 documentos): no
-mejora la clasificación. El 57 % que la regla por nombre no sabe clasificar sigue sin
-saberse —los nombres no llevan la señal (`CaseDossierReport - …-V.pdf`, `DEVOLUCIO
+mejora la clasificación. El **57,0 %** que la regla ANTERIOR no sabía clasificar sigue sin
+saberse —el **55,2 %** con la tabla corregida, y esos 1,8 puntos son los Anexos que la tabla
+vieja no reconocía, no una mejora del reconocimiento— —los nombres no llevan la señal (`CaseDossierReport - …-V.pdf`, `DEVOLUCIO
 CLAUS.pdf`)— y acaba en `08` en vez de en una parada. Lo que cambia es que la sala pasa de
 **no existir** a existir con los 1.352 documentos nombrados y fechados, y el letrado
 corrige leyendo, que es lo que el handoff pedía. Portar la regla de la skill
@@ -73,7 +74,10 @@ def _caso_con_docs(case_manager, inventory, catalogo, docs, case_id="EV-2026-P4"
     ("NOTA SIMPLE TERRENO.pdf", "01. ACTIVACIÓN"),
     ("Certificado de titularidad.pdf", "01. ACTIVACIÓN"),
     # SOLO los Anexos 1 y 2 se quedan en PBC.
-    ("Anexo 1 formulario PBC.pdf", "06. PBC"),
+    # Sin la palabra «PBC» dentro, a propósito: con ella el caso casaba por el token
+    # `pbc` aunque se retirase `anexo 1`, y el mutante que retiraba ese token pasaba
+    # igual. El defecto estaba en la ENTRADA de prueba (R1/H-06).
+    ("Anexo 1 formulario.pdf", "06. PBC"),
     ("Anexo 2 titular real.pdf", "06. PBC"),
     ("Declaracion PBC blanqueo.pdf", "06. PBC"),
 ])

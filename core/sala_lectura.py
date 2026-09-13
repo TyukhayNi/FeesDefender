@@ -43,10 +43,24 @@ from core.utils import now_iso, output_slug, slugify
 # lo fallaban a la vez el CLI y las sesiones. Medido sobre los 1.352 documentos de los
 # diez expedientes con catálogo: **59 documentos** pasan de `06. PBC` a `01. ACTIVACIÓN`.
 #
-# La tabla no distingue vendedor de comprador —el nombre del fichero rara vez lo dice—, así
-# que enruta al lado del vendedor, que es la mayoría, y deja al comprador los documentos que
-# solo él firma (`hoja de visita`, `ficha comprador`). Lo que el nombre no permite decidir
-# es trabajo de quien lee, no de esta tabla.
+# La tabla enruta al lado del **vendedor**, que es la mayoría, y deja al comprador los
+# documentos que solo él firma (`hoja de visita`, `ficha comprador`). Lo que el nombre no
+# permite decidir es trabajo de quien lee, no de esta tabla.
+#
+# **Pero cuando el nombre SÍ dice la parte, la parte manda** (R1/H-04). El defecto para una
+# parte desconocida no puede prevalecer sobre una parte conocida: `Anexo 2 compradores.pdf`
+# iba a `06. PBC` contra el ejemplo literal del runbook —«el `Anexo 2` **de los compradores**
+# NO es la excepción»—, y `DNI comprador.pdf` a `01. ACTIVACIÓN` en vez de a `03. OFERTAS`.
+# Esto NO infiere la parte de un nombre opaco: solo respeta la que está escrita.
+_TOKENS_COMPRADOR: tuple[str, ...] = ("comprador", "compradores", "buscador", "buscadores")
+_TOKENS_VENDEDOR: tuple[str, ...] = ("vendedor", "vendedores", "propietario", "propietarios")
+
+#: Documentos de identidad/KYC y sus anexos: los únicos cuyo destino depende de la PARTE.
+#: Un burofax o una factura no cambian de categoría por llevar «comprador» en el nombre, así
+#: que la regla de parte se aplica solo a esta familia — si no, `requerimiento al comprador`
+#: dejaría de ser una reclamación.
+_CATEGORIAS_POR_PARTE: frozenset[str] = frozenset({"06. PBC", "01. ACTIVACIÓN"})
+
 _KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("07. RECLAMACIONES", ("burofax", "requerimiento", "reclamacion", "reclamación", "ovc", "incumplimiento")),
     ("05. FACTURACIÓN - FINANZAS", ("factura", "honorarios", "abono", "minuta", "justificante de pago")),
@@ -66,10 +80,26 @@ _KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
 #: - **Con límite también a la derecha** se perdían verdaderos positivos con sufijo:
 #:   `oferta2.pdf`, `ofertas recibidas.pdf`, `PBC1 JOSEP GIRBAU.pdf`. Un token identifica
 #:   una palabra por su **inicio** y tiene que tolerar plural, numeración y flexión.
+#:
+#: **La excepción, que la R1 levantó (H-05): un token que TERMINA en dígito no tolera otro
+#: dígito detrás.** Sufijo léxico y continuación de un identificador numérico no son la
+#: misma cosa, aunque la regex las trate igual: con la política uniforme, `Anexo 10.pdf`
+#: casaba `anexo 1` y `Anexo 20 titularidad.pdf` casaba `anexo 2`, convirtiendo los Anexos
+#: 10-19 y 20-29 en la excepción de PBC, que el canon limita a los Anexos 1 y 2. La skill
+#: hermana ya lo distinguía con `[^0-9]`. Los verdaderos positivos con sufijo se conservan
+#: porque `oferta`, `pbc` y `factura` no terminan en dígito.
+def _patron(token: str) -> str:
+    cola = r"(?!\d)" if token[-1].isdigit() else ""
+    return r"\b" + re.escape(token) + cola
+
+
 _KEYWORDS_RE: list[tuple[str, re.Pattern[str]]] = [
-    (categoria, re.compile("|".join(r"\b" + re.escape(t) for t in tokens)))
+    (categoria, re.compile("|".join(_patron(t) for t in tokens)))
     for categoria, tokens in _KEYWORDS
 ]
+
+_RE_COMPRADOR = re.compile("|".join(_patron(t) for t in _TOKENS_COMPRADOR))
+_RE_VENDEDOR = re.compile("|".join(_patron(t) for t in _TOKENS_VENDEDOR))
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".gif", ".bmp", ".tiff", ".tif"}
 
@@ -113,6 +143,14 @@ def _categoria_por_nombre(nombre: str) -> str | None:
     low = nombre.lower().replace("_", " ")
     for categoria, patron in _KEYWORDS_RE:
         if patron.search(low):
+            # La parte ESCRITA en el nombre manda sobre el destino por defecto, y solo en la
+            # familia de la identidad (R1/H-04): el KYC del comprador va a `03. OFERTAS`,
+            # incluidos sus Anexos, que el canon excluye expresamente de la excepción de PBC.
+            # Si el nombre nombra a las dos partes no se elige ninguna: eso ya no lo decide
+            # un nombre.
+            if categoria in _CATEGORIAS_POR_PARTE and _RE_COMPRADOR.search(low) \
+                    and not _RE_VENDEDOR.search(low):
+                return "03. OFERTAS"
             return categoria
     return None
 
@@ -244,7 +282,13 @@ def clasificar_caso(case_id: str) -> dict:
     residuo = []
     n_det = 0
     for e in entries:
-        if e.tipo_documental and (e.confianza or 0) >= UMBRAL_CONFIANZA_AUTOMOVE:
+        # **`es_decision` gobierna también la LECTURA de lo persistido** (R1/H-01). Preguntar
+        # solo por la confianza dejaba congelado un `08` con confianza `1.0` —el estado que
+        # producía el código anterior al aplicar un `08` escrito en la worklist—: se saltaba
+        # como «ya resuelto», salía del residuo y por tanto **desaparecía de la worklist**,
+        # así que ni se reclasificaba ni había forma de corregirlo. Con esto se normaliza
+        # solo, sin migración.
+        if es_decision(e.tipo_documental) and (e.confianza or 0) >= UMBRAL_CONFIANZA_AUTOMOVE:
             continue  # ya resuelto en una corrida previa
         ext = Path(e.nombre_original).suffix
         if _es_imagen(ext):
@@ -264,12 +308,22 @@ def clasificar_caso(case_id: str) -> dict:
             n_det += 1
             continue
         # El nombre no permite afirmar ninguna categoría: se marca la ausencia en vez de
-        # dejar la fila sin tipo. `_fecha_de` se llama igual que en las ramas resueltas —
-        # la fecha no depende de la categoría, y sin ella el documento entraría a la sala
-        # como `0000-00-00` pudiendo saberse por EXIF o mtime.
-        fecha, fuente = _fecha_de(case_id, e)
+        # dejar la fila sin tipo. La fecha se infiere igual que en las ramas resueltas —no
+        # depende de la categoría, y sin ella el documento entraría a la sala como
+        # `0000-00-00` pudiendo saberse por EXIF o mtime—, pero **solo si nadie la ha
+        # decidido todavía**.
+        #
+        # Esa condición la pidió la R1 (H-02) y corrige una regresión de este mismo diff:
+        # escribir la fecha incondicionalmente convertía «el tipo sigue indeciso» en «la
+        # fecha se vuelve a decidir», así que el `organizar` siguiente **pisaba la fecha que
+        # el letrado había puesto en la worklist** y materializaba la copia con otra —
+        # catálogo, nombre y cronología diciendo una, y la worklist otra—. `fecha_fuente` es
+        # la señal correcta y no `fecha_doc`: `aplicar_clasificacion` la sella siempre
+        # (`or "contenido"`), así que distingue «nunca se calculó» de «hay una decisión»
+        # incluso cuando la decisión fue dejar la fecha vacía a propósito.
+        if e.fecha_fuente is None:
+            e.fecha_doc, e.fecha_fuente = _fecha_de(case_id, e)
         e.tipo_documental = CATEGORIA_PENDIENTE
-        e.fecha_doc, e.fecha_fuente = fecha, fuente
         e.confianza = _CONF_PENDIENTE
         residuo.append(e)
 
@@ -323,7 +377,10 @@ def aplicar_clasificacion(case_id: str, *, solo_residuo: bool = False) -> dict:
         fila = filas.get(e.hash)
         if not fila:
             continue
-        ya_resuelto = bool(e.tipo_documental) and (e.confianza or 0) >= UMBRAL_CONFIANZA_AUTOMOVE
+        # Misma frontera que en `clasificar_caso` (R1/H-01): un `08` con confianza plena no
+        # es una entrada resuelta, así que `solo_residuo` no puede protegerlo de su propia
+        # corrección — que es justo para lo que el letrado abre la worklist.
+        ya_resuelto = es_decision(e.tipo_documental) and (e.confianza or 0) >= UMBRAL_CONFIANZA_AUTOMOVE
         if solo_residuo and ya_resuelto:
             continue
         tipo = fila["Tipo"].strip()
@@ -580,8 +637,14 @@ def rellenar_worklist(
             if col == "Parte" and val.lower() not in _PARTES_VALIDAS:
                 continue
             idx = col_idx[col]
-            if celdas[idx]:  # ya rellena → no pisar
-                continue
+            # **Un `08` en la celda `Tipo` NO cuenta como rellena** (R1/H-03). `08` es la
+            # ausencia de decisión, así que tratarlo como intocable dejaba el documento en
+            # un bucle: `_hashes_residuo` lo seguía ofreciendo al clasificador y este
+            # escritor rechazaba cualquier respuesta mejor — `n_docs=1`, `n_celdas=0`, en
+            # cada corrida. Lo escribe el propio camino LLM, así que no hay decisión humana
+            # que proteger. Una categoría REAL ya escrita se sigue respetando.
+            if celdas[idx] and not (col == "Tipo" and not es_decision(celdas[idx])):
+                continue  # ya rellena → no pisar
             celdas[idx] = val
             n_celdas += 1
             tocada = True
@@ -1151,9 +1214,10 @@ def organizar(case_id: str, *, crm_docs=None) -> dict:
     `n_pendientes` lo dice y la worklist sigue siendo el instrumento de corrección.
 
     **Lo que esto NO arregla, para que nadie lo lea como más de lo que es:** la
-    clasificación no mejora. Medido sobre 1.352 documentos de diez expedientes, el 55 % de
-    los nombres no permite afirmar una categoría, y ese 55 % acaba en `08` en vez de en una
-    parada. La ganancia es que la sala pasa de no existir a existir.
+    clasificación no mejora. Medido sobre 1.352 documentos de diez expedientes, el **55,2 %**
+    de los nombres no permite afirmar una categoría —era el 57,0 % antes de corregir
+    `[APER-61]`, y la diferencia son Anexos que la tabla vieja no reconocía— y ese 55 % acaba
+    en `08` en vez de en una parada. La ganancia es que la sala pasa de no existir a existir.
 
     **`detenido_por_residuo` ya NO se devuelve.** Dejarla en `False` para no romper a nadie
     habría sido una mentira silenciosa —diría «no me detuve» ocultando que ya no puede

@@ -820,8 +820,9 @@ python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # renombr
 ```
 
 **Lo que P4 NO arregla, y conviene no leer de más:** la clasificación no mejora. Medido sobre
-1.352 documentos de los diez expedientes con catálogo, el **55 %** de los nombres no permite
-afirmar ninguna categoría —`CaseDossierReport - …-V.pdf`, `DEVOLUCIO CLAUS.pdf`: la señal no
+1.352 documentos de los diez expedientes con catálogo, el **55,2 %** de los nombres no
+permite afirmar ninguna categoría —era el **57,0 %** con la tabla anterior; las dos cifras son
+de la misma muestra y de reglas distintas— —`CaseDossierReport - …-V.pdf`, `DEVOLUCIO CLAUS.pdf`: la señal no
 está en el nombre—, y ese 55 % acaba en `08` en vez de en una parada. La ganancia es que la
 sala pasa de no existir a existir con todo dentro, fechado y nombrado. Y la propuesta literal
 de P4 —portar al motor la regla de la skill (`preclasificar.clasificar_por_patron`)— se midió
