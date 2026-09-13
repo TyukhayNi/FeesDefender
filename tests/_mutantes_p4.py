@@ -154,6 +154,12 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      "    return CATEGORIA_PENDIENTE",
      f"{T_P4}::test_categoria_por_nombre_sigue_devolviendo_none_sin_pistas"),
 
+    # --- La guarda de `preparar-residuo` no puede quedarse INERTE --------------------
+    ("M21 la guarda del CLI vuelve a preguntar por «sin tipo» (queda inerte)", CLI,
+     "                    if not sala_lectura.es_decision(e.tipo_documental)]",
+     "                    if not e.tipo_documental]",
+     f"{T_P4}::test_la_cli_no_declara_clasificado_un_catalogo_lleno_de_pendientes"),
+
     # --- La guarda de «no había nada que hacer» no se toca ---------------------------
     ("M20 quitar la parada se lleva por delante la guarda de sin_material", SL,
      '        return {"case_id": case_id, "n_pendientes": 0,\n'
@@ -165,13 +171,14 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
 
 #: (nombre, motivo). Mutantes que se conservan sin exigirles muerte, con su razón escrita.
 SUPERVIVIENTES_DECLARADOS: list[tuple[str, str]] = [
-    ("el AVISO del CLI sobre los pendientes (`scripts/sala_lectura.py`)",
-     "No hay mutante que lo mate porque no hay test que lo cubra: el subcomando "
-     "`organizar` del CLI no tiene test propio —no lo tenía antes de P4 tampoco— y lo que "
-     "este diff le cambia es el TEXTO que imprime, no una decisión. El contenido "
-     "verificable (que hay pendientes y cuántos) sale de `n_pendientes`, que sí está "
-     "cubierto por M12. Se declara en vez de fabricar un test de `CliRunner` que solo "
-     "comprobaría que una cadena contiene otra cadena."),
+    ("el TEXTO del aviso de `organizar` en el CLI (`scripts/sala_lectura.py`)",
+     "Lo que este diff le cambia al subcomando `organizar` es el TEXTO que imprime, no una "
+     "decisión: el contenido verificable —que hay pendientes y cuántos— sale de "
+     "`n_pendientes`, y eso lo fija M12. Un mutante sobre la cadena solo probaría que una "
+     "cadena contiene otra cadena. **Ojo a la frontera, porque la otra mitad del CLI SÍ "
+     "decide y SÍ tiene mutante:** la guarda de `preparar-residuo` (M21) no imprime, "
+     "decide si se puede afirmar «todo el catálogo está clasificado» y con qué código de "
+     "salida. Esa no se declara: se mata."),
 ]
 
 
