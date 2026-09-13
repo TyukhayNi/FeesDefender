@@ -86,7 +86,11 @@ def test_save_catalog_roundtrip(tmp_casos_root):
     ("Hoja de encargo en exclusiva.pdf", "01. ACTIVACIÓN"),
     ("Oferta del comprador.pdf", "03. OFERTAS"),
     ("Contrato de arras penitenciales.pdf", "04. ARRAS - ARRENDAMIENTOS"),
-    ("Nota simple registral.pdf", "06. PBC"),
+    # [APER-61]: la nota simple es del VENDEDOR -> activacion, no PBC. Este caso decia
+    # "06. PBC" y congelaba el defecto que el runbook describe (06. PBC con 28
+    # documentos y 03. OFERTAS con 1). Se corrige contra la fuente, no contra el codigo.
+    ("Nota simple registral.pdf", "01. ACTIVACIÓN"),
+    ("Anexo 1 formulario.pdf", "06. PBC"),   # sin «PBC» dentro: R1/H-06
     ("Documento sin pistas.pdf", None),
 ])
 def test_clasificar_por_keyword(nombre, esperado):
@@ -134,7 +138,9 @@ def test_clasificar_caso_deterministas_y_residuo(tmp_casos_root):
     entries = {e.nombre_original: e for e in cat.load_catalog(case_id)}
     assert entries["Factura honorarios.pdf"].tipo_documental == "05. FACTURACIÓN - FINANZAS"
     assert entries["foto fachada.jpg"].tipo_documental == "00. FOTOS"
-    assert entries["Documento ambiguo.pdf"].tipo_documental is None
+    # El residuo ya no sale SIN tipo: sale marcado 08 con confianza 0.0 (P4).
+    assert entries["Documento ambiguo.pdf"].tipo_documental == "08. PENDIENTE DE CLASIFICAR"
+    assert entries["Documento ambiguo.pdf"].confianza == 0.0
 
     worklist = case_dir / "01_Procesado" / "_revisar" / "_clasificar.md"
     assert worklist.exists()
@@ -191,7 +197,8 @@ def test_aplicar_ignora_filas_sin_tipo_o_tipo_invalido(tmp_casos_root):
     ]
     worklist.write_text("\n".join(filas), encoding="utf-8")
     res = sl.aplicar_clasificacion(case_id)
-    assert cat.load_catalog(case_id)[0].tipo_documental is None
+    # Un TIPO INVENTADO se sigue rechazando; la fila queda como la dejo clasificar_caso.
+    assert cat.load_catalog(case_id)[0].tipo_documental == "08. PENDIENTE DE CLASIFICAR"
     assert res["n_aplicadas"] == 0
 
 
@@ -329,23 +336,32 @@ def test_poblar_sin_crm_docs_degrada_a_plano(tmp_casos_root):
     assert copias[0].read_bytes() == b"%PDF-D1"
 
 
-def test_cli_organizar_se_detiene_con_residuo(tmp_casos_root):
+def test_cli_organizar_YA_NO_se_detiene_con_residuo(tmp_casos_root):
+    """La parada por residuo se RETIRÓ el 2026-09-14 (P4). Este test guarda el cambio.
+
+    Hasta esa fecha aquí se exigía lo contrario —`detenido_por_residuo is True` y la sala
+    **sin ningún documento**—, y esa exigencia era el coste que P4 vino a quitar: con un
+    solo documento sin clasificar no se montaba nada, y en aperturas reales eso fueron 80
+    documentos a mano en W-030TZY y 21 en W-02NHNC antes de tener nada que leer.
+
+    El aserto no se ha debilitado, se ha invertido: sigue exigiendo el inventario EXACTO
+    de la sala (el `rglob` que pidió la R1 adversarial en su H-12, porque un
+    `glob("*.pdf")` en la raíz dejaba pasar una copia en cualquier subcarpeta), solo que
+    ahora lo que se exige es que el documento **esté**.
+    """
     cm, inv, cat, sl = _reload()
     case_id, case_dir = _caso_con_docs(cm, inv, cat, [
         ("01_Drive EV", "ambiguo.pdf", b"%PDF-2"),
     ])
     res = sl.organizar(case_id)
-    assert res["detenido_por_residuo"] is True
-    assert res["n_residuo"] == 1
-    # El aserto original exigía que no existiera `Sala lectura/Drive E&V`. Al
-    # aplanar lo cambié por un `glob("*.pdf")` en la raíz, que es MÁS DÉBIL: una
-    # copia en cualquier subcarpeta, o de otra extensión, lo pasaba igual. Lo
-    # levantó la R1 adversarial (H-12) y aquí se exige lo que se quería decir:
-    # con residuo, la sala no tiene NINGÚN documento.
+    assert "detenido_por_residuo" not in res
+    assert res["n_pendientes"] == 1
     sala = case_dir / "01_Procesado" / "Sala lectura"
     copiados = [p for p in sala.rglob("*")
                 if p.is_file() and p.name not in ("INDICE.md", "CRONOLOGIA.md")]
-    assert copiados == [], copiados
+    assert len(copiados) == 1, copiados
+    assert "_pendiente_" in copiados[0].name, copiados[0].name
+    assert copiados[0].read_bytes() == b"%PDF-2"
 
 
 def test_organizar_completo_sin_residuo(tmp_casos_root):
@@ -354,7 +370,7 @@ def test_organizar_completo_sin_residuo(tmp_casos_root):
         ("01_Drive EV", "Factura honorarios.pdf", b"%PDF-1"),
     ])
     res = sl.organizar(case_id)
-    assert res["detenido_por_residuo"] is False
+    assert res["n_pendientes"] == 0
     sala = case_dir / "01_Procesado" / "Sala lectura"
     assert (sala / "INDICE.md").exists()
     # Igual que arriba: `any` no distinguía un PDF correcto de cualquier PDF.
@@ -395,10 +411,16 @@ def test_poblar_bundles_idempotente(tmp_casos_root):
 
 
 def _crear_md_del_residuo(case_id, cat, sl, texto="Texto extraído del documento."):
-    """Crea 01_Procesado/MD/<slug>.md para cada entrada del residuo (sin tipo)."""
+    """Crea 01_Procesado/MD/<slug>.md para cada entrada del residuo.
+
+    El residuo se identifica con `es_decision`, no con «sin tipo»: desde P4
+    (2026-09-14) lleva `08. PENDIENTE DE CLASIFICAR`, y filtrar por `if
+    e.tipo_documental` dejaba de crear ningun MD — con eso `preparar_residuo`
+    devolvia [] y los tests del clasificador LLM median una lista vacia.
+    """
     creados = {}
     for e in cat.load_catalog(case_id):
-        if e.tipo_documental:
+        if sl.es_decision(e.tipo_documental):
             continue
         md = sl._md_path(case_id, e)
         md.parent.mkdir(parents=True, exist_ok=True)
@@ -460,7 +482,7 @@ def test_clasificar_residuo_llm_baja_confianza_no_rellena(tmp_casos_root):
     assert res["n_celdas"] == 0
     # sigue en residuo: aplicar no clasifica nada
     assert sl.aplicar_clasificacion(case_id)["n_aplicadas"] == 0
-    assert cat.load_catalog(case_id)[0].tipo_documental is None
+    assert cat.load_catalog(case_id)[0].tipo_documental == "08. PENDIENTE DE CLASIFICAR"
 
 
 def test_clasificar_residuo_llm_idempotente(tmp_casos_root):
@@ -718,7 +740,7 @@ def test_preparar_residuo_encuentra_el_md_donde_la_sala_de_maquina_lo_escribe(
         ("01_Drive EV", "ambiguo.pdf", b"%PDF-1"),
     ])
     sl.clasificar_caso(case_id)
-    e = [x for x in cat.load_catalog(case_id) if not x.tipo_documental][0]
+    e = [x for x in cat.load_catalog(case_id) if not sl.es_decision(x.tipo_documental)][0]
 
     from core.utils import output_slug
     md = _sm_md_dir(case_dir) / f"{output_slug(e.ruta_relativa, e.hash)}.md"
@@ -743,7 +765,7 @@ def test_preparar_residuo_resuelve_un_bundle_partido_por_el_split(tmp_casos_root
         ("01_Drive EV", "ambiguo.pdf", b"%PDF-1"),
     ])
     sl.clasificar_caso(case_id)
-    e = [x for x in cat.load_catalog(case_id) if not x.tipo_documental][0]
+    e = [x for x in cat.load_catalog(case_id) if not sl.es_decision(x.tipo_documental)][0]
 
     from core.utils import output_slug
     slug = output_slug(e.ruta_relativa, e.hash)
@@ -816,15 +838,15 @@ def test_el_ciclo_worklist_aplicar_converge_por_organizar(tmp_casos_root):
         ("01_Drive EV", "ambiguo.pdf", b"%PDF-1"),
     ])
     primera = sl.organizar(case_id)
-    assert primera["detenido_por_residuo"] is True
+    assert primera["n_pendientes"] == 1
 
     _rellenar_una_fila(case_dir, sl, tipo="07. RECLAMACIONES",
                        parte="propietario", descripcion="Requerimiento de pago")
 
     segunda = sl.organizar(case_id)
 
-    assert segunda["detenido_por_residuo"] is False, (
-        "con la worklist rellenada, `organizar` sigue pidiendo rellenarla: no converge")
+    assert segunda["n_pendientes"] == 0, (
+        "con la worklist rellenada, el documento sigue contando como pendiente")
     assert (case_dir / "01_Procesado" / "Sala lectura" / "INDICE.md").exists()
 
 
@@ -843,8 +865,7 @@ def test_organizar_sobre_un_caso_SIN_catalogo_no_canta_exito_sobre_una_sala_vaci
     res = sl.organizar(case_id)
 
     assert cat.load_catalog(case_id), "no construyo el catalogo que le faltaba"
-    assert not (res["detenido_por_residuo"] is False and not res.get("acciones")), (
-        "declaro organizada una sala vacia")
+    assert res.get("acciones"), "declaro organizada una sala vacia"
     assert any((case_dir / "01_Procesado" / "Sala lectura").rglob("*.pdf")), (
         "la sala quedo sin documentos")
 

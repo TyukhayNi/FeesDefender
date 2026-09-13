@@ -48,7 +48,7 @@ def _md_dir(case_dir: Path) -> Path:
 def _escribir_md(case_dir, sl, cat, case_id, nombre):
     from core.utils import output_slug
     e = [x for x in cat.load_catalog(case_id)
-         if not x.tipo_documental and x.nombre_original == nombre][0]
+         if not sl.es_decision(x.tipo_documental) and x.nombre_original == nombre][0]
     d = _md_dir(case_dir)
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{output_slug(e.ruta_relativa, e.hash)}.md").write_text("texto", encoding="utf-8")

@@ -76,8 +76,15 @@ def _escribir_fila(path: Path, hash_: str, celdas_nuevas: dict[int, str]) -> Non
 
 
 def _residuo(cat, case_id, nombre):
+    """La entrada del residuo, identificada por `es_decision`, no por «sin tipo».
+
+    Desde P4 (2026-09-14) el residuo lleva `08. PENDIENTE DE CLASIFICAR`: filtrar por
+    `not x.tipo_documental` devolvia [] y estos cuatro tests morian con IndexError
+    sin llegar a medir nada de lo suyo.
+    """
+    from core import sala_lectura as _sl
     return [x for x in cat.load_catalog(case_id)
-            if not x.tipo_documental and x.nombre_original == nombre][0]
+            if not _sl.es_decision(x.tipo_documental) and x.nombre_original == nombre][0]
 
 
 # ---------------------------------------------------------------------------

@@ -758,6 +758,26 @@ donde empieza la lectura real; no intercalar análisis a mitad de la mecánica d
   la identidad del comprador está mal enrutada.
   - El filo del canon: el `Anexo 2` **de los compradores** NO es la excepción — la
     excepción es party-specific y solo cubre los Anexos del vendedor.
+  - **En el CLI dejó de fallarse el 2026-09-14 (P4).** `core/sala_lectura.py::_KEYWORDS`
+    mandaba `dni`/`nie`/`pasaporte`/`nota simple`/`titularidad` a `06. PBC` —era la causa
+    **codificada** del síntoma, no una coincidencia— y `hoja de visita` a `01. ACTIVACIÓN`,
+    cuando la firma el comprador. Hoy la identidad y la titularidad van a `01. ACTIVACIÓN`,
+    la hoja de visita y la ficha de comprador a `03. OFERTAS`, y en `06. PBC` quedan **solo**
+    los Anexos 1 y 2 (más `pbc`/`blanqueo` explícitos). Medido sobre los 1.352 documentos de
+    los diez expedientes con catálogo, **87 documentos cambian de categoría**, y el desglose
+    importa porque no todo es el mismo hecho: **59** se mueven de `06. PBC` a
+    `01. ACTIVACIÓN` (la corrección de `[APER-61]`), **26** salen del residuo hacia una
+    categoría —24 a `06. PBC`, que son Anexos 1 y 2 que la tabla vieja no reconocía, y 2 a
+    `03. OFERTAS`—, y **2** entran al residuo: son los dos falsos positivos de substring que
+    el límite de palabra elimina (`Companies…` casaba `nie`, `carrasco` casaba `arras`). El
+    residuo baja de 770 a 746 sobre 1.352. Un test congelaba el error
+    (`"Nota simple registral.pdf" → "06. PBC"`) y se corrigió contra este runbook, que es la
+    fuente.
+  - **La tabla no sabe de qué parte es un documento**, y no puede: el nombre rara vez lo
+    dice. Enruta al lado del **vendedor**, que es la mayoría, y deja al comprador lo que solo
+    él firma. Un KYC de comprador cuyo nombre no lo diga seguirá cayendo en `01. ACTIVACIÓN`,
+    así que **el aviso de arriba sigue siendo la comprobación**: lo que el nombre no permite
+    decidir es trabajo de quien lee.
 
 - **`[APER-62]` / W-04A6LI — `layout_bundle_hilo` aborta con `ValueError` y el bundle por
   hilo no se puede montar: `email_export` desambigua la CARPETA, no el nombre del `.eml`.**
@@ -784,11 +804,31 @@ Hoy el ciclo que su propio mensaje recomienda —rellenar la worklist y volver a
 `organizar`— **termina**: encadena el catálogo si falta, vuelca la worklist con `aplicar` antes de
 recalcular el residuo, y `_write_worklist` fusiona en vez de reconstruir.
 
+**Y desde el 2026-09-14 (P4) ya no hace falta ese segundo viaje para tener sala: `organizar`
+no se detiene.** Lo que la regla por nombre no sabe clasificar recibe `08. PENDIENTE DE
+CLASIFICAR` y **entra a la sala igual**, con el slug `_pendiente_` en su nombre; la worklist
+sigue ahí y el CLI dice cuántos son, pero como aviso, no como verja. El coste que esto quita
+está medido en este mismo runbook: la sala de W-030TZY se detuvo pidiendo clasificar **80**
+documentos a mano —y la de W-02NHNC, 21— *antes de que existiera nada que leer*.
+
 ```powershell
-python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # se detiene si hay residuo
-#    → rellena Tipo/Fecha/Parte/Descripcion en 01_Procesado/_revisar/_clasificar.md
-python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # y ahora sí termina
+python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # monta la sala ENTERA
+#    → si avisa de N pendientes: leelos en la sala y rellena Tipo/Fecha/Parte/Descripcion
+#      en 01_Procesado/_revisar/_clasificar.md
+python -m scripts.sala_lectura aplicar   --case "<W-code o case_id>"   # vuelca la worklist
+python -m scripts.sala_lectura organizar --case "<W-code o case_id>"   # renombra lo corregido
 ```
+
+**Lo que P4 NO arregla, y conviene no leer de más:** la clasificación no mejora. Medido sobre
+1.352 documentos de los diez expedientes con catálogo, el **55,2 %** de los nombres no
+permite afirmar ninguna categoría —era el **57,0 %** con la tabla anterior; las dos cifras son
+de la misma muestra y de reglas distintas— —`CaseDossierReport - …-V.pdf`, `DEVOLUCIO CLAUS.pdf`: la señal no
+está en el nombre—, y ese 55 % acaba en `08` en vez de en una parada. La ganancia es que la
+sala pasa de no existir a existir con todo dentro, fechado y nombrado. Y la propuesta literal
+de P4 —portar al motor la regla de la skill (`preclasificar.clasificar_por_patron`)— se midió
+y es **peor**: manda el 90,5 % a `07. RECLAMACIONES` y deja **0** de las 123 fotos en
+`00. FOTOS`, porque detecta imágenes por `screenshot|captura` y no por extensión. La skill
+puede permitírselo porque tiene un LLM leyendo detrás; el motor no.
 
 - **`[APER-68]` / W-030TZY — «Sala de lectura organizada» no significa que estén los cuatro
   artefactos, y la CRONOLOGÍA no distingue fecha de documento de fecha de fichero.** Medido el

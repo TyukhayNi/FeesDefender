@@ -88,7 +88,7 @@ def test_el_caso_normal_sigue_sin_declarar_sin_material(tmp_casos_root):
     res = sl.organizar(case_id)
 
     assert res.get("sin_material") is False
-    assert res["detenido_por_residuo"] is False
+    assert res["n_pendientes"] == 0
     assert res["acciones"], "con un documento catalogable la sala no puede quedar vacia"
 
 
