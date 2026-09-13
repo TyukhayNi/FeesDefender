@@ -59,6 +59,10 @@ RAIZ_PREFIJOS: tuple[str, ...] = (
 ENTREGA: tuple[tuple[re.Pattern[str], str], ...] = (
     (PATRON_LOTE, "_manifiesto.yaml"),                     # intake_lotes.escribir_manifiesto
     (re.compile(r"^01_Drive EV$", re.IGNORECASE), ".pulled"),      # intake_drive
+    # Informe de la verificación por hash del pull (`intake_drive_hash`, MEJORAS #225 vía a):
+    # lo escribe el repo junto al `.pulled` del mismo directorio, así que es protocolo por la
+    # misma razón y con la misma frontera — un homónimo en otra carpeta sigue siendo documento.
+    (re.compile(r"^01_Drive EV$", re.IGNORECASE), ".verificacion_hash.json"),
     (re.compile(r"^sudespacho_\d+$", re.IGNORECASE), ".pulled"),   # sync_sudespacho.pull_expediente (legacy)
     (re.compile(r"^drive$", re.IGNORECASE), ".synced"),            # core/sync (pipeline legacy)
     # Estado de canal en su hogar LEGACY (R1/H-02): `email_export` sigue leyéndolo de aquí

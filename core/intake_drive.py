@@ -48,6 +48,7 @@ from pathlib import Path
 from .case_manager import register_drive_ev
 from .config import caso_path, settings
 from .intake_control import es_fichero_de_protocolo
+from .intake_drive_hash import Verificacion, escribir_informe, verificar_pull_por_hash
 from .utils import now_iso
 
 
@@ -115,6 +116,11 @@ class DriveIntakeResult:
     skipped: bool          # True si .pulled existía y no se forzó
     rclone_returncode: int = 0
     errors: list[str] = field(default_factory=list)
+    #: Veredicto del contraste `sha256` destino ↔ origen (`intake_drive_hash`, vía (a) de
+    #: `MEJORAS #225`). `None` cuando no se intentó —pull saltado, `rclone` no cero o
+    #: `verificar=False`—; un `Verificacion(ejecutada=False)` cuando se intentó y no se pudo.
+    #: Las dos cosas son distintas de «cuadra», y ninguna se lee como cero discrepancias.
+    verificacion: Verificacion | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +167,7 @@ def pull_drive_ev(
     team_id: str,
     *,
     force: bool = False,
+    verificar: bool = True,
 ) -> DriveIntakeResult:
     """Copia la carpeta W-XXXXXX del Drive E&V al caso local.
 
@@ -169,6 +176,11 @@ def pull_drive_ev(
         folder_id: ID de la carpeta W-XXXXXX en el Drive engelvoelkers.com.
         team_id:   ID del Shared Drive (Team Drive) de E&V que contiene la carpeta.
         force:     Si True, re-ejecuta rclone aunque .pulled ya exista.
+        verificar: Si True (default), tras un `rclone` en cero contrasta el `sha256` de
+                   cada fichero del destino contra el que Drive declara para el original
+                   y deja el veredicto en `result.verificacion` y en el informe
+                   `.verificacion_hash.json`. Cuesta un listado del origen y el hasheo
+                   del destino; NUNCA hace fallar el pull.
 
     Returns:
         DriveIntakeResult con el resultado de la operación.
@@ -316,6 +328,25 @@ def pull_drive_ev(
     if returncode == 0:
         register_drive_ev(case_id, team_id, folder_id)
 
+    # --- Verificación por hash (MEJORAS #225, vía (a)) ---------------------
+    # El `copy` de arriba lleva `--ignore-size --ignore-checksum --inplace`, así que rclone
+    # NO comprueba nada tras transferir: un `returncode 0` dice que la transferencia terminó,
+    # no que los bytes del destino sean los del origen. Medido: llegan rellenados con ceros
+    # hasta el siguiente múltiplo de 512 y su `sha256` deja de ser el del original.
+    #
+    # Va aquí, dentro del pull, y no en el llamador, porque un contraste que hay que acordarse
+    # de encadenar no se encadena: aquí lo heredan el CLI de apertura, la secuencia V1 y la UI
+    # sin tocarlos. Y NO condiciona el éxito del pull: los bytes ya están depositados; lo que
+    # falta es saber si acreditan procedencia.
+    verificacion: Verificacion | None = None
+    if verificar and returncode == 0:
+        verificacion = verificar_pull_por_hash(
+            target_dir, folder_id, team_id,
+            remote=remote, local_encoding=_LOCAL_ENCODING,
+            binario=settings.rclone_binary,
+        )
+        escribir_informe(target_dir, verificacion)
+
     files_after = _count_files(target_dir)
 
     result_obj = DriveIntakeResult(
@@ -327,6 +358,7 @@ def pull_drive_ev(
         skipped=False,
         rclone_returncode=returncode,
         errors=errors,
+        verificacion=verificacion,
     )
 
     if errors:

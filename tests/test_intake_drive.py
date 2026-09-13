@@ -271,11 +271,17 @@ def test_pull_comando_incluye_local_encoding_leftspace(caso_ev, tmp_casos_root, 
     fallar rclone con "The parameter is incorrect" al escribir en el montaje de
     Google Drive for Desktop. El default de rclone no codifica el espacio
     inicial; LeftSpace lo codifica a su forma visible segura y round-trip-ea.
+
+    **El aserto elige el `copy` por su verbo, no por ser el último comando.** Desde que el
+    pull encadena la verificación por hash (`intake_drive_hash`, `MEJORAS #225` vía (a)),
+    tras la copia corren dos `rclone lsjson`: quedarse con «el último cmd» probaba el
+    comando equivocado. El listado del destino lleva el mismo flag, y eso lo prueba
+    `test_intake_drive_hash.py`.
     """
-    captured = {}
+    comandos: list[list[str]] = []
 
     def _capture(cmd, *a, **kw):
-        captured["cmd"] = cmd
+        comandos.append(list(cmd))
         mock = MagicMock(spec=subprocess.CompletedProcess)
         mock.returncode = 0
         mock.stdout = ""
@@ -286,7 +292,7 @@ def test_pull_comando_incluye_local_encoding_leftspace(caso_ev, tmp_casos_root, 
 
     pull_drive_ev(caso_ev, folder_id="folderW030", team_id="teamBarcelona")
 
-    cmd = captured["cmd"]
+    cmd = next(c for c in comandos if "copy" in c)
     assert "--local-encoding" in cmd
     enc = cmd[cmd.index("--local-encoding") + 1]
     assert enc == _LOCAL_ENCODING

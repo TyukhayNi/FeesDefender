@@ -32,8 +32,8 @@ import typer
 from core import abrir_caso as brain
 from core.intake_control import es_fichero_de_protocolo
 from core import (
-    alta_crm_politica, case_manager, config, email_export, intake_drive, intake_log,
-    intake_manual, sudespacho_create, sudespacho_relations, whatsapp_intake,
+    alta_crm_politica, case_manager, config, email_export, intake_drive, intake_drive_hash,
+    intake_log, intake_manual, sudespacho_create, sudespacho_relations, whatsapp_intake,
 )
 from core import apertura_v1 as av1
 from core import apertura_v1_estado as estado_v1
@@ -207,6 +207,14 @@ def _intake_drive_ev(ident, case_dir: Path, folder_id, team_id, *,
     hashes = hash_tree_local(res.target_dir, prefijo=subdir)
     _intake_generico(case_dir, ident.case_id, "drive_ev", hashes, base=subdir,
                      dry_run=dry_run, raiz_hashes=res.target_dir.parent)
+
+    # El grito de la verificación por hash (`MEJORAS #225` vía (a)). Se imprime SIEMPRE que
+    # el pull la intentó, cuadre o no: un contraste que solo habla cuando falla no acredita
+    # nada cuando calla. Va a stderr si hay hallazgos o si no se pudo ejecutar.
+    if res.verificacion is not None:
+        hay_que_avisar = res.verificacion.hay_hallazgos or not res.verificacion.ejecutada
+        for linea in intake_drive_hash.lineas_del_grito(res.verificacion):
+            typer.echo(linea, err=hay_que_avisar)
     # Lo devuelve para que el secuenciador de V1 pueda informar sin rodear esta funcion:
     # la custodia (hashes del destino EFECTIVO, reconciliacion y el registro de los bytes
     # parciales de un pull fallido) vive aqui, y un adaptador que la esquive la deroga.
