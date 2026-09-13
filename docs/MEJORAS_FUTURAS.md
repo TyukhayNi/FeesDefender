@@ -1156,6 +1156,20 @@ Paola/Ana organicen casos sin intervención de Nikolai. Relacionado con la fase
 "clasificador por conector" del spec (Scaleway/Claude API sustituyendo a
 Claude-en-sesión para el residuo).
 
+> **Actualizado el 2026-09-13 (fila #30, `[APER-70]`): el hueco sigue igual de grande y ahora
+> además se VE.** El botón de Streamlit que esta entrada describía —«no cierra el residuo sin
+> una sesión de Claude»— se retiró: llamaba a `core/sala_lectura.py`, declarado
+> `[DEPRECADO 2026-06-18]`, y quien lo pulsaba no podía saberlo. Medido antes de retirarlo: el
+> clasificador determinista solo resuelve imágenes y nombres que casen unas 30 palabras clave
+> —19 de 61 documentos en el caso de referencia—, así que el botón **casi siempre** terminaba
+> con «pídeselo a Claude», que es justo lo que su destinatario no podía hacer. Era una vía
+> falsa, no una vía.
+>
+> Lo que hay hoy en su lugar es un expander de **solo lectura** (si está montada, cuántos
+> documentos, qué artefactos faltan, y el texto para pedir el montaje). Eso no cierra esta
+> entrada: **Paola y Ana siguen sin poder montar una sala**, y ahora lo leen en pantalla en
+> vez de descubrirlo pulsando. El disparador para reabrir no cambia.
+
 ## 35. Bundles de WhatsApp en la sala de lectura (chat + media/) — [SUPERADO 2026-06-25 por `core/whatsapp_atomize`]
 
 > **SUPERADO 2026-06-25.** El motor `core/whatsapp_atomize` (spec

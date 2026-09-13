@@ -696,21 +696,35 @@ donde empieza la lectura real; no intercalar análisis a mitad de la mecánica d
 
 **Usa la skill canónica `organizar-sala-lectura` (estructura PLANA).**
 
-> **`[APER-70]` / W-02V48N — esta sección ofrece DOS constructores y no dice cuál gobierna.**
-> Anotado el 2026-09-10. Arriba manda usar la skill; sesenta líneas más abajo, el bloque del
-> `[APER-55]` entrega `python -m scripts.sala_lectura organizar --case …`, que es el **motor
-> local**. Y ese motor se declara **`[DEPRECADO 2026-06-18]`** en la primera línea de su propio
-> módulo (`core/sala_lectura.py`: «queda SUPERSEDIDO por la skill … No ampliar»), mientras la
-> skill se declara «el **único** constructor de la sala». Las dos cosas no pueden ser verdad.
-> **Mientras no se decida: la skill gobierna.** El CLI se conserva porque su ciclo se arregló
-> (`[APER-55]`, `MEJORAS #151`) y sigue siendo el disparo rápido en local, pero lo que produce
-> **no** es la sala plana de la skill. Ojo además con que el botón «📚 Sala de lectura» de Streamlit
-> (`streamlit_app.py:1397`) llama a ese mismo motor deprecado, así que Paola y Ana pueden
-> disparar el camino declarado muerto sin saberlo.
+> **`[APER-70]` / W-02V48N — RESUELTO el 2026-09-13: gobierna la SKILL.** Quedaba abierto desde
+> el 2026-09-10, cuando esta sección ofrecía dos constructores sin decir cuál manda: arriba la
+> skill, y sesenta líneas más abajo el bloque `[APER-55]` con `python -m scripts.sala_lectura
+> organizar --case …`, el **motor local**, que se declara `[DEPRECADO 2026-06-18]` en la primera
+> línea de su propio módulo.
 >
-> La versión de la skill **no se transcribe aquí**: decía `v1.3` y va por la **v1.16**. Un
-> número de versión en un documento que nada actualiza queda rancio por construcción — es el
-> mismo defecto que el conteo de la suite en `CLAUDE.md`. Se lee del `SKILL.md`.
+> **Qué cambia y qué no.** La skill es el constructor: es la que produce los **cuatro**
+> artefactos contratados. El CLI **se conserva** y sigue siendo el disparo rápido en local
+> —su ciclo se arregló (`[APER-55]`, `MEJORAS #151`)—, pero quien lo teclea sabe lo que teclea.
+> Lo que **se retiró** es el botón «📚 Sala de lectura» de Streamlit, que llamaba a ese mismo
+> motor: la UI la usan Paola y Ana, que no tocan código y no pueden leer una docstring antes de
+> pulsar. Hoy el expander **solo lee** — dice si la sala está montada, cuántos documentos tiene,
+> cuáles de los cuatro artefactos le faltan, y da el texto para pedir el montaje. Lo fija
+> `tests/test_guard_ui_sin_deprecados.py`, que se pone rojo si la UI vuelve a importar un módulo
+> declarado deprecado — cualquiera, no solo este.
+>
+> **Y una corrección, porque la frase de arriba se citó tres días:** este bloque decía que lo que
+> el motor produce «**no** es la sala plana». Dejó de ser cierto **once minutos** después de
+> escribirse. La anotación entró en `a545e43` (2026-09-10 22:47:39) y el PR
+> [#328](https://github.com/TyukhayNi/FeesDefender/pull/328) (`a2e6676`, 22:58:29) aplanó el
+> motor: `_directorio_destino` devuelve hoy el directorio plano, con la subcarpeta del documento
+> compuesto como única excepción — la misma que fija la skill. Lo que de verdad le falta al motor
+> es otra cosa, y está medida: escribe **dos de los cuatro** artefactos (`MEJORAS #221`), sin
+> `_MANIFIESTO.md` —que no lo escribe nadie en todo `core/` ni `scripts/`— y con el
+> `indice_documental.yaml` en `01_Procesado/` en vez de dentro de la sala.
+>
+> La versión de la skill **no se transcribe aquí**, y esta vez de verdad: la frase anterior decía
+> «va por la v1.16» y el `SKILL.md` marcaba v1.17 — el defecto que el propio párrafo denunciaba,
+> cometido dentro del párrafo. Se lee del `SKILL.md`.
 
 - **`[APER-60]` / W-04A6LI — La sala de lectura filtra por EXTENSIÓN y la de máquina
   identifica por BYTES: los ficheros sin extensión desaparecen del catálogo en silencio.**
