@@ -218,13 +218,21 @@ def organizar(case: str = typer.Option(..., "--case")):
         else:
             typer.echo("00_Input está vacío: no hay nada que organizar todavía.")
         return
-    if r["detenido_por_residuo"]:
+    typer.echo(f"Sala de lectura organizada. Acciones: {r['acciones']}")
+    # El pendiente se DICE, pero ya no detiene el montaje (P4, 2026-09-14). Antes esto
+    # imprimia «Detenido: N doc(s) en revision» y no habia sala ninguna que leer hasta
+    # clasificarlos a mano: 80 documentos en W-030TZY, 21 en W-02NHNC. Y se dice con el
+    # numero delante porque un «08» que no se cuenta es un indice que calla.
+    if r["n_pendientes"]:
         typer.echo(
-            f"Detenido: {r['n_residuo']} doc(s) en revision. "
-            f"Rellena la worklist y vuelve a correr 'organizar'."
+            f"[AVISO] {r['n_pendientes']} doc(s) en '08. PENDIENTE DE CLASIFICAR': el "
+            "nombre no permitia afirmar categoria.\n"
+            "        Estan EN la sala, con el slug '_pendiente_' en su nombre. Para "
+            "corregirlos, leelos y rellena\n"
+            f"        la worklist: {r['worklist']}\n"
+            "        Luego 'aplicar' y vuelve a correr 'organizar'.",
+            err=True,
         )
-    else:
-        typer.echo(f"Sala de lectura organizada. Acciones: {r['acciones']}")
 
 
 if __name__ == "__main__":
