@@ -245,6 +245,53 @@ def test_c4_pendiente_sin_sala(tmp_path):
     assert r.estado == va.PENDIENTE
 
 
+def test_c4_acepta_el_catalogo_DENTRO_de_la_sala_que_es_donde_lo_pone_la_skill(tmp_path):
+    """El hallazgo ALTO de la R1 de la fila #30, y lo que lo hacía caro.
+
+    Los dos constructores no coinciden: la skill `organizar-sala-lectura` —que gobierna
+    desde el 2026-09-13— pone los cuatro artefactos **dentro** de `Sala lectura/`
+    (`SKILL.md` §estructura, y su propio `verificar_sala.py` excluye ese nombre al contar
+    documentos); el motor deprecado lo deja en `01_Procesado/`. Esta comprobación miraba
+    solo el sitio del motor, así que una sala recién montada **por el constructor bueno**
+    salía incompleta, y la pantalla ofrecía pedir un artefacto que ya estaba. Volver a
+    correr la skill no lo arreglaba nunca.
+    """
+    c = _caso(tmp_path)
+    sala = _con_sala_lectura(c)
+    (sala / "indice_documental.yaml").write_text("- doc: uno\n", encoding="utf-8")
+    r = _r(c, "artefactos_sala")
+    assert r.estado == va.OK, r.detalle
+    assert r.evidencia["catalogo_en"] == "sala"
+
+
+def test_c4_sigue_aceptando_el_catalogo_en_01_procesado(tmp_path):
+    """Y el layout del motor no puede dejar de valer: los dos conviven hoy.
+
+    Cuál es el sitio canónico sigue sin decidirse (`MEJORAS #221`, la mitad de «la
+    ubicación»). Admitir solo el nuevo repetiría el mismo defecto con el signo cambiado.
+    """
+    c = _caso(tmp_path)
+    _con_sala_lectura(c)
+    _con_catalogo(c, 1)
+    r = _r(c, "artefactos_sala")
+    assert r.estado == va.OK
+    assert r.evidencia["catalogo_en"] == "01_Procesado"
+
+
+def test_c4_sin_catalogo_en_ninguno_de_los_dos_sitios_FALLA(tmp_path):
+    """CONTROL POSITIVO de la tolerancia: aceptar dos ubicaciones no es aceptar ninguna.
+
+    Sin esto, `ubicaciones_del_catalogo` podría degenerar en «da igual» y el guard
+    seguiría verde — que es como una tolerancia se convierte en una escotilla.
+    """
+    c = _caso(tmp_path)
+    _con_sala_lectura(c)
+    r = _r(c, "artefactos_sala")
+    assert r.estado == va.FALLO
+    assert "indice_documental.yaml" in r.evidencia["faltan"]
+    assert r.evidencia["catalogo_en"] is None
+
+
 # --- C8: W-codes ajenos en los espejos ----------------------------------------------
 
 

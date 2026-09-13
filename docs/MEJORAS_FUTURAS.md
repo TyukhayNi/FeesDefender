@@ -1156,6 +1156,20 @@ Paola/Ana organicen casos sin intervención de Nikolai. Relacionado con la fase
 "clasificador por conector" del spec (Scaleway/Claude API sustituyendo a
 Claude-en-sesión para el residuo).
 
+> **Actualizado el 2026-09-13 (fila #30, `[APER-70]`): el hueco sigue igual de grande y ahora
+> además se VE.** El botón de Streamlit que esta entrada describía —«no cierra el residuo sin
+> una sesión de Claude»— se retiró: llamaba a `core/sala_lectura.py`, declarado
+> `[DEPRECADO 2026-06-18]`, y quien lo pulsaba no podía saberlo. Medido antes de retirarlo: el
+> clasificador determinista solo resuelve imágenes y nombres que casen unas 30 palabras clave
+> —19 de 61 documentos en el caso de referencia—, así que el botón **casi siempre** terminaba
+> con «pídeselo a Claude», que es justo lo que su destinatario no podía hacer. Era una vía
+> falsa, no una vía.
+>
+> Lo que hay hoy en su lugar es un expander de **solo lectura** (si está montada, cuántos
+> documentos, qué artefactos faltan, y el texto para pedir el montaje). Eso no cierra esta
+> entrada: **Paola y Ana siguen sin poder montar una sala**, y ahora lo leen en pantalla en
+> vez de descubrirlo pulsando. El disparador para reabrir no cambia.
+
 ## 35. Bundles de WhatsApp en la sala de lectura (chat + media/) — [SUPERADO 2026-06-25 por `core/whatsapp_atomize`]
 
 > **SUPERADO 2026-06-25.** El motor `core/whatsapp_atomize` (spec
@@ -10387,6 +10401,19 @@ afirme la existencia de los cuatro. Hoy sale rojo en dos, y ese rojo es la medid
 **Disparador de promoción.** Medio. Sube a alto si se cierra `MEJORAS #220`, porque su remedio (1)
 manda marcar `(*)` en un fichero que no existe.
 
+> **La mitad de «la ubicación» sigue ABIERTA, y ya no viaja sola (2026-09-13, fila #30).** Lo que
+> se sabe hoy, medido: la **skill** —el constructor que gobierna— pone los cuatro artefactos
+> **dentro** de `Sala lectura/` (su árbol de `SKILL.md`, y su propio `verificar_sala.py` excluye ese
+> nombre al contar documentos, o sea lo **asume** ahí); el **motor deprecado** lo deja en
+> `01_Procesado/`. `verificar_apertura.c4` solo miraba el sitio del motor, así que una sala recién
+> montada por la skill salía **incompleta** — lo levantó la R1 adversarial de la fila #30 (H-01,
+> PR [#364](https://github.com/TyukhayNi/FeesDefender/pull/364)). Remedio provisional: `c4` acepta
+> **las dos** ubicaciones y su evidencia dice en cuál apareció (`catalogo_en`). Eso no cierra nada:
+> tolerar es lo honesto **mientras** la decisión esté abierta, no en lugar de tomarla.
+>
+> **Y se decide junto con `MEJORAS #253`** (subir la sala de lectura a la raíz del expediente): las dos tocan el mismo layout, y resolverlas por
+> separado obliga a migrar los 22 expedientes **dos veces**.
+
 ---
 
 ## 222. El paralelismo por documento del OCR está REFUTADO, y `rotate_pages` cuesta el 28 % pero es un seguro que no se puede quitar
@@ -11662,3 +11689,75 @@ es lo que `#227` arreglaba.
 sobre el frontmatter es «las claves que había siguen estando, con su valor», y estas dos son sus
 excepciones conocidas.
 ## 248. La hoja `PREGUNTAS` tiene cinco `<selection>` donde el esquema OOXML admite cuatro
+
+---
+
+## 253. Subir la sala de lectura a la raíz del expediente — se decide JUNTO con la ubicación del `indice_documental.yaml` (`MEJORAS #221`)
+
+**Anotado el 2026-09-13**, por decisión de Nikolai al cerrar la fila #30. **Atada a la mitad viva de `MEJORAS #221` («la ubicación»
+del `indice_documental.yaml`): no se resuelve por separado.** Las dos tocan el mismo layout, y hacerlas en dos veces significa
+migrar 22 expedientes dos veces.
+
+**La idea, con su disparador real —que es de usuario, no de simetría.** Hoy la sala vive en
+`01_Procesado/Sala lectura/`. Un abogado que abre la carpeta del caso necesita **tres clicks** para
+llegar al `INDICE.md` (`01_Procesado` → `Sala lectura` → `INDICE.md`). Subirla a la raíz lo deja en
+**dos**.
+
+### Lo medido el 2026-09-13, para no volver a derivarlo
+
+**A favor, y no es poco:**
+
+- **La raíz del expediente sí está ordenada**, al contrario que `01_Procesado`: 9 carpetas
+  canónicas, **todas numeradas**, 33-35 de 35 presentes en los expedientes reales.
+- **Ya hay precedente de producto derivado en la raíz:** `06_Anonimizado` es salida regenerable del
+  anonimizador y vive arriba. O sea, «es un derivado, le toca `01_Procesado`» **no es una regla de
+  este repo**.
+
+**El coste, medido sobre el Drive real:**
+
+| Qué | Volumen |
+|---|---|
+| Carpetas a mover | 22 · **2.479 ficheros** |
+| Enlaces relativos en los índices | **1.565** (1.064 `../../` + 501 `../`) — **se regeneran** con `render_indices`, salvo los `_MANIFIESTO.md` que escribe el LLM (2 los llevan) |
+| Registros persistidos | **611** `ruta_sala_lectura:` en 10 catálogos — y **cambia de semántica, no solo de valor**: hoy es relativa a `01_Procesado` |
+| Código | 3 definiciones (`sala_lectura._SALA`, `verificar_apertura._SALA_LECTURA`, la tupla de `case_manager:932`) + `_sala_dir` + `_link_original` + `_link_md` + `CASO_SUBDIRS` + el alta + `c4` |
+| Skill | **7 puntos de `SKILL.md` fijan la ruta** → re-empaquetar y **re-importar en Cowork** |
+| Checkouts vivos con sala | 2 (676 y 52 ficheros) |
+
+**El problema que no tiene salida limpia, y es el que de verdad decide.** En la raíz solo hay
+carpetas numeradas, así que la sala **necesitaría número**; y no hay hueco donde tenga sentido. El
+orden es cronológico (Input → Procesado → Análisis → Decisión → Output → Procedimiento) y la sala se
+lee **antes de analizar**, o sea entre `01` y `02`. Los libres son `08`/`09`, al final: sería
+`08_Sala de lectura` y **el número mentiría sobre el orden**. Abrir hueco renumerando `02`–`07` toca
+los 35 expedientes y todo lo que referencia `02_Analisis` o `05_Procedimiento` — eso es otra pieza,
+más grande que esta.
+
+### La alternativa que da más por cero, y lo que le falta
+
+**Un acceso directo de Drive al `INDICE.md` en la raíz del caso: un solo click** —mejor que mover,
+que deja dos— con **cero migración**. Ni un fichero se mueve, ni un registro cambia, ni la skill se
+toca.
+
+Y es seguro, que era la duda: **el checkin usa `rclone copy`, no `sync`**
+([`scripts/repository_cli.py`](../scripts/repository_cli.py)), así que un atajo en la raíz **no se
+borra** al devolver el caso; `--drive-skip-shortcuts` solo hace que no baje al local, que es lo
+correcto porque quien trabaja en local ya tiene la carpeta. La pieza para crearlo **existe y no la
+llama nadie**: `create_shortcut` en el MCP `google-despacho`.
+
+**SIN MEDIR, y hay que medirlo antes de comprometerse con esta vía:** hoy hay **cero shortcuts en
+todo el Drive del despacho**, así que no se sabe **cómo se materializa uno en `G:`** (Drive for
+Desktop) ni si el checkout lo ignora limpiamente. Es una prueba de dos minutos sobre **un** caso —
+crearlo, mirar `G:`, hacer checkout— y **Nikolai decidió el 2026-09-13 no hacerla todavía**. Si en
+`G:` no se ve, o se ve roto, esta alternativa se cae y vuelve a la mesa la de mover.
+
+### Disparador de promoción
+
+**Que se decida la ubicación canónica del `indice_documental.yaml` (`MEJORAS #221`).** En ese momento se
+resuelven las dos a la vez, con una sola migración. Sube a alto si alguien empieza a mover salas a
+mano caso por caso, que es el síntoma de que los tres clicks molestan de verdad.
+
+**Lo que NO es disparador:** que la estructura quede más bonita. Esta entrada nació de una pregunta
+sobre renombrar `Sala lectura` a `01_Sala de lectura`, que se **descartó por no tener ninguno** — y
+`01_Procesado` sigue teniendo **una de siete** subcarpetas numeradas, así que esa alineación no
+existía.
+

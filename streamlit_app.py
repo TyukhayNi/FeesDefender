@@ -1382,29 +1382,68 @@ with tab_casos:
 
         st.divider()
         with st.expander("📚 Sala de lectura"):
+            # Esta pantalla ya NO monta la sala, y el cambio no es cosmético.
+            # Hasta el 2026-09-13 el botón llamaba a `core.sala_lectura.organizar`,
+            # módulo que se declara `[DEPRECADO 2026-06-18] … No ampliar` en su primera
+            # línea. Quien lo pulsaba no lee docstrings. Y el botón tampoco podía
+            # terminar: el clasificador determinista solo resuelve imágenes y nombres
+            # que casen un puñado de palabras clave, así que casi siempre paraba con un
+            # «pídeselo a Claude» que su destinatario no podía resolver.
+            # Gobierna la skill `organizar-sala-lectura`, que corre en Cowork o en
+            # Claude Code — nunca aquí. Así que lo que esta pantalla sí puede hacer es
+            # decir en qué punto está la sala y dar el texto para pedir el montaje.
+            from core import sala_lectura_estado as _sle
+            from core import verificar_apertura as _va_sl
+            from core.casos import case_locator as _cl_sl
+
             st.caption(
-                "Clasifica los documentos de `01_Procesado/` en el árbol de "
-                "la sala de lectura. Si quedan documentos sin clasificar se "
-                "detiene y muestra un aviso."
+                "Estado de la sala de lectura. **Esta pantalla no la monta**: el "
+                "constructor que gobierna es la skill `organizar-sala-lectura`, que "
+                "corre en Cowork o en Claude Code. Abajo tienes el texto para pedirlo."
             )
             _caso_sl = st.selectbox(
                 "Caso",
                 cases,
                 key="casos_sl_sel",
-                help="Selecciona el caso cuya sala de lectura quieres organizar.",
+                help="Selecciona el caso cuya sala de lectura quieres consultar.",
             )
-            if st.button("📚 Organizar sala de lectura", key=f"sala_{_caso_sl}"):
-                from core import sala_lectura
-                with st.spinner("Clasificando y organizando…"):
-                    res = sala_lectura.organizar(_caso_sl)
-                if res["detenido_por_residuo"]:
-                    st.warning(
-                        f"⏸ Quedan {res['n_residuo']} documento(s) sin clasificar en "
-                        f"`01_Procesado/_revisar/_clasificar.md`. Pídele a Claude que "
-                        f"los resuelva en una sesión y vuelve a pulsar el botón."
-                    )
+            try:
+                _estado_sl = _sle.estado(_cl_sl.path_for(_caso_sl))
+            except Exception as _exc_sl:                    # noqa: BLE001 — se muestra
+                st.error(f"No se pudo leer el estado de la sala: {_exc_sl}")
+            else:
+                if not _estado_sl.montada:
+                    st.info("📭 La sala de lectura **no está montada**.")
                 else:
-                    st.success(f"✓ Sala de lectura organizada: {res['acciones']}")
+                    # El recuento y el veredicto de los artefactos son independientes:
+                    # que no se pueda listar el contenido no impide decir si los cuatro
+                    # están. Anidarlos escondería el segundo cuando falla el primero.
+                    if _estado_sl.n_documentos is None:
+                        # «No pude leerlo» no es «hay cero», y mezclarlos es el defecto
+                        # que la R1 adversarial midió (H-02): una sala ilegible decía
+                        # «0 documento(s)» con la misma cara que una vacía de verdad.
+                        st.warning(
+                            "⚠️ La sala existe pero **no se pudo leer su contenido** "
+                            "(permisos, o el Drive a medio montar). El número de "
+                            "documentos no se muestra porque no se sabe."
+                        )
+                    else:
+                        st.write(
+                            f"📄 **{_estado_sl.n_documentos}** documento(s) en la sala."
+                        )
+                    _art_sl = _estado_sl.artefactos
+                    # Los cuatro artefactos se dicen SIEMPRE, también cuando están: el
+                    # defecto que esto cierra (`MEJORAS #221`) era un mensaje de éxito
+                    # sobre una sala a la que le faltaban dos, y nadie volvía a mirar.
+                    if _art_sl.estado == _va_sl.OK:
+                        st.success(f"✅ {_art_sl.detalle}")
+                    else:
+                        st.warning(f"⚠️ {_art_sl.detalle}")
+                st.code(_estado_sl.solicitud, language=None)
+                st.caption(
+                    "Copia el texto y pásaselo a Nikolai o a Claude para que monte "
+                    "la sala."
+                )
 
         st.divider()
         with st.expander("🏙️ Reasignar ciudad"):
