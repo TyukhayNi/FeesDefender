@@ -17,7 +17,7 @@ def test_hash_tree_local(tmp_path: Path):
     (root / "a.txt").write_bytes(b"hola")
     (root / "sub" / "b.txt").write_bytes(b"mundo")
 
-    hashes = cli.hash_tree_local(root, prefijo="01_Drive EV")
+    hashes = cli.hash_tree_local(root, prefijo="01_Drive EV").hashes
 
     assert hashes["01_Drive EV/a.txt"] == hashlib.sha256(b"hola").hexdigest()
     assert hashes["01_Drive EV/sub/b.txt"] == hashlib.sha256(b"mundo").hexdigest()
@@ -246,7 +246,7 @@ def test_hash_tree_local_excluye_solo_el_protocolo_de_su_ubicacion(tmp_path: Pat
     (root / "sub").mkdir()
     (root / "sub" / ".pulled").write_text("de E&V", encoding="utf-8")
 
-    hashes = cli.hash_tree_local(root, prefijo="01_Drive EV")
+    hashes = cli.hash_tree_local(root, prefijo="01_Drive EV").hashes
 
     assert set(hashes) == {"01_Drive EV/a.txt", "01_Drive EV/_inventory.json",
                            "01_Drive EV/.synced", "01_Drive EV/sub/.pulled"}
