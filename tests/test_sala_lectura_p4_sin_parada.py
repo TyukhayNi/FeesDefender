@@ -410,6 +410,46 @@ def test_un_08_escrito_en_la_worklist_no_congela_el_documento(tmp_casos_root):
     assert sala_lectura.clasificar_caso(case_id)["n_residuo"] == 1
 
 
+def test_la_cli_no_declara_clasificado_un_catalogo_lleno_de_pendientes(tmp_casos_root):
+    """La guarda de `preparar-residuo` no puede volverse INERTE al marcar el residuo.
+
+    Ese bloque existe por un defecto medido y su comentario lo dice entero: «si el catálogo
+    tiene documentos sin tipo, esta frase no se puede decir». La frase es *«Sin residuo:
+    todo el catálogo está clasificado»*. La guarda preguntaba `not e.tipo_documental`, y
+    con el residuo marcado `08` esa lista es **siempre vacía**: la guarda seguía ahí,
+    seguía verde, y ya no podía dar el otro valor.
+
+    El escenario que la activa es real, no de laboratorio: worklist **rancia** —el material
+    de `00_Input` cambió y ningún hash casa—, con lo que `preparar_residuo` y
+    `residuo_sin_texto` salen vacíos por la worklist mientras el catálogo tiene el
+    expediente entero en `08`. Sin este test, el CLI lo declararía clasificado y saldría
+    con código 0.
+    """
+    from typer.testing import CliRunner
+    cm, inv, cat, sala_lectura = _reload()
+    case_id, case_dir = _caso_con_docs(cm, inv, cat, [
+        ("04_Manual", "Documento sin pistas.pdf", "y"),
+    ])
+    sala_lectura.clasificar_caso(case_id)
+
+    # Worklist rancia: una fila cuyo hash no está en el catálogo.
+    worklist = case_dir / "01_Procesado" / "_revisar" / sala_lectura.WORKLIST_NAME
+    worklist.write_text(
+        "| Hash | Origen | Fuente | Tipo | Fecha | Parte | Descripcion |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| 0000000000000000 | viejo.pdf | manual |  |  |  |  |\n",
+        encoding="utf-8")
+
+    import importlib
+    import scripts.sala_lectura as cli
+    importlib.reload(cli)
+    res = CliRunner().invoke(cli.app, ["preparar-residuo", "--case", case_id])
+
+    assert "todo el catálogo está clasificado" not in res.output, res.output
+    assert res.exit_code == 1, (
+        f"declaró clasificado un catálogo con pendientes, y con código 0:\n{res.output}")
+
+
 def test_sin_material_sigue_sin_montar_nada(tmp_casos_root):
     """La guarda de «no había nada que hacer» no se toca: sigue siendo distinta del éxito.
 

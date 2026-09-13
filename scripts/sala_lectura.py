@@ -117,8 +117,17 @@ def preparar_residuo(case: str = typer.Option(..., "--case")):
         # Así que la condición no enumera causas: **si el catálogo tiene documentos sin
         # tipo, esta frase no se puede decir**, venga el vacío de donde venga. La causa solo
         # decide qué se aconseja, nunca si se afirma ni el código de salida.
+        #
+        # **Y desde P4 (2026-09-14) se pregunta con `es_decision`, no con `not
+        # tipo_documental`.** El residuo ya no sale sin tipo: sale con `08. PENDIENTE DE
+        # CLASIFICAR`, así que la lista de «sin tipo» pasó a estar **siempre vacía** y esta
+        # guarda se volvió INERTE — seguía aquí, seguía verde, y ya no podía dar el otro
+        # valor. Con la worklist rancia (hashes que ya no casan) los dos métodos de residuo
+        # salen vacíos por su lado y esto habría vuelto a decir «todo el catálogo está
+        # clasificado» con el expediente entero pendiente, y con salida 0. Es el mismo
+        # defecto que la R2 cerró, entrando por otra puerta.
         sin_tipo = [e for e in catalogo_documental.load_catalog(case)
-                    if not e.tipo_documental]
+                    if not sala_lectura.es_decision(e.tipo_documental)]
         if sin_tipo:
             hay_worklist = (sala_lectura._revisar_dir(case)
                             / sala_lectura.WORKLIST_NAME).exists()
