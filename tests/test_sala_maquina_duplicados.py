@@ -226,9 +226,55 @@ def _cli(monkeypatch, case):
 
 # ── R1 de Codex: D9-D15 ────────────────────────────────────────────────────────────────
 
+#: Un RTF de verdad, con texto suficiente para que `ocr_quality` lo dé por `ok`. Es el
+#: ejemplar que sustituye al DOCX en D9 — ver el docstring de D9.
+_RTF = (r"{\rtf1\ansi\deff0{\fonttbl{\f0 Times New Roman;}}\f0\fs24 "
+        + "Encargo firmado por las partes con honorarios de intermediacion. " * 10
+        + "}").encode("ascii")
+
+
 def test_d9_el_titular_es_quien_sabe_extraer_no_el_primero(tmp_path, monkeypatch):
-    """R1/H-01: un DOCX sin extensión en `A/` (sin_soporte) y sus mismos bytes en `B/x.docx`
-    (nativo). El titular tiene que ser la copia que sabe extraer, y el texto tiene que salir."""
+    """R1/H-01: una copia que NO sabe extraer en `A/` (sin_soporte) y los mismos bytes en
+    `B/` con una extensión que sí (nativo). El titular tiene que ser la que sabe extraer,
+    y el texto tiene que salir.
+
+    **El ejemplar cambió el 2026-09-13, y el motivo importa más que el cambio.** Este test
+    usaba un DOCX: sin extensión era `sin_soporte` y con ella `nativo`, que es literalmente
+    el ejemplo que cita la regla 2 de `_marcar_duplicados`. La pieza B de `MEJORAS #215`
+    **le quitó la premisa**: el sniff ya abre el contenedor, así que un DOCX sin extensión
+    es hoy `nativo` y las dos copias saben extraer. La regla 2 no ha cambiado ni se ha
+    debilitado el aserto — lo que ha cambiado es que el DOCX ya no la ejercita. Se sustituye
+    por un RTF, cuyo `{\rtf1` no es una firma mágica reconocible: sin extensión sigue siendo
+    `sin_soporte`, con `.rtf` es `nativo`, y la regla vuelve a tener un caso que la mueva.
+    El mundo nuevo del DOCX tiene su propio test, justo debajo.
+    """
+    case = tmp_path / "EV-2026-001"
+    (case / "00_Input" / "A").mkdir(parents=True)
+    (case / "00_Input" / "B").mkdir(parents=True)
+    (case / "00_Input" / "B" / "encargo.rtf").write_bytes(_RTF)
+    (case / "00_Input" / "A" / "encargo").write_bytes(_RTF)
+    p = sm.plan(sm.inventariar(case), set())
+    por_rel = {x.rel_path: x for x in p}
+    assert por_rel["A/encargo"].ruta == "sin_soporte", "premisa: la copia sin extensión no sabe extraer"
+    assert por_rel["B/encargo.rtf"].ruta == "nativo", "premisa: la copia con extensión sí"
+    assert por_rel["B/encargo.rtf"].duplicado_de == ""
+    assert por_rel["A/encargo"].duplicado_de == "B/encargo.rtf"
+    cob = sm.ejecutar(case, p, case_id="EV-2026-001")
+    estados = {c.rel_path: (c.metodo, c.estado) for c in cob}
+    assert estados["B/encargo.rtf"] == ("nativo", "ok")
+    assert estados["A/encargo"][0] == sm.METODO_DUPLICADO
+    assert list((case / "01_Procesado" / "02_Sala de máquina" / "03_MD").glob("*.md"))
+
+
+def test_d9c_con_el_sniff_de_contenedores_las_DOS_copias_del_docx_saben_extraer(tmp_path):
+    """El mundo que abre la pieza B de `MEJORAS #215`, contratado para que se vea si vuelve
+    a cambiar: con el DOCX sin extensión ya reconocido, la regla 2 no desempata —las dos
+    procedencias saben extraer— y decide la regla 3, la primera por ruta.
+
+    Lo que sigue siendo cierto, y es lo que de verdad protege el usuario: el titular sabe
+    extraer, hay UN solo espejo y el texto sale. Lo que ya no es cierto es que el titular
+    tenga que ser la copia que trae la extensión en el nombre.
+    """
     from docx import Document
     case = tmp_path / "EV-2026-001"
     (case / "00_Input" / "A").mkdir(parents=True)
@@ -236,16 +282,22 @@ def test_d9_el_titular_es_quien_sabe_extraer_no_el_primero(tmp_path, monkeypatch
     d = Document()
     d.add_paragraph("Encargo firmado por las partes con honorarios de intermediacion. " * 10)
     d.save(case / "00_Input" / "B" / "encargo.docx")
-    (case / "00_Input" / "A" / "encargo").write_bytes((case / "00_Input" / "B" / "encargo.docx").read_bytes())
+    (case / "00_Input" / "A" / "encargo").write_bytes(
+        (case / "00_Input" / "B" / "encargo.docx").read_bytes())
+
     p = sm.plan(sm.inventariar(case), set())
     por_rel = {x.rel_path: x for x in p}
-    assert por_rel["B/encargo.docx"].duplicado_de == ""
-    assert por_rel["A/encargo"].duplicado_de == "B/encargo.docx"
+
+    assert por_rel["A/encargo"].ruta == "nativo", "la pieza B lo saca de sin_soporte"
+    assert por_rel["B/encargo.docx"].ruta == "nativo"
+    assert por_rel["A/encargo"].duplicado_de == "", "regla 3: la primera por ruta"
+    assert por_rel["B/encargo.docx"].duplicado_de == "A/encargo"
+
     cob = sm.ejecutar(case, p, case_id="EV-2026-001")
     estados = {c.rel_path: (c.metodo, c.estado) for c in cob}
-    assert estados["B/encargo.docx"] == ("nativo", "ok")
-    assert estados["A/encargo"][0] == sm.METODO_DUPLICADO
-    assert list((case / "01_Procesado" / "02_Sala de máquina" / "03_MD").glob("*.md"))
+    assert estados["A/encargo"] == ("nativo", "ok"), "el titular extrae de verdad"
+    assert estados["B/encargo.docx"][0] == sm.METODO_DUPLICADO
+    assert len(list((case / "01_Procesado" / "02_Sala de máquina" / "03_MD").glob("*.md"))) == 1
 
 
 def test_d9b_titular_sin_soporte_en_la_corrida_no_cancela_la_copia(tmp_path, monkeypatch):

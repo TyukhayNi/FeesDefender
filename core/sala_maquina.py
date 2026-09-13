@@ -14,6 +14,7 @@ import re
 import shutil
 import tempfile
 import time
+import zipfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
@@ -72,20 +73,85 @@ _MAGIC_BYTES: tuple[tuple[bytes, str], ...] = (
     (b"BM", ".bmp"),
 )
 
+#: Cabecera de CONTENEDOR. La comparten `.docx`, `.xlsx`, `.pptx`, todo ODF y un `.zip`
+#: cualquiera, así que por sí sola no decide una extensión: hay que abrir el índice.
+_ZIP_MAGIC = b"PK\x03\x04"
 
-def _sniff_ext_por_contenido(head: bytes) -> str | None:
-    """Detecta la extensión real por firma mágica de bytes.
+#: Entrada del índice que identifica cada contenedor OOXML. Se busca por nombre EXACTO:
+#: el paquete declara su tipo con esa pieza, no con la extensión que traía el fichero.
+_OOXML_INDICE: tuple[tuple[str, str], ...] = (
+    ("word/document.xml", ".docx"),
+    ("xl/workbook.xml", ".xlsx"),
+    ("ppt/presentation.xml", ".pptx"),
+)
 
-    Último recurso en inventariar() cuando el nombre no trae extensión
-    reconocible (típico de capturas/fotos compartidas directo a Drive sin
-    "Guardar como" — confirmado 2026-07-17, caso W-02TH0W: 'Señal 3000 €' y
-    'DNI ... jpg' sin punto): el fichero es perfectamente legible, solo mal
-    nombrado. Nunca lanza — None si no reconoce ninguna firma.
+#: ODF declara su tipo en la primera entrada del zip (`mimetype`, sin comprimir).
+_ODF_MIMETYPES: dict[str, str] = {
+    "application/vnd.oasis.opendocument.text": ".odt",
+    "application/vnd.oasis.opendocument.spreadsheet": ".ods",
+    "application/vnd.oasis.opendocument.presentation": ".odp",
+}
+
+#: Tope de lectura del `mimetype` de ODF. La entrada debería medir ~40 bytes; leerla
+#: entera sería confiar en un fichero de fuera para dimensionar la memoria.
+_MAX_BYTES_MIMETYPE = 128
+
+
+def _sniff_ext_por_contenido(ruta: Path) -> str | None:
+    """Detecta la extensión real por el CONTENIDO. `None` si no reconoce nada.
+
+    Último recurso en inventariar() cuando el nombre no trae extensión reconocible
+    (típico de escaneos y fotos subidos a Drive sin "Guardar como" — confirmado
+    2026-07-17 en W-02TH0W con 'Señal 3000 €' y 'DNI ... jpg' sin punto, y medido otra
+    vez el 2026-09-10 en W-048U77, donde 11 de 58 ficheros de E&V llegaron sin
+    extensión): el fichero es perfectamente legible, solo mal nombrado.
+
+    **Recibe la RUTA y no 16 bytes, y ese cambio de firma ES `MEJORAS #215`.** Las seis
+    firmas planas se resuelven en la cabecera; los contenedores no. `PK\\x03\\x04` cubre
+    `.docx`, `.xlsx`, `.pptx`, todo ODF y un `.zip` cualquiera, así que un sniff
+    `PK` → `.docx` sería adivinar: hay que abrir el índice y preguntarle al paquete qué
+    dice ser. Los tres `sin_soporte` de W-048U77 eran `.docx` con contenido, y uno un
+    contrato de arras de 78 párrafos.
+
+    **No decide la ruta de proceso** —eso es `clasificar_ruta`—, así que un `.ods` o un
+    `.zip` reconocidos siguen siendo `sin_soporte`; lo que cambia es que la ficha de
+    cobertura los nombra en vez de dejar el hueco. Nunca lanza: un fichero ilegible
+    devuelve `None` y el inventario conserva la extensión del nombre.
     """
+    try:
+        with Path(ruta).open("rb") as fh:
+            head = fh.read(16)
+    except OSError:
+        return None
     for magic, ext in _MAGIC_BYTES:
         if head.startswith(magic):
             return ext
+    if head.startswith(_ZIP_MAGIC):
+        return _sniff_contenedor_zip(Path(ruta))
     return None
+
+
+def _sniff_contenedor_zip(ruta: Path) -> str | None:
+    """Qué contenedor es, leyendo el índice del zip.
+
+    `.zip` es la respuesta honesta cuando el índice no declara ninguno de los formatos
+    conocidos: es un zip de verdad y sigue sin tener lector. `None` cuando la cabecera
+    dice contenedor y el contenedor no se deja abrir (truncado, cifrado, corrupto) —que
+    no es lo mismo que "no es un zip", y por eso no se afirma nada.
+    """
+    try:
+        with zipfile.ZipFile(ruta) as zf:
+            nombres = set(zf.namelist())
+            for entrada, ext in _OOXML_INDICE:
+                if entrada in nombres:
+                    return ext
+            if "mimetype" in nombres:
+                with zf.open("mimetype") as fh:
+                    declarado = fh.read(_MAX_BYTES_MIMETYPE).decode("ascii", "replace")
+                return _ODF_MIMETYPES.get(declarado.strip(), ".zip")
+    except (zipfile.BadZipFile, OSError, KeyError, RuntimeError, NotImplementedError):
+        return None
+    return ".zip"
 
 
 _MIN_CHARS = 40                 # < esto para el documento entero = empty
@@ -258,7 +324,11 @@ def _marcar_duplicados(docs: list[DocPlan], productores_previos: frozenset[str])
        antes de esta regla) siguen siendo dos: no se retira una generación existente.
     2. Si nadie tiene espejo, el titular es la primera procedencia con una ruta que sabe
        extraer (`ruta != sin_soporte`): mismos bytes no es misma capacidad de extracción —un
-       DOCX guardado sin extensión es `sin_soporte`, su copia `.docx` es `nativo`.
+       RTF guardado sin extensión es `sin_soporte`, su copia `.rtf` es `nativo`.
+       *(El ejemplo era un DOCX hasta el 2026-09-13. La pieza B de `MEJORAS #215` le quitó
+       la premisa —el sniff abre el contenedor, así que un DOCX sin extensión ya es
+       `nativo`— y dejaba la regla sin caso que la ejercitara. La regla no cambia; lo que
+       encogió es su dominio. Tests: D9 y D9c.)*
     3. Si ninguna sabe, el primero por ruta (orden `sorted`, determinista).
     """
     por_sha: dict[str, list[DocPlan]] = {}
@@ -1485,9 +1555,7 @@ def inventariar_cacheado(case_dir: Path,
         else:
             ext = p.suffix.lower()
             if clasificar_ruta(ext) == "sin_soporte":
-                with p.open("rb") as fh:
-                    head = fh.read(16)
-                detectada = _sniff_ext_por_contenido(head)
+                detectada = _sniff_ext_por_contenido(p)
                 if detectada is not None:
                     ext = detectada
             sha = file_sha256(p)
