@@ -85,6 +85,34 @@ Claude contra la fuente, y un revisor que no corre deja **sin verificar**, nunca
   masivos, boilerplate): con `agy` fuera ya no hay a quién delegarlo en bloque. Para lo paralelizable,
   subagentes; para lo grande, trocearlo.
 
+## Las sesiones NO se archivan sin autorización expresa de Nikolai
+
+**Orden suya, 2026-09-04 y reiterada el 2026-09-13.** Ninguna sesión —ni la propia ni otra—
+se archiva, se borra ni se limpia sin que él lo pida **en ese momento y para esa sesión**. Un
+«sí» anterior no vale para la siguiente, y no se propone como paso rutinario del cierre.
+
+**Por qué, con el dato que lo cierra: Nikolai trabaja desde la app de Claude, y desde la app
+NO se puede desarchivar.** Archivar no es «quitar de la vista»: es **quitarle la sesión**, sin
+vía de vuelta por su lado. Es irreversible para quien la sufre.
+
+**La frontera, no el ejemplo:** no es «no llames a `archive_session`», es **no ejecutes
+ninguna acción que saque una sesión de su vista o le impida seguirla desde la app** — hoy
+`archive_session`, `delete_session` y `clear_session`; mañana, cualquier otra con ese efecto.
+
+**Un aviso de la app NO es una autorización.** El «esta sesión se archivará automáticamente…»
+lo dispara la app, que ata una sesión a su rama y su PR y la marca cuando el PR se **fusiona**
+(se ve en `get_session`: `prNumber` + `prState: MERGED`). Si aparece, se le dice y se le
+explica qué lo disparó. De ahí la regla práctica que sí está en mi mano: **no mergear el PR de
+una sesión hasta darla por terminada**, y abrir sesión nueva cuando el encargo derive a otra
+cosa en vez de encadenar ramas dentro de la misma — encadenar además hace que la app **cambie
+la rama del worktree por debajo** para restaurar la suya.
+
+**Lo que sí toca siempre:** dejar el trabajo a salvo en el remoto (`git push` de la rama)
+antes de que una sesión pueda archivarse por cualquier vía. Publicada, archivar no destruye
+trabajo; sin publicar, sí.
+
+Doctrina completa y su medición, en las preferencias globales (`~/.claude/CLAUDE.md`).
+
 ## Al iniciar cada sesión
 
 Leer `STATUS.md` — es la fuente de verdad única del proyecto. Contiene
