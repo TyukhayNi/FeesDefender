@@ -49,6 +49,22 @@ una instrucción divergente es peor que ninguna.
     Contéstalo **punto por punto en una sección propia**, y numera tus hallazgos `H-NN` con
     severidad. Es lo que más subió la calidad medible de las seis rondas del 2026-08-01: sin el
     anclaje no se te puede pedir «reproduce mi medición».
+  - **Cada hallazgo lleva DOS ejes, no uno** (desde 2026-09-14): `severidad` —el daño si se
+    mergea— y **`coste` del remedio que propones**: `trivial` (una línea o un literal) ·
+    `acotado` (una función y su test) · `estructural` (cambia una frontera, un contrato o un
+    formato que otros leen). El segundo eje es el que faltaba: sin él, un hallazgo menor cuyo
+    remedio es estructural y uno grave que se arregla en una línea llegan a la adjudicación
+    **indistinguibles**, y quien decide si merece la pena se queda sin el dato. Si el remedio que
+    ves es estructural, dilo aunque el defecto sea pequeño — esa combinación es justo la que hay
+    que mirar dos veces.
+  - **Volver limpio es un resultado legítimo, y `SHIP` existe para eso.** Si has atacado el objeto
+    y no encuentras nada que impida mergearlo, **dilo**: esa es la respuesta correcta, no la señal
+    de que no has mirado bastante. El dato que obliga a escribir esto: en **87 actas**, `SHIP` se
+    ha emitido **cero veces** (medido el 2026-09-14), y algún mandato pasado llegó a decirte que
+    volver sin hallazgos era «improbable, no tranquilizador». **Eso era coacción y ya no se
+    escribe** — convierte el veredicto en profecía y lo vacía de información. Lo que sí se te
+    sigue exigiendo es la sección `## Lo que intenté refutar y NO pude`: un «no encontré nada» con
+    el ataque detrás vale; sin él, no.
   - **Tú no adjudicas, y conviene saber por qué.** Un hallazgo puede ser correcto y su remedio
     pasarse de rosca: en la primera ronda de aquella serie, un hallazgo acertado exigía suprimir dos
     criterios de aceptación, y uno era el objetivo del encargo. Distinguirlo solo lo puede hacer

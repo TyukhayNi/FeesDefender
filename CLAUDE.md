@@ -16,7 +16,9 @@ Las comunicaciones a clientes de origen ruso o ex-URSS van en ruso por defecto.
 ## Revisión adversarial: OBLIGATORIA, la ejecuta Codex, la adjudica Claude
 
 **Todo diseño (spec/plan) y todo diff de código no trivial pasa por una revisión adversarial
-antes de mergearse.** Eso no es opcional y no ha cambiado. Lo que cambió (2026-08-01) es quién la
+antes de mergearse.** Eso no es opcional y no ha cambiado. **«No trivial» lo define la tabla de
+rondas de más abajo** — desde el 2026-09-14, porque esta frase llevaba usando el término sin
+decir qué era, y un término normativo sin definición lo acaba definiendo la parte interesada. Lo que cambió (2026-08-01) es quién la
 ejecuta: **Codex**, con su propia bolsa de tokens. Antes se delegaba a Gemini vía la CLI `agy` de
 Antigravity; esa vía se retiró por cupo agotado de forma persistente — el porqué, con la evidencia,
 en `docs/DEAD_ENDS.md`. **No la reintentes.**
@@ -34,6 +36,13 @@ en `docs/DEAD_ENDS.md`. **No la reintentes.**
   Contrato completo: `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md`.
 - **Para qué sirve el acta, en una frase:** yo soy la parte revisada, así que sin el original
   archivado nadie puede contrastar **qué dijo el revisor** con **qué decidí yo que dijo**.
+- **El mandato no coacciona, y pide dos ejes** (2026-09-14). Al redactar un encargo de revisión
+  **no se escribe nada que haga sospechoso volver limpio**: `SHIP` lleva **0 de 87** actas, y algún
+  mandato llegó a decirle al revisor que no encontrar nada era «improbable, no tranquilizador» —
+  eso convierte el veredicto en profecía y lo vacía de información. Y cada hallazgo se le pide con
+  **severidad y coste del remedio** (`trivial` · `acotado` · `estructural`), porque sin el segundo
+  eje un defecto menor con remedio estructural llega indistinguible de uno grave que se arregla en
+  una línea, y la adjudicación se queda sin el dato que decide. Lado del revisor: `AGENTS.md`.
 - **Claude es siempre el juez.** Codex nunca tiene la última palabra sobre corrección. Un hallazgo
   se confirma o se refuta **contra la fuente**, no contra el diff ni contra la seguridad con que
   venga redactado.
@@ -55,7 +64,16 @@ código.** Dos categorías y nada más:
 | La pieza… | Rondas |
 |---|---|
 | decide **quién puede escribir** sobre qué copia, o puede **destruir o corromper datos de cliente** | **2** — una sobre el diseño (spec/plan) y una sobre el diff |
+| **no cambia ni una línea que corra en producción**: docs, bitácora, frontmatter de una skill, o tests que **solo añaden** casos sin tocar ni relajar los existentes | **0** — exenta, y se declara |
 | todo lo demás | **1** — sobre el diff |
+
+**La exención la fija el DIFF, no el juicio sobre su importancia** (fila de 0, añadida el
+2026-09-14). Se lee mirando qué líneas cambian, no decidiendo si el cambio «merece» revisión —
+porque quien decidiría soy yo, que soy la parte revisada. **Tres cosas no quedan exentas nunca**,
+por inocente que parezca el diff: `core/`, cualquier **guard**, y el propio contrato de revisión.
+**Y la regla de cierre: si hay que argumentar por qué algo es trivial, no lo es.** La exención que
+necesita defensa es justo la que hay que revisar. Se **declara en el PR** con la frase que la
+justifica: una exención silenciosa es indistinguible de un olvido.
 
 **Techo duro: nunca una tercera ronda sobre la misma pieza sin que Nikolai la autorice
 expresamente.** No es burocracia, es el remedio a un sesgo medido. En el 55º cierre, cuando
