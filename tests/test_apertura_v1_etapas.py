@@ -378,3 +378,108 @@ def test_el_informe_de_drive_cuenta_EL_ARBOL_y_no_solo_el_primer_nivel(tmp_path)
     assert r.estado == "hecha"
     assert "2 documento" in r.detalle, r.detalle
     assert "0 ficheros" not in r.detalle
+
+
+# ===========================================================================
+# El lazo se cierra solo: V1 verifica el EXPEDIENTE al terminar (`MEJORAS #252`)
+#
+# `verificar_apertura` se construyó el 2026-09-11 (fila #28, P2) y hasta el 2026-09-13
+# **no lo disparaba nadie**: ni V1, ni `abrir_caso`, ni el runbook lo mencionaba. Una red
+# que hay que acordarse de lanzar es una red que no atrapa nada — y la pieza existe justo
+# porque «estar encima» no escala.
+#
+# Lo que NO hace, y es deliberado: no cambia el código de salida de la apertura, no
+# escribe, y no corre bajo el mutex (el propio módulo lo evita a propósito para poder
+# usarse mientras otra cosa trabaja sobre el caso). Es un informe al final, no una verja.
+# ===========================================================================
+
+
+def test_e1_al_terminar_v1_se_verifica_el_expediente(tmp_path, monkeypatch):
+    """El lazo, cerrado. Sin esto, la red de P2 dependía de que alguien se acordara."""
+    vistos = []
+    monkeypatch.setattr(cli, "_verificar_expediente",
+                        lambda case_dir, case_id, **kw: vistos.append((case_dir, case_id)))
+
+    cli._informar_v1_y_verificar(_resultado_v1(), tmp_path, "W-TEST01")
+
+    assert vistos == [(tmp_path, "W-TEST01")]
+
+
+def test_e2_si_la_verificacion_revienta_la_apertura_NO_se_cae(tmp_path, monkeypatch):
+    """Un verificador que tumba lo que verifica es peor que no tenerlo: los bytes ya
+    están depositados y el trabajo hecho. El fallo se dice y se sigue."""
+    def explota(case_dir, case_id, **kw):
+        raise RuntimeError("token de Drive caducado")
+
+    monkeypatch.setattr(cli, "_verificar_expediente", explota)
+
+    cli._informar_v1_y_verificar(_resultado_v1(), tmp_path, "W-TEST01")   # no debe lanzar
+
+
+def test_e3_y_ese_fallo_se_DICE_en_vez_de_tragarse(tmp_path, monkeypatch, capsys):
+    """El simétrico de E2, y el que impide que «no se cae» se convierta en «no se entera
+    nadie»: si la verificación no pudo correr, eso es exactamente lo que hay que leer."""
+    def explota(case_dir, case_id, **kw):
+        raise RuntimeError("token de Drive caducado")
+
+    monkeypatch.setattr(cli, "_verificar_expediente", explota)
+
+    cli._informar_v1_y_verificar(_resultado_v1(), tmp_path, "W-TEST01")
+
+    salida = capsys.readouterr()
+    texto = salida.out + salida.err
+    assert "token de Drive caducado" in texto
+    assert "no se pudo verificar" in texto.lower()
+
+
+def _resultado_v1():
+    from core import apertura_v1 as av1
+
+    return av1.ResultadoV1(estado=av1.EstadoV1.COMPLETO, etapas=(), pendientes=(),
+                           parada=None, no_ejecutadas=())
+
+
+def test_r1_h07_main_LLAMA_al_verificador_y_lo_hace_FUERA_del_mutex():
+    """H-07 (MEDIO), mutación U1 del revisor: quitar la llamada en `main` y dejar el
+    `_informar_v1` de siempre. **Los tres tests `e1`-`e3` seguían verdes**, porque prueban
+    el helper y no su cableado — el mismo defecto que la ronda anterior encontró en la
+    pieza A (`A19`), cometido otra vez una pieza después.
+
+    Se comprueba sobre el AST, y se contratan **dos** propiedades, no una:
+
+    1. que `main` llame a `_informar_v1_y_verificar` — si alguien vuelve a poner ahí
+       `_informar_v1` a secas, la verificación deja de correr y nadie se entera;
+    2. que esa llamada **no esté dentro de ningún `with`**. El punto es el mutex:
+       `verificar_apertura` evita pedirlo a propósito para poder usarse mientras otra cosa
+       trabaja sobre el caso, así que meterlo bajo exclusión derogaría esa decisión en
+       silencio.
+
+    **Su límite, declarado:** esto prueba que el cableado existe, no que se ejecute. Lo
+    segundo necesita una apertura real, y eso queda SIN VERIFICAR.
+    """
+    import ast
+    import inspect
+
+    arbol = ast.parse(inspect.getsource(cli).replace("\r\n", "\n"))
+    main = next(n for n in ast.walk(arbol)
+                if isinstance(n, ast.FunctionDef) and n.name == "main")
+
+    llamadas = [n for n in ast.walk(main)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
+    nombres = {n.func.id for n in llamadas}
+    assert "_informar_v1_y_verificar" in nombres, (
+        "main ya no encadena la verificación del expediente")
+    assert "_informar_v1" not in nombres, (
+        "main llama al informe pelado: la verificación se quedó sin disparar")
+
+    # Ninguna de esas llamadas puede colgar de un `with` (el mutex es un `with`).
+    bajo_with = {
+        id(c)
+        for w in ast.walk(main) if isinstance(w, (ast.With, ast.AsyncWith))
+        for c in ast.walk(w) if isinstance(c, ast.Call)
+    }
+    for c in llamadas:
+        if c.func.id == "_informar_v1_y_verificar":
+            assert id(c) not in bajo_with, (
+                "la verificación quedó DENTRO de un `with`: si ese `with` es el mutex, "
+                "deroga que el módulo no lo pida")
