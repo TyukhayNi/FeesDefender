@@ -170,9 +170,13 @@ def test_f4_el_inventario_resuelve_contra_la_raiz_efectiva(tmp_casos_root):
     (raiz / "01_Drive EV").mkdir(parents=True)
     (raiz / "01_Drive EV" / "x.pdf").write_bytes(b"12345")
 
-    inv = cli._inventario_desde_hashes(raiz, "01_Drive EV",
-                                       {"01_Drive EV/x.pdf": "deadbeef"})
+    inv, sin_verificar = cli._inventario_desde_hashes(
+        raiz, "01_Drive EV", {"01_Drive EV/x.pdf": "deadbeef"})
     assert inv == [{"relpath": "x.pdf", "sha256": "deadbeef", "size": 5}]
+    # R1/H-03: la funcion ahora tolera que el montaje renombre entre el hash y el stat, y
+    # devuelve lo que no pudo medir. El camino feliz no declara nada — que es el contrato
+    # que este test defiende: el tamano sale de la raiz EFECTIVA, y sale.
+    assert sin_verificar == ()
 
 
 # --------------------------------------------------------------------------- F5

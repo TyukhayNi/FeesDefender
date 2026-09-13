@@ -546,3 +546,403 @@ def test_a22_si_la_RAIZ_entera_es_irrecorrible_se_declara_con_su_propia_clave(tm
 
     assert arbol.hashes == {}
     assert [f.clave for f in arbol.sin_verificar] == [PREFIJO]
+
+
+# ---------------------------------------------------------------------------
+# 9. Los doce hallazgos de la R1 de Codex (2026-09-13), por frontera
+#
+# Acta: docs/superpowers/plans/2026-09-13-fila27-pieza-a-r1-adversarial-review.md
+# Cuatro fronteras y no doce defectos sueltos — remediar el ejemplo en vez de la
+# frontera es lo que costó cuatro rondas en el mutex de V1.
+# ---------------------------------------------------------------------------
+
+# --- Frontera A: comparar nombres de fichero por igualdad de CADENA ---------
+# En Windows el sistema de ficheros no distingue caja, así que dos cadenas distintas
+# pueden nombrar el mismo fichero. Comparar con `==` produce los dos errores simétricos:
+# adoptar lo que no debe (H-01) y no reconocer lo que sí (H-09).
+
+def test_r1_h01_un_candidato_YA_LISTADO_no_se_adopta_aunque_cambie_la_caja(tmp_path, monkeypatch):
+    """H-01 (ALTO). `X.PDF` estaba listado; el montaje lo presenta como `x.pdf`. Con la
+    comparación sensible a la caja, `x.pdf` parece un candidato nuevo y se adopta: el hash
+    de OTRO documento acaba bajo dos claves, y el original se pierde **sin declararse**."""
+    root = _arbol(tmp_path, {"x": b"ORIGINAL", "X.PDF": b"OTRO"})
+    real = cli.file_sha256
+    disparado: list[str] = []
+
+    def doble(path: Path, *a, **kw):
+        if path.name == "x" and not disparado:
+            disparado.append("si")
+            path.unlink()
+            (root / "X.PDF").rename(root / "x.pdf")
+            raise FileNotFoundError(2, "gone", str(path))
+        return real(path, *a, **kw)
+
+    monkeypatch.setattr(cli, "file_sha256", doble)
+
+    arbol = cli.hash_tree_local(root, prefijo=PREFIJO)
+
+    assert arbol.renombrados == (), "adoptó un fichero que ya estaba listado"
+    assert [f.clave for f in arbol.sin_verificar] == [f"{PREFIJO}/x"]
+    # Y el otro documento se cuenta UNA vez, no dos con el mismo hash.
+    assert len(arbol.hashes) == 1
+
+
+def test_r1_h09_un_renombrado_que_solo_cambia_la_caja_SI_se_reconoce(tmp_path, monkeypatch):
+    """H-09 (BAJO), la mitad simétrica: `Photo` va a `photo.jpg`. El documento está y es
+    legible; con `==` quedaba declarado sin verificar por un detalle de mayúsculas."""
+    root = _arbol(tmp_path, {"Photo": b"bytes"})
+    _renombrar_al_abrir(monkeypatch, root / "Photo", [root / "photo.jpg"])
+
+    arbol = cli.hash_tree_local(root, prefijo=PREFIJO)
+
+    assert arbol.renombrados == ((f"{PREFIJO}/Photo", f"{PREFIJO}/photo.jpg"),)
+    assert f"{PREFIJO}/photo.jpg" in arbol.hashes
+    assert arbol.sin_verificar == ()
+
+
+def test_r1_h09b_un_renombrado_con_DOS_extensiones_tambien_se_reconoce(tmp_path, monkeypatch):
+    """H-09 (BAJO), la otra mitad: `x` va a `x.tar.gz`. El criterio por `stem` falla —el
+    stem es `x.tar`—, y el criterio correcto no es «el stem coincide» sino «el nombre
+    efectivo empieza por el listado más un punto»."""
+    root = _arbol(tmp_path, {"x": b"bytes"})
+    _renombrar_al_abrir(monkeypatch, root / "x", [root / "x.tar.gz"])
+
+    arbol = cli.hash_tree_local(root, prefijo=PREFIJO)
+
+    assert arbol.renombrados == ((f"{PREFIJO}/x", f"{PREFIJO}/x.tar.gz"),)
+    assert f"{PREFIJO}/x.tar.gz" in arbol.hashes
+
+
+# --- Frontera B: la declaración viaja por caminos con salidas anticipadas ---
+# Construir el dato y usarlo al final deja tantos agujeros como `return` haya en medio.
+
+def test_r1_h02_el_evento_se_escribe_aunque_NO_haya_ni_un_depositable(tmp_path, monkeypatch):
+    """H-02 (ALTO), y es el caso PEOR: el pull trae ficheros, ninguno se pudo leer, así que
+    `plan.con_sha` queda vacío y el `append_event` no llegaba a ejecutarse. La única
+    corrida que de verdad tenía algo que declarar era la única que no dejaba rastro."""
+    monkeypatch.setattr(intake_log, "read_events", lambda *a, **k: [])
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+    sv = (brain.FicheroSinVerificar(clave=f"{PREFIJO}/volatil", motivo="PermissionError"),)
+
+    cli._intake_generico(case_dir, "W-TEST", "drive_ev", {}, base=PREFIJO,
+                         dry_run=False, raiz_hashes=tmp_path, sin_verificar=sv)
+
+    ev = intake_log.read_events_de(case_dir)
+    assert len(ev) == 1, "sin depositables, la declaración no llegó al ledger"
+    assert ev[0]["details"]["count"] == 0
+    assert ev[0]["details"]["sin_verificar"] == [
+        {"clave": f"{PREFIJO}/volatil", "motivo": "PermissionError"}]
+
+
+def test_r1_h02b_sin_incidencias_y_sin_depositables_sigue_sin_escribir_evento(tmp_path, monkeypatch):
+    """El simétrico, que impide remediar H-02 ensuciando el ledger: una corrida que no
+    depositó nada y no tuvo incidencias no tiene nada que declarar."""
+    monkeypatch.setattr(intake_log, "read_events", lambda *a, **k: [])
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+
+    cli._intake_generico(case_dir, "W-TEST", "drive_ev", {}, base=PREFIJO,
+                         dry_run=False, raiz_hashes=tmp_path)
+
+    assert intake_log.read_events_de(case_dir) == []
+
+
+def test_r1_h07_un_fallo_del_RECUENTO_no_borra_las_incidencias_ya_conocidas(tmp_path, monkeypatch):
+    """H-07 (MEDIO). `etapa_drive` contaba el destino y retornaba desde el `except` antes
+    de construir los pendientes: un error al contar se llevaba por delante una declaración
+    que ya venía calculada en el resultado."""
+    destino = tmp_path / "00_Input" / PREFIJO
+    destino.mkdir(parents=True)
+    (destino / "a.pdf").write_bytes(b"x")
+    res = DriveIntakeResult(
+        case_id="C", team_id="T", folder_id="F", target_dir=destino, files_after=1,
+        skipped=False, rclone_returncode=0, errors=[],
+        custodia_sin_verificar=(
+            brain.FicheroSinVerificar(clave=f"{PREFIJO}/volatil", motivo="desaparecio"),))
+
+    def explota(*a, **k):
+        raise PermissionError(13, "Permission denied", str(destino))
+
+    monkeypatch.setattr(cli, "es_fichero_de_protocolo", explota)
+
+    r = cli.etapa_drive(None, tmp_path, folder_id="F", team_id="T",
+                        intake=lambda *a, **k: res)
+
+    assert r.estado == "hecha"
+    assert [p.codigo for p in r.pendientes] == ["custodia_sin_verificar"]
+
+
+def test_r1_h08_el_pull_FALLIDO_adjunta_la_declaracion_a_la_excepcion(tmp_path, monkeypatch):
+    """H-08 (MEDIO). El evento del pull fallido sí guardaba claves y motivos, pero
+    `exc.result` seguía vacío, así que `etapa_drive` devolvía un fallo genérico sin decir
+    qué no se pudo leer. La declaración se calculaba y se tiraba a mitad de camino."""
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+    destino = case_dir / "00_Input" / PREFIJO
+    destino.mkdir()
+    (destino / "volatil").write_bytes(b"y")
+    _renombrar_al_abrir(monkeypatch, destino / "volatil", [])
+
+    parcial = DriveIntakeResult(
+        case_id="W-TEST", team_id="T", folder_id="F", target_dir=destino, files_after=1,
+        skipped=False, rclone_returncode=3, errors=["rclone: exit 3"])
+
+    def _pull(*a, **k):
+        raise cli.intake_drive.DriveIntakeError(parcial)
+
+    monkeypatch.setattr(cli.intake_drive, "pull_drive_ev", _pull)
+
+    class _Ident:
+        case_id = "W-TEST"
+
+    with pytest.raises(cli.intake_drive.DriveIntakeError) as exc:
+        cli._intake_drive_ev(_Ident(), case_dir, "F", "T", dry_run=False)
+
+    assert [f.clave for f in exc.value.result.custodia_sin_verificar] == [f"{PREFIJO}/volatil"]
+
+
+def test_r1_h08b_la_etapa_declara_la_custodia_tambien_cuando_el_pull_FALLA(tmp_path):
+    """La otra mitad de H-08: que el dato llegue a `exc.result` no sirve de nada si la
+    etapa no lo lee. Un fallo de `rclone` y ficheros ilegibles son dos hechos distintos."""
+    destino = tmp_path / "00_Input" / PREFIJO
+    destino.mkdir(parents=True)
+    parcial = DriveIntakeResult(
+        case_id="C", team_id="T", folder_id="F", target_dir=destino, files_after=0,
+        skipped=False, rclone_returncode=3, errors=["rclone: exit 3"],
+        custodia_sin_verificar=(
+            brain.FicheroSinVerificar(clave=f"{PREFIJO}/volatil", motivo="desaparecio"),))
+
+    def _intake(*a, **k):
+        raise cli.intake_drive.DriveIntakeError(parcial)
+
+    r = cli.etapa_drive(None, tmp_path, folder_id="F", team_id="T", intake=_intake)
+
+    assert r.estado == "fallo"
+    assert [p.codigo for p in r.pendientes] == ["custodia_sin_verificar"]
+    assert "volatil" in r.pendientes[0].detalle
+
+
+# --- Frontera C: el recorrido afirma más de lo que mide --------------------
+
+def test_r1_h03_la_carrera_en_el_STAT_posterior_no_tumba_la_etapa(tmp_path):
+    """H-03 (ALTO). `_inventario_desde_hashes` recompone la ruta desde la clave y hace
+    `stat()`: si el montaje renombra entre el hash y el stat, la misma carrera vuelve a
+    matar la etapa dos líneas después. `MEJORAS #214` nombra esta función explícitamente —
+    remediar solo `hash_tree_local` dejaba la cadena a medias."""
+    (tmp_path / PREFIJO).mkdir()
+    (tmp_path / PREFIJO / "a.pdf").write_bytes(b"x")
+    hashes = {f"{PREFIJO}/a.pdf": "sha-de-a", f"{PREFIJO}/se-fue": "sha-de-b"}
+
+    inventario, sin_verificar = cli._inventario_desde_hashes(tmp_path, PREFIJO, hashes)
+
+    assert [i["relpath"] for i in inventario] == ["a.pdf"]
+    assert [f.clave for f in sin_verificar] == [f"{PREFIJO}/se-fue"]
+    assert sin_verificar[0].motivo
+
+
+def test_r1_h03b_lo_que_el_stat_pierde_llega_al_evento(tmp_path, monkeypatch):
+    """Y la costura: sin esto, H-03 quedaria tolerado pero seguiria sin declararse."""
+    monkeypatch.setattr(intake_log, "read_events", lambda *a, **k: [])
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+
+    cli._intake_generico(case_dir, "W-TEST", "drive_ev",
+                         {f"{PREFIJO}/se-fue": "sha"}, base=PREFIJO,
+                         dry_run=False, raiz_hashes=tmp_path)
+
+    ev = intake_log.read_events_de(case_dir)
+    assert len(ev) == 1
+    assert [d["clave"] for d in ev[0]["details"]["sin_verificar"]] == [f"{PREFIJO}/se-fue"]
+
+
+def test_r1_h03c_un_hueco_del_stat_NO_aborta_la_apertura_como_si_sobrara(tmp_path, monkeypatch):
+    """Efecto del propio remedio de H-03, encontrado al construirlo y fijado aquí.
+
+    Al desacoplar el inventario de los hashes, la clave que el `stat` no pudo medir dejaba
+    de estar en el plan pero seguia llegando a `reconcile` dentro de `hashes`: salia como
+    `extra`, `ok` pasaba a False y la apertura **abortaba entera**. Un hueco declarado no
+    es un sobrante — es exactamente lo contrario, y confundirlos convierte el remedio en
+    una via nueva de tumbar la etapa.
+
+    Esto tambien acota la afirmacion del handoff §3.3 («`extras` es siempre vacio porque
+    `reconcile` cuadra consigo mismo»): deja de serlo en cuanto el inventario y los hashes
+    pueden diferir.
+    """
+    monkeypatch.setattr(intake_log, "read_events", lambda *a, **k: [])
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+    (tmp_path / PREFIJO).mkdir()
+    (tmp_path / PREFIJO / "esta.pdf").write_bytes(b"x")
+    from core.utils import file_sha256
+
+    # Un fichero medible y otro cuya ruta ya no existe: el segundo es el hueco.
+    hashes = {f"{PREFIJO}/esta.pdf": file_sha256(tmp_path / PREFIJO / "esta.pdf"),
+              f"{PREFIJO}/se-fue": "sha-de-algo-que-ya-no-esta"}
+
+    cli._intake_generico(case_dir, "W-TEST", "drive_ev", hashes, base=PREFIJO,
+                         dry_run=False, raiz_hashes=tmp_path)
+
+    detalles = intake_log.read_events_de(case_dir)[0]["details"]
+    assert detalles["count"] == 1
+    assert [d["clave"] for d in detalles["sin_verificar"]] == [f"{PREFIJO}/se-fue"]
+
+
+def test_r1_h04_una_raiz_que_NO_SE_PUDO_MIRAR_no_es_una_raiz_vacia(tmp_path, monkeypatch):
+    """H-04 (MEDIO), y es la propia frontera de esta pieza en su PRIMERA línea: `is_dir()`
+    devuelve False tanto si la carpeta no existe como si no se pudo averiguar. Lo segundo
+    no es cero ficheros."""
+    root = _arbol(tmp_path, {"a.pdf": b"x"})
+    real_stat = os.stat
+
+    def doble(path, *a, **kw):
+        if str(path) == str(root):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_stat(path, *a, **kw)
+
+    monkeypatch.setattr(os, "stat", doble)
+
+    arbol = cli.hash_tree_local(root, prefijo=PREFIJO)
+
+    assert arbol.hashes == {}
+    assert [f.clave for f in arbol.sin_verificar] == [PREFIJO]
+
+
+def test_r1_h04b_una_raiz_que_es_un_FICHERO_se_declara(tmp_path):
+    """La otra rama del mismo booleano: un `01_Drive EV` que resulto ser un fichero es un
+    destino que no se pudo recorrer, no un destino vacio."""
+    root = tmp_path / PREFIJO
+    root.write_bytes(b"no soy una carpeta")
+
+    arbol = cli.hash_tree_local(root, prefijo=PREFIJO)
+
+    assert arbol.hashes == {}
+    assert [f.clave for f in arbol.sin_verificar] == [PREFIJO]
+
+
+def test_r1_h04c_una_raiz_que_de_verdad_NO_EXISTE_sigue_sin_declararse(tmp_path):
+    """El simetrico que impide remediar H-04 convirtiendo toda ausencia en incidencia: el
+    pull que no llego a crear la carpeta no tiene ficheros sin verificar, tiene cero."""
+    arbol = cli.hash_tree_local(tmp_path / "no-existe", prefijo=PREFIJO)
+
+    assert arbol.hashes == {} and arbol.sin_verificar == ()
+
+
+def test_r1_h05_un_subdirectorio_ENLAZADO_se_declara_en_vez_de_desaparecer(tmp_path):
+    """H-05 (MEDIO). `os.walk` no sigue enlaces de directorio, y no seguirlos es correcto
+    —los ciclos son peores—. Lo que no es correcto es no decirlo: el subarbol entero
+    quedaba fuera del inventario bajo una promesa de completitud."""
+    root = _arbol(tmp_path, {"visible.pdf": b"x"})
+    fuera = tmp_path / "fuera"
+    fuera.mkdir()
+    (fuera / "doc.pdf").write_bytes(b"y")
+    try:
+        (root / "enlazado").symlink_to(fuera, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:      # Windows sin privilegio
+        pytest.skip(f"este entorno no crea enlaces de directorio: {exc!r}")
+
+    arbol = cli.hash_tree_local(root, prefijo=PREFIJO)
+
+    assert f"{PREFIJO}/visible.pdf" in arbol.hashes
+    assert [f.clave for f in arbol.sin_verificar] == [f"{PREFIJO}/enlazado"]
+    assert "enlace" in arbol.sin_verificar[0].motivo.lower()
+
+
+# --- Frontera D: oraculos de un solo elemento y expectativas de la salida ---
+
+def test_r1_h10_las_incidencias_viajan_TODAS_no_solo_la_primera(tmp_path, monkeypatch):
+    """H-10 (MEDIO), hallazgo contra el ARNES y no contra el codigo: el mutante
+    `tuple(sin_verificar[:1])` sobrevivia a los 23 tests, porque todos los oraculos tenian
+    exactamente una incidencia. Un inventario truncado afirma que lo demas si se midio."""
+    root = _arbol(tmp_path, {"a.pdf": b"x", "b.pdf": b"y", "c.pdf": b"z"})
+    real = cli.file_sha256
+
+    def doble(path: Path, *a, **kw):
+        if path.name in ("a.pdf", "b.pdf"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *a, **kw)
+
+    monkeypatch.setattr(cli, "file_sha256", doble)
+
+    arbol = cli.hash_tree_local(root, prefijo=PREFIJO)
+
+    assert [f.clave for f in arbol.sin_verificar] == [
+        f"{PREFIJO}/a.pdf", f"{PREFIJO}/b.pdf"]
+    assert list(arbol.hashes) == [f"{PREFIJO}/c.pdf"]
+
+
+def test_r1_h10b_las_DOS_incidencias_llegan_enteras_al_evento(tmp_path, monkeypatch):
+    """El mismo mutante, un tramo mas adelante: truncar al pasar al ledger tambien pasaba."""
+    monkeypatch.setattr(intake_log, "read_events", lambda *a, **k: [])
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+    sv = (brain.FicheroSinVerificar(clave=f"{PREFIJO}/a", motivo="m1"),
+          brain.FicheroSinVerificar(clave=f"{PREFIJO}/b", motivo="m2"))
+
+    cli._intake_generico(case_dir, "W-TEST", "drive_ev", {}, base=PREFIJO,
+                         dry_run=False, raiz_hashes=tmp_path, sin_verificar=sv)
+
+    detalles = intake_log.read_events_de(case_dir)[0]["details"]
+    assert detalles["sin_verificar"] == [
+        {"clave": f"{PREFIJO}/a", "motivo": "m1"},
+        {"clave": f"{PREFIJO}/b", "motivo": "m2"}]
+
+
+def test_r1_h11_el_evento_del_pull_fallido_CONSERVA_el_motivo(tmp_path, monkeypatch):
+    """H-11 (MEDIO), tambien contra el arnes. A18 sacaba el motivo esperado de la propia
+    salida, asi que un mutante que escribiera `motivo=""` la satisfacia. El oraculo tiene
+    que venir de la ENTRADA: aqui se fija el error y se comprueba que llega intacto."""
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+    destino = case_dir / "00_Input" / PREFIJO
+    destino.mkdir()
+    (destino / "bloqueado.pdf").write_bytes(b"x")
+    real = cli.file_sha256
+    ERROR = PermissionError(13, "el motivo exacto que tiene que sobrevivir", "bloqueado.pdf")
+
+    def doble(path: Path, *a, **kw):
+        if path.name == "bloqueado.pdf":
+            raise ERROR
+        return real(path, *a, **kw)
+
+    monkeypatch.setattr(cli, "file_sha256", doble)
+    parcial = DriveIntakeResult(
+        case_id="W-TEST", team_id="T", folder_id="F", target_dir=destino, files_after=1,
+        skipped=False, rclone_returncode=3, errors=["rclone: exit 3"])
+
+    def _pull(*a, **k):
+        raise cli.intake_drive.DriveIntakeError(parcial)
+
+    monkeypatch.setattr(cli.intake_drive, "pull_drive_ev", _pull)
+
+    class _Ident:
+        case_id = "W-TEST"
+
+    with pytest.raises(cli.intake_drive.DriveIntakeError):
+        cli._intake_drive_ev(_Ident(), case_dir, "F", "T", dry_run=False)
+
+    ev = intake_log.read_events_de(case_dir)[0]
+    assert ev["details"]["sin_verificar"][0]["motivo"] == repr(ERROR)
+
+
+# --- H-12: el aviso al operador no puede afirmar un hash que no hubo -------
+
+def test_r1_h12_el_aviso_no_afirma_haber_hasheado_lo_que_no_se_leyo(tmp_path, monkeypatch, capsys):
+    """H-12 (BAJO). `renombrados` registra que el nombre cambio —un hecho—, pero el aviso
+    decia «se hasheo bajo el nombre efectivo» aunque el reaparecido fuera ilegible o
+    quedara excluido por protocolo. Dos lineas despues se declaraba lo contrario."""
+    monkeypatch.setattr(intake_log, "read_events", lambda *a, **k: [])
+    case_dir = tmp_path / "caso"
+    (case_dir / "00_Input").mkdir(parents=True)
+
+    cli._intake_generico(
+        case_dir, "W-TEST", "drive_ev", {}, base=PREFIJO, dry_run=False,
+        raiz_hashes=tmp_path,
+        sin_verificar=(brain.FicheroSinVerificar(
+            clave=f"{PREFIJO}/x.pdf", motivo="PermissionError"),),
+        renombrados=((f"{PREFIJO}/x", f"{PREFIJO}/x.pdf"),))
+
+    salida = capsys.readouterr()
+    texto = salida.out + salida.err
+    assert "renombr" in texto.lower()
+    assert "hashe" not in texto.lower(), "afirma un hash que no ocurrio"
