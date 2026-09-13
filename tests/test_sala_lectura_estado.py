@@ -8,11 +8,14 @@ Claude Code. Asi que la UI no puede montar la sala — y lo que si puede, y no h
 **decir si esta montada y que le falta**.
 
 Todo lo de aqui es de LECTURA. Que eso sea cierto no se deja a la buena fe: hay un test
-que sella el arbol entero por `sha256` y vuelve a compararlo despues de llamar.
+que sella el arbol entero —ficheros por `sha256` y **directorios por su ruta**— y vuelve a
+compararlo despues de llamar, con sus dos controles positivos al lado. La primera version del
+sello solo miraba ficheros y daba VERDE ante un `mkdir`; lo midio la R1 adversarial (H-03).
 """
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 
 import pytest
@@ -45,10 +48,24 @@ def _caso(tmp_path: Path, *, sala: bool = True, artefactos=(), catalogo=False,
 
 
 def _sello(raiz: Path) -> list[tuple[str, str]]:
-    """Huella del arbol: ruta relativa + sha256 de cada fichero, ordenada."""
+    """Huella del arbol: ruta relativa de cada entrada + `sha256` si es fichero.
+
+    **Los DIRECTORIOS entran en la huella, y esa linea la compro la R1 adversarial.** La
+    primera version solo recorria ficheros regulares, asi que un `mkdir` de un directorio
+    vacio —justo la escritura mas probable de un lector que «se asegura» de que la carpeta
+    existe— no cambiaba el sello y el test daba **VERDE**. El revisor lo demostro
+    sustituyendo `sle.estado` por una version que hace `mkdir` y corriendo el cuerpo
+    original del test: `control_mkdir: ["VERDE", "VERDE", "VERDE"]` (R1, H-03).
+
+    Sigue sin cubrir —y se dice, porque prometer mas es el defecto que esto remedia—
+    metadatos (`mtime`, atributos), escrituras transitorias que restauren los mismos
+    bytes, y cualquier efecto fuera de `raiz`.
+    """
     out = []
     for p in sorted(raiz.rglob("*")):
-        if p.is_file():
+        if p.is_dir():
+            out.append((str(p.relative_to(raiz)) + "/", "<dir>"))
+        elif p.is_file():
             out.append((str(p.relative_to(raiz)),
                         hashlib.sha256(p.read_bytes()).hexdigest()))
     return out
@@ -145,15 +162,23 @@ def test_sala_completa_da_ok(tmp_path: Path) -> None:
     assert sle.estado(case_dir).artefactos.estado == va.OK
 
 
-def test_la_sala_del_motor_deprecado_acusa_los_dos_que_le_faltan(
+def test_la_sala_del_motor_deprecado_acusa_el_manifiesto_que_le_falta(
     tmp_path: Path,
 ) -> None:
     """El caso REAL medido en W-030TZY y W-02NHNC (`MEJORAS #221`).
 
-    `core.sala_lectura` escribe `INDICE.md` y `CRONOLOGIA.md`, no escribe el
-    `_MANIFIESTO.md` —en todo `core/` y `scripts/` no lo escribe nadie— y deja el
-    catalogo en `01_Procesado/`. Ese estado tiene que verse, porque el mensaje de exito
-    del motor decia «organizada» sobre el.
+    El motor escribe `INDICE.md`, `CRONOLOGIA.md` **y** el catalogo en `01_Procesado/`
+    (`catalogo_documental.save_catalog`): son **tres** de los cuatro que el contrato exige,
+    dos de ellos dentro de la sala. El que no escribe es el `_MANIFIESTO.md`. Ese estado
+    tiene que verse, porque el mensaje de exito del motor decia «organizada» sobre el.
+
+    **El nombre decia «los dos que le faltan» y el aserto siempre exigio uno** — R1, H-07.
+    Mezclaba el inventario de la sala con el del expediente: «dos de los cuatro» es cierto
+    *dentro de la sala* y falso *en el expediente*, y la frase no decia cual de los dos.
+
+    Sobre el manifiesto: no hay ningun **generador** en `core/` ni en `scripts/`. Si hay
+    quien lo **reescribe** cuando ya existe (`scripts/redate_whatsapp_anexos.py`), que es
+    otra cosa (R1, H-08).
     """
     case_dir = _caso(tmp_path, artefactos=("INDICE.md", "CRONOLOGIA.md"), catalogo=True)
     r = sle.estado(case_dir).artefactos
@@ -248,3 +273,128 @@ def test_un_caso_que_no_existe_no_se_crea_al_preguntarle(tmp_path: Path) -> None
     e = sle.estado(fantasma)
     assert e.montada is False
     assert not fantasma.exists()
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"sala": False},
+    {},
+    {"artefactos": ARTEFACTOS_EN_LA_SALA, "catalogo": True,
+     "documentos": ("2025-01-02_encargo.pdf",)},
+])
+def test_control_positivo_el_sello_ve_un_directorio_nuevo(tmp_path: Path, kwargs) -> None:
+    """El instrumento del test de arriba, probado contra la escritura que se le escapaba.
+
+    Sin esto, `test_leer_el_estado_no_toca_un_solo_byte` es una guarda que nadie ha visto
+    morder: daba verde ante un `mkdir` y nadie lo sabia hasta que la R1 lo midio (H-03).
+    Aqui se crea el directorio a mano —no lo crea `estado()`— y se exige que el sello
+    **cambie**. Si algun dia alguien simplifica `_sello` a solo ficheros, esto se pone rojo.
+    """
+    case_dir = _caso(tmp_path, **kwargs)
+    antes = _sello(case_dir)
+    (case_dir / "01_Procesado" / "_directorio_nuevo").mkdir(parents=True)
+    assert _sello(case_dir) != antes
+
+
+def test_control_positivo_el_sello_ve_un_fichero_nuevo(tmp_path: Path) -> None:
+    case_dir = _caso(tmp_path)
+    antes = _sello(case_dir)
+    (case_dir / "01_Procesado" / "colado.txt").write_text("x", encoding="utf-8")
+    assert _sello(case_dir) != antes
+
+
+# ---------------------------------------------------------------------------
+# El layout de la SKILL, que es el constructor que gobierna (R1, H-01)
+# ---------------------------------------------------------------------------
+
+
+def _caso_de_la_skill(tmp_path: Path) -> Path:
+    """Una sala montada como la monta la skill: los CUATRO artefactos dentro.
+
+    Es el layout de `SKILL.md` §estructura, y el que su propio `verificar_sala.py` asume
+    al excluir esos cuatro nombres del recuento de documentos.
+    """
+    case_dir = tmp_path / "BaRS1 - Sintetico - (W-00TEST) - Impago"
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    sala.mkdir(parents=True)
+    for nombre in (*ARTEFACTOS_EN_LA_SALA, CATALOGO):
+        (sala / nombre).write_text(f"# {nombre}\n", encoding="utf-8")
+    (sala / "2025-01-02_encargo.pdf").write_text("contenido\n", encoding="utf-8")
+    return case_dir
+
+
+def test_una_sala_montada_por_la_skill_no_sale_incompleta(tmp_path: Path) -> None:
+    """El hallazgo ALTO de la R1, y el que decidio el NO-SHIP.
+
+    La skill pone el catalogo **dentro** de la sala; `c4` lo buscaba solo en
+    `01_Procesado/`, que es donde lo deja el motor deprecado. Consecuencia: la pantalla
+    declaraba incompleta una sala recien construida por el constructor que ella misma
+    recomienda, y ofrecia pedir un artefacto que ya estaba. Volver a correr la skill no
+    lo arreglaba nunca.
+    """
+    r = sle.estado(_caso_de_la_skill(tmp_path)).artefactos
+    assert r.estado == va.OK, r.detalle
+    assert r.evidencia["catalogo_en"] == "sala"
+
+
+def test_el_catalogo_de_la_skill_no_se_cuenta_como_documento(tmp_path: Path) -> None:
+    """Y la otra mitad del mismo hallazgo: el catalogo inflaba el recuento en uno.
+
+    La exclusion razonaba que el catalogo «vive fuera», cierto solo del motor retirado.
+    """
+    assert sle.estado(_caso_de_la_skill(tmp_path)).n_documentos == 1
+
+
+def test_el_layout_del_motor_deprecado_sigue_valiendo(tmp_path: Path) -> None:
+    """Aceptar el de la skill no puede romper el del motor: los dos conviven hoy.
+
+    La decision de cual es el sitio canonico sigue abierta (`MEJORAS #221`), y un lector
+    que solo admitiera el nuevo repetiria el defecto con el signo cambiado.
+    """
+    case_dir = _caso(tmp_path, artefactos=ARTEFACTOS_EN_LA_SALA, catalogo=True)
+    r = sle.estado(case_dir).artefactos
+    assert r.estado == va.OK
+    assert r.evidencia["catalogo_en"] == "01_Procesado"
+
+
+# ---------------------------------------------------------------------------
+# «No lo se» no es «no hay» (R1, H-02) — y la capitalizacion (R1, H-05)
+# ---------------------------------------------------------------------------
+
+
+def test_si_no_se_puede_enumerar_el_recuento_es_None_y_no_cero(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Una sala ilegible decia «0 documento(s)», igual que una vacia de verdad.
+
+    `rglob` **suprime** los errores de exploracion. El revisor lo reprodujo inyectando
+    `PermissionError` en `os.scandir`: `permiso_listado_denegado: {"n_documentos": 0}`
+    sobre una sala que si tenia contenido. Aqui se inyecta en el mismo punto de E/S.
+    """
+    case_dir = _caso(tmp_path, documentos=("2025-01-02_encargo.pdf",))
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    real = os.scandir
+
+    def _revienta(path=".", *a, **k):
+        if Path(path) == sala:
+            raise PermissionError(13, "denegado")
+        return real(path, *a, **k)
+
+    monkeypatch.setattr(os, "scandir", _revienta)
+    e = sle.estado(case_dir)
+    assert e.montada is True, "la sala existe: eso si se sabe"
+    assert e.n_documentos is None, "no se pudo leer, y eso NO es cero"
+
+
+def test_los_artefactos_en_minusculas_tampoco_cuentan_como_documentos(
+    tmp_path: Path,
+) -> None:
+    """En Windows `INDICE.md` e `indice.md` son el MISMO fichero.
+
+    `c4` los encontraba por una grafia (el filesystem no distingue) y el recuento los
+    sumaba como documentos por la otra: los dos numeros de la misma pantalla, discrepando
+    sobre los mismos bytes (R1, H-05).
+    """
+    e = sle.estado(_caso(tmp_path, artefactos=("indice.md", "cronologia.md",
+                                               "_manifiesto.md"),
+                         catalogo=True, documentos=("2025-01-02_encargo.pdf",)))
+    assert e.n_documentos == 1

@@ -24,29 +24,45 @@ cuatro y donde vive cada uno», y una segunda copia de esa lista divergiria — 
 Lo que este modulo anyade sobre `c4` es lo que la UI necesita y el informe de apertura no
 da: si la carpeta existe, cuantos documentos hay dentro, y el texto de la peticion.
 
-## La propiedad que lo define
+## La propiedad que lo define, y lo que su prueba alcanza
 
-**Nada de aqui escribe.** Sustituye a un camino que escribia sobre el expediente, asi que
+**Nada de aqui escribe el expediente.** Sustituye a un camino que escribia sobre el, asi que
 un `mkdir(exist_ok=True)` de mas convertiria el remedio en el mismo defecto con otra cara.
 Lo fija por comportamiento `tests/test_sala_lectura_estado.py::test_leer_el_estado_no_toca_un_solo_byte`,
-que sella el arbol por `sha256` —rutas incluidas, que un fichero nuevo no cambia ningun
-hash— antes y despues de llamar.
+que sella el arbol —**rutas de ficheros Y de directorios**, mas el `sha256` del contenido—
+antes y despues de llamar, y tiene su control positivo de `mkdir` al lado.
+
+**Y lo que ese sello NO alcanza, dicho porque la primera version lo prometia entero:**
+compara el estado final, no las operaciones, asi que no veria una escritura transitoria que
+restaurase los mismos bytes, ni cambios de metadatos (`mtime`, atributos), ni efectos fuera
+de `case_dir`. Tampoco cubre el **import**: importar este modulo registra modulos en
+`sys.modules` y compila regex, como cualquier otro. La promesa es sobre el expediente. Los
+limites los midio la R1 adversarial de la fila #30 (H-03), cuyo control positivo demostro
+que el sello de la primera version daba **verde** ante un `mkdir`.
 """
 from __future__ import annotations
 
 import dataclasses
+import os
 from pathlib import Path
 
 from core import verificar_apertura as va
 from core.email_atomize.contaminacion import w_code_de_carpeta
 
-#: Los que `c4` busca DENTRO de la sala. El cuarto artefacto contratado —el
-#: `indice_documental.yaml`— vive en `01_Procesado/`, fuera, y por eso no puede colarse
-#: en el conteo de documentos. La fuente de los cuatro sigue siendo `va._ARTEFACTOS_SALA`;
-#: esto es su interseccion con la sala, derivada y no transcrita.
-_ARTEFACTOS_EN_LA_SALA = frozenset(
-    n for n in va._ARTEFACTOS_SALA if n != va._CATALOGO
-)
+#: Nombres que, **en la raiz de la sala**, no son documentos del expediente.
+#:
+#: Son los cuatro contratados, el catalogo INCLUIDO. La primera version lo excluia de esta
+#: lista razonando que «vive en `01_Procesado/`, fuera» — y eso es cierto del motor
+#: deprecado y **falso de la skill que gobierna**, que lo pone dentro junto a los otros
+#: tres. Resultado: una sala recien montada por la skill contaba su propio catalogo como
+#: un documento mas. Lo levanto la R1 adversarial (H-01). Como el nombre solo se descuenta
+#: **en la raiz**, incluirlo aqui no pierde nada cuando vive fuera.
+#:
+#: Se compara en `casefold()`: en Windows `INDICE.md` e `indice.md` son el MISMO fichero,
+#: asi que `c4` encuentra el artefacto por una grafia y el conteo lo sumaba como documento
+#: por la otra — los dos numeros de la misma pantalla, discrepando (R1, H-05). Es la misma
+#: razon por la que `core/sala_lectura.py` compara rutas con `clave_ruta`.
+_ARTEFACTOS_EN_LA_SALA = frozenset(n.casefold() for n in va._ARTEFACTOS_SALA)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -59,7 +75,14 @@ class EstadoSala:
     escrito dos de los cuatro artefactos— visto desde el otro lado.
     """
     montada: bool
-    n_documentos: int
+    #: Documentos de la sala, o **`None` cuando no se pudo enumerar**.
+    #:
+    #: `None` no es cero, y la distincion la compro la R1 adversarial (H-02): `rglob`
+    #: **suprime** los errores de exploracion, asi que una sala que existe pero no se deja
+    #: listar —permisos, Drive a medio montar, la carpeta retirada a mitad del recorrido—
+    #: devolvia `0` y la pantalla decia «0 documento(s)» con la misma cara que una sala
+    #: vacia de verdad. Es [[feedback-no-lo-se-no-es-no-hay]] en una linea de UI.
+    n_documentos: int | None
     artefactos: va.Resultado
     solicitud: str
 
@@ -77,19 +100,42 @@ def _sala(case_dir: Path) -> Path | None:
     return va._dir_estructural(proc / va._SALA_LECTURA, va._SALA_LECTURA)
 
 
-def _contar_documentos(sala: Path) -> int:
-    """Ficheros de la sala que son documentos del expediente.
+def _contar_documentos(sala: Path) -> int | None:
+    """Ficheros de la sala que son documentos del expediente, o `None` si no se pudo leer.
 
     Se excluyen los artefactos **de la raiz de la sala**, no los de cualquier nivel: la
     exclusion es por POSICION. Un adjunto llamado `INDICE.md` dentro de la subcarpeta de
     un documento compuesto es un documento del expediente, y descontarlo por su nombre lo
     haria desaparecer del numero sin que nadie lo dijera.
+
+    **Se recorre con `os.walk(onerror=...)` y no con `rglob`.** `rglob` se traga los
+    errores de exploracion, asi que una sala ilegible devolvia `0` — indistinguible de una
+    vacia (R1, H-02). Aqui cualquier error durante el recorrido aborta y devuelve `None`,
+    que la pantalla dice con otras palabras. Falla **declarando**, no contando de menos.
+
+    Lo que este numero SI cuenta, dicho porque la pantalla no puede matizarlo: todo fichero
+    regular que no sea artefacto de la raiz. Eso incluye ficheros de cero bytes, auxiliares
+    del sistema (`Thumbs.db`, `.DS_Store`, `desktop.ini`), ocultos y enlaces a fichero — un
+    oculto puede ser prueba valida, asi que no se filtran a ciegas. No recorre directorios
+    enlazados ni deduplica por contenido. Un recuento por el manifiesto, en vez de por el
+    filesystem, seria mas fiel; no se hace aqui porque el manifiesto es justo el artefacto
+    que hoy suele faltar.
     """
-    return sum(
-        1 for p in sala.rglob("*")
-        if p.is_file()
-        and not (p.parent == sala and p.name in _ARTEFACTOS_EN_LA_SALA)
-    )
+    fallo = False
+
+    def _anota(_exc: OSError) -> None:
+        nonlocal fallo
+        fallo = True
+
+    n = 0
+    for dirpath, _dirnames, nombres in os.walk(sala, onerror=_anota):
+        raiz = Path(dirpath) == sala
+        for nombre in nombres:
+            if raiz and nombre.casefold() in _ARTEFACTOS_EN_LA_SALA:
+                continue
+            if (Path(dirpath) / nombre).is_file():
+                n += 1
+    return None if fallo else n
 
 
 def _solicitud(case_dir: Path, artefactos: va.Resultado) -> str:

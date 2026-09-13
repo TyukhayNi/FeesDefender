@@ -232,12 +232,35 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
         f"{abs(len(logicos) - len(entradas))}", ev)
 
 
+def ubicaciones_del_catalogo(proc: Path, sala: Path) -> tuple[Path, ...]:
+    """Dónde puede estar el `indice_documental.yaml`, en orden de preferencia.
+
+    **Los dos constructores no coinciden, y la decisión de cuál gana sigue abierta**
+    (`MEJORAS #221`, su mitad de «la ubicación»). La skill `organizar-sala-lectura` —que
+    gobierna desde el 2026-09-13— lo pone **dentro de la sala**, junto a los otros tres:
+    lo dice su árbol (`SKILL.md` §estructura) y lo confirma su propio verificador, que
+    excluye ese nombre al contar documentos de la sala. `core/sala_lectura.py`, el motor
+    deprecado, lo escribe en `01_Procesado/` (`catalogo_documental._catalog_path`).
+
+    Hasta el 2026-09-13 esta comprobación solo miraba el sitio del **motor retirado**, así
+    que una sala recién construida por la skill se declaraba **incompleta** y la pantalla
+    ofrecía pedir un artefacto que ya estaba. Lo levantó la R1 adversarial de la fila #30
+    (H-01), reproduciéndolo con los helpers reales de la skill.
+
+    Se aceptan las dos **mientras la decisión siga abierta**, y la evidencia dice en cuál
+    apareció: tolerar en silencio convertiría este lector en el sitio donde la ambigüedad
+    se esconde. Cuando se decida, aquí queda una sola.
+    """
+    return (sala / _CATALOGO, proc / _CATALOGO)
+
+
 def c4_artefactos_de_la_sala(case_dir: Path) -> Resultado:
     """Los cuatro artefactos que la sala de lectura contrata (`MEJORAS #221`).
 
-    El CLI decía «Sala de lectura organizada» habiendo escrito **dos de los cuatro**. Lo
-    que lo hace caro no es que falten: es que el operador lee «organizada» y no vuelve a
-    mirar. Esta comprobación es el lector que sí mira.
+    El CLI decía «Sala de lectura organizada» habiendo escrito **tres de los cuatro** —los
+    dos índices y el catálogo, este último en `01_Procesado/`— y ninguno de ellos el
+    `_MANIFIESTO.md`. Lo que lo hace caro no es que falte: es que el operador lee
+    «organizada» y no vuelve a mirar. Esta comprobación es el lector que sí mira.
     """
     titulo = "Los cuatro artefactos de la sala de lectura"
     proc = _dir_estructural(case_dir / _PROCESADO, _PROCESADO)
@@ -245,14 +268,19 @@ def c4_artefactos_de_la_sala(case_dir: Path) -> Resultado:
     if sala is None:
         return Resultado("artefactos_sala", titulo, PENDIENTE,
                          "no hay `Sala lectura`: no se ha montado")
-    # El catálogo vive en `01_Procesado/`, no dentro de la sala.
-    ubicacion = {n: (proc / n if n == _CATALOGO else sala / n) for n in _ARTEFACTOS_SALA}
+    candidatas = ubicaciones_del_catalogo(proc, sala)
+    catalogo = next((p for p in candidatas if p.is_file()), candidatas[-1])
+    ubicacion = {n: (catalogo if n == _CATALOGO else sala / n) for n in _ARTEFACTOS_SALA}
     faltan = sorted(n for n, p in ubicacion.items() if not p.is_file())
     no_ficheros = sorted(n for n, p in ubicacion.items() if p.exists() and not p.is_file())
     vacios = sorted(n for n, p in ubicacion.items()
                     if p.is_file() and p.stat().st_size == 0)
     ev = {"presentes": sorted(set(_ARTEFACTOS_SALA) - set(faltan)),
-          "faltan": faltan, "vacios": vacios, "no_ficheros": no_ficheros}
+          "faltan": faltan, "vacios": vacios, "no_ficheros": no_ficheros,
+          # En cuál de las dos apareció. Sin esto, «presente» no dice cuál de los dos
+          # constructores lo puso, que es justo el dato que la decisión abierta necesita.
+          "catalogo_en": ("sala" if catalogo.parent == sala else "01_Procesado"
+                          ) if catalogo.is_file() else None}
     if no_ficheros:
         return Resultado("artefactos_sala", titulo, FALLO,
                          f"existen pero NO son ficheros: {', '.join(no_ficheros)}", ev)

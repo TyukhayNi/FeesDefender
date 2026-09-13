@@ -1415,9 +1415,22 @@ with tab_casos:
                 if not _estado_sl.montada:
                     st.info("📭 La sala de lectura **no está montada**.")
                 else:
-                    st.write(
-                        f"📄 **{_estado_sl.n_documentos}** documento(s) en la sala."
-                    )
+                    # El recuento y el veredicto de los artefactos son independientes:
+                    # que no se pueda listar el contenido no impide decir si los cuatro
+                    # están. Anidarlos escondería el segundo cuando falla el primero.
+                    if _estado_sl.n_documentos is None:
+                        # «No pude leerlo» no es «hay cero», y mezclarlos es el defecto
+                        # que la R1 adversarial midió (H-02): una sala ilegible decía
+                        # «0 documento(s)» con la misma cara que una vacía de verdad.
+                        st.warning(
+                            "⚠️ La sala existe pero **no se pudo leer su contenido** "
+                            "(permisos, o el Drive a medio montar). El número de "
+                            "documentos no se muestra porque no se sabe."
+                        )
+                    else:
+                        st.write(
+                            f"📄 **{_estado_sl.n_documentos}** documento(s) en la sala."
+                        )
                     _art_sl = _estado_sl.artefactos
                     # Los cuatro artefactos se dicen SIEMPRE, también cuando están: el
                     # defecto que esto cierra (`MEJORAS #221`) era un mensaje de éxito

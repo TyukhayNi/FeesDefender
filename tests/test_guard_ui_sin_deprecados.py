@@ -12,11 +12,41 @@ y no la propiedad de la que es ejemplo.
 
 La propiedad que se fija aqui:
 
-    **Lo que `streamlit_app.py` importa de `core/` no puede estar declarado DEPRECADO.**
+    **Ningun `import` ESTATICO Y LITERAL de `streamlit_app.py` nombra un modulo de `core/`
+    cuya docstring inicial se abra con el marcador de deprecado.**
 
 Se escribe asi a proposito, sin nombrar ningun modulo: el censo lo hace el propio guard
-leyendo las docstrings, de forma que deprecar un modulo **basta** para que su uso en la
-UI se ponga rojo, sin tocar este fichero.
+leyendo las docstrings, de forma que deprecar un modulo **basta** para que su uso literal
+en la UI se ponga rojo, sin tocar este fichero.
+
+## Lo que este guard NO acredita, y hay que leerlo antes de confiar en su verde
+
+La primera version prometia «la UI no importa modulos deprecados», a secas. Eso es mas de
+lo que una comprobacion sintactica sobre **un** fichero puede dar, y la R1 adversarial de
+la fila #30 devolvio el inventario (H-04). Se transcribe porque un limite no declarado es
+una confianza que el guard no compra:
+
+- **Import por llamada o con nombre calculado:** `importlib.import_module`, `__import__`,
+  sus alias y wrappers; y cualquier nombre armado por concatenacion, f-string o variable.
+  Son nodos `Call`, no `Import`.
+- **Codigo cargado o evaluado:** `exec`, `eval`, `runpy`, `spec_from_file_location`.
+- **Import transitivo:** la UI importa un modulo vivo que a su vez importa el deprecado.
+  Este guard no recorre el grafo, solo el fichero de la UI.
+- **Reexportaciones y carga diferida:** una fachada o un `__getattr__` de modulo que
+  resuelve el deprecado al pedirle un atributo.
+- **`from core import *`:** no produce ningun candidato; no se expande `__all__`.
+- **Inicializadores de ancestros:** `import core.pkg.x` ejecuta los `__init__.py` del
+  camino, y solo se examina el candidato final.
+- **Otra convencion de deprecacion:** un aviso por decorador, una asignacion a `__doc__`,
+  o el marcador en otro idioma o mas abajo. Solo se reconoce la forma que el repo usa.
+- **Alcanzabilidad:** un import bajo `if False` o `TYPE_CHECKING` cuenta igual. Es
+  deliberado —declarar la dependencia ya es la senyal— pero no equivale a «se ejecuta».
+
+Lo que si acredita: **las formas ordinarias y literales**, incluidas las anidadas a
+cualquier profundidad — que es como estaba escrito el defecto que lo motivo. El revisor
+recorrio ademas un grafo estatico de 71 modulos alcanzables desde `streamlit_app` y no
+encontro camino a `core.sala_lectura`; eso no cierra el inventario de arriba, pero dice que
+hoy no hay una dependencia deprecada viva escondida detras de el.
 
 ## Por que importa que sea la UI y no cualquier llamador
 
@@ -96,11 +126,16 @@ def _fichero_del_modulo(raiz_repo: Path, punteado: str) -> Path | None:
     corto y es el equivocado: arrastraria las dependencias de media UI a un guard.
     """
     partes = punteado.split(".")
-    modulo = raiz_repo.joinpath(*partes).with_suffix(".py")
-    if modulo.is_file():
-        return modulo
+    # **El paquete gana al fichero homonimo, porque asi lo resuelve Python.** La primera
+    # version miraba el `.py` primero, asi que con `core/pkg.py` vivo y `core/pkg/` deprecado
+    # leia la docstring del que Python NO importa: el guard miraria el modulo equivocado.
+    # Lo midio la R1 adversarial (H-06) contrastando contra `PathFinder.find_spec`. Hoy no
+    # existe ninguna colision asi en `core/`; se arregla igual, que es cuando sale barato.
     paquete = raiz_repo.joinpath(*partes, "__init__.py")
-    return paquete if paquete.is_file() else None
+    if paquete.is_file():
+        return paquete
+    modulo = raiz_repo.joinpath(*partes).with_suffix(".py")
+    return modulo if modulo.is_file() else None
 
 
 def declaracion_de_deprecado(doc: str) -> str | None:
@@ -221,12 +256,16 @@ def test_el_import_dentro_de_una_funcion_tambien_cuenta(tmp_path: Path) -> None:
         repo, modulos_core_importados(repo / "app.py"))
 
 
-def test_un_simbolo_importado_de_un_modulo_vivo_no_rompe_el_resolutor(
-    tmp_path: Path,
-) -> None:
+def test_un_simbolo_importado_no_rompe_el_resolutor(tmp_path: Path) -> None:
     """`from core.probe import COSA` propone `core.probe.COSA`, que no es un modulo.
 
     Tiene que descartarse en silencio y dejar `core.probe` evaluado por su docstring.
+
+    **El nombre decia «de un modulo vivo» y el fixture monta uno deprecado** — lo cazo la
+    R1 adversarial (H-09). El aserto siempre fue el correcto: lo que se prueba es que el
+    candidato-simbolo se descarta **sin** arrastrar consigo al modulo, que si se retiene.
+    Se corrige el nombre, no el aserto: hacerlos coincidir por el otro lado habria sido
+    cambiar la prueba para que encajara con su etiqueta.
     """
     repo = _repo_sintetico(
         tmp_path,
@@ -275,6 +314,31 @@ def test_mencionar_el_marcador_en_la_primera_linea_tampoco_es_declararlo(
         fuente_ui="from core import probe\n",
     )
     assert deprecados_entre(repo, modulos_core_importados(repo / "app.py")) == {}
+
+
+def test_con_paquete_y_fichero_homonimos_gana_el_paquete(tmp_path: Path) -> None:
+    """Como los resuelve Python, no como los encuentra un `is_file()` puesto antes.
+
+    Con `core/pkg.py` y `core/pkg/__init__.py` a la vez, `PathFinder` importa el paquete.
+    El resolutor miraba el fichero primero, asi que con el paquete deprecado y el fichero
+    vivo leia la docstring del modulo que Python **no** importa y daba verde. Lo midio la
+    R1 adversarial (H-06) contrastando contra `importlib.machinery.PathFinder.find_spec`;
+    el remedio lo fija este control, que es el que su mutante `M17` sobrevivio sin tener.
+
+    Hoy no existe una colision asi en `core/`: es la forma valida la que se cubre, no un
+    modulo real actualmente omitido.
+    """
+    (tmp_path / "core" / "pkg").mkdir(parents=True)
+    (tmp_path / "core" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "core" / "pkg.py").write_text('"""Fichero vivo."""\n', encoding="utf-8")
+    (tmp_path / "core" / "pkg" / "__init__.py").write_text(
+        '"""[DEPRECADO 2026-01-01] el paquete, que es el que Python importa."""\n',
+        encoding="utf-8")
+    (tmp_path / "app.py").write_text("from core import pkg\n", encoding="utf-8")
+
+    hallados = deprecados_entre(tmp_path, modulos_core_importados(tmp_path / "app.py"))
+    assert "core.pkg" in hallados, (
+        "se leyo la docstring de `core/pkg.py`, que es el modulo que Python NO importa")
 
 
 def test_un_marcador_en_el_cuerpo_no_declara_el_modulo(tmp_path: Path) -> None:

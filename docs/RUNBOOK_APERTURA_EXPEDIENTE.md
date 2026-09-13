@@ -708,9 +708,18 @@ donde empieza la lectura real; no intercalar análisis a mitad de la mecánica d
 > Lo que **se retiró** es el botón «📚 Sala de lectura» de Streamlit, que llamaba a ese mismo
 > motor: la UI la usan Paola y Ana, que no tocan código y no pueden leer una docstring antes de
 > pulsar. Hoy el expander **solo lee** — dice si la sala está montada, cuántos documentos tiene,
-> cuáles de los cuatro artefactos le faltan, y da el texto para pedir el montaje. Lo fija
-> `tests/test_guard_ui_sin_deprecados.py`, que se pone rojo si la UI vuelve a importar un módulo
-> declarado deprecado — cualquiera, no solo este.
+> cuáles de los cuatro artefactos le faltan, y da el texto para pedir el montaje.
+> `tests/test_guard_ui_sin_deprecados.py` lo sostiene **por un lado concreto**: se pone rojo si la
+> UI vuelve a **importar** un módulo declarado deprecado —cualquiera, no solo este—. Es un guard
+> de imports: no detectaría una escritura añadida a mano al expander, y su inventario de límites
+> está en su propia docstring.
+>
+> **Y un desacuerdo de layout que esto destapó y deja abierto** (R1 adversarial, H-01): la skill
+> pone los **cuatro** artefactos dentro de `Sala lectura/`; el motor deja el `indice_documental.yaml`
+> en `01_Procesado/`. `verificar_apertura.c4` solo miraba el sitio del motor, así que una sala
+> recién montada **por la skill** se declaraba incompleta. Ahora acepta **las dos** ubicaciones y
+> la evidencia dice en cuál apareció (`catalogo_en`). Cuál es la canónica sigue sin decidirse —es
+> la mitad viva de `MEJORAS #221`— y hasta entonces tolerar las dos es lo honesto.
 >
 > **Y una corrección, porque la frase de arriba se citó tres días:** este bloque decía que lo que
 > el motor produce «**no** es la sala plana». Dejó de ser cierto **once minutos** después de
@@ -718,9 +727,12 @@ donde empieza la lectura real; no intercalar análisis a mitad de la mecánica d
 > [#328](https://github.com/TyukhayNi/FeesDefender/pull/328) (`a2e6676`, 22:58:29) aplanó el
 > motor: `_directorio_destino` devuelve hoy el directorio plano, con la subcarpeta del documento
 > compuesto como única excepción — la misma que fija la skill. Lo que de verdad le falta al motor
-> es otra cosa, y está medida: escribe **dos de los cuatro** artefactos (`MEJORAS #221`), sin
-> `_MANIFIESTO.md` —que no lo escribe nadie en todo `core/` ni `scripts/`— y con el
-> `indice_documental.yaml` en `01_Procesado/` en vez de dentro de la sala.
+> es otra cosa, y está medida: de los cuatro artefactos contratados escribe **tres** —los dos
+> índices dentro de la sala y el `indice_documental.yaml` en `01_Procesado/`— y **no escribe el
+> `_MANIFIESTO.md`** (`MEJORAS #221`). Dos matices que conviene no perder, los dos de la R1 de la
+> fila #30: «dos de los cuatro» era el conteo **dentro de la sala**, y decirlo sin esa mitad
+> mezcla dos inventarios (H-07); y del manifiesto lo que no existe es un **generador** —sí hay
+> quien lo **reescribe** si ya está, `scripts/redate_whatsapp_anexos.py` (H-08)—.
 >
 > La versión de la skill **no se transcribe aquí**, y esta vez de verdad: la frase anterior decía
 > «va por la v1.16» y el `SKILL.md` marcaba v1.17 — el defecto que el propio párrafo denunciaba,
