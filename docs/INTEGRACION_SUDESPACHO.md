@@ -2871,11 +2871,26 @@ Pasó el 2026-09-14 — dos `POST` devolvieron `201` con ids 648 y 649 contra la
 escritura, y el `DELETE` fue contra la de lectura, que respondió `200 "Deleted!"` a las dos.
 Ni las creaciones ni los borrados aparecieron en el **log de auditoría** de `tnm`.
 
-**Y el corolario que más cuesta:** hoy **no hay lectura verificable** en ninguna de las dos
-fachadas. `GET /api/element_register/<elemento>/<id>` y el listado devuelven `500` con
-`Warning: Array to string conversion` —también para ids que SÍ existen, y también para el id de
-control que no existe—, así que **no distinguen**. Cuatro instrumentos probados, cuatro inertes.
-El único que funcionó fue la revisión humana en la UI. Ficha: `MEJORAS #258`.
+### 18.1. El `500` de `properties` era la FORMA del parámetro (resuelto el 2026-09-14)
 
-**Regla operativa mientras eso siga así:** no se acredita una escritura al CRM por su `status`.
-Si hay que confirmar que algo se creó, se mira en la UI — y se dice en el acta que esa fue la vía.
+Durante unas horas se creyó que no había lectura verificable: `GET /api/element_register/<elem>/<id>`
+devolvía `500 Warning: Array to string conversion` **también para ids que existen**. La causa no era
+la API:
+
+| Forma del parámetro | Resultado |
+|---|---|
+| `?properties=Referencia_Cliente` (**cadena, comas si son varias**) | **200** — devuelve el registro |
+| `?properties[0]=Referencia_Cliente` (indexado) | `500 Array to string conversion` |
+| sin `properties` | `500 Undefined array key` |
+
+**Los corchetes indexados son la convención del endpoint PLURAL** (`/api/element_registries/<elem>`,
+el de listados, como en `core/procurador_intake.py:362`). El **singular** quiere la cadena. Mezclarlas
+es el error, y el mensaje `Array to string conversion` lo dice literalmente.
+
+**Con la forma correcta, el instrumento distingue** (medido con control positivo y negativo):
+un id que existe → `200`; uno que no → `500`. Eso basta para acreditar por lectura.
+
+**Regla operativa, que no cambia:** no se acredita una escritura al CRM por su `status`. Se relee
+con `?properties=…` y se comprueba el `200`. Medido así el 2026-09-14: dos altas con la **misma**
+`Referencia_Cliente` produjeron dos expedientes que **coexisten** —verificado por lectura, no por el
+`201`—, y su borrado también se verificó por lectura.

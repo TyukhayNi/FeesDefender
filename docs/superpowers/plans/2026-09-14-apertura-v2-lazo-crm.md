@@ -1,6 +1,6 @@
 ---
 tipo: plan
-estado: parado
+estado: vigente
 creado: 2026-09-14
 rev: "2"
 spec: docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md §§5, 5.1, 5.2, 21.3
@@ -8,57 +8,17 @@ spec: docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.m
 
 # V2 — el lazo del CRM dentro de la secuencia (P1, primera mitad) — rev. 2
 
-> ## ⛔ PARADO el 2026-09-14, por decisión de Nikolai — NO implementar
+> ## ✅ DESBLOQUEADO el 2026-09-14 — se puede implementar
 >
-> **Motivo: no hay lectura verificable del CRM** (`MEJORAS #258`). Cuatro vías de lectura
-> —dos GET, un listado y la UI por `find`— devolvieron 500 o resultaron inertes, **cada una
-> con su control positivo fallando**. Contra este CRM hoy solo tenemos `status`, no resultado.
+> Estuvo **parado unas horas** por `MEJORAS #258` («no hay lectura verificable del CRM»). Resultó
+> que sí la hay: el endpoint singular quiere `?properties=<cadena>` y yo pasaba `properties[0]=…`,
+> que es la convención del **plural**. Con la forma correcta el instrumento distingue —`200` para
+> un id que existe, `500` para uno que no—, y con él se verificó por lectura tanto un alta como su
+> borrado. Detalle: `INTEGRACION_SUDESPACHO.md` §18.1.
 >
-> Eso tumba la prueba de aceptación de la Task 6: «releer el expediente y comprobar por
-> resultado» **no es ejecutable**. Cablear `crm_alta` y `actuacion` dentro de la secuencia
-> significaría escribir a ciegas y aceptar la pieza con un `201` — que es exactamente lo que
-> P6 demostró que no basta (tres defectos reales bajo 5.612 tests verdes y 39 mutantes muertos).
->
-> **Lo descubrió una comprobación manual de Nikolai en la UI**, no ninguno de mis instrumentos.
->
-> **Se reanuda cuando `#258` esté cerrada.** El resto del plan (rev. 2, con los 8 hallazgos de
-> la R1 remediados) sigue siendo válido y no hay que rehacerlo. Ver también `MEJORAS #259` y
-> `#260`, que salieron de esta misma medición.
-
-> **Para trabajadores agénticos:** SUB-SKILL REQUERIDA: usar `superpowers:subagent-driven-development`
-> o `superpowers:executing-plans` para ejecutar este plan tarea a tarea. Los pasos usan casillas
-> (`- [ ]`) para el seguimiento.
-
-**Goal:** que el modo secuenciado pueda dar de alta el expediente en el CRM, registrar la actuación
-de apertura y verificar el resultado, sin escribir nada que el operador no haya autorizado y sin
-duplicar nada al relanzar.
-
-**Architecture:** tres `Etapa` nuevas en `scripts/abrir_caso.py` sobre el `secuenciar` que ya
-existe (**no se toca**). Cada efecto remoto se pide a la función que ya lo implementa; lo que este
-plan construye es el **contrato de resultado** que hoy falta: `_alta_crm` devuelve `None` en cinco
-situaciones distintas y `alta_actuacion` devuelve un `Recibo` que nadie conserva.
-
-**Tech Stack:** Python 3, `typer`, `pytest`. Sin dependencias nuevas.
-
----
-
-## 0. Qué cambia respecto a la rev. 1, y por qué
-
-La rev. 1 recibió una **R1 adversarial con veredicto NO-SHIP: 8 hallazgos, 8 confirmados, 0
-refutados** ([acta](2026-09-14-apertura-v2-lazo-crm-r1-adversarial-review.md)). Tres fronteras, y
-esta revisión las cierra en el diseño, no caso a caso:
-
-| Frontera | Qué pasaba | Qué cambia en rev. 2 |
-|---|---|---|
-| **Escribí contra firmas no verificadas** (H-02, H-03, H-04, H-06) | tres llamadas no compilaban, y proponía crear un agregador `verificar()` **que ya existía** | Task 0: **toda firma se verifica con `inspect.signature` antes de escribir su tarea**, y el plan cita la firma real |
-| **Exclusión nominal ≠ exclusión material** (H-05, H-07) | decía «la §8.1 no entra» y el comando invocado **crea y actualiza contrarios**; decía que sala y viabilidad no entraban, y su fallo dejaba V2 `bloqueado` | **`crm_ficha` sale del alcance** (decisión de Nikolai, 2026-09-14), y el éxito de V2 se separa del diagnóstico global |
-| **Capturar una excepción no es recuperación** (H-01, H-08) | el default de `--crm` es `api` y la secuencia no recibía ese dato; traducir excepción a `fallo` no es la intención durable del §5.2 | autorización explícita y propagada; recibo persistido; y la deuda del §5.2 en el alta **declarada**, no fingida |
-
-**Alcance de esta entrega: `crm_alta`, `actuacion`, `verificar`.** `crm_ficha` **no entra**: llevar
-el YAML al CRM ejecuta los efectos materiales de la §8.1 —vincular cliente propio, crear o
-actualizar contrarios, vincular colaboradores, escribir Notas— y el spec los sitúa **después de la
-sala de lectura y la viabilidad**, que son V3. El §21.3 permite a V2 construir DTOs y adaptadores;
-no ejecutar esa fase.
+> **Lo que la parada deja, y conviene conservar:** la Task 6 no puede aceptar la pieza con un
+> `201`. Cada corrida contra el 636 **relee** con `?properties=…` y comprueba el `200`. Eso es
+> ahora posible y es obligatorio.
 
 ## Global Constraints
 

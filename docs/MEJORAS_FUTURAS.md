@@ -11888,7 +11888,19 @@ leído (documento, correo entrante, ficha), y el envío va detrás de una confir
 no de un valor por defecto.
 
 
-## 258. No hay lectura verificable del CRM — y eso BLOQUEA cualquier escritura automatizada
+## 258. No hay lectura verificable del CRM — ✅ RESUELTA el 2026-09-14, era la FORMA del parámetro
+
+> **✅ CERRADA horas después de abrirse.** No era que faltara lectura verificable: era que yo pasaba
+> `properties[0]=…` (la convención del endpoint **plural**) a un endpoint **singular** que quiere
+> `properties=<cadena>`. Con la forma correcta, `GET /api/element_register/<elem>/<id>` devuelve
+> **200** para un id que existe y **500** para uno que no — distingue, que es lo único que se le
+> pedía. Detalle y tabla: `INTEGRACION_SUDESPACHO.md` §18.1. **Desbloquea V2** (`PLAN.md` fila #34).
+>
+> **Lo que deja como lección** no es el parámetro: es que **declaré «no hay» cuando lo cierto era
+> «no sé»** — cuatro instrumentos inertes seguidos y ninguno me hizo sospechar de la forma de mi
+> propia llamada, que es lo primero que había que mirar. El mensaje del servidor lo decía literal:
+> *Array to string conversion*.
+
 
 **Qué pasa.** Contra este CRM solo tenemos **status**, no resultado. Medido el 2026-09-14, con
 control positivo en cada intento:
@@ -11945,10 +11957,14 @@ duplicados**. Si REST hace commit y se pierde la respuesta, el fallback crea un 
 expediente. La protección que tenemos (`core/alta_crm_politica`) corre **antes** de la llamada,
 así que no cubre ese hueco.
 
-**Y el servidor no lo impide.** Medido el 2026-09-14: dos POST con la misma `Referencia_Cliente`
-devolvieron **201 con ids distintos** — no hay unicidad del lado servidor, coherente con que el
-atlas declare ese campo como `TextCorto` y que la clave real sea `Numero_Expediente`,
-autoincremental.
+**Y el servidor no lo impide — VERIFICADO POR LECTURA, no por el `201`.** Medido el 2026-09-14:
+dos altas con la misma `Referencia_Cliente` produjeron los ids **650 y 651**, y **ambos se releyeron
+con `?properties=…` devolviendo 200**: coexisten. Después se borraron y el borrado también se
+verificó por lectura. No hay unicidad del lado servidor, coherente con que el atlas declare ese
+campo como `TextCorto` y que la clave real sea `Numero_Expediente`, autoincremental.
+
+*(La primera medición de este hecho se apoyaba solo en dos `201` y quedó en el aire cuando esos ids
+no aparecieron en la auditoría; se rehízo entera con lectura verificable.)*
 
 **La frontera, que es más ancha que este caso.** No es «existe un fallback»: es **un reintento que
 no verifica si su primer intento ya surtió efecto**, y reaparecerá en cualquier otra escritura
@@ -11956,5 +11972,5 @@ remota que reintentemos. El remedio barato es reconsultar antes del segundo POST
 fallback es la única opción irreversible y hoy no se puede justificar con datos (`MEJORAS #259`).
 
 **Disparador.** Se cierra junto con `#259`, o antes si una apertura produce un expediente
-duplicado. **Depende de `#258`:** sin lectura verificable no se puede acreditar que el remedio
-funcione.
+duplicado. **Ya no depende de `#258`**, que se resolvió el mismo día: el remedio se puede acreditar
+releyendo con `?properties=…`.
