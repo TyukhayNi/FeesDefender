@@ -12055,3 +12055,62 @@ expediente.
 **Dónde debería vivir, para cuando se decida:** junto al informe, dentro del expediente, y
 declarado como protocolo si no debe inventariarse como documento del cliente — la misma frontera
 que `MEJORAS #261` plantea para el recibo de la actuación.
+
+## 263. El clasificador por LLM acierta el 13% — y se equivoca CONVENCIDO
+
+**Qué se midió.** Antes de decidir si la corrida de apertura puede clasificar sola, se pasó el
+clasificador por LLM (`core/sala_lectura.make_llm_cloud_chat_fn`, Mistral Small 3.2 vía Scaleway)
+sobre documentos ya catalogados y se comparó contra el `indice_documental.yaml`, que es **verdad
+conocida**: lo revisó el letrado.
+
+**El resultado, el 2026-09-14, sobre 75 documentos de 6 expedientes distintos:**
+
+| | |
+|---|---|
+| Acierto global | **10 de 75 — 13 %** |
+| Clasificados con confianza ≥ 0,8 | 62 |
+| De ésos, aciertan | 10 |
+| **MAL con confianza alta** | **52** |
+| Tiempo por documento | 0,71 s |
+
+**Lo que hace grave el dato no es el 13 %: es que se equivoca convencido.** De 62 documentos en
+los que el modelo dijo estar seguro, **52 estaban mal**. **Un umbral de confianza no protege de
+esto**, porque el número con el que filtrarías es justo el que miente — y esa era la salvaguarda
+que se iba a usar para decidir qué entra sin revisión humana.
+
+**Y los errores son sistemáticos, no ruido:** manda a `03. OFERTAS` lo que son
+`07. RECLAMACIONES`, y a `04. ARRAS` lo que es `01. ACTIVACIÓN`. Confunde categorías que en el
+trabajo del despacho significan cosas distintas: una reclamación no es una oferta.
+
+**Refuta una hipótesis explícita, y conviene que quede escrito.** Se había razonado —y
+recomendado— que un lector del **contenido** superaría el techo de las reglas, porque `MEJORAS
+#232` (P4) midió que el residuo no lo causa la regla sino que **el nombre no lleva la señal**. La
+inferencia era razonable y **es falsa**: leyendo el texto completo, este modelo acierta menos
+(13 %) que las reglas (~43 %).
+
+**Lo que se descartó antes de dar la cifra por buena:** que el defecto fuera del arnés. El prompt
+de sistema **sí incluye la taxonomía completa** (`TAXONOMIA_EV`) y el modelo responde con
+categorías de esa lista — no está adivinando a ciegas. Y la muestra se repartió **por expediente**
+(15 por caso): los primeros 60 documentos salían todos del mismo, y eso no es una muestra, es un
+expediente. Con el reparto, el acierto bajó del 33 % al 13 %.
+
+**Qué queda abierto, y son dos preguntas distintas:**
+
+1. **¿Es el modelo?** Mistral Small es pequeño. Probar uno mayor cuesta una tarde.
+2. **¿Es el prompt?** No explica qué distingue una reclamación de una oferta **en la taxonomía de
+   E&V**; le da la lista de nombres y poco más. Puede que el fallo sea de instrucción, no de
+   capacidad.
+
+Se prueban **con el mismo arnés, cambiando una cosa cada vez**.
+
+**El arnés queda en el repo:** `scripts/medir_clasificador_llm.py`. No es un test y no corre en la
+suite —sale a la red de pago y lee de `CASOS_ROOT`—; se invoca a mano y **solo lee**. Cualquier
+cambio futuro se compara contra el 13 % en menos de un minuto, en vez de discutirse.
+
+```
+python -m scripts.medir_clasificador_llm --por-caso 15 --limite 75
+```
+
+**Disparador.** Que se quiera volver a plantear la clasificación automática dentro de la corrida.
+**Mientras tanto la decisión es no automatizarla**: la corrida deja el residuo marcado como
+pendiente y la lectura la sigue haciendo una sesión, que es lo que hace hoy y funciona.
