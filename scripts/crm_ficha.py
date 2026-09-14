@@ -94,8 +94,9 @@ def main(
         raise typer.Exit(code=1)
 
     plan = [f"cliente propio {ficha.cliente_propio} (id {cliente_propio_id}) → exp {exp_id}"]
-    if ficha.contrario:
-        plan.append(f"contrario: {ficha.contrario.apellido1} (dedup NIF)")
+    # TODOS los contrarios, no solo el primero ([APER-63]): una reclamación formulada por
+    # dos firmantes —un matrimonio— exigía una segunda llamada a mano.
+    plan += [f"contrario: {c.apellido1 or c.nombre} (dedup NIF)" for c in ficha.contrarios]
     plan += [f"colaborador: {c.email or c.nombre} (dedup email)" for c in ficha.colaboradores]
     if ficha.notas_html:
         plan.append("Notas (update_expediente)")
@@ -153,8 +154,8 @@ def main(
         link_ev_mmc(exp_id, cliente_propio_id=cliente_propio_id)
         typer.echo(f"OK cliente propio {ficha.cliente_propio} (id {cliente_propio_id}) vinculado (exp {exp_id})")
 
-        if ficha.contrario:
-            cid, creado = ensure_contrario_vinculado(exp_id, ficha.contrario)
+        for contrario in ficha.contrarios:
+            cid, creado = ensure_contrario_vinculado(exp_id, contrario)
             esperado["clientes_contrarios"].append(str(cid))
             typer.echo(f"OK contrario id={cid} ({'creado' if creado else 'existente'}) vinculado")
         for col in ficha.colaboradores:
