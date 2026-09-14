@@ -819,3 +819,41 @@ revisor independiente y se comprobó contra la fuente.
 **No hay R3.** El presupuesto de dos rondas está agotado y el techo duro exige autorización
 expresa para una tercera. **La remediación de esta R2 no ha pasado por ninguna ronda**, y eso se
 dice aquí y en el PR en lugar de dejarlo implícito.
+
+## 10. La corrida real contra el 636 (2026-09-14) — las tres, verificadas POR LECTURA
+
+Autorizada expresamente por Nikolai. Se acotó a las **etapas nuevas**: arrastrar Drive y OCR no
+acredita nada del lazo del CRM y sí cuesta. **Baseline y verificación por censo de actuaciones
+vistas DESDE el expediente**, que es lo único que prueba el vínculo — nunca por el status.
+
+| Corrida | Resultado | Censo |
+|---|---|---|
+| **1 — `--crm skip`** | `crm_alta` y `actuacion` → `saltada`, «escritura al CRM no autorizada» | **6 = 6: cero escrituras** |
+| **2 — `--crm api`** | `hecha`: actuación **21413**, firma `Nikolai_Tyukhay`, recibo persistido | 6 → **7** |
+| **3 — `--crm api`, relanzada** | `saltada`: «ya hay actuacion verificada (id=21413); no se crea otra» | **7: NO duplicó** |
+
+**La corrida 3 es la que ningún doble acredita**, y es exactamente lo que la R1 predijo que
+fallaría sin recibo durable: el revisor lo reprodujo entonces con ids 900 y 901. Aquí, contra el
+CRM real, no se duplicó.
+
+**Limpieza verificada por lectura:** `DELETE` de la 21413 y censo de vuelta a **6**. El CRM queda
+como estaba.
+
+### Dos cosas que la corrida enseñó y ningún test había dicho
+
+1. **La guarda `DestinoNoAcreditado` del core funciona, y saltó.** El primer intento pasó
+   `W-PRUEBA636` como referencia esperada y el CRM declara `PRUEBA - BORRAR (W-TEST636)`:
+   `alta_actuacion` **se negó a escribir** — «cada elemento numera aparte y este par apunta a otro
+   caso. No se escribe nada». Es la protección que impide colgar una actuación del expediente de
+   otro cliente, y no la había ejercitado ningún test.
+2. **El primer montaje del caso sintético produjo un FALSO VERDE**, y conviene registrarlo: el
+   frontmatter anida todo bajo `meta:`, mi fichero no lo hacía, y las corridas 2 y 3 salieron
+   `saltada` sin ejercitar nada — con lo que la 3 «no duplicaba» por no haber hecho nada. Solo se
+   vio porque el baseline estaba delante. Se añadió un **control positivo** al script: si la
+   corrida 2 no crea nada, **aborta** en vez de declarar que la 3 pasó.
+
+**Y un pendiente que la corrida dejó dicho, no oculto:** el recibo trae
+`motivo: "id_predefinido [sin_filas]…"` — el asunto `SENIOR - APERTURA E ESTUDIO INICIAL CASO` no
+casa exacto con ninguna de las 3 filas que devolvió el filtro, así que **no se hereda el
+`id_predefinido`**. El core prefiere no inventarlo, que es lo correcto; queda como dato para
+cuando se decida si esa variante del asunto debe existir en el CRM.
