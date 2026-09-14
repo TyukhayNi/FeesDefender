@@ -9489,6 +9489,31 @@ que duplicarlo otra vez.
 
 ## 209. Crear actuaciones en el CRM no tiene helper: la receta vive en prosa y se reescribe a mano cada vez
 
+> ✅ **CERRADA el 2026-09-14 (P6).** `core/sudespacho_actuaciones.py` encapsula la receta con
+> **recibo reanudable**, y la frontera que el propio #209 enunciaba —*el contrato del CRM se
+> documenta y no se encapsula*— queda cerrada para esta familia: un módulo por familia de
+> operación, no un helper por caso.
+>
+> **Tres rondas adversariales** (R1 sobre el diseño, R2 con dos revisores en paralelo, R3
+> excepcional sobre la remediación) con **8 + 19 + 9 = 36 hallazgos confirmados y 0 refutados**
+> —los 19 de la R2 son los distintos de sus dos revisores, que devolvieron 11 y 13 con cinco
+> coincidentes, agrupados en 13 categorías para remediar por frontera—. Adjudicación
+> en `docs/superpowers/specs/2026-09-14-p6-ficha-crm-y-actuaciones-design.md` §§6-8; actas
+> literales con su digest en los cuatro `…-r{1,2,2b,3}-adversarial-review.md`.
+>
+> **Y lo que de verdad cerró la pieza no fue una cuarta ronda, sino CORRERLA.** Con 5.612 tests
+> verdes y 39 mutantes muertos, una sola ejecución contra el CRM real encontró tres defectos que
+> ningún doble puede ver —`Prioridad: "Normal"` inexistente, `fecha_alta` vacía y `precio_hora`
+> a `0,00`—, porque **un doble acredita qué decide el código ante una respuesta, nunca que el
+> payload sea aceptable**. Eso vale como método, no solo como anécdota: para una pieza que
+> escribe en el CRM, la prueba de aceptación es la ejecución. Detalle en el §9 del spec y en
+> `INTEGRACION_SUDESPACHO.md` §§15.8-15.12.
+>
+> **Lo que NO cubre y queda fichado:** colgar un seguimiento de su actuación (el POST de la
+> relación devuelve 201 sin efecto), elegir los calendarios del CRM a los que se asocia un evento
+> —viven en otro host y hace falta un HAR—, y los dos flujos de «crear documento por plantilla»
+> y «enviar por email», que son §10.11 y §10.9 y **no** son campos de la actuación.
+
 **Qué pasa.** El 2026-09-10 se creó a mano, con `urllib` en un heredoc, una actuación
 `TA - CONTROL DICTADO SENTENCIA` colgada del expediente judicial de `W-02VEKE`, y se corrigió su
 cuantía. Funcionó, y quedó documentado en `INTEGRACION_SUDESPACHO.md §15.6`. Pero **no hay ni una

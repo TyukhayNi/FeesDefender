@@ -1021,6 +1021,33 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
      escribir, porque cada elemento numera aparte y verificar la llegada no verifica la intención.
    - La verificación es la del §15.6 paso 6: releer **desde el lado del expediente**. El `GET` por
      id de la actuación devuelve 404 aunque exista.
+   - **CORREGIDO EL 2026-09-14 al correrlo de verdad, y lo de arriba era falso en dos puntos.**
+     Tres rondas adversariales y 5.600 tests verdes no lo vieron; una ejecución contra el CRM sí,
+     porque **un doble acepta cualquier payload**: acredita qué decide el código ante una
+     respuesta, nunca que el payload sea aceptable.
+     - **`Prioridad: "Normal"` no existe** y tumba el POST con `HTTP 404 — The value: <Normal>
+       … is incorrect`. El enum es `Alta · Media · Baja`, y estaba escrito en §15.7 mientras el
+       código lo contradecía.
+     - **La actuación nacía sin `fecha_alta` y con `precio_hora` a `0,00`**, teniendo
+       `SENIOR - …` en el asunto. Parece completa en el listado y **factura cero**. Ahora el
+       prefijo y el precio salen de la **misma fila** de la tabla de firmantes, y no pueden
+       volver a decir cosas distintas.
+     - **Faltaba `tipo_facturacion`** («Facturar por duración» / «por precio»): sin él el CRM no
+       sabe por qué eje cobrar y la tarifa puesta **no cobra**. Las tres cosas van juntas o no va
+       ninguna.
+     - **Paso 7 nuevo:** si la actuación vence, se **agenda** el evento (`calendario`,
+       `Tipo: Vencimiento`). `fecha_vencimiento` es un campo que nadie mira; lo que avisa es el
+       evento. Con recordatorios e invitados, que van **serializados en PHP**.
+     - **`cerrar_actuacion`** pasa de `Planificado` a `Hecho` con su `fecha_fin`.
+   - **Lo que sigue SIN resolverse, y conviene no darlo por hecho:**
+     - **La tarifa efectiva sigue sin acreditarse por el `Subject`.** El prefijo dice qué tarifa
+       *debería* aplicarse y `precio_hora` la escribe, pero nada comprueba que el CRM facture eso:
+       el botón «aplicar tarifa usuario» del §15.4 sigue sin vía API.
+     - **Los eventos creados por API NO se sincronizan a ningún calendario** (§15.12): existen y
+       se ven, pero `id_gcalendar` queda vacío. Si el aviso lo dispara la sincronización, **no
+       salta** — y un vencimiento que se ve y no avisa es peor que no tenerlo.
+     - **Un seguimiento («Comentario») se crea y no se sabe colgar** de su actuación: el POST de
+       la relación devuelve 201 sin efecto (§15.10). El código levanta en vez de darlo por bueno.
 7. **`[APER-50]` / W-02ZIIF — Juzgado (solo judicial):** NO es una relación M2M simple ni
    una propiedad plana del expediente — es una relación con atributos propios vía el
    elemento intermedio `autos` (secuencia de 4 llamadas REST confirmada; detalle completo
@@ -1090,8 +1117,14 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
     devolver dos fichas y la guarda de ambigüedad se evaluaba antes del cruce con el NIF—, así
     que habría funcionado la primera corrida y bloqueado la siguiente para siempre. La frontera:
     un criterio fuerte unívoco no puede quedar tapado por la multiplicidad de uno débil.
-  - **Y recuerda `[APER-63]`:** `crm_ficha` lee **un** contrario del YAML. En una reclamación con
-    dos firmantes solidarios, el segundo es siempre trabajo a mano. `MEJORAS #239`.
+  - **Y `[APER-63]` ya NO obliga a trabajo a mano.** Esta línea decía que `crm_ficha` lee un
+    solo contrario y que el segundo firmante solidario se hace siempre a mano; dejó de ser
+    cierto el mismo día, en esta misma tanda. Ver su bloque más abajo.
+  - **Lo que sigue SIN resolverse.** La parte de un **nombre opaco no se infiere**: si el
+    expediente no aporta documento ni correo utilizables, `resolver_parte` no adivina quién es
+    a partir del nombre, y **para**. Es deliberado —fallar cerrado cuesta una intervención
+    manual; fundir dos personas corrompe la ficha de un cliente y se descubre tarde—, pero
+    conviene saberlo antes de esperar que la apertura lo cierre sola.
 - **`[APER-15]` La doc puede ir por detrás del código** → verificar contra
   `core/sudespacho_relations.py` (`ensure_*`, `link_*`); **grep del código > doc**.
 - **`[APER-16]` / `[APER-33]` Estado de PR/merge por `gh`, no por la rama local.**
