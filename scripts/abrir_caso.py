@@ -25,6 +25,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import os
+from collections import namedtuple
 import stat
 import zipfile
 from pathlib import Path
@@ -58,6 +59,14 @@ ETAPAS_V1 = ("drive", "crm", "sala_maquina")
 #: llevar el YAML al CRM ejecuta los efectos materiales de la §8.1, que el spec situa
 #: DESPUES de la sala de lectura y la viabilidad (R1/H-05).
 ETAPAS_V2 = ETAPAS_V1 + ("crm_alta", "actuacion", "verificar")
+
+#: Lo que `_alta_crm` hizo de verdad. Devolvia `None` en SEIS situaciones distintas, y
+#: quien lo consumiera no podia distinguir «ya estaba vinculado» de «el POST dio timeout»
+#: (R1/H-02). El modo `libre` ignora el retorno, asi que anadirlo no le cambia nada.
+ResultadoAlta = namedtuple("ResultadoAlta", "estado exp_id detalle")
+#: Vocabulario cerrado de `ResultadoAlta.estado`.
+ESTADOS_ALTA = ("creado", "ya_vinculado", "declinado", "omitido",
+                "fallo_post", "fallo_registro")
 #: Vocabulario cerrado de `--crm`. Antes vivia implicito en el help del flag.
 _CRM_MODOS = ("api", "skip")
 
@@ -1023,12 +1032,12 @@ def _alta_crm(
     crm_mode: str,
     yes: bool,
     force: bool = False,
-) -> None:
+) -> ResultadoAlta:
     """5.9 alta CRM con gate + idempotencia (§8: no re-dar de alta si ya hay un
     extrajudicial registrado para este caso) + tolerancia a caída (§9)."""
     if crm_mode != "api":
         typer.echo("CRM omitido (--crm skip): referencia pendiente + TODO")
-        return
+        return ResultadoAlta("omitido", None, "--crm skip")
 
     expedientes = case_manager.get_case_status(ident.case_id)["expedientes"]
     # La MISMA regla que el formulario (R1/H-08): cualquier expediente ya vinculado —de la
@@ -1041,7 +1050,8 @@ def _alta_crm(
             f"CRM ya registrado (element={ya.get('element')}, id={ya.get('id')}), "
             "no se re-da de alta"
         )
-        return
+        return ResultadoAlta("ya_vinculado", str(ya.get("id") or ""),
+                             f"element={ya.get('element')}")
 
     # El chequeo de arriba mira el `_caso.md` LOCAL. Si ese registro se perdio —o el
     # caso se abrio en otra maquina— el CRM puede tener ya el expediente y esto crearia
@@ -1105,7 +1115,7 @@ def _alta_crm(
                f"posicion={payload.posicion} tags={payload.tags} cuantia={payload.cuantia}")
     if not (yes or typer.confirm("¿Dar de alta en el CRM?")):
         typer.echo("CRM omitido (declinado por el usuario): referencia pendiente + TODO")
-        return
+        return ResultadoAlta("declinado", None, "el operador declino el gate")
 
     # CUATRO desenlaces, no uno. Hasta el 2026-09-11 un solo `except` cubria el alta Y el
     # registro local, asi que un fallo del segundo imprimia «Alta CRM falló» con el alta
@@ -1119,7 +1129,7 @@ def _alta_crm(
             f"[AVISO] Alta CRM falló ({exc!r}): Drive+intake ya completados, "
             "referencia_crm queda pendiente + TODO."
         )
-        return
+        return ResultadoAlta("fallo_post", None, repr(exc))
 
     try:
         case_manager.register_expediente(ident.case_id, exp_id, _ELEMENT_EXTRAJUDICIAL)
@@ -1130,13 +1140,13 @@ def _alta_crm(
             f"expediente. Vincula el existente con `register_expediente({ident.case_id!r}, "
             f"{exp_id!r}, {_ELEMENT_EXTRAJUDICIAL!r})`."
         )
-        return
+        return ResultadoAlta("fallo_registro", exp_id, repr(exc))
     typer.echo(f"OK CRM id={exp_id}")
 
     # La cuantia se conoce al leer el encargo, pero el alta va al final: por eso llega aqui
     # y no a `ensure_case`. Solo se escribe si el flag vino.
     if cuantia is None:
-        return
+        return ResultadoAlta("creado", exp_id, "")
     try:
         informe = case_manager.update_meta(ident.case_id, cuantia=cuantia)
     except Exception as exc:
@@ -1146,7 +1156,7 @@ def _alta_crm(
             "repone —entra por la guarda de «CRM ya registrado» y retorna antes—: ponla a "
             "mano o con `case_manager.update_meta`."
         )
-        return
+        return ResultadoAlta("creado", exp_id, "cuantia no escrita en _caso.md")
     # TRES estados, no dos (R2/H2-04): `!= "reescrito"` agrupaba «conservado» con «sin
     # tocar», y en el segundo NO se escribió ninguna clave — el mensaje decía «cuantía
     # escrita» seguido del motivo, que dice literalmente «no se escribe nada». Un aviso que
@@ -1158,6 +1168,9 @@ def _alta_crm(
         typer.echo(f"[AVISO] la cuantía NO se ha escrito en `_caso.md`: "
                    f"{informe['motivo']}. La cuantía local sigue pendiente y no coincidirá "
                    f"con la del CRM; repásala a mano.")
+    # El alta se hizo y se registró: los avisos de arriba son sobre la cuantía local, que
+    # no cambia el desenlace del CRM.
+    return ResultadoAlta("creado", exp_id, informe["cuerpo"])
 
 
 def _autoderivar_drive_ev(
