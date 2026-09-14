@@ -766,7 +766,8 @@ git commit -m "El arnés de P6: cada mutante apunta a su test"
   `test_sudespacho_actuaciones_r3.py` y 11 de `test_resolver_parte_r3.py`.
   Esperado: dos semillas (777, 31337) verdes. Explicar la variación del conteo.
 - [x] **Paso 5: R2 adversarial sobre el diff**, adjudicar, acta hermana `…-r2-…`.
-- [ ] **Paso 6:** PR. **No mergear**: lo decide Nikolai.
+- [x] **Paso 6:** PR [#371](https://github.com/TyukhayNi/FeesDefender/pull/371), abierto el 2026-09-14 con `leak-scan` verde y `MERGEABLE`.
+  **No mergeado: lo decide Nikolai.**
 
 ---
 
