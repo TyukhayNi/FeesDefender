@@ -1008,6 +1008,17 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
      resultado correcto, no un fallo de la consulta.
    - `precio_hora` **sí** se escribe por API (lo que no se puede automatizar es el botón «aplicar
      tarifa usuario» de §15.4), y `tipo_actuacion` va vacío en todas las reales.
+   - **ENCAPSULADO el 2026-09-14 (P6): `core/sudespacho_actuaciones.py`** (`MEJORAS #209`).
+     `asunto_canonico(base, firmante=…)` **exige el firmante y no tiene defecto** —el prefijo es
+     la tarifa—, y un asunto que ya trae el prefijo de otro **levanta** en vez de corregirse en
+     silencio: puede ser el firmante lo que esté mal. El firmante es el campo `firmante:` del
+     `_ficha_crm.yaml`, **entrada humana**: quien opera no es quien firma. `aprender_id_predefinido`
+     tiene **cuatro** salidas (aprendido / no aplica / cero filas / no pude mirar), y
+     `alta_actuacion` devuelve un **recibo reanudable**, porque una verificación negativa no es
+     ausencia de escritura: si el vínculo falla, la actuación existe y repetir el alta crearía
+     otra dejando la primera huérfana.
+     **Y el paso 3 no es opcional:** `resolver_destino` contrasta la referencia **antes** de
+     escribir, porque cada elemento numera aparte y verificar la llegada no verifica la intención.
    - La verificación es la del §15.6 paso 6: releer **desde el lado del expediente**. El `GET` por
      id de la actuación devuelve 404 aunque exista.
 7. **`[APER-50]` / W-02ZIIF — Juzgado (solo judicial):** NO es una relación M2M simple ni
@@ -1047,6 +1058,12 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
     firmantes necesita una segunda llamada a mano,
     `ensure_contrario_vinculado(exp_id, NuevoClienteContrario(...))`, y comprobarla con
     `get_relaciones("extrajudiciales", exp_id)` — que devuelve la lista acumulada.
+  - **RESUELTO el 2026-09-14 (P6):** `contrario:` admite un mapping **o una lista**, y
+    `scripts/crm_ficha.py` los vincula **todos** (leer N y vincular 1 habría sido una pieza que
+    nadie encadena). Ausente, `null` y `[]` significan lo mismo; un elemento que no es mapping
+    **aborta con su índice y no escribe nada** — filtrarlo, como hace `colaboradores`, lo
+    convertiría en «cero contrarios» en silencio, y **un elemento inválido no es una parte
+    ausente**.
   - **Contrario extranjero: el móvil no se puede guardar.** `movil` solo acepta 9 dígitos
     españoles (`[APER-14]`); un `+40 …` rumano no entra. Déjalo **vacío y dilo** en el
     comentario del YAML: es un dato que el CRM no puede almacenar, no un dato que falte.
@@ -1062,6 +1079,17 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
     devuelve `(id, created)`; si `created` es `False` y el id es el del otro deudor, se ha fundido.
   - **Salida practicada:** `create_cliente_contrario(...)` + `link_contrario(exp_id, cid)`, y
     comprobar con `get_relaciones("extrajudiciales", exp_id)`, que devuelve la lista acumulada.
+  - **RESUELTO en el código el 2026-09-14 (P6).** `resolver_parte` ya no resuelve por email
+    cuando hay un NIF que lo desmiente: **un email identifica un buzón, no a una persona.** Con
+    NIF utilizable que no casa ninguna ficha, cada ficha del buzón se contrasta por su
+    documento y **crear exige que TODAS queden descartadas**; una ficha sin documento
+    comparable **para**, que es la política de fallar cerrado. La comparación es canónica en
+    los dos lados, porque compararla como texto duplicaría una ficha legítima.
+  - **Lo que la ronda destapó y conviene no repetir:** el primer remedio **creaba el estado que
+    el propio código bloqueaba después** —al dar de alta a la segunda persona, el buzón pasa a
+    devolver dos fichas y la guarda de ambigüedad se evaluaba antes del cruce con el NIF—, así
+    que habría funcionado la primera corrida y bloqueado la siguiente para siempre. La frontera:
+    un criterio fuerte unívoco no puede quedar tapado por la multiplicidad de uno débil.
   - **Y recuerda `[APER-63]`:** `crm_ficha` lee **un** contrario del YAML. En una reclamación con
     dos firmantes solidarios, el segundo es siempre trabajo a mano. `MEJORAS #239`.
 - **`[APER-15]` La doc puede ir por detrás del código** → verificar contra
