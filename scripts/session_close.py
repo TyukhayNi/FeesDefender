@@ -431,6 +431,89 @@ def _avisar_specs_sin_traza() -> None:
     print("(Un handoff que lo mencione NO cuenta: no es fuente de verdad.)")
 
 
+# --- Aperturas con defectos anotados y sin fichar (P8 (a)) --------------------
+#: Estados que un fichero de apertura puede declarar. Cualquier otro es ILEGIBLE,
+#: nunca "fichado por defecto": la direccion del fallo importa, y ante la duda el
+#: aviso habla.
+_ESTADOS_APERTURA = {"pendiente", "fichado", "descartado"}
+
+
+def raiz_aperturas_por_defecto() -> Path:
+    """El hogar de produccion de los ficheros de apertura. Para los LLAMADORES.
+
+    `_leer_aperturas` no se cae aqui sola, y eso es deliberado: la barrera de test
+    cubre rclone y `subprocess`, no las escrituras al perfil del usuario, asi que
+    un test que se olvidara de redirigir la raiz escribiria en el `%LOCALAPPDATA%`
+    real. Misma doctrina que `core/casos/workspace_registry.raiz_por_defecto()`.
+    """
+    override = os.getenv("FEESDEFENDER_APERTURAS")
+    if override:
+        return Path(override)
+    base = os.getenv("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    return Path(base) / "FeesDefender" / "aperturas"
+
+
+def _frontmatter_apertura(texto: str) -> tuple[dict[str, str] | None, str]:
+    """Parsea el frontmatter plano de un fichero de apertura.
+
+    Devuelve `(campos, "")` o `(None, motivo)`. **No usa `yaml`**, y no es pereza:
+    `safe_load` convierte `fecha: 2026-09-14` en `datetime.date` —no en el `str`
+    que el resto compara— y el `import yaml` revienta al invocar este script desde
+    un worktree (ver `tests/test_session_close_no_pude_medir.py`), que convertiria
+    un aviso en una caida del cierre entero.
+    """
+    lineas = texto.splitlines()
+    if not lineas or lineas[0].strip() != "---":
+        return None, "sin frontmatter"
+    campos: dict[str, str] = {}
+    for ln in lineas[1:]:
+        if ln.strip() == "---":
+            return campos, ""
+        if not ln.strip():
+            continue
+        clave, sep, valor = ln.partition(":")
+        if sep:
+            campos[clave.strip().lower()] = valor.strip()
+    return None, "frontmatter sin cierre"
+
+
+def _leer_aperturas(raiz: Path) -> tuple[list[tuple[str, str, str]], list[tuple[str, str]]]:
+    """Lee los ficheros de apertura de `raiz`. **La raiz se inyecta: sin default.**
+
+    Devuelve `(pendientes, ilegibles)`. Un fichero que no se puede interpretar NO
+    se cuenta como pendiente ni se traga: se declara aparte, que es la leccion de
+    la pieza A de la fila #27. Aqui es exacta — un frontmatter tecleado mal es
+    justo el caso que, tragado, deja el defecto sin fichar creyendo que lo esta.
+    """
+    pendientes: list[tuple[str, str, str]] = []
+    ilegibles: list[tuple[str, str]] = []
+    if not raiz.is_dir():
+        return pendientes, ilegibles
+    for fichero in sorted(raiz.glob("*.md")):
+        nombre = fichero.name
+        try:
+            texto = fichero.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            ilegibles.append((nombre, f"no se pudo leer: {e}"))
+            continue
+        campos, motivo = _frontmatter_apertura(texto)
+        if campos is None:
+            ilegibles.append((nombre, motivo))
+            continue
+        estado = campos.get("estado", "").strip().lower()
+        if not estado:
+            ilegibles.append((nombre, "falta estado:"))
+        elif estado not in _ESTADOS_APERTURA:
+            ilegibles.append((nombre, f"estado desconocido: {estado}"))
+        elif not campos.get("caso"):
+            ilegibles.append((nombre, "falta caso:"))
+        elif not campos.get("fecha"):
+            ilegibles.append((nombre, "falta fecha:"))
+        elif estado == "pendiente":
+            pendientes.append((nombre, campos["caso"], campos["fecha"]))
+    return pendientes, ilegibles
+
+
 #: Dependencias de terceros que la suite necesita ya en la fase de COLECCION:
 #: `core.config` importa `dotenv`; `core.utils`, `yaml` y `slugify`. Sin ellas
 #: pytest no "falla": no llega a ejecutar ninguna asercion.
