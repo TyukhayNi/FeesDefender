@@ -28,10 +28,16 @@ def test_modo_libre_no_impone_nada():
     assert cli.validar_modo("libre", crm="api", fuente="email") == []
 
 
-def test_v1_rechaza_crm_api():
-    errores = cli.validar_modo("v1", crm="api", fuente="drive_ev", folder_id="FID")
-    assert len(errores) == 1
-    assert "--crm skip" in errores[0]
+def test_v1_admite_crm_api_DECLARADO():
+    """**Propiedad SUSTITUIDA el 2026-09-14 (V2), no relajada.**
+
+    Hasta V2 esto afirmaba «v1 rechaza --crm api», porque ninguna de sus tres etapas
+    escribia en el CRM y la puerta lo prohibia en bloque. V2 mete `crm_alta` y
+    `actuacion` DENTRO de la secuencia, asi que prohibir la escritura la haria
+    imposible. Lo que la puerta protege ahora es lo que de verdad estaba en juego:
+    que **nadie escriba sin declararlo** — ver `test_v1_rechaza_omitir_crm`.
+    """
+    assert cli.validar_modo("v1", crm="api", fuente="drive_ev", folder_id="FID") == []
 
 
 def test_v1_admite_crm_skip():
@@ -40,14 +46,18 @@ def test_v1_admite_crm_skip():
 
 
 def test_v1_rechaza_el_default_de_crm():
-    """Omitir --crm deja `api` por default: en v1 eso ABORTA, no se corrige en silencio.
+    """Omitir --crm ABORTA en v1: la omisión no autoriza a escribir.
 
     El plan traía aquí `assert default or True`, que no puede fallar nunca.
     La aserción que muerde es leer el default REAL de la opción Typer: si alguien lo
-    cambiara a `skip`, la omisión pasaría en silencio y este test lo dice.
+    pusiera un valor, la omisión pasaría en silencio y este test lo dice.
     """
     default_crm = inspect.signature(cli.main).parameters["crm"].default.default
-    assert default_crm == "api"
+    # **Mecanismo SUSTITUIDO en V2, propiedad intacta.** Antes el default era `api` y la
+    # puerta rechazaba `api`; ahora el default es `None` —«no lo declaro»— y lo que la
+    # puerta rechaza es esa ausencia. El aserto sigue mordiendo por el mismo sitio: con
+    # un default con valor, la omision volveria a autorizar en silencio.
+    assert default_crm is None, "un default con valor autorizaria por omision"
     assert cli.validar_modo("v1", crm=default_crm, fuente="drive_ev",
                             folder_id="FID") != []
 
@@ -65,7 +75,8 @@ def test_v1_admite_drive_ev():
 
 
 def test_v1_acumula_los_errores():
-    errores = cli.validar_modo("v1", crm="api", fuente="email", folder_id="FID")
+    # En V2 el error de CRM es OMITIRLO (`None`); `api` declarado es valido.
+    errores = cli.validar_modo("v1", crm=None, fuente="email", folder_id="FID")
     assert len(errores) == 2
 
 
@@ -100,7 +111,7 @@ def test_v1_aborta_antes_de_crear_el_esqueleto(casos_root, monkeypatch):
     ])
 
     assert res.exit_code == 1
-    assert "--crm skip" in res.output
+    assert "--crm" in res.output and "declarar" in res.output
     assert list(casos_root.iterdir()) == []
 
 
@@ -226,7 +237,7 @@ def test_v1_exige_folder_id():
 
 def test_v1_acumula_todos_los_errores():
     """Las cinco reglas se acumulan; la puerta no para en la primera."""
-    errores = cli.validar_modo("v1", crm="api", fuente="email",
+    errores = cli.validar_modo("v1", crm=None, fuente="email",
                                force=True, dry_run=True)
     assert len(errores) == 5, errores
 
@@ -262,7 +273,7 @@ def test_v1_aborta_antes_de_la_autoderivacion_y_de_la_identidad(casos_root, monk
     ])
 
     assert res.exit_code == 1
-    assert "--crm skip" in res.output
+    assert "--crm" in res.output and "declarar" in res.output
     assert list(casos_root.iterdir()) == []
 
 

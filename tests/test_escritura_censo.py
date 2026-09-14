@@ -144,7 +144,32 @@ AMBIGUAS = frozenset({"replace", "copy", "dump"})
 #:
 #: Condicion de bajada: cuando las escrituras del indice del caso pasen por la costura, esta
 #: baja con las otras 10 de `core/case_manager.py`.
-TECHO_CENSO = 92
+#:
+#: ---
+#:
+#: **92 -> 94 el 2026-09-14 (V2, el lazo del CRM). Decision de Nikolai, consultada
+#: expresamente porque este trinquete solo baja.**
+#:
+#: Las dos escrituras son el **recibo de la actuacion**
+#: (`scripts/abrir_caso._guardar_recibo`: el `mkdir` del padre y el `write_text`), que
+#: persiste `00_Input/_recibo_actuacion.json`.
+#:
+#: **Por que no se pudo evitar, comprobado antes de pedir la subida:**
+#:
+#: 1. **Sin persistirlo, relanzar la secuencia crea una SEGUNDA actuacion en el CRM.** No
+#:    es una hipotesis: la R1 de Codex sobre el plan lo reprodujo con el helper real y
+#:    transporte sustituido — dos corridas sin `desde` dieron los ids 900 y 901, y la
+#:    tercera, con `desde`, reutilizo el 901. Un `Recibo` en memoria muere con el proceso,
+#:    que es justo el corte que el §5.2 de la spec describe.
+#: 2. **`core/apertura_v1_estado.py` no sirve de hogar**, aunque sea «estado durable por
+#:    ronda» y ya este en `PRODUCTORES`: sus `etapas` son `dict[str, str]` y **se abre una
+#:    ronda nueva en cada corrida**. El recibo tiene que sobrevivir ENTRE corridas, que es
+#:    exactamente su razon de ser. Meterlo ahi habria conservado la cifra y perdido la
+#:    propiedad — mover el trinquete otra vez, con mejor coartada.
+#:
+#: Condicion de bajada: cuando la escritura del recibo pase por la costura, esta baja con
+#: las de `scripts/abrir_caso.py`.
+TECHO_CENSO = 94
 
 
 def _nombre_llamado(n: ast.Call) -> str | None:
