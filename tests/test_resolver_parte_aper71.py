@@ -11,7 +11,8 @@ Diseño y adjudicación de la R1:
 **El vocabulario que faltaba (R1/H-01, H-02).** Un documento tiene TRES estados, no dos:
 ausente, **utilizable** (tiene forma canónica) y **no interpretable** (se aportó algo que no
 sobrevive a `_canonizar_documento`: `" -- . "` → `""`). Y comparar dos documentos es comparar
-sus formas canónicas **en los dos lados**: `12.345.678-z` y `12345678Z` son el mismo.
+sus formas canónicas **en los dos lados**: `1.234.567-k` y `1234567K` son el mismo (siete digitos a proposito: aqui no se
+transcribe ningun documento con forma real).
 
 **Y la frontera que obligó a reordenar la función (R1/H-03):** un criterio fuerte que identifica
 unívocamente no puede quedar tapado por la multiplicidad de uno débil. La guarda de ambigüedad
@@ -215,7 +216,7 @@ def test_la_ficha_del_buzon_sin_nif_para_en_vez_de_crear(monkeypatch):
 
 
 def test_h02_un_nif_igual_escrito_de_otra_forma_para_en_vez_de_duplicar(monkeypatch):
-    """`12.345.678-z` y `12345678Z` son **el mismo documento**.
+    """`1.234.567-k` y `1234567K` son **el mismo documento**.
 
     Comparar los textos elegiría «difiere → crear» y **duplicaría una ficha legítima**;
     comparar las formas canónicas elige «coincide → para». La rev. 1 admitía las dos lecturas
@@ -224,7 +225,7 @@ def test_h02_un_nif_igual_escrito_de_otra_forma_para_en_vez_de_duplicar(monkeypa
     Que la consulta por NIF no la encontrase y el email sí es precisamente la señal de que algo
     no cuadra: no se adivina.
     """
-    fichas = [_registro("A", nif="12.345.678-z", email="casa@ejemplo.es")]
+    fichas = [_registro("A", nif="1.234.567-k", email="casa@ejemplo.es")]
 
     def fake(elemento, propiedad, valor, *, operador="equal", limite=5, properties=()):
         # El CRM busca por el valor LITERAL: con separadores no encuentra nada (medido
@@ -236,7 +237,7 @@ def test_h02_un_nif_igual_escrito_de_otra_forma_para_en_vez_de_duplicar(monkeypa
                                       if str(sr._values_dict(f).get("email")) == valor])
 
     monkeypatch.setattr(sr, "_buscar_registros", fake)
-    r = sr.resolver_parte(ELEM, nif="12345678Z", email="casa@ejemplo.es")
+    r = sr.resolver_parte(ELEM, nif="1234567K", email="casa@ejemplo.es")
 
     assert r.id is None, "duplicó una ficha legítima por comparar los textos"
     assert not r.resuelta
