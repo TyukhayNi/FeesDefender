@@ -514,6 +514,38 @@ def _leer_aperturas(raiz: Path) -> tuple[list[tuple[str, str, str]], list[tuple[
     return pendientes, ilegibles
 
 
+def _avisar_aperturas_sin_fichar(raiz: Path | None = None) -> None:
+    """AVISO no bloqueante: aperturas que anotaron defectos y no los ficharon.
+
+    (a) de P8 dice que la sesion de apertura los ficha «al final», y nada obligaba
+    a ese «al final»: dependia de que alguien se acordara, que es el defecto mas
+    medido de esta casa. Esto es el disparador.
+
+    **Silencio total cuando no hay nada** (decision de Nikolai, 2026-09-14). Eso
+    hace que un lector roto se parezca a uno que no encuentra nada, asi que la
+    prueba de que el instrumento muerde la da el control positivo de la suite, no
+    la salida diaria: `test_control_positivo_un_pendiente_se_ve`.
+    """
+    try:
+        raiz = raiz if raiz is not None else raiz_aperturas_por_defecto()
+        pendientes, ilegibles = _leer_aperturas(raiz)
+    except Exception as e:  # el aviso nunca debe romper el cierre
+        print(f"[aviso] no se pudieron leer las aperturas: {e}")
+        return
+    if not pendientes and not ilegibles:
+        return
+    print("\n" + "-" * 40)
+    print("Aperturas con defectos sin fichar")
+    if pendientes:
+        print(f"[!] {len(pendientes)} apertura(s) pendiente(s) de fichar:")
+        for nombre, caso, fecha in pendientes:
+            print(f"    {nombre}  ({caso}, {fecha})")
+        print("    Fichalos en docs/MEJORAS_FUTURAS.md y pon `estado: fichado`,")
+        print("    o `estado: descartado` si decides que no merecen ficha.")
+    for nombre, motivo in ilegibles:
+        print(f"[aviso] no interpretable: {nombre} ({motivo})")
+
+
 #: Dependencias de terceros que la suite necesita ya en la fase de COLECCION:
 #: `core.config` importa `dotenv`; `core.utils`, `yaml` y `slugify`. Sin ellas
 #: pytest no "falla": no llega a ejecutar ninguna asercion.
@@ -844,6 +876,12 @@ def main() -> None:
         _avisar_specs_sin_traza()
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar trazabilidad de specs/plans: {e}")
+
+    # Aviso de aperturas con defectos anotados y sin fichar (modo AVISO, no bloquea).
+    try:
+        _avisar_aperturas_sin_fichar()
+    except Exception as e:  # el aviso nunca debe romper el cierre
+        print(f"[aviso] no se pudo comprobar las aperturas sin fichar: {e}")
 
 
 if __name__ == "__main__":

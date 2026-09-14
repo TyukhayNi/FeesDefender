@@ -123,3 +123,43 @@ def test_raiz_por_defecto_cae_en_localappdata(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
 
     assert sc.raiz_aperturas_por_defecto() == tmp_path / "FeesDefender" / "aperturas"
+
+
+def test_el_aviso_calla_cuando_no_hay_nada(tmp_path, capsys):
+    # Silencio total: una cabecera vacia en cada cierre es el aviso que nadie lee.
+    sc._avisar_aperturas_sin_fichar(tmp_path)
+
+    assert capsys.readouterr().out == ""
+
+
+def test_el_aviso_nombra_el_pendiente(tmp_path, capsys):
+    _escribir(tmp_path, "2026-09-14_W-02UDC1.md", _PENDIENTE)
+
+    sc._avisar_aperturas_sin_fichar(tmp_path)
+
+    salida = capsys.readouterr().out
+    assert "2026-09-14_W-02UDC1.md" in salida
+    assert "W-02UDC1" in salida
+
+
+def test_el_aviso_declara_los_ilegibles_aparte(tmp_path, capsys):
+    _escribir(tmp_path, "roto.md", "---\nestado: pendiente\n")
+
+    sc._avisar_aperturas_sin_fichar(tmp_path)
+
+    salida = capsys.readouterr().out
+    assert "roto.md" in salida
+    assert "no interpretable" in salida
+
+
+def test_el_aviso_no_rompe_el_cierre_si_el_lector_lanza(tmp_path, monkeypatch, capsys):
+    def _explota(_raiz):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(sc, "_leer_aperturas", _explota)
+
+    # La garantia es la del resto de avisos: nunca rompe el cierre.
+    try:
+        sc._avisar_aperturas_sin_fichar(tmp_path)
+    except RuntimeError:
+        raise AssertionError("el aviso dejo escapar la excepcion")
