@@ -3,13 +3,20 @@ tipo: spec
 estado: vigente
 creado: 2026-09-14
 objeto: core/sudespacho_relations.py, core/crm_ficha.py, core/sudespacho_actuaciones.py
-rev: "2"
+rev: "3"
 ---
 
 # P6 — La ficha CRM y la actuación, sin YAML a mano y sin fundir a dos personas
 
 Tres piezas del §P6 del handoff de la apertura. **Dos rondas** por el radio de daño: la pieza 2
 decide **la identidad de una parte** y hoy escribe encima de la ficha de otro cliente.
+
+**Rev. 3 (2026-09-14), tras la R3 excepcional: 9 hallazgos, 9 confirmados, 0 refutados.** La R3
+la autorizó Nikolai expresamente sobre el techo de dos rondas, y su objeto no era la pieza sino
+**la remediación de la R2**. Encontró que el remedio cerraba el caso y no la frontera en cinco
+sitios, y que un mutante del arnés moría por la razón equivocada. Adjudicación en el §8, con las
+**siete fronteras** en que se agrupan los nueve. **Se cierra sin cuarta ronda**, por decisión de
+Nikolai: lo que la sustituye es correr la pieza contra el CRM real (§9).
 
 **Rev. 2 (2026-09-14), tras la R1 adversarial: 8 hallazgos, 8 confirmados.** La rev. 1 no se
 conserva porque no llegó a código; lo que cambió y por qué está en el §6.
@@ -278,11 +285,18 @@ y el id `"2"` aborta — que es el comportamiento correcto.
 - **Coinciden en cinco**, y cada uno vio lo que el otro no. **Ninguno refutado.**
 - **Remediado en:** `tests/test_sudespacho_actuaciones_r2.py` (18 casos) y el diff que los pasa.
 
-**La frontera, y es una sola para quince hallazgos:** *cada helper distingue estados que su
+**La frontera, y es una sola para los dos informes:** *cada helper distingue estados que su
 único llamador colapsa.* Los helpers se escribieron con cuidado —cuatro salidas en el paso 1,
 firmante frente a operador, validación frente a fallo de red, un payload validado— y
-`alta_actuacion` los aplanaba. Remediar los quince casos uno a uno habría dejado el dieciséis;
-por eso el remedio reescribe el orquestador y no los parches.
+`alta_actuacion` los aplanaba. Remediar caso a caso habría dejado el siguiente; por eso el
+remedio reescribe el orquestador y no los parches.
+
+> **Cuántos hallazgos son, dicho con precisión** (corregido tras la R3, que lo reclamó). Los dos
+> revisores devolvieron **11 y 13**, con **cinco coincidentes**: **19 hallazgos distintos**, que
+> se agrupan en las **13 categorías** de la tabla de abajo. La rev. 2 de este documento decía
+> «quince» en prosa sobre una tabla de trece y sin mapeo que permitiera reconstruir el número —
+> o sea, una cifra que ningún lector podía comprobar. El agrupamiento es la unidad útil aquí
+> porque el remedio es por frontera; el recuento por informe vive en cada acta.
 
 | | Hallazgo | Adjudicación |
 |---|---|---|
@@ -321,3 +335,213 @@ El test preexistente que intenta alcanzar el CRM (`tests/test_sudespacho_relatio
 anterior a este diff y su remedio toca el aislamiento de la suite, no P6. Se **declara** aquí
 —la suite no está tan aislada como decimos— y se ficha aparte. Mezclarlo con esta pieza haría
 irrevisable el diff, que es justo lo que el techo de rondas intenta evitar.
+
+## 8. Adjudicación de la R3 (Codex, 2026-09-14) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff remediado `8aed442..53cc575`, commit `53cc575`
+- **Ronda:** 3
+- **Revisor:** Codex (solo lectura)
+- **Informe recibido:** `2026-09-14-p6-ficha-crm-y-actuaciones-r3-adversarial-review.md`
+- **Hallazgos:** 9 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** rev. 3 de este documento y el diff que la acompaña
+
+**Ronda excepcional, autorizada expresamente por Nikolai** tras leer la R2, y pedida por una
+razón concreta: los remedios de hallazgos ALTO son donde aparece el defecto siguiente. Acertó.
+El objeto de la ronda no era la pieza sino **la remediación**, y su pregunta central era si
+cada remedio cerraba la frontera o solo el caso que el informe describía.
+
+**Nueve de nueve confirmados, cero refutados.** El revisor declaró además que **no pide una
+cuarta ronda**, y Nikolai decidió cerrar sin ella: el criterio «hasta que una ronda vuelva
+limpia» no converge —lo midieron las cuatro del mutex— y el coste de la ronda es cierto
+mientras el del defecto no lo es.
+
+| Hallazgo | Sev. | Coste | Adjudicación |
+|---|---|---|---|
+| **H-01** el parseo pierde el recibo tras escribir | `CRÍTICO` | acotado | **CONFIRMADO**, reproducido: `{"items": 1}` → `TypeError` fuera del `try`; `values:[null]` → `AttributeError` |
+| **H-02** la identidad del recibo es opcional | `ALTO` | acotado | **CONFIRMADO**, reproducido: con `elemento=""` **escribe** el vínculo de una actuación ajena |
+| **H-03** `sin_filas` y `no_aplica` se consumen igual | `ALTO` | acotado | **CONFIRMADO**: el orquestador solo distinguía `sin_comprobar`, y el motivo de `no_aplica` afirmaba lo no visto |
+| **H-04** se aprende la plantilla de una variante | `ALTO` | acotado | **CONFIRMADO**: filtro `like` y ninguna comprobación del `Subject` de la fila; el orden decidía el id |
+| **H-05** la exhaustividad se descarta | `ALTO` | estructural | **CONFIRMADO**: `_buscar_registros` tiraba `totalItems` y `Consulta` no tenía dónde guardarlo |
+| **H-06** una `incompleta` que nadie puede reanudar | `MEDIO` | acotado | **CONFIRMADO**, reproducido: cero escrituras y «concilia a mano» |
+| **H-07** validar se clasifica como escribir | `MEDIO` | acotado | **CONFIRMADO**, reproducido: cero POST y «puede haberse creado una actuación» |
+| **H-08** M29 muere por `NameError` | `MEDIO` | acotado | **CONFIRMADO**: `_RE_WCODE` no existe ni se importa |
+| **H-09** el test preexistente llama al tenant | `MEDIO` | acotado | **CONFIRMADO**. Declarado en la rev. 2 como no remediado; **se remedia aquí** por decisión de Nikolai |
+
+### 8.1 Los nueve son ejemplos de SIETE fronteras, y así se remedian
+
+Remediar nueve sitios habría dejado el décimo — es literalmente lo que pasó entre la R2 y esta
+ronda. El remedio va por frontera:
+
+| Frontera | Cierra | Dónde |
+|---|---|---|
+| **A.** Decodificar no es interpretar; y **tras escribir, siempre hay recibo** | H-01 | `_items`, `_values`, y el paso 6 envuelto en `alta_actuacion` |
+| **B.** Un contexto ausente no desactiva la comprobación que ese contexto permite | H-02 | `_act_id_reanudable`, con el contrato del recibo entero en un sitio |
+| **C.** Estados de conocimiento distintos no se colapsan, y un motivo no afirma lo no visto | H-03 | quinta salida `no_interpretable`; el recibo final conserva cuál fue |
+| **D.** La evidencia recibida debe ser de la operación que se ejecuta | H-04 | solo se aprende de la fila cuyo `Subject` es el pedido |
+| **E.** Pedido, recibido y total no son la misma información | H-05 | `Consulta.total_declarado` + `truncada`, consumido al decidir |
+| **F.** «No lo intenté» es un estado, no una variante de «lo intenté y no sé» | H-06 | estado `no_intentada`, reanudable porque nada se escribió |
+| **G.** Validar y transmitir son fases distintas | H-07, H-09 | `_validar_extra` delante del `try`; el test recupera su doble |
+| **H.** El arnés distingue morir por la propiedad de morir por estar roto | H-08 | `_ROTO` en `_mutantes_p6`, con control positivo |
+
+### 8.2 Los tres patrones que esta ronda destapó en mí, no en el código
+
+**Escribí comentarios que afirman lo que el código no hace.** El docstring de `_items` decía
+«El parseo entero va cubierto, y esto ya se pagó una vez en el módulo hermano» mientras el
+`try` seguía envolviendo solo `resp.json()`. El del paso 1 exigía el asunto **literal** «porque
+una aproximación devolvería el de otra plantilla», y filtraba con `like` sin comprobar la fila.
+Dos veces en el mismo diff, y las dos en el sitio donde un comentario cierra la discusión. Los
+dos docstrings quedan corregidos **diciendo que fueron falsos**, no reescritos en silencio.
+
+**Remedié el ejemplo y no la frontera, otra vez.** La R2 sacó la validación del firmante fuera
+del `try` y dejó dentro la de `extra`: misma frontera, caso siguiente. Y la guarda de identidad
+del recibo existía pero la desactivaba el valor por defecto del campo que la condicionaba.
+
+**Y por tercera vez en esta pieza, el remedio creó el estado que el código bloquea después**
+(H-06). El mandato de la ronda lo señalaba por nombre —«¿algún remedio abre un estado nuevo? es
+el modo de fallo de esta pieza, ya observado dos veces»—, lo busqué, y lo había introducido.
+
+### 8.3 Lo que el 37/37 valía de verdad
+
+El arnés declaraba **37 mutantes, 37 muertos**. Eran **36 muertes semánticas y una coartada**:
+M29 sustituía `wcode_match` por una llamada a `_RE_WCODE`, regex que la R2 había retirado del
+módulo, así que moría con `NameError` — el programa mutado no funcionaba, y eso no acredita que
+el test detecte nada. Sobre esa muerte falsa se había retirado M16 «porque M29 lo absorbe»: una
+afirmación de cobertura apoyada en un mutante que no cubría.
+
+Lo que el revisor comprobó y **rebaja el daño**: el test **sí** caza la mutación de M16 cuando
+se le da ejecutable. Lo roto era el mutante, no la cobertura. Aun así el número que di era
+falso, y se dio por medido.
+
+Remedio: M29 reapuntado con una sustitución ejecutable, **M16 restaurado**, y el arnés aprende a
+distinguir las dos muertes (`_ROTO`). El detector tiene **control positivo**: con un mutante
+roto a propósito grita `[ARNES ROTO] … murió por NameError`. Sin esa comprobación sería una
+guarda inerte, que es el defecto que viene a cerrar.
+
+### 8.4 Dos huecos de contabilidad que el revisor reclamó, y tenía razón en los dos
+
+**El acta del segundo revisor de la R2 no existía.** El §7 la citaba —`…-r2b-adversarial-review.md`—
+y el revisor de la R3 se negó, correctamente, a atribuir a ese revisor hallazgos que no podía
+leer. Ya está escrita. Su informe volvió con el `outputFile` **vacío** y se recuperó de la
+notificación de la tarea en el transcript; el acta lo dice, porque la procedencia de un original
+archivado es parte de lo que el acta acredita.
+
+**Y el número de hallazgos de la R2 no era reconstruible.** La prosa decía «quince» sobre una
+tabla de trece filas y sin mapeo. Corregido arriba con el reparto real: **11 + 13 con cinco
+coincidentes = 19 distintos en 13 categorías**. Una cifra que ningún lector puede comprobar es,
+a efectos de este archivo, una cifra inventada.
+
+### 8.5 Lo que esta ronda NO cubre, dicho por el revisor
+
+Suite completa y sus dos semillas, aceptación real de los payloads por el tenant, límites
+efectivos de paginación del servidor, idempotencia del POST y del vínculo, concurrencia, y
+constructores externos al árbol. **Los dobles acreditan las decisiones ante las respuestas
+descritas, no la frecuencia de esas respuestas en producción.**
+
+De ahí sale lo que sustituye a la cuarta ronda, y es mejor evidencia que otra lectura: **correr
+la pieza entera contra el CRM real** sobre `extrajudiciales/636`, leer por API cómo quedó, y
+medir si se puede deshacer. Queda en §9.
+
+## 9. La corrida EN VIVO, que es lo que sustituye a la cuarta ronda
+
+**Decidida por Nikolai el 2026-09-14**, y es mejor evidencia que otra lectura. El revisor de la
+R3 declaró SIN VERIFICAR, entre otras cosas, «la aceptación actual de los payloads por el
+tenant». Eso no lo cubre nadie leyendo: **un doble acepta cualquier cosa que se le mande**, así
+que acredita qué decide el código ante una respuesta y nunca que el payload sea aceptable.
+
+Objeto: expediente **`extrajudiciales/636`**, que el despacho tiene como desechable (su
+`Referencia_Cliente` era literalmente `PRUEBA - BORRAR`).
+
+**Preparación, y qué se tocó.** El paso 3 acredita el destino con `wcode_match`, que devuelve
+`False` si a cualquiera de los dos lados le falta el W-code; el 636 no tenía. Se le puso uno
+**sintético** por API conservando la etiqueta original —`PRUEBA - BORRAR (W-TEST636)`— y se
+verificó por lectura, no por status. Queda dicho para poder deshacerlo.
+
+### 9.1 Tres defectos en una sola ejecución, ninguno visible para un doble
+
+**Con 5.612 tests verdes, tres rondas adversariales y 39 mutantes muertos**, la primera corrida
+real murió en el paso 4:
+
+```
+HTTP 404 — The value: <Normal> sent for the property: Prioridad is incorrect.
+```
+
+| Defecto | Qué pasaba | Por qué ningún doble lo veía |
+|---|---|---|
+| `Prioridad: "Normal"` | valor **inexistente**: el enum es `Alta · Media · Baja` | el doble acepta el payload que se le dé |
+| `fecha_alta` vacía | las 40 actuaciones reales muestreadas la traen | el doble no valida campos obligatorios de negocio |
+| `precio_hora = 0,00` | el asunto decía `SENIOR - …`, que **ES** la tarifa de 103 €/h | dos datos sobre lo mismo, y solo uno se factura |
+
+Los tres estaban **contradiciendo documentación propia**: el enum consta en
+`INTEGRACION_SUDESPACHO.md` §15.6 y la tarifa en `[APER-72]`, medida sobre 20 instancias reales
+y citada en un comentario del propio módulo. **El conocimiento estaba escrito y el código no lo
+aplicaba** — el mismo patrón que la R3 encontró dos veces en los docstrings.
+
+El más caro es el tercero, y conviene nombrarlo: una actuación con `SENIOR` en el asunto y
+`0,00` en el precio **parece completa en el listado y factura cero**. El remedio es estructural,
+no un valor: prefijo y precio salen ahora de la **misma fila** (`_FIRMANTES`), así que no pueden
+volver a decir cosas distintas.
+
+Y el `Prioridad` inválido produjo además un recibo `incierta` —«puede haberse creado una
+actuación, concilia a mano»— por algo que el servidor había rechazado. Es la **frontera G otra
+vez**, un caso más allá: los enums se validan ahora antes del POST, como `extra`.
+
+### 9.2 Lo que la corrida acreditó, ya remediada
+
+```
+1. GET  element_registries/extrajudiciales      200   paso 3, destino acreditado
+2. GET  element_registries/actuaciones          200   paso 1, id_predefinido
+3. POST element_register/actuaciones            201   paso 4  → actuación 21395
+4. POST relation_element/extrajudiciales/636    201   paso 5
+5. GET  element_registries/actuaciones          200   paso 6, verificada del lado del expediente
+6. POST element_register/calendario             201   paso 7  → evento 20235
+7. POST relation_element/actuaciones/21395      201   paso 7, evento colgado de la actuación
+```
+
+Recibo: **`verificada`, paso 7**, con `fecha_alta 2026-09-14`, `precio_hora 103.00`,
+`Prioridad Alta`, `fecha_vencimiento 2026-10-01 09:00:00` y el evento agendado. **El recibo
+conserva el estado de conocimiento del paso 1** —el remedio de H-03— y se lee en vivo:
+`id_predefinido [sin_filas]: ninguna de las 0 fila(s) … tiene el asunto exacto`.
+
+**Y el paso 1 se probó contra los datos reales, que es donde H-04 se juega.** Pidiendo
+`SENIOR - EXTRAJUDICIAL - REVISION VIABILIDAD`, el filtro `like` devolvió **10 filas de las que
+solo 3 eran el asunto exacto** —el resto, variantes como `… - DESCARTADO` o `… - INICIAL
+W-02JSVZ`—. Antes del remedio se aprendía el id de la primera fila con valor; ahora solo de las
+exactas, y el motivo lo dice.
+
+### 9.3 El paso 7: una fecha límite que no avisa no es una fecha límite
+
+Añadido en esta corrida a petición de Nikolai. `fecha_vencimiento` es un campo del elemento que
+**nadie mira**; lo que avisa es el evento del calendario. `calendario` resultó ser un elemento
+normal cuyo *parent* puede ser `actuaciones` (`CRM_SUDESPACHO_ATLAS.md`), con enum `Tipo` que
+incluye `Vencimiento`: se crea y se cuelga con la misma receta que todo lo demás, **sin tocar el
+host `api-calendar-commons-pro`**, que sirve notificaciones y salas y no el alta del evento.
+
+El fallo al agendar **no se lleva el recibo**: la actuación ya existe, está vinculada y
+verificada, y repetir el alta por un evento que no se pudo poner crearía una segunda. Es la
+invariante del paso 6 aplicada al 7.
+
+### 9.4 Lo que la corrida midió y conviene no olvidar
+
+- **`totalItems` existe y llega como FLOAT** (`20834.0`). La guarda de H-05 puede dispararse:
+  no es decorado. Una comprobación por `isinstance(x, int)` la habría dejado inerte.
+- **El truncamiento de H-05 es real y trivial de reproducir**: pidiendo `itemsPerPage=1` el
+  servidor devuelve 1 fila y declara 20.834.
+- **`duracion` no hace viaje de ida y vuelta**: se manda `"00:01:00"` y se lee `'60'`. El CRM
+  guarda segundos.
+- **Filtrar `actuaciones` por `id` con `equal` devuelve vacío** (no error). Para leer una
+  instancia, `like` sobre `Subject`, como ya avisaba el §15.6.
+- **`fecha_alta` y `precio_hora` se escriben por API**, verificado con un `PUT` sobre la 21393.
+  El `§15.4` decía «la tarifa es solo por UI» y es verdad **a medias**: lo que no se resuelve
+  por API es la *tarifa confidencial del usuario*, no el campo.
+
+### 9.5 Lo que queda abierto
+
+- **Reversibilidad de `actuaciones`**: el §17.5 documenta `DELETE` sobre `relation_element` y
+  `element_register`, medido en `gdocu` y `colaboradores`, **nunca en `actuaciones`**. Las de
+  prueba creadas aquí (21393, 21395) y el evento 20235 siguen vivos, igual que el W-code
+  sintético del 636.
+- **Las dos casillas de la UI** —«Crear documento a través de plantilla» y «Enviar por email»—
+  **no son campos del elemento**: los 37 de `actuaciones` solo tienen cinco `CheckBox` y ninguna
+  es esa. Son los flujos de §10.11 (familia `rtf`) y §10.9 (`nest-mail`), documentados y
+  confirmados, pero **piezas aparte**. Y la segunda haría que el código **envíe correo en nombre
+  del despacho**: no se cablea sin decidir antes cuándo y a quién.

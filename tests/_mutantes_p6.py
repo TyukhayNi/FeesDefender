@@ -37,6 +37,7 @@ T_71 = "tests/test_resolver_parte_aper71.py"
 T_63 = "tests/test_crm_ficha_n_contrarios.py"
 T_ACT = "tests/test_sudespacho_actuaciones.py"
 T_R2 = "tests/test_sudespacho_actuaciones_r2.py"
+T_R3 = "tests/test_sudespacho_actuaciones_r3.py"
 VAL = "core/crm_ficha_validacion.py"
 
 #: (nombre, fichero a mutar, texto original, texto mutado, test que DEBE ponerse rojo).
@@ -115,13 +116,11 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      f"{T_ACT}::test_una_consulta_fallida_no_es_ausencia"),
 
     ("M15 el paso 1 colapsa «cero filas» en «no aplica»", ACT,
-     '        return IdPredefinido("sin_filas", motivo=f"ninguna actuación casa {asunto!r}")',
+     '        return IdPredefinido("sin_filas", motivo=(\n'
+     '            f"ninguna de las {len(filas)} fila(s) que devolvió el filtro tiene el asunto "\n'
+     '            f"{pedido!r} exacto: heredar el id de una variante sería inventarlo"))',
      '        return IdPredefinido("no_aplica", motivo="")',
      f"{T_ACT}::test_cero_filas_no_es_lo_mismo_que_filas_sin_campo"),
-
-    # M16 («el destino deja de contrastarse») lo ABSORBE M29 tras la R2: el contraste ya no
-    # es una intersección de subcadenas sino `wcode_match`, y atacar aquello sería atacar un
-    # texto que ya no existe.
 
     ("M17 [H-06] no poder leer el destino pasa por acreditarlo", ACT,
      '        raise DestinoNoAcreditado(\n            f"no se pudo leer {elemento}/{exp_id} (HTTP {r.status_code}). No se escribe nada.")',
@@ -134,12 +133,12 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      f"{T_ACT}::test_si_el_vinculo_falla_el_recibo_conserva_el_id_creado"),
 
     ("M19 [H-04] reanudar vuelve a crear una actuación", ACT,
-     "    act_id = desde.act_id if desde else None",
+     "    act_id = _act_id_reanudable(desde, destino) if desde is not None else None",
      "    act_id = None",
      f"{T_ACT}::test_reanudar_desde_el_recibo_no_crea_otra_actuacion"),
 
     ("M20 se declara éxito sin la verificación del paso 6", ACT,
-     "    if not verificar_actuacion_vinculada(destino.elemento, destino.exp_id, act_id,\n                                         client=client):",
+     "    if not vinculada:",
      "    if False:",
      f"{T_ACT}::test_no_declara_exito_sin_la_verificacion_del_paso_6"),
 
@@ -177,30 +176,55 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      "    if False:",
      f"{T_ACT}::test_extremos_invertidos_se_rechazan"),
     # --- [R2] Los remedios de la segunda ronda, cada uno con su mutante -----------------
-    ("M27 [R2] el parseo vuelve a quedar fuera del try: se pierde el recibo", ACT,
-     "    try:\n        data = resp.json()\n    except Exception as exc:  # noqa: BLE001 — cualquier cuerpo que no se pueda interpretar\n        raise CuerpoIlegible(f\"respuesta con cuerpo ilegible: {exc!r}\") from exc",
-     "    data = resp.json()",
-     f"{T_R2}::test_un_cuerpo_no_json_en_el_paso_6_no_pierde_el_recibo"),
+    # R3: el `try` de `_items` ya cubre la iteracion, asi que «el parseo vuelve a quedar
+    # fuera» dejo de ser matable — el propio remedio lo absorbio. Lo que SI decide algo es
+    # la comprobacion de forma: sin ella `{"items": "texto"}` vuelve a salir como lista
+    # vacia, o sea «el CRM dice que no hay», que es una afirmacion que nadie hizo.
+    ("M27 [R3] una forma imposible vuelve a pasar por lista vacia", ACT,
+     "        if not isinstance(crudo, list):",
+     "        if False:",
+     f"{T_R3}::test_un_cuerpo_json_con_forma_imposible_sale_como_CuerpoIlegible"),
+
+    # La invariante nueva de la pieza, que ningun mutante cubria: en cuanto se ha escrito,
+    # el llamador recibe el `act_id` pase lo que pase en el paso 6 (R3/H-01).
+    ("M39 [R3] una excepcion del paso 6 vuelve a llevarse el recibo", ACT,
+     "    try:\n        vinculada = verificar_actuacion_vinculada(destino.elemento, destino.exp_id, act_id,\n                                                  client=client)\n    except Exception as exc:  # noqa: BLE001",
+     "    if True:\n        vinculada = verificar_actuacion_vinculada(destino.elemento, destino.exp_id, act_id,\n                                                  client=client)\n    elif False:",
+     f"{T_R3}::test_tras_vincular_SIEMPRE_vuelve_un_recibo_aunque_verificar_reviente"),
 
     ("M28 [R2] el destino vuelve a leer la PRIMERA fila", ACT,
      '    propia = [f for f in filas if str(f.get("id") or "").strip() == str(exp_id)]',
      "    propia = filas",
      f"{T_R2}::test_el_destino_se_acredita_con_LA_FILA_pedida_no_con_la_primera"),
 
+    # **Este mutante estuvo MAL APUNTADO una ronda entera** (R3/H-08). Llamaba a `_RE_WCODE`,
+    # que la R2 había retirado del módulo: el mutante moría con `NameError`, el arnés lo
+    # contaba como muerto y no acreditaba nada. La sustitución tiene que ser **ejecutable**,
+    # o el rojo prueba que el programa está roto y no que el test detecte la decisión mala.
+    # Ahora usa `re`, que sí está importado, y lo mata el segundo caso parametrizado del test
+    # —`W-0XXXXX (relacionado W-02VEKE)`—, que es el que ejercita «PRINCIPAL, no de pasada».
     ("M29 [R2] el W-code vuelve a compararse por subcadena", ACT,
      "    if not wcode_match(referencia_esperada, leida):",
-     "    if not ({m.upper() for m in _RE_WCODE.findall(referencia_esperada or '')}\n"
-     "            & {m.upper() for m in _RE_WCODE.findall(leida)}):",
+     "    if not (set(re.findall(r'W-[A-Z0-9]{5,8}', (referencia_esperada or '').upper()))\n"
+     "            & set(re.findall(r'W-[A-Z0-9]{5,8}', (leida or '').upper()))):",
+     f"{T_R2}::test_el_w_code_se_compara_ENTERO_y_como_principal"),
+
+    # M16 vuelve: la R2 lo retiró declarando que M29 lo absorbía, y M29 no acreditaba nada.
+    # Son además propiedades distintas — «no se contrasta» y «se contrasta mal» — y la
+    # absorción era una afirmación sobre cobertura hecha sin comprobarla.
+    ("M16 [H-06] el destino deja de contrastarse", ACT,
+     "    if not wcode_match(referencia_esperada, leida):",
+     "    if False:",
      f"{T_R2}::test_el_w_code_se_compara_ENTERO_y_como_principal"),
 
     ("M30 [R2] un recibo incierto vuelve a ser reanudable", ACT,
-     '        if desde.estado == "incierta" or not desde.act_id:',
-     "        if False:",
+     '    if desde.estado == "incierta" or not desde.act_id:',
+     "    if False:",
      f"{T_R2}::test_reanudar_un_recibo_INCIERTO_no_crea_otra_actuacion"),
 
     ("M31 [R2] el recibo de otro expediente vuelve a aceptarse", ACT,
-     "        if desde.elemento and (desde.elemento, desde.exp_id) != (destino.elemento, destino.exp_id):",
-     "        if False:",
+     "    if (desde.elemento or desde.exp_id) and \\\n            (desde.elemento, desde.exp_id) != (destino.elemento, destino.exp_id):",
+     "    if False:",
      f"{T_R2}::test_reanudar_con_el_recibo_de_OTRO_expediente_se_rechaza"),
 
     ("M32 [R2] el paso 1 vuelve a consultar el asunto crudo", ACT,
@@ -209,7 +233,7 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      f"{T_R2}::test_el_paso_1_consulta_el_asunto_QUE_SE_VA_A_ESCRIBIR"),
 
     ("M33 [R2] «no pude mirar el catálogo» vuelve a seguir adelante", ACT,
-     '        if pre.estado == "sin_comprobar":',
+     '        if pre.estado in ("sin_comprobar", "no_interpretable"):',
      "        if False:",
      f"{T_R2}::test_no_poder_mirar_el_catalogo_NO_sigue_adelante"),
 
@@ -280,11 +304,28 @@ def _corre(test: str) -> tuple[int, str]:
     hay. Pasó en P4 con un mutante apuntado al fichero equivocado. `main` los separa.
     """
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    # `--tb=line` en vez de `--tb=no`: una línea por fallo, y **con el tipo de excepción**,
+    # que es lo que permite distinguir un rojo semántico de un programa roto (`_ROTO`).
     r = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "--tb=no", "-p", "no:randomly",
+        [sys.executable, "-m", "pytest", "-q", "--tb=line", "-p", "no:randomly",
          "-p", "no:cacheprovider", test],
         cwd=RAIZ, capture_output=True, encoding="utf-8", errors="replace", env=env)
     return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
+#: Excepciones que NO pueden ser la detección de una decisión mala: significan que el módulo
+#: mutado está roto. Un rojo así cuenta como muerte y **no acredita nada** — el test no ha
+#: detectado nada, simplemente el programa no llega a funcionar.
+#:
+#: R3/H-08: M29 sustituía `wcode_match` por una llamada a `_RE_WCODE`, una regex que la ronda
+#: anterior había retirado del módulo. Moría con `NameError`, el arnés lo contaba como muerto,
+#: y sobre esa muerte falsa se había retirado otro mutante «porque este lo absorbe». El 37/37
+#: era 36 muertes y una coartada.
+#:
+#: La lista es CORTA a propósito: `AttributeError` y `TypeError` se quedan fuera porque sí
+#: pueden ser una detección legítima, y un arnés que grita de más acaba desactivado.
+_ROTO = ("NameError", "UnboundLocalError", "ImportError", "ModuleNotFoundError",
+         "SyntaxError", "IndentationError")
 
 
 def main() -> int:
@@ -294,6 +335,18 @@ def main() -> int:
         s = io.open(objetivo, encoding="utf-8").read()
         if viejo not in s:
             print(f"[ARNES ROTO] {nombre}: el texto original ya no esta en {fichero}")
+            fallos.append(nombre)
+            continue
+        # **Que la mutación COMPILE se comprueba antes de gastar dos corridas de pytest.** Es
+        # el caso más básico de «murió por estar roto, no por la propiedad» (R3/H-08), y el
+        # `rc=4` ya lo cazaba — pero tarde y diciendo solo «dejó de coleccionar». Aquí sale la
+        # línea exacta. Lo destapó una re-apuntada propia: un `if False:` copiado con la
+        # indentación del sitio del que venía dejaba el `raise` menos indentado que su `if`.
+        try:
+            compile(s.replace(viejo, nuevo, 1), fichero, "exec")
+        except SyntaxError as exc:
+            print(f"[ARNES ROTO] {nombre}: la mutación no compila "
+                  f"(línea {exc.lineno}: {exc.msg}). Revisa su indentación")
             fallos.append(nombre)
             continue
         rc_previo, salida = _corre(test)
@@ -311,7 +364,7 @@ def main() -> int:
         # **La restauración se arma ANTES de mutar, no después.**
         try:
             _escribir(objetivo, s.replace(viejo, nuevo, 1))
-            rc, _ = _corre(test)
+            rc, salida_mut = _corre(test)
         finally:
             _escribir(objetivo, s)
         if rc == _PYTEST_USAGE_ERROR:
@@ -323,6 +376,13 @@ def main() -> int:
             fallos.append(nombre)
         elif rc == 0:
             print(f"[SUPERVIVIENTE] {nombre}  <- no lo mata {test.split('::')[-1]}")
+            fallos.append(nombre)
+        elif (roto := next((e for e in _ROTO if e in salida_mut), None)):
+            # **Morir no es ser detectado.** El test se pone rojo porque el programa mutado no
+            # funciona, no porque haya cazado la decisión que se quería introducir: ese rojo no
+            # acredita la propiedad y contarlo como muerte es una garantía falsa.
+            print(f"[ARNES ROTO] {nombre}: el mutante murió por {roto}, no por la propiedad. "
+                  "La sustitución tiene que ser EJECUTABLE")
             fallos.append(nombre)
         else:
             print(f"[muerto] {nombre}")

@@ -2638,3 +2638,120 @@ despliegue: localizarlos por la traza de red, no guardar la URL.
 > **Y el contraste con el §14.5 merece anotarse.** Allí la lección fue que *un HAR prueba la UI, no la
 > API*, y descartar por HAR costó semanas. Aquí es la simétrica: **el código de la UI sí prueba qué
 > pide la API**, porque es quien la llama. Leer el cliente no es leer la interfaz.
+### 15.8 Lo que destapó correr `alta_actuacion` de verdad (2026-09-14, expediente 636)
+
+> Tres rondas adversariales, 5.612 tests verdes y 39 mutantes muertos **no encontraron** lo de
+> abajo. Una sola ejecución contra el tenant sí. La razón es estructural y conviene tenerla
+> delante al planificar: **un doble acepta cualquier payload**, así que acredita *qué decide el
+> código ante una respuesta* y nunca *que el payload sea aceptable*. Son dos propiedades
+> distintas y la segunda no se prueba en seco.
+
+**1. `Prioridad: "Normal"` no existe y tumba el POST.** El módulo lo mandaba; el enum real es
+`Alta · Media · Baja` (ya documentado en §15.7, y el código lo contradecía). Respuesta:
+
+```
+HTTP 404 — {"detail":"The value: <Normal> sent for the property: Prioridad is incorrect."}
+```
+
+Nótese el **404** para un error de validación de valor: no es 400 ni 422. Un lector que
+distinga por código lo confundirá con «no existe el endpoint».
+
+**2. Una actuación creada por API nace SIN `fecha_alta` y con `precio_hora = 0,00`.** Las 40
+reales muestreadas traen las dos. Una actuación sin fecha no se factura y una a cero no cobra, y
+las dos **parecen completas** en el listado. Hay que mandarlas en el POST.
+
+**3. `§15.4` es verdad a medias, y la mitad falsa cuesta dinero.** Decía «`precio_hora` solo por
+UI». Lo que **no** se resuelve por API es la *tarifa confidencial del usuario* que aplica el
+botón; **el campo se escribe sin problema** — verificado con `PUT /api/element_register/
+actuaciones/21393 {"fecha_alta": "2026-09-14", "precio_hora": "103.00"}` → 200, comprobado por
+lectura. Y la cifra no hay que resolverla: `[APER-72]` la midió (SENIOR 103,00 · ABOGADO 77,00).
+
+**4. `duracion` NO hace viaje de ida y vuelta.** Se manda `"00:01:00"` y se lee `'60'`: el campo
+`Cronometro` guarda **segundos**. No es un defecto, pero un test de round-trip que espere el
+mismo literal falla.
+
+**5. Filtrar `actuaciones` por `id` con `equal` devuelve VACÍO**, no error — consistente con el
+aviso del §15.6 sobre el GET-detalle. Para leer una instancia concreta: `like` sobre `Subject`,
+o `associated` sobre `left.<elemento>.id` desde el expediente.
+
+**6. `totalItems` llega como FLOAT** (`20834.0`), no entero, y existe en las dos formas de
+respuesta (`totalItems` con `Accept: application/json` exacto, `hydra:totalItems` sin él). Una
+guarda que compruebe `isinstance(x, int)` queda **inerte**.
+
+### 15.9 Agendar el vencimiento: el elemento `calendario` (2026-09-14)
+
+`fecha_vencimiento` es un campo de `actuaciones` que **nadie mira**: lo que avisa es un evento.
+Y el evento es un elemento normal, no un servicio aparte.
+
+| Hecho | Detalle |
+|---|---|
+| Elemento | `calendario`, *parent* `actuaciones` (entre otros) — `CRM_SUDESPACHO_ATLAS.md` |
+| Crear | `POST /api/element_register/calendario` → 201 con `id` |
+| Colgar de la actuación | `POST /api/relation_element/actuaciones/{act_id}` body `["right.calendario.{ev_id}"]` → 201 |
+| `Tipo` (enum) | `Aviso · Evento · Llamada · Recordatorio · Señalamiento · Vencimiento` |
+| Campos usados | `Subject`, `Tipo`, `Estado`, `Prioridad`, `StartTime`, `EndTime`, `profesional_asignado`, `IsAllDayEvent`, `Description` |
+
+**No hace falta el host `api-calendar-commons-pro.sudespacho.biz`.** Ese sirve notificaciones y
+salas de reunión (§14.1); el alta del evento va por el host REST de siempre con `x-api-key`.
+
+Verificado en vivo: actuación **21395** con `fecha_vencimiento 2026-10-01 09:00:00`, evento
+**20235** creado y vinculado.
+
+**⚠️ Las dos casillas de la UI de la actuación NO son campos.** «Crear documento a través de
+plantilla» y «Enviar por email» no aparecen entre los 37 campos del elemento —solo hay cinco
+`CheckBox`: `conceptualizada`, `facturar`, `IsAllDayEvent`, `online`, `obligacion`—. Son los
+flujos de **§10.11** (plantillas `rtf` + los tres pasos del §17 para guardar) y **§10.9**
+(`nest-mail`). Buscarlas como propiedad es perder el tiempo.
+
+### 15.10 Recordatorios, invitados, descripción y seguimientos (2026-09-14)
+
+**Recordatorios e invitados van SERIALIZADOS EN PHP**, dentro de campos `TextArea` del evento.
+Forma exacta, copiada de registros vivos:
+
+```
+recordatorios      a:1:{i:0;a:3:{s:4:"tipo";s:18:"correo_electronico";s:6:"cuanto";i:7;s:6:"tiempo";s:3:"day";}}
+invitadosexternal  a:1:{s:27:"paola.barreto@tyukhay.legal";s:27:"paola.barreto@tyukhay.legal";}
+```
+
+- Los invitados son un array **asociativo con clave = valor = email**.
+- Un recordatorio es `{tipo, cuanto, tiempo}`. Valores **observados** sobre 500 eventos:
+  `tipo` ∈ {`correo_electronico` (86), `ventana_emergente` (7)}; `tiempo` ∈ {`day` (87),
+  `minute` (6)}; `cuanto` entero. **Son observados, no un enum declarado** — viven dentro del
+  blob y no hay endpoint que los liste, al contrario que `Prioridad`.
+- **La longitud va en BYTES.** Con una tilde, contar caracteres produce una cadena que el CRM
+  guarda igual y luego no sabe releer.
+- Vacío se escribe `a:0:{}`, que es lo que pone la UI. No es lo mismo que omitir el campo.
+
+**Descripción: es el campo `Description`** (`TextAreaLong`) de la actuación. Directo.
+
+**⚠️ Seguimientos («Comentario» en la UI): el elemento existe, se crea, y NO se sabe atar.**
+`seguimientos` es un elemento con *parent* `actuaciones` (atlas) y campos `asunto`, `notas`
+(`EditorHtmlSimple`, guarda HTML), `personaasignada`… El alta funciona: `POST
+/api/element_register/seguimientos` → 201 con id, y el registro se relee bien.
+
+**Lo que NO funciona es colgarlo de su actuación.** Probadas las tres formas, todas verificadas
+por LECTURA y no por status:
+
+| Intento | Resultado |
+|---|---|
+| `POST relation_element/actuaciones/{act}` `["right.seguimientos.{id}"]` | **201 y nada** |
+| `POST relation_element/actuaciones/{act}` `["left.seguimientos.{id}"]` | 404 |
+| `POST relation_element/seguimientos/{id}` `["right.actuaciones.{act}"]` | 404 |
+| `POST relation_element/seguimientos/{id}` `["left.actuaciones.{act}"]` | **201 y nada** |
+
+Y no se puede leer desde el otro lado: **`GET related_register/seguimientos/{id}` → HTTP 500**
+para todos los registros probados, incluidos los dos preexistentes del despacho.
+
+**Tampoco hay campo de atadura**: al contrario que `calendario` —que usa `miembro` +
+`elemento`—, el seguimiento real del despacho (id 2) no tiene ningún campo apuntando a una
+actuación. **El tenant solo tiene 2 seguimientos**, así que el elemento apenas se usa y su
+contrato está poco acreditado.
+
+`core/sudespacho_actuaciones.crear_seguimiento` **verifica por lectura y levanta** si no
+consigue colgarlo, devolviendo el id del seguimiento creado para poder atarlo a mano. Lo que
+NO hace es dar por bueno el 201.
+
+**Para cerrarlo hace falta un dato que solo da la UI:** que alguien añada un comentario desde
+el panel de una actuación y se lea después cómo quedó atado. Un HAR de esa acción lo resolvería
+en un minuto.
+

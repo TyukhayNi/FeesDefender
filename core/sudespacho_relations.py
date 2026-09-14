@@ -1054,6 +1054,21 @@ class Consulta:
     #: False cuando la consulta no se pudo completar. NO es «no hay resultados».
     ok: bool = True
     motivo: str = ""
+    #: Cuantos registros dice el CUERPO que hay en total, si lo dice. `None` = no consta.
+    #: R3/H-05: se descartaba antes de que nadie pudiera mirarlo, y es la unica senal que
+    #: distingue «estos son todos» de «estos son los que cabian».
+    total_declarado: int | None = None
+
+    @property
+    def truncada(self) -> bool:
+        """¿Consta que faltan registros por ver?
+
+        **Solo dice que si con evidencia.** Sin total declarado devuelve False, que no
+        significa «estan todos» sino «no consta que falten»: afirmar incompletitud sin dato
+        bloquearia toda resolucion por buzon, y afirmar exhaustividad sin dato es el defecto
+        que esto viene a cerrar. Quien decide crear tiene que mirar ademas la longitud.
+        """
+        return self.total_declarado is not None and self.total_declarado > len(self.registros)
 
     @property
     def ids(self) -> list[str]:
@@ -1149,7 +1164,16 @@ def _buscar_registros(
     try:
         data = r.json()
         items = data.get("items") or data.get("hydra:member") or []
-        return Consulta(registros=[i for i in items if isinstance(i, dict)])
+        # El total viene con un nombre u otro segun el `Accept` (§14 de INTEGRACION). Un
+        # total ilegible se descarta en silencio: este contrato dice «nunca lanza», y no
+        # poder leer el total no invalida los registros que si se leyeron.
+        crudo = data.get("totalItems", data.get("hydra:totalItems"))
+        try:
+            total = int(crudo) if crudo is not None else None
+        except (TypeError, ValueError):
+            total = None
+        return Consulta(registros=[i for i in items if isinstance(i, dict)],
+                        total_declarado=total)
     except Exception as exc:  # noqa: BLE001 — cuerpo con forma inesperada
         return Consulta(ok=False, motivo=f"cuerpo inesperado: {exc!r}")
 
@@ -1309,6 +1333,16 @@ def _resolver_por_buzon_compartido(
     # remedio de `[APER-71]` lo volvió peligroso, porque esta rama ahora **autoriza una
     # creación**. Es la misma lección que la R1: un remedio cambia qué estados son alcanzables,
     # y obliga a volver a mirar los que antes no importaban.
+    # **Dos truncamientos distintos, y la longitud solo delata uno** (R3/H-05). Que lleguen
+    # tantas como se pidieron es sospecha de que hay más; que el cuerpo declare un total mayor
+    # del que mandó es la CERTEZA de que los hay, y esa señal se estaba tirando en
+    # `_buscar_registros`. Concluir «todas descartadas» sobre una página incompleta, en la
+    # rama que autoriza CREAR una ficha, es el defecto entero de esta función.
+    if c_mail.truncada:
+        return ResolucionParte(motivo=(
+            f"el email devolvió {len(c_mail.registros)} fichas y el propio cuerpo declara "
+            f"{c_mail.total_declarado}: la lista está truncada y no se puede afirmar que se "
+            "hayan contrastado TODAS"))
     if len(c_mail.registros) >= _LIMITE_BUZON:
         return ResolucionParte(motivo=(
             f"el email devolvió {len(c_mail.registros)} fichas, el máximo que se pidió: la "
