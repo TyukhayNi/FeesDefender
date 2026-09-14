@@ -279,3 +279,125 @@ def test_sin_expediente_vinculado_la_actuacion_declara_pendiente(tmp_path, monke
 
     assert res.estado == "saltada"
     assert [p.codigo for p in res.pendientes] == ["actuacion_sin_expediente"]
+
+
+# --------------------------------------------------------------------------
+# Ramas de error: las senalo `diff-cover` y son justo donde la etapa decide si
+# un fallo se declara o se traga. La respuesta por defecto es escribir el test.
+# --------------------------------------------------------------------------
+
+def test_crm_alta_traduce_una_excepcion_a_fallo(tmp_path):
+    def _explota():
+        raise RuntimeError("el CRM se cayo")
+
+    res = ac.etapa_crm_alta(_Ident(), tmp_path, crm="api", alta=_explota)
+
+    assert res.estado == "fallo"
+    assert "se cayo" in res.detalle
+
+
+def test_actuacion_traduce_una_excepcion_a_fallo(tmp_path):
+    def _explota(**_kw):
+        raise RuntimeError("boom")
+
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api",
+                             firmante="Nikolai_Tyukhay", alta=_explota)
+
+    assert res.estado == "fallo"
+    assert "boom" in res.detalle
+
+
+def test_verificar_traduce_una_excepcion_a_fallo(tmp_path):
+    def _explota(_cd):
+        raise RuntimeError("el verificador reviento")
+
+    res = ac.etapa_verificar(_Ident(), tmp_path, verificar=_explota)
+
+    assert res.estado == "fallo"
+    assert "reviento" in res.detalle
+
+
+def test_si_el_recibo_no_se_puede_guardar_se_DICE(tmp_path, monkeypatch):
+    # El efecto remoto SI ocurrio; lo que falla es poder reanudarlo. Callarlo
+    # dejaria creer que un relanzamiento es seguro, y crearia otra actuacion.
+    def _no_escribe(*_a, **_k):
+        raise OSError("disco lleno")
+
+    monkeypatch.setattr(ac, "_guardar_recibo", _no_escribe)
+
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay",
+                             alta=lambda **kw: _ReciboFalso("verificada", act_id=930))
+
+    assert res.estado == "fallo"
+    assert "930" in res.detalle and "crearia otra" in res.detalle
+
+
+def test_un_recibo_corrupto_se_ignora_y_no_tumba_la_etapa(tmp_path):
+    # Un JSON que no casa con `Recibo` no puede impedir que la etapa corra: se
+    # trata como «no hay recibo previo».
+    ac._recibo_path(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    ac._recibo_path(tmp_path).write_text('{"campo_que_no_existe": 1}', encoding="utf-8")
+
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay",
+                             alta=lambda **kw: _ReciboFalso("verificada", act_id=931))
+
+    assert res.estado == "hecha"
+
+
+def test_el_firmante_sale_del_yaml_cuando_no_se_pasa(tmp_path):
+    (tmp_path / "00_Input").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "00_Input" / "_ficha_crm.yaml").write_text(
+        "firmante: Nikolai_Tyukhay\n", encoding="utf-8")
+    vistos = {}
+
+    ac.etapa_actuacion(_Ident(), tmp_path, crm="api",
+                       alta=lambda **kw: vistos.update(kw) or _ReciboFalso("verificada", 932))
+
+    assert vistos["firmante"] == "Nikolai_Tyukhay"
+
+
+def test_sin_yaml_no_hay_firmante_y_se_declara(tmp_path):
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api")
+
+    assert res.estado == "saltada"
+    assert [p.codigo for p in res.pendientes] == ["actuacion_sin_firmante"]
+
+
+def test_un_yaml_ilegible_no_inventa_firmante(tmp_path):
+    (tmp_path / "00_Input").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "00_Input" / "_ficha_crm.yaml").write_text(
+        "esto: [no es, yaml valido\n", encoding="utf-8")
+
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api")
+
+    assert res.estado == "saltada"
+    assert [p.codigo for p in res.pendientes] == ["actuacion_sin_firmante"]
+
+
+def test_verificar_por_el_camino_REAL_llama_al_verificador(tmp_path, monkeypatch):
+    """El mismo control que hizo falta en `actuacion`: sin esto, `_verificar_real`
+    no se ejercita nunca porque todos los tests inyectan `verificar=`."""
+    from core import verificar_apertura as va
+
+    llamadas = []
+    monkeypatch.setattr(va, "verificar",
+                        lambda cd: llamadas.append(cd) or _InformeFalso([]))
+
+    res = ac.etapa_verificar(_Ident(), tmp_path, crm="api")
+
+    assert llamadas == [tmp_path]
+    assert res.estado == "hecha"
+
+
+def test_si_no_se_puede_leer_el_caso_no_hay_destino(tmp_path, monkeypatch):
+    # `read_case_meta` puede lanzar (caso a medio crear). Eso no es «hay expediente»:
+    # es «no lo se», y la actuacion declara pendiente en vez de inventarse un destino.
+    def _explota(_cd):
+        raise OSError("_caso.md ilegible")
+
+    monkeypatch.setattr(ac.case_locator, "read_case_meta", _explota)
+
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay")
+
+    assert res.estado == "saltada"
+    assert [p.codigo for p in res.pendientes] == ["actuacion_sin_expediente"]
