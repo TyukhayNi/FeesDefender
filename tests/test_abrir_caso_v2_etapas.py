@@ -24,6 +24,17 @@ class _Ident:
     direccion = "Calle Falsa 1"
 
 
+@pytest.fixture(autouse=True)
+def con_expediente_vinculado(monkeypatch):
+    """Por defecto el caso TIENE expediente CRM: es la precondicion de la actuacion.
+
+    Los tests que prueban su ausencia la pisan con su propio `monkeypatch`.
+    """
+    monkeypatch.setattr(ac.case_locator, "read_case_meta",
+                        lambda _cd: {"sudespacho_expedientes": [
+                            {"element": "extrajudiciales", "id": "644"}]})
+
+
 @dataclasses.dataclass
 class _ReciboFalso:
     """Espejo de `core.sudespacho_actuaciones.Recibo` para los dobles."""
@@ -222,3 +233,49 @@ def test_la_secuencia_v2_tiene_las_etapas_en_orden(tmp_path):
     etapas = ac._etapas_v2(_Ident(), tmp_path, folder_id="X", team_id="1", crm="skip")
 
     assert tuple(e.nombre for e in etapas) == ac.ETAPAS_V2
+
+
+def test_el_camino_REAL_pasa_los_argumentos_obligatorios(tmp_path, monkeypatch):
+    """El control que faltaba: sin este test, el camino sin doble no se ejercita.
+
+    Todos los tests de arriba inyectan `alta=...`, asi que `alta_actuacion` nunca se
+    llamaba de verdad. Con eso, faltarle `elemento`, `exp_id`, `referencia_esperada` y
+    `asunto` —los cuatro obligatorios— pasaba inadvertido: es el «doble que tapa la
+    condicion», y es el defecto que R1/H-03 ya habia señalado.
+    """
+    from core import sudespacho_actuaciones as sa
+
+    vistos = {}
+
+    def _espia(*args, **kw):
+        vistos.update(kw)
+        vistos["posicionales"] = args
+        return _ReciboFalso("verificada", act_id=920)
+
+    monkeypatch.setattr(sa, "alta_actuacion", _espia)
+    monkeypatch.setattr(ac.case_locator, "read_case_meta",
+                        lambda _cd: {"sudespacho_expedientes": [
+                            {"element": "extrajudiciales", "id": "644"}]})
+
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay")
+
+    assert res.estado == "hecha", res.detalle
+    faltan = [k for k in ("elemento", "exp_id", "referencia_esperada", "asunto")
+              if k not in vistos and len(vistos.get("posicionales", ())) < 3]
+    assert not faltan, f"la llamada real no pasa: {faltan}"
+    # El asunto lleva el PREFIJO DE TARIFA que corresponde a quien firma —`SENIOR` a
+    # 103,00 €/h—, no el username. Lo pone `asunto_canonico`, no esta etapa.
+    assert vistos.get("asunto", "").startswith("SENIOR - "), vistos.get("asunto")
+    assert vistos["posicionales"] == ("extrajudiciales", "644", "W-TEST01")
+
+
+def test_sin_expediente_vinculado_la_actuacion_declara_pendiente(tmp_path, monkeypatch):
+    # No hay a que colgar la actuacion. Es un pendiente, no un fallo: el alta puede
+    # venir en la misma corrida o en otra.
+    monkeypatch.setattr(ac.case_locator, "read_case_meta",
+                        lambda _cd: {"sudespacho_expedientes": []})
+
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay")
+
+    assert res.estado == "saltada"
+    assert [p.codigo for p in res.pendientes] == ["actuacion_sin_expediente"]

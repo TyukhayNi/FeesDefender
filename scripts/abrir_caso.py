@@ -1016,6 +1016,30 @@ def _guardar_recibo(case_dir: Path, recibo) -> None:
         encoding="utf-8")
 
 
+#: Base del asunto de la actuacion de apertura. El PREFIJO no se escribe aqui: lo pone
+#: `sudespacho_actuaciones.asunto_canonico` a partir de quien firma, porque ese prefijo
+#: ES la tarifa (`SENIOR` 103,00 €/h, `ABOGADO` 77,00) y ponerlo a mano facturaria al
+#: cliente la de otro (`[APER-72]`).
+_ASUNTO_APERTURA = "APERTURA E ESTUDIO INICIAL CASO"
+
+
+def _expediente_del_caso(case_dir: Path):
+    """`(elemento, exp_id)` del expediente CRM vinculado, o `None` si no hay.
+
+    Se lee del `_caso.md`, que es donde `register_expediente` lo deja. `None` no es un
+    error: es un caso cuyo alta todavia no se ha hecho.
+    """
+    try:
+        meta = case_locator.read_case_meta(case_dir)
+    except Exception:  # noqa: BLE001
+        return None
+    for link in (meta.get("sudespacho_expedientes") or []):
+        elemento, exp_id = link.get("element"), link.get("id")
+        if elemento and exp_id:
+            return str(elemento), str(exp_id)
+    return None
+
+
 def _firmante_de(case_dir: Path) -> str:
     """`firmante:` de `_ficha_crm.yaml`, o "" si no hay fichero o no lo declara."""
     from core import crm_ficha as cf
@@ -1064,9 +1088,27 @@ def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
             nombre="actuacion", estado="saltada",
             detalle=f"ya hay actuacion verificada (id={previo.act_id}); no se crea otra")
 
+    # A QUE se cuelga la actuacion. Sin expediente vinculado no hay destino, y eso es
+    # un pendiente —el alta puede venir en esta misma corrida o en otra—, no un fallo.
+    destino = _expediente_del_caso(case_dir)
+    if destino is None:
+        return av1.EtapaResultado(
+            nombre="actuacion", estado="saltada",
+            detalle="el caso no tiene expediente CRM vinculado: no hay donde colgarla",
+            pendientes=(av1.Pendiente(
+                codigo="actuacion_sin_expediente",
+                detalle="Da de alta el expediente (etapa `crm_alta`) y relanza "
+                        "`--hasta actuacion`."),))
+    elemento, exp_id = destino
+
     def _alta_real(**kw):
         from core import sudespacho_actuaciones as sa
-        return sa.alta_actuacion(**kw)
+        # El asunto lo construye la funcion canonica, NO esta etapa: su prefijo es la
+        # tarifa y copiarlo a mano factura al cliente la de otro (`[APER-72]`).
+        return sa.alta_actuacion(
+            elemento, exp_id, ident.case_id,
+            asunto=sa.asunto_canonico(_ASUNTO_APERTURA, firmante=kw["firmante"]),
+            **kw)
 
     try:
         recibo = (alta or _alta_real)(firmante=quien, desde=previo)
@@ -1102,7 +1144,8 @@ def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
             detalle="Relanza la etapa: el recibo guardado la reanuda sin crear otra."),))
 
 
-def etapa_verificar(ident, case_dir: Path, *, verificar=None) -> av1.EtapaResultado:
+def etapa_verificar(ident, case_dir: Path, *, crm: str = "api",
+                    verificar=None) -> av1.EtapaResultado:
     """Etapa 6 (V2): el «OK» del EXPEDIENTE, no el del paso.
 
     Reutiliza `core.verificar_apertura.verificar`, que **ya existe**: la rev. 1 del plan
@@ -1124,8 +1167,13 @@ def etapa_verificar(ident, case_dir: Path, *, verificar=None) -> av1.EtapaResult
                                   detalle=f"{type(exc).__name__}: {exc}")
 
     filas = list(getattr(informe, "resultados", ()) or ())
+    # **Sin autorizacion no se escribio nada, asi que no se puede EXIGIR que este
+    # escrito.** Con `--crm skip` las comprobaciones del CRM fallarian siempre y la
+    # secuencia saldria `bloqueado` por no haber hecho lo que nadie le pidio. Siguen
+    # viajando como pendiente: el diagnostico no se pierde, solo deja de bloquear.
+    decisorias = COMPROBACIONES_DE_V2 if crm == "api" else frozenset()
     fallos_v2 = sorted(r.id for r in filas
-                       if r.estado == "fallo" and r.id in COMPROBACIONES_DE_V2)
+                       if r.estado == "fallo" and r.id in decisorias)
     pendientes = tuple(
         av1.Pendiente(codigo=f"verificacion:{r.id}", detalle=(r.detalle or r.id))
         for r in filas
@@ -1150,7 +1198,7 @@ def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm):
         av1.Etapa("sala_maquina", lambda: etapa_sala_maquina(ident)),
         av1.Etapa("crm_alta", lambda: etapa_crm_alta(ident, case_dir, crm=crm)),
         av1.Etapa("actuacion", lambda: etapa_actuacion(ident, case_dir, crm=crm)),
-        av1.Etapa("verificar", lambda: etapa_verificar(ident, case_dir)),
+        av1.Etapa("verificar", lambda: etapa_verificar(ident, case_dir, crm=crm)),
     ]
 
 
