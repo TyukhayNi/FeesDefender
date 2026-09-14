@@ -26,6 +26,17 @@ en `docs/DEAD_ENDS.md`. **No la reintentes.**
 - **Patrón:** Codex ataca (**solo lectura, sin escribir en el repo**) → escribe sus hallazgos a un
   fichero **fuera del repo**, en la ruta que fija el encargo → devuelve **ruta y `sha256` canónico**
   → **Claude adjudica** cada hallazgo contra el código real.
+- **Ninguna ronda se lanza sin vigía, y el vigía cubre la MUERTE además del fin** (2026-09-14).
+  Las cuatro formas medidas de caerse —cupo a mitad, `404` del backend, filtro de contenido y
+  capacidad del modelo en el arranque— son **silenciosas**: dejan el workdir igual de vacío que
+  un revisor que está pensando. Un vigía que solo espera el informe **calla igual ante un proceso
+  muerto que ante uno vivo**, y ese silencio se lee como «sigue corriendo» — así se perdieron 18
+  minutos en la R3 de P6, que se descubrió muerta porque Nikolai preguntó. La señal de fin **no**
+  es la salida del lanzador (`nohup &` termina él, no el revisor), **no** es la aparición de
+  `INFORME.md` (puede seguir escribiéndose) y **no** es el reloj: es la terminación del revisor,
+  con `-o <fichero>`. El vigía espera **eso o un `ERROR` en el log**, y dice cuál ocurrió. Si
+  murió, la cobertura es **AUSENTE, no parcial**, y se relanza en directorio **nuevo** para no
+  borrar el `_stdout.log` que prueba el intento. Detalle: contrato §4.
 - **Dónde va cada cosa** (esto era el «o» ambiguo, resuelto el 2026-08-01):
   la **adjudicación** va *embebida* en el spec o el plan revisado, con el encabezado canónico y su
   ficha; el **informe del revisor** va *literal* a un **acta hermana** `…-r<N>-adversarial-review.md`
