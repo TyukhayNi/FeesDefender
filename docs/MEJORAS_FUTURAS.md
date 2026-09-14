@@ -11996,3 +11996,62 @@ dónde vive este recibo.
 
 **Lo que hace falta:** decidir quién conserva y transporta el recibo entre copias, registrarlo, y
 probarlo — incluido el caso de dos copias con recibos distintos.
+
+## 262. El JSON de la 1ª pasada de viabilidad es EFÍMERO — y sin él no hay reproducción ni auditoría
+
+**Qué pasa.** `render_informe.py` (skill `viabilidad-prerelleno`) parte de *«un JSON con los datos
+extraídos en la 1ª pasada documental»*. Ese JSON **no se guarda en ninguna parte**: lo produce la
+sesión que lee el expediente y muere con ella.
+
+**Medido el 2026-09-14** sobre los cuatro expedientes más recientes de Barcelona: **cero** tienen
+JSON de viabilidad, y **tres sí tienen el informe generado** (`Informe viabilidad - W-048UOL.xlsx`
+y dos más). O sea: el flujo se usa y su entrada se pierde.
+
+**Por qué importa, y son dos cosas distintas:**
+
+1. **No se puede reproducir ni auditar.** El informe dice qué se respondió a cada una de las 88
+   preguntas, pero **no de dónde salió**. Rehacerlo exige volver a leer el expediente entero con
+   una sesión. Y si mañana se discute una respuesta, no hay nada que enseñar salvo el xlsx.
+2. **Bloquea el cableado de V3.** Para que la corrida genere el informe sin el letrado delante,
+   alguien tiene que producir ese JSON y **dejarlo escrito**. Hoy ni siquiera hay un ejemplo del
+   que partir para conocer su forma.
+
+**El contrato del JSON, derivado POR EJECUCIÓN el 2026-09-14** — no leyéndolo, porque leerlo no
+bastó: tres intentos hasta que corrió. Se deja aquí porque **no está escrito en ningún sitio**:
+
+```json
+{
+  "case_id": "...", "ref": "W-XXXXX", "fecha": "AAAA-MM-DD",
+  "equipo": {"director_captador": "APELLIDO, Nombre", "asesor_captador": "...",
+             "director_buscador": "...", "asesor_buscador": "..."},
+  "observaciones": "...",
+  "importes": {"principal": 0, "costas": 0, "intereses": 0},
+  "hitos": {"<id de la plantilla>": {"score": 0, "fecha": "AAAA-MM-DD"}},
+  "preguntas": {"<id de la plantilla>": {"respuesta": "...", "cita": "...", "confianza": "..."}},
+  "actividades": [], "motivos_impago": [],
+  "avisos": [{"n": 1, "tipo": "...", "aviso": "...", "impacto": "...", "fuente": "...",
+              "severidad": "alta|media|baja", "accion": "...", "sube": "no", "estado": "abierto"}],
+  "bitacora_inicial": "..."
+}
+```
+
+**Los dos errores que cuesta descubrir:** `equipo` es un **objeto** de cuatro claves (un texto
+revienta con `AttributeError`), y `avisos` es una lista de **objetos**, no de cadenas.
+
+**Tres cosas más que la corrida enseñó y conviene no volver a descubrir:**
+
+- El script **valida los identificadores contra la plantilla** y avisa de los que no reconoce
+  (`hito desconocido '1' — se ignora`), en vez de inventarlos. Está bien hecho.
+- **Las 88 filas salen marcadas como pendientes aunque el JSON traiga cero respuestas** —
+  comprobado: plantilla 0 marcadas, generado 88. Es lo que cerró `MEJORAS #228` (P5).
+- **Un fallo a mitad deja un `.xlsx` incompleto** que bloquea el reintento, porque la skill nunca
+  sobrescribe. La protección es correcta; el residuo hay que retirarlo a mano.
+
+**Disparador.** Cualquiera de los dos: que haya que reproducir o discutir un informe ya entregado,
+o que se decida cablear la viabilidad dentro de la corrida de apertura. **Depende de la misma
+decisión que la sala de lectura**: qué hace la corrida cuando necesita que alguien *lea* el
+expediente.
+
+**Dónde debería vivir, para cuando se decida:** junto al informe, dentro del expediente, y
+declarado como protocolo si no debe inventariarse como documento del cliente — la misma frontera
+que `MEJORAS #261` plantea para el recibo de la actuación.
