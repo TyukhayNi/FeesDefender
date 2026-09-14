@@ -11786,3 +11786,104 @@ sobre renombrar `Sala lectura` a `01_Sala de lectura`, que se **descartó por no
 `01_Procesado` sigue teniendo **una de siete** subcarpetas numeradas, así que esa alineación no
 existía.
 
+
+## 254. Un seguimiento («Comentario») se crea y no se sabe colgar de su actuación
+
+**Qué pasa.** `core/sudespacho_actuaciones.crear_seguimiento` da de alta el registro sin
+problema —`POST /api/element_register/seguimientos` → 201, y se relee bien con sus `notas` y su
+`personaasignada`—, pero **no hay forma conocida de atarlo a la actuación**. Medido el
+2026-09-14, las cuatro variantes, verificando **por lectura** y no por status:
+
+| Intento | Resultado |
+|---|---|
+| `POST relation_element/actuaciones/{act}` `["right.seguimientos.{id}"]` | **201 y nada** |
+| `POST relation_element/actuaciones/{act}` `["left.seguimientos.{id}"]` | 404 |
+| `POST relation_element/seguimientos/{id}` `["right.actuaciones.{act}"]` | 404 |
+| `POST relation_element/seguimientos/{id}` `["left.actuaciones.{act}"]` | **201 y nada** |
+
+Y no se puede leer desde el otro lado: **`GET related_register/seguimientos/{id}` → HTTP 500**
+en todos los registros probados, incluidos los preexistentes del despacho.
+
+**Tampoco hay campo de atadura.** `calendario` resuelve esto con `miembro` + `elemento`;
+`seguimientos` tiene ocho campos y ninguno apunta a una actuación.
+
+**Por qué no es urgente.** El tenant tiene **cuatro** seguimientos en total: el elemento apenas
+se usa, así que su contrato está poco acreditado y nadie lo echa en falta hoy. Y el código no
+miente: `crear_seguimiento` **verifica releyendo y levanta**, devolviendo el id del seguimiento
+creado para poder colgarlo a mano.
+
+**Disparador.** Que alguien quiera anotar comentarios por código. **Lo que lo desbloquea es un
+HAR** de la UI añadiendo un comentario desde el panel de una actuación — un minuto de captura.
+Es el límite del método del §14.6: descubrir una escritura sin HAR funciona cuando va por el API
+de elementos, y ésta no parece ir por ahí.
+
+Detalle completo: `INTEGRACION_SUDESPACHO.md` §15.10.
+
+---
+
+## 255. Los eventos de calendario creados por API no llegan a ningún calendario
+
+**Qué pasa, y es lo caro.** `crear_evento_calendario` deja el evento en el CRM —se ve en el panel
+de la actuación, conserva su tipo, sus recordatorios y sus invitados— pero **`id_gcalendar` queda
+vacío**. Los creados desde la UI traen un UUID. Medido el 2026-09-14 comparando unos con otros.
+
+**Un vencimiento que se ve y no avisa es peor que no tenerlo:** parece cubierto. Si el aviso lo
+dispara la sincronización, no salta.
+
+**Eso es lo que controla «Selecciona calendario para asociar este evento»** — las fichas
+`Nikolai_Tyukhay` y `Oficina del Despacho Principal` del panel. Modelo, corregido por Nikolai:
+*el CRM tiene sus propios calendarios, que pueden sincronizarse con Google Calendar o no*.
+
+**Lo que se descartó, para no repetirlo:**
+
+- **No es una relación entre elementos.** El evento 20234, creado desde la UI **con** esas dos
+  fichas, tiene exactamente las mismas relaciones que uno creado por API.
+- **No es un campo del evento.** `Invitados` guarda `N;`, `tipo_sincronizacion` está vacío en
+  todos, y `miembro` es el id de la actuación.
+- **No están en el host REST.** `/api/elements` declara 89 elementos y el único de calendario es
+  `calendario` (el evento). `/api/calendar`, `/api/calendar/calendars` y `/api/calendar/members`
+  dan 404; `/api/calendar/meetingroom` devuelve los 5 **usuarios**, no los calendarios.
+
+**Conclusión: viven en el host de calendario** `api-calendar-commons-pro.sudespacho.biz` (§14.1),
+con otra autenticación (JWT de `localStorage['token']`, no `x-api-key`).
+
+**Disparador.** Que se quiera que un vencimiento agendado por código **avise de verdad**. Hace
+falta un **HAR** de la UI guardando ese control. Detalle: `INTEGRACION_SUDESPACHO.md` §15.12.
+
+---
+
+## 256. «Crear documento a través de plantilla» desde la actuación
+
+**Qué pasa.** Es una de las dos casillas del panel de la actuación, y **no es un campo**: los 37
+campos de `actuaciones` solo tienen cinco `CheckBox` y ninguna es ésa. Es el flujo de plantillas
+`rtf` del **§10.11**, ya confirmado en vivo el 2026-09-10, que **no está cableado a la actuación**.
+
+**Lo que ya está resuelto y lo que falta.** El render funciona
+(`GET /api/templates/rtf/{tpl}/{elemento}/{id}` → `{content, name}` con el RTF completo), pero
+**el render no guarda nada**: para dejar el documento en el gestor documental hay que encadenar
+los tres pasos del §17. Lo que falta es exactamente ese encadenado, más elegir la plantilla.
+
+**Disparador.** Que una actuación tenga que generar su documento sin pasar por la UI. Hoy no lo
+pide nadie: se marca la casilla a mano. **Misma frontera que `MEJORAS #209`** — el contrato del
+CRM se documenta y no se encapsula—, así que si se aborda, abordarla como familia.
+
+---
+
+## 257. «Enviar por email» desde la actuación — y por qué NO se cableó
+
+**Qué pasa.** La otra casilla del panel. Tampoco es un campo: es el flujo `nest-mail` del
+**§10.9** (crear el mail y **enviarlo con un `PUT`**), documentado y confirmado.
+
+**Y aquí la razón de que esté en el backlog y no construido no es técnica.** Cablearlo haría que
+el código **envíe correo en nombre del despacho, automáticamente, al dar de alta una actuación**.
+Eso no es un detalle de implementación: es una decisión sobre qué sale del despacho y hacia
+quién, y la toma Nikolai. Se planteó el 2026-09-14 y se dejó sin construir a propósito.
+
+**Disparador.** Una decisión expresa de Nikolai que diga **cuándo** se manda y **a quién** — no
+«que lo sepa hacer». Mientras tanto, la casilla se marca a mano, que es reversible hasta el
+momento del envío.
+
+**Y si se construye, dos cosas que no se negocian:** el destinatario **nunca** sale de contenido
+leído (documento, correo entrante, ficha), y el envío va detrás de una confirmación explícita,
+no de un valor por defecto.
+

@@ -71,20 +71,20 @@ irrevisable el diff. La pieza 1 va en cuatro por la misma razón.
 - Produce: `ResolucionParte.motivo: str = ""`; `sudespacho_relations._estado_documento(str) -> str`
   con valores `"ausente" | "utilizable" | "no_interpretable"`.
 
-- [ ] **Paso 1: escribir los tests que fallan**
+- [x] **Paso 1: escribir los tests que fallan**
 
 Los de `test_resolver_parte_aper71.py` que cubren el vocabulario:
 `test_h01_un_nif_no_interpretable_no_cae_a_la_politica_de_email`,
 `test_un_nif_ausente_de_verdad_si_usa_la_politica_de_email`,
 `test_el_error_de_un_nif_no_interpretable_no_habla_de_varias_fichas`.
 
-- [ ] **Paso 2: verificar que fallan por la razón correcta**
+- [x] **Paso 2: verificar que fallan por la razón correcta**
 
 Run: `python -m pytest tests/test_resolver_parte_aper71.py -k "no_interpretable or ausente_de_verdad" -q --tb=short -p no:randomly`
 Esperado: FAIL — `AttributeError: 'ResolucionParte' object has no attribute 'motivo'`, y el de
 `no_interpretable` resolviendo a `"A"` por email.
 
-- [ ] **Paso 3: implementar lo mínimo**
+- [x] **Paso 3: implementar lo mínimo**
 
 ```python
 def _estado_documento(valor: str) -> str:
@@ -125,12 +125,12 @@ En `_exigir_identidad_cierta`, **antes** de la rama de `ambiguo`:
         )
 ```
 
-- [ ] **Paso 4: verificar que pasan**
+- [x] **Paso 4: verificar que pasan**
 
 Run: `python -m pytest tests/test_resolver_parte_aper71.py -k "no_interpretable or ausente_de_verdad" -q --tb=short -p no:randomly`
 Esperado: PASS.
 
-- [ ] **Paso 5: commit**
+- [x] **Paso 5: commit**
 
 ```bash
 git add core/sudespacho_relations.py tests/test_resolver_parte_aper71.py
@@ -149,7 +149,7 @@ git commit -m "Un documento tiene TRES estados, no dos (R1/H-01)"
 - Consume: `_estado_documento` (tarea 1), `Consulta.ids`, `_PROP_NIF`.
 - Produce: `resolver_parte` con el orden del §2.1 del diseño. Firma sin cambios.
 
-- [ ] **Paso 1: escribir los tests que fallan**
+- [x] **Paso 1: escribir los tests que fallan**
 
 `test_h03_el_nif_unico_manda_aunque_el_email_devuelva_varias`,
 `test_h03_el_orden_de_los_resultados_no_cambia_la_decision`,
@@ -158,12 +158,12 @@ git commit -m "Un documento tiene TRES estados, no dos (R1/H-01)"
 `test_una_consulta_fallida_manda_sobre_todo_lo_demas`,
 `test_sin_nif_y_con_varias_fichas_en_el_buzon_es_ambiguo`.
 
-- [ ] **Paso 2: verificar que falla el que importa**
+- [x] **Paso 2: verificar que falla el que importa**
 
 Run: `python -m pytest tests/test_resolver_parte_aper71.py -k h03 -q --tb=short -p no:randomly`
 Esperado: FAIL — `test_h03_el_nif_unico_manda…` devuelve `ambiguo=("A","B")` en vez de `id="B"`.
 
-- [ ] **Paso 3: reordenar la función**
+- [x] **Paso 3: reordenar la función**
 
 Sustituir el bloque desde `ids_nif = set(c_nif.ids)` hasta el `return ResolucionParte()` final:
 
@@ -215,19 +215,19 @@ Y arriba, tras `nif_canon = _canonizar_documento(nif)`, añadir:
 En la tarea 3 se define `_resolver_por_buzon_compartido`; hasta entonces, para que el módulo
 importe, añadir el stub **con su test ya escrito** (paso siguiente).
 
-- [ ] **Paso 4: stub mínimo para que el módulo cargue**
+- [x] **Paso 4: stub mínimo para que el módulo cargue**
 
 ```python
 def _resolver_por_buzon_compartido(nif, c_mail, prop_nif) -> "ResolucionParte":
     return ResolucionParte(motivo="pendiente: tabla del buzón compartido")
 ```
 
-- [ ] **Paso 5: verificar que pasan los de esta tarea**
+- [x] **Paso 5: verificar que pasan los de esta tarea**
 
 Run: `python -m pytest tests/test_resolver_parte_aper71.py -k "h03 or conflicto or varias_fichas_por_nif or consulta_fallida or sin_nif_y_con_varias" -q --tb=short -p no:randomly`
 Esperado: PASS.
 
-- [ ] **Paso 6: commit**
+- [x] **Paso 6: commit**
 
 ```bash
 git add core/sudespacho_relations.py tests/test_resolver_parte_aper71.py
@@ -247,7 +247,7 @@ git commit -m "El NIF único manda sobre la multiplicidad del email (R1/H-03)"
 - Consume: `_estado_documento`, `_canonizar_documento`, `_values_dict`, `Consulta.registros`.
 - Produce: `_resolver_por_buzon_compartido(nif: str, c_mail: Consulta, prop_nif: str) -> ResolucionParte`.
 
-- [ ] **Paso 1: escribir los tests que fallan**
+- [x] **Paso 1: escribir los tests que fallan**
 
 `test_aper71_el_buzon_compartido_con_nif_distinto_crea_ficha_nueva`,
 `test_la_ficha_del_buzon_sin_nif_para_en_vez_de_crear`,
@@ -257,12 +257,12 @@ git commit -m "El NIF único manda sobre la multiplicidad del email (R1/H-03)"
 `test_la_segunda_corrida_sobre_el_mismo_yaml_converge`,
 `test_un_tercer_firmante_del_mismo_buzon_tambien_resuelve`.
 
-- [ ] **Paso 2: verificar que fallan**
+- [x] **Paso 2: verificar que fallan**
 
 Run: `python -m pytest tests/test_resolver_parte_aper71.py -q --tb=short -p no:randomly`
 Esperado: FAIL en los siete, con `motivo="pendiente: tabla del buzón compartido"`.
 
-- [ ] **Paso 3: la consulta por email pide el NIF**
+- [x] **Paso 3: la consulta por email pide el NIF**
 
 En `resolver_parte`, sustituir la construcción de `c_mail`:
 
@@ -272,7 +272,7 @@ En `resolver_parte`, sustituir la construcción de `c_mail`:
               if (email or "").strip() else Consulta())
 ```
 
-- [ ] **Paso 4: implementar la tabla**
+- [x] **Paso 4: implementar la tabla**
 
 ```python
 def _resolver_por_buzon_compartido(
@@ -312,18 +312,18 @@ def _resolver_por_buzon_compartido(
     return ResolucionParte()
 ```
 
-- [ ] **Paso 5: verificar que pasa el fichero entero**
+- [x] **Paso 5: verificar que pasa el fichero entero**
 
 Run: `python -m pytest tests/test_resolver_parte_aper71.py -q --tb=short -p no:randomly`
 Esperado: PASS, 16 tests.
 
-- [ ] **Paso 6: no romper lo que ya había**
+- [x] **Paso 6: no romper lo que ya había**
 
 Run: `python -m pytest tests/test_sudespacho_relations.py tests/test_crm_dedup_incertidumbre.py -q --tb=short -p no:randomly`
 Esperado: PASS. Si algo falla, **leerlo antes de tocarlo**: puede ser un test que congelaba el
 comportamiento viejo (legítimo de corregir, con su justificación) o una regresión real.
 
-- [ ] **Paso 7: commit**
+- [x] **Paso 7: commit**
 
 ```bash
 git add core/sudespacho_relations.py tests/test_resolver_parte_aper71.py
@@ -344,7 +344,7 @@ git commit -m "El email identifica un buzón, no a una persona ([APER-71])"
   `FichaCRMInput.contrario` se conserva como propiedad de compatibilidad que devuelve el
   primero o `None`.
 
-- [ ] **Paso 1: escribir el test que falla**
+- [x] **Paso 1: escribir el test que falla**
 
 ```python
 def test_una_lista_de_dos_contrarios_produce_dos(tmp_path):
@@ -376,12 +376,12 @@ def test_un_elemento_invalido_aborta_con_su_indice_y_no_escribe_nada(tmp_path):
     assert "1" in str(exc.value), str(exc.value)
 ```
 
-- [ ] **Paso 2: verificar que fallan**
+- [x] **Paso 2: verificar que fallan**
 
 Run: `python -m pytest tests/test_crm_ficha_n_contrarios.py -q --tb=short -p no:randomly`
 Esperado: FAIL — `AttributeError: 'FichaCRMInput' object has no attribute 'contrarios'`.
 
-- [ ] **Paso 3: implementar**
+- [x] **Paso 3: implementar**
 
 ```python
 def _contrarios_de(raw) -> list[NuevoClienteContrario]:
@@ -421,12 +421,12 @@ En el DTO, `contrario` pasa a propiedad:
 Y en `cargar`, sustituir las dos líneas de `contrario_raw` por
 `contrarios=_contrarios_de(data.get("contrario"))`.
 
-- [ ] **Paso 4: verificar**
+- [x] **Paso 4: verificar**
 
 Run: `python -m pytest tests/test_crm_ficha_n_contrarios.py tests/test_crm_ficha*.py -q --tb=short -p no:randomly`
 Esperado: PASS.
 
-- [ ] **Paso 5: commit**
+- [x] **Paso 5: commit**
 
 ```bash
 git add core/crm_ficha.py tests/test_crm_ficha_n_contrarios.py
@@ -448,7 +448,7 @@ git commit -m "La ficha admite N contrarios, validados enteros antes de escribir
   `motivo: str = ""`), estados `"aprendido" | "no_aplica" | "sin_filas" | "sin_comprobar"`;
   `aprender_id_predefinido(asunto: str, *, client=None) -> IdPredefinido`.
 
-- [ ] **Paso 1: escribir los tests que fallan**
+- [x] **Paso 1: escribir los tests que fallan**
 
 ```python
 def test_aprende_el_id_de_una_instancia_real():
@@ -476,12 +476,12 @@ def test_una_consulta_fallida_no_es_ausencia():
     assert r.estado == "sin_comprobar" and r.valor is None
 ```
 
-- [ ] **Paso 2: verificar que fallan**
+- [x] **Paso 2: verificar que fallan**
 
 Run: `python -m pytest tests/test_sudespacho_actuaciones.py -q --tb=short -p no:randomly`
 Esperado: FAIL — `ModuleNotFoundError: core.sudespacho_actuaciones`.
 
-- [ ] **Paso 3: implementar el módulo y la función**
+- [x] **Paso 3: implementar el módulo y la función**
 
 Cabecera del módulo con la receta citada (§15.6) y:
 
@@ -505,12 +505,12 @@ class IdPredefinido:
 clasifica: excepción o HTTP != 200 → `sin_comprobar`; sin filas → `sin_filas`; filas con todos
 los `id_predefinido` vacíos → `no_aplica`; un entero → `aprendido`.
 
-- [ ] **Paso 4: verificar**
+- [x] **Paso 4: verificar**
 
 Run: `python -m pytest tests/test_sudespacho_actuaciones.py -q --tb=short -p no:randomly`
 Esperado: PASS, 4 tests.
 
-- [ ] **Paso 5: commit**
+- [x] **Paso 5: commit**
 
 ```bash
 git add core/sudespacho_actuaciones.py tests/test_sudespacho_actuaciones.py
@@ -530,7 +530,7 @@ git commit -m "El paso 1 de la receta tiene CUATRO salidas ([APER-72], MEJORAS #
   `resolver_destino(elemento: str, exp_id: str, referencia_esperada: str, *, client=None) -> Destino`.
   Lanza `DestinoNoAcreditado` si la referencia no casa.
 
-- [ ] **Paso 1: escribir los tests que fallan**
+- [x] **Paso 1: escribir los tests que fallan**
 
 ```python
 def test_un_expediente_de_OTRO_caso_con_el_mismo_numero_no_se_acredita():
@@ -556,12 +556,12 @@ def test_no_acreditar_el_destino_no_escribe_nada(monkeypatch):
     assert escrituras == []
 ```
 
-- [ ] **Paso 2: verificar que fallan**
+- [x] **Paso 2: verificar que fallan**
 
 Run: `python -m pytest tests/test_sudespacho_actuaciones.py -k destino -q --tb=short -p no:randomly`
 Esperado: FAIL — `AttributeError: module has no attribute 'resolver_destino'`.
 
-- [ ] **Paso 3: implementar**
+- [x] **Paso 3: implementar**
 
 `resolver_destino` hace `GET element_registries/{elemento}` filtrando por id, pide la property
 de referencia (`Referencia_Cliente` para `extrajudiciales`, `referencia_cliente` para
@@ -569,12 +569,12 @@ de referencia (`Referencia_Cliente` para `extrajudiciales`, `referencia_cliente`
 compara por W-code con `wcode_match` del módulo hermano. Sin coincidencia → `DestinoNoAcreditado`
 con los dos valores en el mensaje.
 
-- [ ] **Paso 4: verificar**
+- [x] **Paso 4: verificar**
 
 Run: `python -m pytest tests/test_sudespacho_actuaciones.py -q --tb=short -p no:randomly`
 Esperado: PASS.
 
-- [ ] **Paso 5: commit**
+- [x] **Paso 5: commit**
 
 ```bash
 git add core/sudespacho_actuaciones.py tests/test_sudespacho_actuaciones.py
@@ -596,7 +596,7 @@ git commit -m "Verificar la llegada no verifica la intención: el paso 3 (R1/H-0
   `verificar_actuacion_vinculada(...) -> bool`,
   `alta_actuacion(..., desde: Recibo | None = None) -> Recibo`.
 
-- [ ] **Paso 1: escribir los tests que fallan**
+- [x] **Paso 1: escribir los tests que fallan**
 
 ```python
 def test_si_el_vinculo_falla_el_recibo_conserva_el_id_creado():
@@ -624,23 +624,23 @@ def test_alta_actuacion_no_declara_exito_sin_la_verificacion_del_paso_6():
     assert r.estado != "verificada"
 ```
 
-- [ ] **Paso 2: verificar que fallan**
+- [x] **Paso 2: verificar que fallan**
 
 Run: `python -m pytest tests/test_sudespacho_actuaciones.py -k "recibo or reanudar or incierto or paso_6" -q --tb=short -p no:randomly`
 Esperado: FAIL.
 
-- [ ] **Paso 3: implementar**
+- [x] **Paso 3: implementar**
 
 `alta_actuacion` encadena 1→6; con `desde` salta al paso indicado reutilizando `act_id`. Un fallo
 tras el POST devuelve `incompleta` con el id; un fallo **durante** el POST sin respuesta,
 `incierta`. Docstring: **reintentar el alta completa en estado `incompleta` está prohibido**.
 
-- [ ] **Paso 4: verificar**
+- [x] **Paso 4: verificar**
 
 Run: `python -m pytest tests/test_sudespacho_actuaciones.py -q --tb=short -p no:randomly`
 Esperado: PASS.
 
-- [ ] **Paso 5: commit**
+- [x] **Paso 5: commit**
 
 ```bash
 git add core/sudespacho_actuaciones.py tests/test_sudespacho_actuaciones.py
@@ -660,7 +660,7 @@ git commit -m "El recibo reanudable: una verificación negativa no es ausencia d
   firmante); `duracion_desde_ronda(case_dir: Path) -> int | None`;
   `FichaCRMInput.firmante: str = ""`.
 
-- [ ] **Paso 1: escribir los tests que fallan**
+- [x] **Paso 1: escribir los tests que fallan**
 
 ```python
 def test_el_asunto_exige_el_firmante_porque_el_prefijo_ES_la_tarifa():
@@ -690,12 +690,12 @@ def test_extremos_invertidos_se_rechazan(tmp_path):
                                         "2026-09-14T10:00:00Z"))
 ```
 
-- [ ] **Paso 2: verificar que fallan**
+- [x] **Paso 2: verificar que fallan**
 
 Run: `python -m pytest tests/test_sudespacho_actuaciones.py -k "asunto or firmante or duracion or invertidos" -q --tb=short -p no:randomly`
 Esperado: FAIL.
 
-- [ ] **Paso 3: implementar**
+- [x] **Paso 3: implementar**
 
 `asunto_canonico` mapea username → prefijo con una tabla explícita y **sin defecto**; el mapeo
 vive en el módulo con su fuente (`docs/MANUAL_DESPACHO.md`) citada. `duracion_desde_ronda` usa
@@ -705,12 +705,12 @@ actividad facturable**.
 
 `FichaCRMInput` gana `firmante: str = ""`, leído de `data.get("firmante")`.
 
-- [ ] **Paso 4: verificar**
+- [x] **Paso 4: verificar**
 
 Run: `python -m pytest tests/test_sudespacho_actuaciones.py tests/test_crm_ficha_n_contrarios.py -q --tb=short -p no:randomly`
 Esperado: PASS.
 
-- [ ] **Paso 5: commit**
+- [x] **Paso 5: commit**
 
 ```bash
 git add core/sudespacho_actuaciones.py core/crm_ficha.py tests/
@@ -724,7 +724,7 @@ git commit -m "El prefijo ES la tarifa, y la duración mide la ronda que mide ([
 **Ficheros:**
 - Crear: `tests/_mutantes_p6.py`
 
-- [ ] **Paso 1: escribir el arnés** con el contrato de la casa (copiar la estructura de
+- [x] **Paso 1: escribir el arnés** con el contrato de la casa (copiar la estructura de
   `tests/_mutantes_p4.py`: `_escribir` con reintentos, `_corre` devolviendo `(rc, salida)`,
   `_PYTEST_USAGE_ERROR` distinguido de un rojo, restauración armada **antes** de mutar).
 
@@ -735,12 +735,12 @@ git commit -m "El prefijo ES la tarifa, y la duración mide la ronda que mide ([
   dos; `resolver_destino` sin contraste; el recibo perdiendo el `act_id`; `asunto_canonico`
   con defecto.
 
-- [ ] **Paso 2: correr con el árbol limpio**
+- [x] **Paso 2: correr con el árbol limpio**
 
 Run: `python -m tests._mutantes_p6`
 Esperado: todos muertos, o los supervivientes **declarados con su razón**.
 
-- [ ] **Paso 3: commit**
+- [x] **Paso 3: commit**
 
 ```bash
 git add tests/_mutantes_p6.py
@@ -754,14 +754,14 @@ git commit -m "El arnés de P6: cada mutante apunta a su test"
 **Ficheros:**
 - Modificar: `docs/RUNBOOK_APERTURA_EXPEDIENTE.md`, `PLAN.md`, `docs/MEJORAS_FUTURAS.md`
 
-- [ ] **Paso 1:** `[APER-71]`, `[APER-63]` y `[APER-72]` ganan su bloque «resuelto el
+- [x] **Paso 1:** `[APER-71]`, `[APER-63]` y `[APER-72]` ganan su bloque «resuelto el
   2026-09-14», **con lo que sigue sin resolverse dicho**: la parte de un nombre opaco no se
   infiere, y la tarifa efectiva sigue sin acreditarse por un `Subject`.
-- [ ] **Paso 2:** `MEJORAS #209` cerrada con su PR.
-- [ ] **Paso 3:** fila #33 en `PLAN.md` con las dos rondas y sus actas.
+- [x] **Paso 2:** `MEJORAS #209` cerrada con su PR.
+- [x] **Paso 3:** fila #33 en `PLAN.md` con las dos rondas y sus actas.
 - [ ] **Paso 4: la verja.** Run: `python -m scripts.session_close`
   Esperado: dos semillas (777, 31337) verdes. Explicar la variación del conteo.
-- [ ] **Paso 5: R2 adversarial sobre el diff**, adjudicar, acta hermana `…-r2-…`.
+- [x] **Paso 5: R2 adversarial sobre el diff**, adjudicar, acta hermana `…-r2-…`.
 - [ ] **Paso 6:** PR. **No mergear**: lo decide Nikolai.
 
 ---

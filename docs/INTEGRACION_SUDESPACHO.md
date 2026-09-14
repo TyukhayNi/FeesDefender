@@ -2557,6 +2557,29 @@ nunca relanzar el lote entero.
 
 ### 17.5 Borrar: qué se lleva cada `DELETE`
 
+> **Ampliado el 2026-09-14: `actuaciones`, `calendario` y `seguimientos` también se borran**, y
+> hasta hoy el §17.5 solo lo acreditaba sobre `gdocu` y `colaboradores` —y decía expresamente
+> que *no se cuenta con el borrado como red* para lo que no estuviera aquí—. Medido limpiando
+> nueve eventos, siete actuaciones y un seguimiento del expediente de prueba 636, **verificando
+> por lectura**:
+>
+> - `DELETE /api/relation_element/{padre}/{id}` con `["right.calendario.{ev}"]` → 200, y quita
+>   solo esa relación.
+> - `DELETE /api/element_register/calendario/{ev}` → 200.
+> - `DELETE /api/relation_element/extrajudiciales/{exp}` con `["right.actuaciones.{act}"]` → 200.
+> - `DELETE /api/element_register/actuaciones/{act}` → 200; la actuación desaparece del listado
+>   asociado al expediente.
+> - `DELETE /api/element_register/seguimientos/{id}` → 200.
+>
+> **El orden sigue siendo el mismo y sigue importando: relaciones primero, registro después.**
+> Y el evento se desata de su actuación por la relación, aunque se ate por el campo `miembro`
+> (§15.9): son dos ataduras distintas y hay que deshacer la que existe.
+>
+> ⚠️ **Lo que esto NO acredita: que el borrado alcance a Google Calendar.** Uno de los eventos
+> borrados tenía `id_gcalendar` poblado; se borró del CRM y **no se comprobó** qué pasó con su
+> copia sincronizada. Para un evento creado por API da igual —no llegan a sincronizarse
+> (§15.12)—, pero para uno de la UI es una pregunta abierta.
+
 - **`DELETE /api/documents/{id}`** → 200. El documento desaparece del listado filtrado, pero
   **`related_register` sigue devolviéndolo**: queda una **relación huérfana** apuntando a un
   documento que ya no existe. Es inocua, pero ensucia el censo de cualquiera que use esa vía.
