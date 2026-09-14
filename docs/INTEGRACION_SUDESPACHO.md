@@ -2816,11 +2816,19 @@ usuario. Tampoco son campos del evento: `Invitados` guarda `N;` y `tipo_sincroni
 vacío en todos. Y «Oficina del Despacho Principal» no existe como registro en `empleados`,
 `usuarios`, `organismos` ni `proveedores`.
 
-**El modelo que queda en pie:** son calendarios de Google, y la selección la maneja el **host de
-calendario** `api-calendar-commons-pro.sudespacho.biz` (§14.1), que es otra API. `/api/calendar/
-meetingroom` del host REST devuelve el censo de los 5 usuarios, pero no los calendarios.
+**El modelo correcto lo dio Nikolai, y desmonta el que yo había inferido:** *el CRM tiene sus
+propios calendarios, que pueden sincronizarse con Google Calendar o no*. O sea que las fichas
+eligen **calendarios del CRM**, y la sincronización con Google es una capa encima —eso explica
+el `id_gcalendar` vacío—. No son calendarios de Google, como escribí primero.
 
-**Para cerrarlo hace falta un HAR** de la UI guardando ese control. Es el caso que el §14.6
-contempla: descubrir una escritura sin HAR funciona cuando la escritura va por el API de
-elementos, y esto no va por ahí.
+**Y en el host REST no están.** `/api/elements` declara 89 elementos y el único de calendario es
+`calendario` (el evento mismo). `/api/calendar`, `/api/calendar/calendars` y
+`/api/calendar/members` dan 404; `/api/calendar/meetingroom` devuelve el censo de los 5
+**usuarios**, no los calendarios.
+
+**Conclusión: viven en el host de calendario** `api-calendar-commons-pro.sudespacho.biz`
+(§14.1), que es otra API con su propia autenticación (JWT de `localStorage['token']`, no
+`x-api-key`). **Para cerrarlo hace falta un HAR** de la UI guardando ese control. Es el límite
+del método del §14.6: descubrir una escritura sin HAR funciona cuando va por el API de
+elementos, y esta no va por ahí.
 
