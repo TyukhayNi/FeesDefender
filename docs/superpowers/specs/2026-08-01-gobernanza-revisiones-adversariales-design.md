@@ -1,6 +1,11 @@
 # Archivo verificable de las revisiones adversariales
 
-> **Estado:** **rev. 9** (2026-08-02). La rev. 9 **no reabre nada del recorte**: registra que el
+> **Estado:** **rev. 10** (2026-09-14). La rev. 10 **no reabre nada del recorte** ni cambia un artefacto:
+> añade al §4 la condición de lanzamiento que faltaba —**ninguna ronda se lanza sin vigía, y el vigía
+> cubre la muerte además del fin**—, tras una ronda que murió en el arranque y tardó dieciocho minutos
+> en descubrirse. Todo lo demás sigue como en la rev. 9, cuyo encabezado se conserva íntegro debajo.
+>
+> **Estado anterior:** **rev. 9** (2026-08-02). La rev. 9 **no reabre nada del recorte**: registra que el
 > retrofit de los encabezados heredados se ejecutó (§7), fija la frontera entre acta y handoff que
 > el §3 y `GOBERNANZA_FUENTES_VERDAD.md` §5 contradecían (§3.1), y declara una ceguera medida de G7
 > (§6). Todo lo demás sigue como en la rev. 8, cuyo encabezado se conserva íntegro debajo.
@@ -157,6 +162,38 @@ como la del propio, con un digest internamente coherente y **falso**, que es exa
 el acta existe para dar. Corolario doble: **un fichero más antiguo que el mandato no puede ser respuesta
 al mandato**, y el mandato lleva una cláusula de higiene del workdir («si encuentras otro fichero, no lo
 leas y decláralo») — funcionó: el revisor declaró en su primera línea el residuo que encontró.
+
+**Y «recibir» exige saber que la ronda TERMINÓ: el vigía se arma ANTES de lanzar, nunca después.**
+Ninguna ronda se lanza sin un vigía puesto sobre ella, y el vigía cubre **las dos** salidas —que
+termine y que se caiga—, porque las cuatro formas medidas de morir son **silenciosas**. Se
+distinguen por su cadena literal, y solo por ella: `You've hit your usage limit` (cupo, puede saltar
+*a mitad* de ronda), `404` en `wss://chatgpt.com/backend-api/codex/responses` (backend caído),
+`flagged for possible cybersecurity risk` (filtro de contenido, lo dispara **cómo se redacta el
+mandato**) y `Selected model is at capacity` (arranque; **es la única transitoria: se quita sola**).
+Ninguna deja rastro en el workdir: se queda igual de vacío que si el revisor estuviera pensando. **Un vigía que solo espera el informe calla
+exactamente igual ante un proceso muerto que ante uno que trabaja**, y ese silencio se lee como
+«sigue corriendo». Medido el 2026-09-14: la R3 de P6 murió en el arranque con `Selected model is at
+capacity`, sin escribir un token, y se descubrió **dieciocho minutos después porque Nikolai
+preguntó** — no porque nada avisara. La pregunta que arma bien un vigía es: **si el proceso se
+cayera ahora mismo, ¿mi vigía diría algo?**
+
+**Qué NO es la señal de fin**, las tres por separado y las tres medidas:
+
+- **La salida del proceso lanzador.** Con `nohup … &` el que termina es el lanzador, no el revisor.
+- **La aparición de `INFORME.md`.** El revisor puede seguir escribiéndolo: un `sha256` calculado ahí
+  y otro dos minutos después no coincidieron (2026-08-26). **Un digest solo significa algo sobre un
+  fichero terminado**; archivar uno truncado como «la voz literal del revisor» destruye justo la
+  garantía que el acta existe para dar.
+- **El reloj.** Una ronda no tiene duración prevista, y esperar «lo que suele tardar» es inventar
+  una señal que no existe.
+
+**La señal es la terminación del revisor**: lanzando con `-o <fichero>`, la aparición de ese fichero.
+El vigía espera esa condición **o** un `ERROR` en el log de la ronda, y dice cuál de las dos ocurrió.
+
+Y si lo que ocurrió fue la muerte, **la cobertura es AUSENTE, no parcial**: los tokens quemados no
+producen nada archivable. Se conserva el `_stdout.log` como prueba de que el intento existió —por eso
+se relanza en **directorio nuevo** y no limpiando el anterior— y se declara según el §5 que nadie
+miró el objeto.
 
 **Frontera de confianza, declarada.** El guard detecta que alteren el bloque; una edición coordinada de
 bloque y digest pasaría, y lo que la delata es el diff. Pero eso **no es inmutabilidad**: `STATUS.md:6`
