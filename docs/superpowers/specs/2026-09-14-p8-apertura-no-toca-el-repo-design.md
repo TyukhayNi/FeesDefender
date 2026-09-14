@@ -228,3 +228,75 @@ guards no quedan exentos nunca. El aviso, además, es código nuevo en el camino
   existe y no se fichó; no puede detectar la apertura que no anotó nada. Eso sigue dependiendo
   del runbook, es decir, de que la sesión lo lea — que es el mismo tipo de dependencia que este
   spec acaba de llamar defectuosa en el §3. Se declara en vez de fingir que la cubre.
+
+## 13. Adjudicación de la revisión adversarial (Codex, 2026-09-14) — LISTA-CON-CAMBIOS, remediado
+
+Acta literal con su digest: [`…-r1-adversarial-review.md`](2026-09-14-p8-apertura-no-toca-el-repo-r1-adversarial-review.md).
+Objeto: el diff `aba9656..7a78385`. **6 hallazgos, 6 confirmados, 0 refutados.** Cada uno se
+contrastó contra el código reproduciéndolo en una sonda propia, no contra el informe.
+
+**Los seis son DOS fronteras. Remediar los seis casos por separado habría sido el error de las
+cuatro rondas del mutex.**
+
+### Frontera 1 — el lector daba por «nada que declarar» lo que no podía interpretar
+
+| | Hallazgo | Vía | Adjudicación |
+|---|---|---|---|
+| H-01 | sintaxis que no entiende | un `detalle:` con `estado: fichado` dentro **silenciaba un pendiente** de la raíz; clave duplicada; línea sin `:` | **CONFIRMADO**, reproducido |
+| H-02 | enumeración que falla | `Path.glob` **suprime** el error y devuelve cero entradas; raíz que no es carpeta = raíz ausente | **CONFIRMADO**, reproducido |
+| H-03 | bytes que no decodifica | `errors="replace"` → U+FFFD, campo «no vacío», nota corrupta desaparecida de las dos listas | **CONFIRMADO**, reproducido |
+
+**Lo caro de este hallazgo no es el defecto: es de quién era la lección.** La pieza A de la fila
+#27 ya había medido exactamente esto —`rglob` suprime los errores de recorrido, por eso allí se
+usó `os.walk(onerror=…)` y por eso la custodia «declara lo que no pudo leer»— y **el §6 de este
+spec lo cita** como fundamento del diseño de dos listas. Escribí la lección y acto seguido la
+incumplí por tres vías distintas en la misma función. Es un *hecho escrito que nadie aplica*,
+aplicado a su propio autor.
+
+**Remedio, sobre la frontera:** todo camino en que el lector no puede **afirmar** produce ahora un
+`ilegible` declarado. Gramática plana cerrada (sangría, duplicado o línea sin `:` → ilegible),
+`os.listdir` en vez de `glob` (propaga el error), decodificación estricta, y la distinción entre
+**raíz ausente** (silencio legítimo: máquina que nunca abrió un expediente) y **raíz inválida o
+inenumerable** (comprobación que no se hizo, y se dice).
+
+**Una regresión propia, cazada al remediar:** al reescribir el recorrido metí un
+`if not fichero.is_file(): continue` — un salto silencioso, el mismo defecto que la ronda venía a
+cerrar, esta vez para un directorio llamado `x.md`. Lo tumbó un test que ya existía. Se retiró: el
+intento de lectura falla y el fallo se declara.
+
+### Frontera 2 — la prueba prometía más de lo que ejercitaba
+
+| | Hallazgo | Adjudicación |
+|---|---|---|
+| H-04 | el guard comprobaba los estados **en una sola dirección**, pese a que su comentario prometía las dos | **CONFIRMADO** |
+| H-05 | el test «no rompe el cierre» no tocaba `main()` ni miraba la salida: sobrevivían dos roturas | **CONFIRMADO** |
+
+Ambos los probó el revisor con mutantes: M1 (desconectar la llamada de `main()`), M2 (silenciar el
+diagnóstico) y M3 (añadir un estado solo al RUNBOOK) dejaban **72 tests verdes**.
+
+**Remedio:** el guard compara ahora los estados **por igualdad** contra la **línea normativa** del
+RUNBOOK, no contra el documento entero — detalle que resultó necesario, no cosmético: «archivado»
+aparece **4 veces** en ese runbook por razones ajenas (el archivo del expediente en el CRM), así
+que un guard que buscara en todo el fichero no podía morder. Y dos tests nuevos matan M1 y M2.
+**Los tres mutantes se aplicaron y se vieron rojos antes de dar el remedio por bueno.**
+
+### H-06 — confirmado con matiz
+
+El revisor lo llamó contradicción entre `CLAUDE.md` (d) y `[APER-30]`. **No la hay:** el ordinal es
+del **cierre de sesión**, no del expediente, y los cierres de sesión se siguen numerando; lo que
+(d) retira es que *cada apertura* genere el suyo. **Pero la ambigüedad sí la introducía este
+diff** —quien abriera tres expedientes leería `[APER-30]` tres veces—, así que se aclara en el
+runbook en vez de discutir la etiqueta.
+
+### Lo que el revisor no pudo refutar, y que conviene registrar
+
+El mutante **M4** —lector que devuelve siempre vacío— produjo **13 fallos**: el control positivo
+del §8 no era decorativo. Y declaró **SIN VERIFICAR**, correctamente, la suite completa, las dos
+semillas de aceptación, las ACL nativas de Windows y una apertura real del despacho.
+
+### Lo que se deja fuera, declarado
+
+El revisor midió que un cuerpo de 16 MiB consume ~48 MiB de pico porque el fichero se lee entero.
+**No se remedia:** son notas de unas líneas escritas a mano, el propio revisor no lo consideró
+bloqueante, y poner un límite de tamaño sería construir contra un problema que nadie ha tenido.
+Queda dicho aquí para que la próxima vez sea una decisión y no un descubrimiento.
