@@ -513,3 +513,55 @@ class TestElCRMDesescapaLasEntidadesHTML:
         assert r.exit_code == 1, r.output
         assert "[FALTA] Notas" in r.output
         assert "DESMIENTE" in r.output
+
+
+def test_el_cli_vincula_TODOS_los_contrarios_no_solo_el_primero(caso_con_ficha, monkeypatch):
+    """`[APER-63]`: una reclamación formulada por dos firmantes —un matrimonio— exigía una
+    segunda llamada a mano.
+
+    **Este test existe porque el arnés lo pidió.** El mutante que reduce el bucle del CLI a
+    `ficha.contrarios[:1]` sobrevivía: los tests del lector prueban que el YAML se lee entero,
+    y ninguno probaba que el CLI los *vincule* todos. Leer N y vincular 1 es exactamente la
+    pieza construida que nadie encadena.
+    """
+    ficha = case_locator.path_for(caso_con_ficha) / "00_Input" / "_ficha_crm.yaml"
+    ficha.write_text(
+        "contrario:\n"
+        "  - nombre: JUAN\n    apellido1: PEREZ\n    nif: 00000000T\n"
+        "  - nombre: MARIA\n    apellido1: LOPEZ\n    nif: 11111111H\n"
+        "notas_html: '<p>Vuelta</p>'\n",
+        encoding="utf-8",
+    )
+    ensure_c = MagicMock(side_effect=[("1099", True), ("1100", True)])
+    monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", MagicMock())
+    monkeypatch.setattr("scripts.crm_ficha.ensure_contrario_vinculado", ensure_c)
+    monkeypatch.setattr("scripts.crm_ficha.ensure_colaborador_vinculado", MagicMock())
+    monkeypatch.setattr("scripts.crm_ficha.update_expediente",
+                        MagicMock(return_value={"Notas": "<p>Vuelta</p>"}))
+    monkeypatch.setattr("scripts.crm_ficha.get_expediente",
+                        MagicMock(return_value={"Notas": "<p>Vuelta</p>"}))
+    monkeypatch.setattr("scripts.crm_ficha.get_relaciones",
+                        MagicMock(return_value={"clientes_propios": [{"id": "2"}],
+                                                "clientes_contrarios": [{"id": "1099"},
+                                                                        {"id": "1100"}],
+                                                "colaboradores": []}))
+
+    r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+    assert r.exit_code == 0, r.output
+    assert ensure_c.call_count == 2, f"vinculó {ensure_c.call_count} contrario(s), no 2"
+    assert [c.args[1].apellido1 for c in ensure_c.call_args_list] == ["PEREZ", "LOPEZ"]
+
+
+def test_el_plan_del_cli_enumera_los_dos_contrarios(caso_con_ficha, monkeypatch):
+    """Y el dry-run los dice: el letrado tiene que ver a quién va a vincular antes de que se
+    escriba."""
+    ficha = case_locator.path_for(caso_con_ficha) / "00_Input" / "_ficha_crm.yaml"
+    ficha.write_text(
+        "contrario:\n"
+        "  - nombre: JUAN\n    apellido1: PEREZ\n"
+        "  - nombre: MARIA\n    apellido1: LOPEZ\n",
+        encoding="utf-8",
+    )
+    r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--dry-run"])
+    assert r.exit_code == 0, r.output
+    assert "PEREZ" in r.output and "LOPEZ" in r.output, r.output
