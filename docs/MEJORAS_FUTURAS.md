@@ -12055,3 +12055,117 @@ expediente.
 **Dónde debería vivir, para cuando se decida:** junto al informe, dentro del expediente, y
 declarado como protocolo si no debe inventariarse como documento del cliente — la misma frontera
 que `MEJORAS #261` plantea para el recibo de la actuación.
+
+## 263. El clasificador por LLM acierta el 13% — y se equivoca CONVENCIDO
+
+**Qué se midió.** Antes de decidir si la corrida de apertura puede clasificar sola, se pasó el
+clasificador por LLM (`core/sala_lectura.make_llm_cloud_chat_fn`, Mistral Small 3.2 vía Scaleway)
+sobre documentos ya catalogados y se comparó contra el `indice_documental.yaml`, que es **verdad
+conocida**: lo revisó el letrado.
+
+**El resultado, el 2026-09-14, sobre 75 documentos de 6 expedientes distintos:**
+
+| | |
+|---|---|
+| Acierto global | **10 de 75 — 13 %** |
+| Clasificados con confianza ≥ 0,8 | 62 |
+| De ésos, aciertan | 10 |
+| **MAL con confianza alta** | **52** |
+| Tiempo por documento | 0,71 s |
+
+**Lo que hace grave el dato no es el 13 %: es que se equivoca convencido.** De 62 documentos en
+los que el modelo dijo estar seguro, **52 estaban mal**. **Un umbral de confianza no protege de
+esto**, porque el número con el que filtrarías es justo el que miente — y esa era la salvaguarda
+que se iba a usar para decidir qué entra sin revisión humana.
+
+**Y los errores son sistemáticos, no ruido:** manda a `03. OFERTAS` lo que son
+`07. RECLAMACIONES`, y a `04. ARRAS` lo que es `01. ACTIVACIÓN`. Confunde categorías que en el
+trabajo del despacho significan cosas distintas: una reclamación no es una oferta.
+
+**Refuta una hipótesis explícita, y conviene que quede escrito.** Se había razonado —y
+recomendado— que un lector del **contenido** superaría el techo de las reglas, porque `MEJORAS
+#232` (P4) midió que el residuo no lo causa la regla sino que **el nombre no lleva la señal**. La
+inferencia era razonable y **es falsa**: leyendo el texto completo, este modelo acierta menos
+(13 %) que las reglas (~43 %).
+
+**Lo que se descartó antes de dar la cifra por buena:** que el defecto fuera del arnés. El prompt
+de sistema **sí incluye la taxonomía completa** (`TAXONOMIA_EV`) y el modelo responde con
+categorías de esa lista — no está adivinando a ciegas. Y la muestra se repartió **por expediente**
+(15 por caso): los primeros 60 documentos salían todos del mismo, y eso no es una muestra, es un
+expediente. Con el reparto, el acierto bajó del 33 % al 13 %.
+
+**Qué queda abierto, y son dos preguntas distintas:**
+
+1. **¿Es el modelo?** Mistral Small es pequeño. Probar uno mayor cuesta una tarde.
+2. **¿Es el prompt?** No explica qué distingue una reclamación de una oferta **en la taxonomía de
+   E&V**; le da la lista de nombres y poco más. Puede que el fallo sea de instrucción, no de
+   capacidad.
+
+Se prueban **con el mismo arnés, cambiando una cosa cada vez**.
+
+**El arnés queda en el repo:** `scripts/medir_clasificador_llm.py`. No es un test y no corre en la
+suite —sale a la red de pago y lee de `CASOS_ROOT`—; se invoca a mano y **solo lee**. Cualquier
+cambio futuro se compara contra el 13 % en menos de un minuto, en vez de discutirse.
+
+```
+python -m scripts.medir_clasificador_llm --por-caso 15 --limite 75
+```
+
+**Disparador.** Que se quiera volver a plantear la clasificación automática dentro de la corrida.
+**Mientras tanto la decisión es no automatizarla**: la corrida deja el residuo marcado como
+pendiente y la lectura la sigue haciendo una sesión, que es lo que hace hoy y funciona.
+
+## 264. Sala de lectura y viabilidad no son dos cableados: son UNA decisión
+
+**Anotado 2026-09-14**, al cerrar la tanda P1/P8 y preguntarse qué falta para que la corrida de
+apertura llegue hasta el informe. Las tres piezas de este hueco ya estaban fichadas por separado
+—#36, #262, #263— y **ninguna remite a las otras**: el hueco se lee tres veces como tres problemas
+y nunca como el que es.
+
+**La decisión, en una frase:** *qué hace la corrida cuando necesita que alguien **lea** el
+expediente.* Todo lo demás de esta entrada es consecuencia de eso.
+
+**Lo que ya está medido, y dónde vive:**
+
+| Pieza | Ficha | Lo que dice |
+|---|---|---|
+| El motor local | #36, #67 | `core/sala_lectura.py` está `[DEPRECADO 2026-06-18]`; el botón que lo llamaba se retiró el 2026-09-13 porque el clasificador determinista solo resolvía **19 de 61** documentos. Paola y Ana siguen sin poder montar una sala. |
+| El sustituto por LLM | #263 | Acierta el **13 %** (75 docs, 6 expedientes) y **52 de 62** se equivocan con confianza ≥ 0,8. No sirve como lector. |
+| La entrada de viabilidad | #262 | `render_informe.py` **sí** corre sin sesión ni LLM —probado, marca las 88 preguntas—, pero el JSON del que parte lo produce una sesión leyendo el expediente y muere con ella. |
+
+**Por qué es una decisión y no dos.** Las dos etapas que faltan para cerrar la corrida
+—`sala_lectura` y `viabilidad`— **no están bloqueadas por el cableado**: el de la segunda está
+probado (#262) y el de la primera es el mismo patrón que V2. Están bloqueadas por lo mismo, que
+**hoy el único lector fiable del expediente es una sesión de Claude**, y una sesión no se invoca
+desde un `subprocess`. Cablearlas por separado produce dos veces el mismo pendiente declarado.
+
+Las tres salidas, y ninguna es técnica:
+
+1. **La corrida para y pide sesión.** Es lo que hace hoy, funciona, y deja el flujo dependiendo
+   de que Nikolai esté delante (#36).
+2. **La corrida sigue con un lector automático.** Refutado por la medición: 13 % y convencido
+   (#263).
+3. **La corrida deja el trabajo preparado para que una sesión lo remate en un paso** — el JSON
+   escrito, el residuo marcado. No está construido, y es la única de las tres que nadie ha medido.
+
+**Lo que sí es cableable hoy, leído de la fuente el 2026-09-14:**
+
+- **El correo ya está construido como `--fuente email`** (`scripts/abrir_caso.py:283`): llama a
+  `email_export.export_label` y deposita un lote en `00_Input/<AAAA-MM-DD>_email_<NN>/`. Lo que lo
+  frena es una **puerta declarada**, `_FUENTES_V1 = ("drive_ev",)` (`scripts/abrir_caso.py:285`).
+  Levantarla es el mismo movimiento que V2 hizo con la puerta de `--crm skip`, y con la misma
+  forma: pendiente declarado, nunca salto silencioso.
+- **Corrección de lo que yo mismo afirmé en la sesión:** dimensioné esa ronda «en 2, porque
+  escribe en Gmail». **Es falso.** `core/email_export.py` solo hace `messages().get`,
+  `messages().list` y `labels().list`: **lee** de Gmail y escribe en el caso. El presupuesto de
+  rondas se lee del diff cuando exista, no de esta frase.
+
+**Un dato menor que induce a error justo al dimensionar esto:** `core/llm.py` apunta a Ollama en
+`localhost:11434`; lo importa `streamlit_app.py:14` y **no lo usa en ninguna línea** (cero
+referencias `llm.` en todo el fichero). Quien lo vea puede creer que hay un LLM local disponible
+para este cableado. No lo hay, y el Ollama local está descartado desde el motor documental —lo
+dice la entrada #48 de este mismo fichero—.
+
+**Disparador.** Que Nikolai elija cuál de las tres salidas quiere. Mientras no la elija, **no se
+cablea ninguna de las dos etapas**: montar el lazo sin haber decidido el lector produce una etapa
+que siempre sale `saltada`, que es el hueco de hoy con más código encima.
