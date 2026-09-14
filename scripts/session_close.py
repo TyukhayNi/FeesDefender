@@ -454,13 +454,19 @@ def raiz_aperturas_por_defecto() -> Path:
 
 
 def _frontmatter_apertura(texto: str) -> tuple[dict[str, str] | None, str]:
-    """Parsea el frontmatter plano de un fichero de apertura.
+    """Parsea el frontmatter plano de un fichero de apertura, con GRAMATICA CERRADA.
 
     Devuelve `(campos, "")` o `(None, motivo)`. **No usa `yaml`**, y no es pereza:
     `safe_load` convierte `fecha: 2026-09-14` en `datetime.date` —no en el `str`
     que el resto compara— y el `import yaml` revienta al invocar este script desde
     un worktree (ver `tests/test_session_close_no_pude_medir.py`), que convertiria
     un aviso en una caida del cierre entero.
+
+    **Prescindir de YAML obliga a definir el formato, no a ser tolerante** (R1/H-01).
+    La version anterior aplanaba la sangria, dejaba ganar a la ultima clave repetida
+    e ignoraba las lineas sin `:`; con eso, un `detalle:` que contuviera
+    `estado: fichado` SILENCIABA un pendiente declarado en la raiz. Lo que el parser
+    no entiende ya no se acepta: se declara ilegible.
     """
     lineas = texto.splitlines()
     if not lineas or lineas[0].strip() != "---":
@@ -471,9 +477,15 @@ def _frontmatter_apertura(texto: str) -> tuple[dict[str, str] | None, str]:
             return campos, ""
         if not ln.strip():
             continue
+        if ln[0] in " \t":
+            return None, f"linea con sangria (el formato es plano): {ln.strip()[:40]!r}"
         clave, sep, valor = ln.partition(":")
-        if sep:
-            campos[clave.strip().lower()] = valor.strip()
+        if not sep:
+            return None, f"linea sin ':' : {ln.strip()[:40]!r}"
+        nombre = clave.strip().lower()
+        if nombre in campos:
+            return None, f"clave duplicada: {nombre!r}"
+        campos[nombre] = valor.strip()
     return None, "frontmatter sin cierre"
 
 
@@ -487,12 +499,35 @@ def _leer_aperturas(raiz: Path) -> tuple[list[tuple[str, str, str]], list[tuple[
     """
     pendientes: list[tuple[str, str, str]] = []
     ilegibles: list[tuple[str, str]] = []
-    if not raiz.is_dir():
+    # AUSENCIA no es lo mismo que NO PUDE COMPROBARLO (R1/H-02). Una maquina que
+    # nunca abrio un expediente no tiene la carpeta, y eso es silencio legitimo;
+    # una raiz que existe pero no es carpeta, o que no se deja enumerar, es una
+    # comprobacion que NO se hizo y hay que decirlo.
+    if not raiz.exists():
         return pendientes, ilegibles
-    for fichero in sorted(raiz.glob("*.md")):
-        nombre = fichero.name
+    if not raiz.is_dir():
+        return pendientes, [(raiz.name, f"la raiz de aperturas no es una carpeta: {raiz}")]
+    try:
+        # `Path.glob` SUPRIME el error de enumeracion y devuelve cero entradas, que
+        # es indistinguible de una carpeta vacia — el mismo defecto de `rglob` que
+        # midio la pieza A de la fila #27. `os.listdir` lo propaga.
+        nombres = sorted(n for n in os.listdir(raiz) if n.lower().endswith(".md"))
+    except OSError as e:
+        return pendientes, [(raiz.name, f"no se pudo enumerar la raiz de aperturas: {e}")]
+    for nombre in nombres:
+        fichero = raiz / nombre
+        # No se filtra por `is_file()`: un directorio o un enlace roto llamado `x.md`
+        # es una anomalia que hay que DECLARAR, y saltarlo en silencio seria repetir
+        # aqui el mismo defecto que esta ronda vino a cerrar. El intento de lectura
+        # falla y el fallo se declara.
         try:
-            texto = fichero.read_text(encoding="utf-8", errors="replace")
+            # Estricto a proposito: `errors="replace"` convertia un byte invalido en
+            # U+FFFD, el campo seguia «no vacio» y la nota corrupta desaparecia de las
+            # dos listas (R1/H-03).
+            texto = fichero.read_text(encoding="utf-8")
+        except UnicodeDecodeError as e:
+            ilegibles.append((nombre, f"no es UTF-8 valido: {e}"))
+            continue
         except OSError as e:
             ilegibles.append((nombre, f"no se pudo leer: {e}"))
             continue

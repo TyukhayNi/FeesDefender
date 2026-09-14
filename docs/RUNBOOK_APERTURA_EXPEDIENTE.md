@@ -1210,6 +1210,11 @@ Todo REST `x-api-key`. No se borra nada.
 - **`[APER-30]` Numeración del "cierre" en `STATUS.md`:** `grep` del último `(Nº cierre` en
   **`origin/main`** ANTES de numerar (colisionó dos veces con la sesión paralela). No fiarse
   del `STATUS.md` local.
+  - **Una apertura NO abre un cierre numerado propio** (P8 (d), 2026-09-13). El ordinal es del
+    **cierre de sesión**, no del expediente: un día con tres aperturas tiene **un** cierre, y
+    dentro un bloque «aperturas del día» que narra las tres con sus W-codes. Numerar uno por
+    expediente multiplica los ordinales sin añadir información. La regla vive en `CLAUDE.md`
+    §«Cierre de sesión»; este paso se lee con ella delante.
 - **`[APER-31]` Rama de cierre SIEMPRE por W-code** (`docs/cierre-sesion-w0XXXXX`), nunca
   alias de proyecto/dirección — aunque ese alias sea normal *dentro* del caso.
 - **`[APER-32]` `git push --force-with-lease`, `git reset --hard`, `git branch -D` están

@@ -204,3 +204,128 @@ def test_sin_fecha_es_ilegible(tmp_path):
 
     assert pendientes == []
     assert ilegibles == [("f.md", "falta fecha:")]
+
+
+# --- R1/H-01, H-02, H-03: UNA sola frontera, tres vias ---------------------
+# El lector convertia «no pude interpretar esto» en «no hay nada que declarar».
+# Es la leccion que la pieza A de la fila #27 ya habia comprado y que este mismo
+# spec cita en su §6 — escrita, y no aplicada aqui. Todo camino en que el lector
+# no puede AFIRMAR tiene que producir un ILEGIBLE declarado, nunca un silencio.
+
+
+def test_una_clave_anidada_no_puede_pisar_el_estado(tmp_path):
+    # R1/H-01: `detalle:` con `estado: fichado` dentro SILENCIABA un pendiente.
+    _escribir(tmp_path, "a.md",
+              "---\ncaso: W-T\nfecha: 2026-09-14\nestado: pendiente\n"
+              "detalle:\n  estado: fichado\n---\n")
+
+    pendientes, ilegibles = sc._leer_aperturas(tmp_path)
+
+    assert pendientes == [], "un anidamiento no puede convertirse en estado de raiz"
+    assert [f for f, _ in ilegibles] == ["a.md"]
+
+
+def test_una_clave_duplicada_es_ilegible(tmp_path):
+    # R1/H-01: `estado:` dos veces. Escoger el ultimo es resolver una ambiguedad
+    # inventandose el criterio; el fichero es ambiguo y eso es lo que hay que decir.
+    _escribir(tmp_path, "b.md",
+              "---\ncaso: W-T\nfecha: 2026-09-14\nestado: pendiente\nestado: fichado\n---\n")
+
+    pendientes, ilegibles = sc._leer_aperturas(tmp_path)
+
+    assert pendientes == []
+    assert "duplicada" in ilegibles[0][1]
+
+
+def test_una_linea_sin_dos_puntos_es_ilegible(tmp_path):
+    # R1/H-01: ignorarla daba por bueno un frontmatter roto.
+    _escribir(tmp_path, "c.md",
+              "---\ncaso: W-T\nfecha: 2026-09-14\nestado: fichado\nesto esta roto\n---\n")
+
+    pendientes, ilegibles = sc._leer_aperturas(tmp_path)
+
+    assert pendientes == []
+    assert [f for f, _ in ilegibles] == ["c.md"]
+
+
+def test_un_byte_invalido_no_se_sustituye_en_silencio(tmp_path):
+    # R1/H-03: `errors="replace"` convertia el byte malo en U+FFFD y el campo
+    # seguia «no vacio», asi que la nota corrupta desaparecia de las dos listas.
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "d.md").write_bytes(
+        b"---\ncaso: W-\xff\nfecha: 2026-09-14\nestado: fichado\n---\n")
+
+    pendientes, ilegibles = sc._leer_aperturas(tmp_path)
+
+    assert pendientes == []
+    assert [f for f, _ in ilegibles] == ["d.md"]
+    assert "utf-8" in ilegibles[0][1].lower()
+
+
+def test_una_raiz_que_no_es_carpeta_se_declara_no_se_calla(tmp_path):
+    # R1/H-02: un fichero como raiz se trataba IGUAL que una carpeta ausente.
+    # Ausencia es «nada que declarar»; raiz invalida es «no pude comprobarlo».
+    raiz = tmp_path / "soy_un_fichero"
+    raiz.write_text("x", encoding="utf-8")
+
+    pendientes, ilegibles = sc._leer_aperturas(raiz)
+
+    assert pendientes == []
+    assert len(ilegibles) == 1
+    assert "no es una carpeta" in ilegibles[0][1]
+
+
+def test_si_la_enumeracion_falla_se_declara(tmp_path, monkeypatch):
+    # R1/H-02: `Path.glob` SUPRIME el error de enumeracion, asi que una carpeta
+    # ilegible por permisos devolvia cero ficheros y el aviso callaba. Es
+    # literalmente el defecto de `rglob` que la fila #27 ya midio.
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    def _explota(_ruta):
+        raise PermissionError("acceso denegado")
+
+    monkeypatch.setattr(sc.os, "listdir", _explota)
+
+    pendientes, ilegibles = sc._leer_aperturas(tmp_path)
+
+    assert pendientes == []
+    assert len(ilegibles) == 1, "una carpeta que no se puede enumerar NO es una carpeta vacia"
+    assert "no se pudo enumerar" in ilegibles[0][1]
+
+
+# --- R1/H-05: la prueba tiene que ejercitar lo que promete ------------------
+# El test «no rompe el cierre» llamaba al aviso directamente y no miraba la salida,
+# asi que sobrevivian DOS roturas: desconectar la llamada de `main()` (el aviso
+# queda inalcanzable) y tragarse la excepcion sin decir nada.
+
+
+def test_main_LLAMA_al_aviso_de_aperturas(monkeypatch):
+    # Guard ESTRUCTURAL sobre el AST, no una ejecucion de `main()`: correrlo de
+    # verdad lanza la suite entera con dos semillas. Lo que mata al mutante es
+    # exactamente esto — que la llamada siga cableada.
+    import ast
+    import inspect
+
+    arbol = ast.parse(inspect.getsource(sc))
+    main = next(n for n in ast.walk(arbol)
+                if isinstance(n, ast.FunctionDef) and n.name == "main")
+    llamadas = {n.func.id for n in ast.walk(main)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+
+    assert "_avisar_aperturas_sin_fichar" in llamadas, (
+        "main() ya no llama al aviso: el disparador de P8 quedaria inalcanzable")
+
+
+def test_cuando_el_lector_lanza_el_aviso_lo_DICE(tmp_path, monkeypatch, capsys):
+    # No basta con no romper el cierre: un fallo tragado en silencio es
+    # indistinguible de «no habia nada pendiente», que es justo lo que P8 evita.
+    def _explota(_raiz):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(sc, "_leer_aperturas", _explota)
+
+    sc._avisar_aperturas_sin_fichar(tmp_path)
+
+    salida = capsys.readouterr().out
+    assert "boom" in salida, "el fallo del lector se trago sin decir nada"
+    assert "aviso" in salida.lower()

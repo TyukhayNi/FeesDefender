@@ -5,6 +5,7 @@ cambia el ejemplo de la prosa, el lector deja de entenderlo, y el aviso enmudece
 justo cuando mas falta hace — que es el defecto que P8 existe para cerrar.
 """
 
+import re
 from pathlib import Path
 
 import scripts.session_close as sc
@@ -38,10 +39,20 @@ def test_el_ejemplo_del_runbook_lo_entiende_el_lector(tmp_path):
     assert caso and fecha
 
 
-def test_el_runbook_nombra_los_tres_estados():
-    # Un estado que el codigo acepta y el runbook no documenta es un estado que
-    # nadie usara; uno que el runbook promete y el codigo no acepta es un fichero
-    # que caera en «ilegible» sin que su autor entienda por que.
+def _estados_del_runbook() -> set[str]:
+    """Los estados que la LINEA NORMATIVA del RUNBOOK promete, no los del documento entero.
+
+    Buscar en todo el fichero dejaba que una mencion ajena al contrato satisficiera
+    el aserto (R1/H-04). El ancla es la linea que enumera los estados.
+    """
     texto = RUNBOOK.read_text(encoding="utf-8")
-    for estado in sorted(sc._ESTADOS_APERTURA):
-        assert f"`{estado}`" in texto, f"el RUNBOOK no documenta el estado {estado}"
+    linea = next(ln for ln in texto.splitlines() if "**`estado`**:" in ln)
+    return set(re.findall(r"`([a-z]+)`", linea.split("**`estado`**:", 1)[1]))
+
+
+def test_los_estados_del_runbook_y_los_del_codigo_son_LOS_MISMOS():
+    # En las DOS direcciones, que es lo que el comentario anterior prometia y el
+    # aserto no hacia: un estado que el codigo acepta y el runbook no documenta es
+    # un estado que nadie usara; uno que el runbook promete y el codigo no acepta
+    # es un fichero que caera en «ilegible» sin que su autor entienda por que.
+    assert _estados_del_runbook() == sc._ESTADOS_APERTURA
