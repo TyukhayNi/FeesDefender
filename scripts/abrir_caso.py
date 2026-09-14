@@ -53,6 +53,13 @@ _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
 
 #: Nombres de las etapas de V1, en orden. Es tambien el vocabulario de `--hasta`.
 ETAPAS_V1 = ("drive", "crm", "sala_maquina")
+#: V2 AMPLIA V1 por la derecha: las tres primeras conservan nombre y orden, asi que un
+#: `--hasta sala_maquina` de antes sigue parando donde paraba. `crm_ficha` NO esta:
+#: llevar el YAML al CRM ejecuta los efectos materiales de la §8.1, que el spec situa
+#: DESPUES de la sala de lectura y la viabilidad (R1/H-05).
+ETAPAS_V2 = ETAPAS_V1 + ("crm_alta", "actuacion", "verificar")
+#: Vocabulario cerrado de `--crm`. Antes vivia implicito en el help del flag.
+_CRM_MODOS = ("api", "skip")
 
 #: Intentos que la sala de maquina da a un documento antes de saltarlo. Se lee del
 #: motor y no se copia: un numero a mano aqui se pudre cuando alli cambie.
@@ -1252,7 +1259,7 @@ def _derivar_team_id(folder_id):
 def validar_modo(
     modo: str,
     *,
-    crm: str,
+    crm: str | None,
     fuente: str,
     force: bool = False,
     dry_run: bool = False,
@@ -1281,15 +1288,24 @@ def validar_modo(
     # HA-06 de la R-A. El vocabulario se valida AQUI y no dentro de `secuenciar`, que
     # corre despues de la identidad, del mutex y de `ensure_case`: en la rev. 1 un typo
     # abortaba con el esqueleto del caso ya creado.
-    if hasta is not None and hasta not in ETAPAS_V1:
+    if hasta is not None and hasta not in ETAPAS_V2:
         errores.append(
-            f"--hasta {hasta!r} no es una etapa de V1; validas: {list(ETAPAS_V1)}")
-    if crm != "skip":
+            f"--hasta {hasta!r} no es una etapa; validas: {list(ETAPAS_V2)}")
+    # La puerta del CRM NO desaparece con V2: cambia de forma. Antes prohibia escribir
+    # («exige --crm skip») porque ninguna de las tres etapas lo hacia. Con `crm_alta` y
+    # `actuacion` dentro, la garantia pasa a ser que la escritura se DECLARE: omitir el
+    # flag no autoriza nada, porque su default es `api` y alcanzaria un POST de alta
+    # (R1/H-01 — nombrar las etapas no acredita autorizacion).
+    if crm is None:
         errores.append(
-            f"--modo v1 no escribe en el CRM: exige --crm skip (recibido: {crm!r}). "
-            "El default es `api` y alcanza un POST de alta, así que omitir el flag "
-            "también aborta."
+            "--modo v1 exige declarar --crm api|skip. Omitirlo no autoriza a escribir: "
+            "con `crm_alta` y `actuacion` dentro de la secuencia, la ausencia del flag "
+            "alcanzaria un POST de alta. Con `skip`, las etapas que escriben salen "
+            "`saltada` con su pendiente."
         )
+    elif crm not in _CRM_MODOS:
+        errores.append(
+            f"--crm solo admite {'|'.join(sorted(_CRM_MODOS))} (recibido: {crm!r}).")
     if fuente not in _FUENTES_V1:
         errores.append(
             f"--modo v1 solo admite --fuente {_FUENTES_V1[0]} (recibido: {fuente!r}). "
@@ -1369,7 +1385,11 @@ def main(
              "copia en el Drive, no se procesa sin esto). ACTIVO por defecto desde la "
              "acción 6b; los logotipos de firma se filtran y el .eml sigue siendo fiel"),
     cuantia: float | None = typer.Option(None, "--cuantia"),
-    crm: str = typer.Option("api", "--crm", help="api|skip"),
+    crm: str | None = typer.Option(
+        None, "--crm",
+        help="api|skip. OBLIGATORIO en --modo v1: ahi la secuencia incluye etapas "
+             "que escriben en el CRM, y omitir el flag no las autoriza. En `libre` "
+             "se resuelve a `api`, que era su default historico."),
     force: bool = typer.Option(False, "--force"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     yes: bool = typer.Option(False, "--yes", help="auto-confirma el gate CRM"),
@@ -1381,10 +1401,17 @@ def main(
         force=force, dry_run=dry_run, folder_id=folder_id, case_id=case_id,
         hasta=hasta,
     )
+
     if errores_modo:
         for e in errores_modo:
             typer.echo(f"[ERROR] {e}", err=True)
         raise typer.Exit(code=1)
+
+    # DESPUES de la puerta, y solo aqui: el modo `libre` conserva su default historico
+    # (`api`). El secuenciado no llega con `None` —la puerta lo aborta—, asi que esta
+    # linea no puede autorizar una escritura que nadie declaro (R1/H-01).
+    if crm is None:
+        crm = "api"
 
     if fuente not in _FUENTES_CLI:
         typer.echo(f"[ERROR] Fuente desconocida: {fuente}. Válidas: {_FUENTES_CLI}", err=True)
