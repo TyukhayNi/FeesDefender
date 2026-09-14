@@ -93,6 +93,40 @@ fecha: 2026-07-22
     `sync.pull` como *fuente* de pull, así que apuntarlo al hogar canónico hace que un pull futuro
     se traiga el caso sobre sí mismo. Automatizarlo en `repository_cli checkin`: `MEJORAS #139`.
 
+- **`[APER-73]` Esta sesión NO toca el repo. Anota los defectos; los fichas al cerrar.**
+  Una sesión de apertura ejecuta el runbook y, si encuentra un defecto de *nuestro* código, **no
+  lo arregla aquí**: lo anota y sigue. Está medido — las **838 líneas** huérfanas que hubo que
+  rescatar el 2026-09-13 (fila #29) fueron una sesión de apertura que se puso a reparar y dejó
+  código sin commitear sobre una base **21 commits atrás**, duplicando algo que otra vía ya había
+  construido. Repara **una sola** sesión, que es la dueña del código.
+  - **Dónde se anota:** `%LOCALAPPDATA%\FeesDefender\aperturas\<AAAA-MM-DD>_<W-code>.md`. Fuera
+    del repo a propósito: el fichero lo escribe esta sesión y lo lee el **cierre**, que puede
+    correr días después, en otra rama y en otro worktree — la ruta tiene que ser computable por
+    las dos sin coordinarse.
+  - **Formato** (lo lee `scripts/session_close.py`; el guard
+    `tests/test_guard_formato_apertura.py` comprueba que este bloque y el código no divergen):
+
+    <!-- formato-fichero-apertura -->
+
+    ```markdown
+    ---
+    caso: W-02UDC1
+    fecha: 2026-09-14
+    estado: pendiente
+    fichas: []
+    ---
+
+    ## Título corto del defecto
+
+    Lo observado, con su medición y la ruta del fichero.
+    ```
+
+  - **`estado`**: `pendiente` · `fichado` · `descartado`. Al fichar, pon `fichado` y lista los
+    `MEJORAS #NN` en `fichas:`; si decides que no merece ficha, `descartado` y di por qué en el
+    cuerpo. Mientras siga `pendiente`, **`session_close` te lo recordará en cada cierre**.
+  - **Los pendientes del CASO no van aquí** — esos son `Pendiente` / `estado.json` / la ficha de
+    cierre del expediente. Este fichero es solo para defectos de nuestro código y del proceso.
+
 ---
 
 ## 1. Recon en paralelo (antes de preguntar) `[APER-02]`
@@ -1186,6 +1220,11 @@ Todo REST `x-api-key`. No se borra nada.
   3. `git push origin tmp-merge:<rama-remota-del-PR>` (fast-forward)
   4. `git checkout -B <rama-local> origin/<rama-remota>`; borrar `tmp-merge`.
 - Cierre estándar: `python -m scripts.session_close` (slash `/cierre`).
+- **`[APER-73]` Antes de cerrar: ficha lo que anotaste.** Lee
+  `%LOCALAPPDATA%\FeesDefender\aperturas\<fecha>_<W-code>.md`, abre los `MEJORAS #NN` que
+  procedan **leyendo `origin/main`** (no la rama en que estés), y deja el fichero en
+  `estado: fichado` con sus `fichas:`, o en `estado: descartado`. `session_close` avisa si queda
+  alguno en `pendiente` — es aviso, no verja: no te bloquea el cierre.
 
 ---
 
