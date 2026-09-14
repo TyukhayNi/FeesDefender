@@ -1,12 +1,29 @@
 ---
 tipo: plan
-estado: vigente
+estado: parado
 creado: 2026-09-14
 rev: "2"
 spec: docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md §§5, 5.1, 5.2, 21.3
 ---
 
 # V2 — el lazo del CRM dentro de la secuencia (P1, primera mitad) — rev. 2
+
+> ## ⛔ PARADO el 2026-09-14, por decisión de Nikolai — NO implementar
+>
+> **Motivo: no hay lectura verificable del CRM** (`MEJORAS #258`). Cuatro vías de lectura
+> —dos GET, un listado y la UI por `find`— devolvieron 500 o resultaron inertes, **cada una
+> con su control positivo fallando**. Contra este CRM hoy solo tenemos `status`, no resultado.
+>
+> Eso tumba la prueba de aceptación de la Task 6: «releer el expediente y comprobar por
+> resultado» **no es ejecutable**. Cablear `crm_alta` y `actuacion` dentro de la secuencia
+> significaría escribir a ciegas y aceptar la pieza con un `201` — que es exactamente lo que
+> P6 demostró que no basta (tres defectos reales bajo 5.612 tests verdes y 39 mutantes muertos).
+>
+> **Lo descubrió una comprobación manual de Nikolai en la UI**, no ninguno de mis instrumentos.
+>
+> **Se reanuda cuando `#258` esté cerrada.** El resto del plan (rev. 2, con los 8 hallazgos de
+> la R1 remediados) sigue siendo válido y no hay que rehacerlo. Ver también `MEJORAS #259` y
+> `#260`, que salieron de esta misma medición.
 
 > **Para trabajadores agénticos:** SUB-SKILL REQUERIDA: usar `superpowers:subagent-driven-development`
 > o `superpowers:executing-plans` para ejecutar este plan tarea a tarea. Los pasos usan casillas

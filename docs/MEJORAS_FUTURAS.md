@@ -11887,3 +11887,74 @@ momento del envío.
 leído (documento, correo entrante, ficha), y el envío va detrás de una confirmación explícita,
 no de un valor por defecto.
 
+
+## 258. No hay lectura verificable del CRM — y eso BLOQUEA cualquier escritura automatizada
+
+**Qué pasa.** Contra este CRM solo tenemos **status**, no resultado. Medido el 2026-09-14, con
+control positivo en cada intento:
+
+| Vía | Resultado |
+|---|---|
+| `GET /api/element_register/extrajudiciales/<id>` en `tnm.sudespacho.net` | **500** `Warning: Array to string conversion` — también para un id que SÍ existe |
+| lo mismo en `api-crm-commons-pro.sudespacho.biz` | **500**, y **también para el id de control** que no existe |
+| `GET /api/element_registries/extrajudiciales` (listado) | **500**, 4.199 bytes de página de error |
+| `find` sobre la UI en el navegador | inerte: la navegación redirigió a la raíz, y el **control positivo** (buscar una cabecera que sí estaba) tampoco casó |
+
+**Cuatro instrumentos, cuatro inertes.** Y el dato que lo hace grave: **un cero de esos
+instrumentos es indistinguible de un cero verdadero**. Sin control positivo se habría dado por
+bueno cualquiera de ellos.
+
+**Y hay un split de fachadas que nadie había documentado:** la **escritura** va a
+`https://api-crm-commons-pro.sudespacho.biz` (`_REST_BASE` en `core/sudespacho_create.py:90`) y
+la **lectura** y la UI a `tnm.sudespacho.net`. Se puede crear por una y borrar por la otra sin
+darse cuenta — pasó el 2026-09-14.
+
+**Por qué bloquea.** La regla de la casa es **verificar por resultado, nunca por status**, y P6
+midió lo que cuesta saltársela: 5.612 tests verdes y 39 mutantes muertos no vieron tres defectos
+que una ejecución real encontró. Si V2 cablea `crm_alta` y `actuacion` dentro de la secuencia, su
+prueba de aceptación sería un `201` — exactamente lo que P6 demostró que no basta. **El único
+instrumento que funcionó en toda la medición fue la revisión manual de Nikolai en la UI.**
+
+**Disparador: ya disparado.** V2 (`docs/superpowers/plans/2026-09-14-apertura-v2-lazo-crm.md`)
+queda **PARADO** por decisión de Nikolai del 2026-09-14 hasta que exista esta lectura.
+
+**Qué haría falta.** Una función que, dado un `exp_id`, devuelva sus campos de forma fiable, con
+un **test de control positivo** que falle si el instrumento deja de distinguir. Antes de escribirla:
+leer `INTEGRACION_SUDESPACHO.md` §14.6 y `/api/docs` —la UI dice más que el JSON—, porque el 500
+del `properties[]` huele a forma de parámetro mal construida, no a API rota.
+
+## 259. El fallback legacy del alta no deja rastro — su uso es inmedible
+
+**Qué pasa.** `create_expediente` cae al frontal heredado si el REST falla
+(`core/sudespacho_create.py:1699-1731`), y ese camino **no escribe ningún evento ni log**.
+Medido el 2026-09-14 buscando en el bloque entero: cero registros.
+
+**Por qué importa.** La pregunta «¿podemos quitar el fallback legacy?» la hizo Nikolai el
+2026-09-14 y **no se puede responder con datos**: nadie sabe cuántas altas lo han usado. Un
+camino de escritura que no deja rastro no se puede evaluar ni para retirarlo ni para confiar en
+él. Y está vivo: el frontal responde, y durante una apertura la cookie está fresca porque el
+checklist la renueva.
+
+**Disparador.** La propia decisión sobre legacy. Es barato —un evento en el log forense cuando el
+fallback se dispara— y es lo que permite decidir dentro de unos meses con hechos.
+
+## 260. Un reintento que no comprueba si su primer intento ya funcionó
+
+**Qué pasa.** Entre el POST REST y el POST legacy de `create_expediente` **no hay reconsulta de
+duplicados**. Si REST hace commit y se pierde la respuesta, el fallback crea un segundo
+expediente. La protección que tenemos (`core/alta_crm_politica`) corre **antes** de la llamada,
+así que no cubre ese hueco.
+
+**Y el servidor no lo impide.** Medido el 2026-09-14: dos POST con la misma `Referencia_Cliente`
+devolvieron **201 con ids distintos** — no hay unicidad del lado servidor, coherente con que el
+atlas declare ese campo como `TextCorto` y que la clave real sea `Numero_Expediente`,
+autoincremental.
+
+**La frontera, que es más ancha que este caso.** No es «existe un fallback»: es **un reintento que
+no verifica si su primer intento ya surtió efecto**, y reaparecerá en cualquier otra escritura
+remota que reintentemos. El remedio barato es reconsultar antes del segundo POST; retirar el
+fallback es la única opción irreversible y hoy no se puede justificar con datos (`MEJORAS #259`).
+
+**Disparador.** Se cierra junto con `#259`, o antes si una apertura produce un expediente
+duplicado. **Depende de `#258`:** sin lectura verificable no se puede acreditar que el remedio
+funcione.

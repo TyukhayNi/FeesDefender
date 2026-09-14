@@ -2855,3 +2855,27 @@ el `id_gcalendar` vacío—. No son calendarios de Google, como escribí primero
 del método del §14.6: descubrir una escritura sin HAR funciona cuando va por el API de
 elementos, y esta no va por ahí.
 
+
+## 18. Escritura y lectura van a fachadas DISTINTAS (medido el 2026-09-14)
+
+Dato que no estaba escrito en ningún sitio y que explica una medición entera que salió torcida:
+
+| Camino | Host | Auth |
+|---|---|---|
+| **Escritura** (`create_expediente` → `_rest_post`) | `https://api-crm-commons-pro.sudespacho.biz` (`core/sudespacho_create.py:90`) | `x-api-key` |
+| **Lectura** (`SudespachoClient`) y la **UI** | `tnm.sudespacho.net` | `x-api-key` / sesión |
+| **Fallback legacy** del alta | `tnm.sudespacho.net` | cookie `PHPSESSID` + CSRF |
+
+**La consecuencia práctica: se puede crear por una fachada y borrar por la otra sin notarlo.**
+Pasó el 2026-09-14 — dos `POST` devolvieron `201` con ids 648 y 649 contra la fachada de
+escritura, y el `DELETE` fue contra la de lectura, que respondió `200 "Deleted!"` a las dos.
+Ni las creaciones ni los borrados aparecieron en el **log de auditoría** de `tnm`.
+
+**Y el corolario que más cuesta:** hoy **no hay lectura verificable** en ninguna de las dos
+fachadas. `GET /api/element_register/<elemento>/<id>` y el listado devuelven `500` con
+`Warning: Array to string conversion` —también para ids que SÍ existen, y también para el id de
+control que no existe—, así que **no distinguen**. Cuatro instrumentos probados, cuatro inertes.
+El único que funcionó fue la revisión humana en la UI. Ficha: `MEJORAS #258`.
+
+**Regla operativa mientras eso siga así:** no se acredita una escritura al CRM por su `status`.
+Si hay que confirmar que algo se creó, se mira en la UI — y se dice en el acta que esa fue la vía.
