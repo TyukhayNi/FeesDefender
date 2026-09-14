@@ -545,3 +545,39 @@ invariante del paso 6 aplicada al 7.
   es esa. Son los flujos de §10.11 (familia `rtf`) y §10.9 (`nest-mail`), documentados y
   confirmados, pero **piezas aparte**. Y la segunda haría que el código **envíe correo en nombre
   del despacho**: no se cablea sin decidir antes cuándo y a quién.
+
+### 9.6 Lo que Nikolai pidió sobre la marcha, y qué costó cada cosa
+
+Todo verificado **corriéndolo**, y con la actuación releída del CRM después.
+
+| Pedido | Resultado |
+|---|---|
+| Persona asignada | ya la ponía; confirmado leyendo el registro, no de memoria |
+| Tipo de evento | ya lo ponía, validado contra el enum |
+| Calendarios a asociar | **no hacía falta**: salen poblados solos en eventos creados por API |
+| Vencimiento + evento | paso 7 nuevo — `fecha_vencimiento` es un campo que nadie mira |
+| Recordatorios e invitados | PHP serializado; la forma se copió de registros vivos, no se dedujo |
+| Descripción | campo `Description` |
+| Seguimientos | se crean y **no se sabe atar** — declarado, no disimulado |
+| Facturación | faltaba `tipo_facturacion`: sin él la tarifa puesta no cobra |
+| Cerrar la actuación | `Planificado` → `Hecho` con su `fecha_fin`, verificando por lectura |
+
+**Dos daños propios, reparados**, y los dos enseñan lo mismo:
+
+1. **Poner `miembro` hizo que el CRM sobrescribiera el asunto de tres actuaciones** con el del
+   evento. Y **el prefijo del asunto ES la tarifa**, así que un título de evento con otro
+   prefijo puede cambiar lo que se le factura a un cliente. Reparadas a mano; el evento lleva
+   ahora el mismo asunto que su actuación, que es lo que hace la UI —y por eso allí la
+   sincronización es inocua—. *Nadie había escrito que `miembro` sincroniza el Subject: no
+   estaba en el atlas ni en INTEGRACION. Se descubrió mirando el resultado.*
+2. **`crear_seguimiento` daba por bueno un `201` que no creaba la relación.** Ahora verifica
+   releyendo y levanta. Es el mismo defecto que el paso 6 de esta receta existe para impedir,
+   cometido en una función añadida el mismo día.
+
+**Y una corrección de método que vale más que las dos:** las grafías `hour` y `year` de los
+recordatorios las iba a **inferir** del patrón de las otras tres. Nikolai paró eso —«no
+infieras, léelo»—. No había endpoint que las listara, así que se cerró **escribiéndolas y
+mirando cómo las pinta la UI**: «3 horas antes», «3 años antes». Eso es más fuerte que el
+barrido de datos, porque prueba que el CRM **entiende** el valor y no solo que alguien lo
+guardó. En un campo donde una grafía mala no da error y el aviso simplemente no salta, la
+diferencia entre inferir y leer es la diferencia entre un recordatorio y un adorno.

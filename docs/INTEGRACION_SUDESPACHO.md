@@ -2755,3 +2755,72 @@ NO hace es dar por bueno el 201.
 el panel de una actuación y se lea después cómo quedó atado. Un HAR de esa acción lo resolvería
 en un minuto.
 
+### 15.11 Cerrar una actuación, y las unidades de recordatorio que la API NO lista (2026-09-14)
+
+**Cerrar = `Estado: Hecho` + `fecha_fin`, y van juntas.** `PUT /api/element_register/actuaciones/{id}`
+con `{"Estado": "Hecho", "fecha_fin": "AAAA-MM-DD"}` → 200. De las actuaciones reales en `Hecho`,
+la fecha de fin viene poblada (3 de 4 en la muestra): una actuación cerrada sin fecha no dice
+cuándo se hizo, que es lo que se factura. `core/sudespacho_actuaciones.cerrar_actuacion` lo hace
+y **verifica releyendo**, porque el `PUT` de este CRM devuelve 200 con soltura.
+
+**Truco para releer una actuación concreta.** Filtrar `actuaciones` por `id` devuelve **vacío**
+(§15.8), así que para comprobar el estado se filtra por `Estado` y se busca el id entre los
+resultados. Suena del revés y es lo que funciona.
+
+**⚠️ Las unidades de tiempo del recordatorio NO se pueden leer por API.** Se buscó:
+
+| Ruta | Resultado |
+|---|---|
+| `GET /api/view/enums/calendario/recordatorios` | **HTTP 500** |
+| `GET /api/view/config/calendario/recordatorios` | 404 |
+| `GET /api/view/lists` | 404 |
+| `GET /api/lists` | 200 con `[]` |
+| `GET /api/view/config/calendario/fields` | 200, y `recordatorios` sale como `TextArea` **sin enum** |
+
+El desplegable de la UI ofrece **cinco** (Minutos · Horas · Días · Meses · Años) y el barrido de
+los **2.309** eventos con recordatorio del tenant solo acreditaba la grafía de **tres**: `day`
+(284), `minute` (67), `month` (2).
+
+**Las otras dos se cerraron escribiéndolas y mirando la UI**, no infiriéndolas: se crearon dos
+actuaciones sonda con `hour` y `year`, y el panel las pintó como «Correo electrónico 3 horas
+antes» y «3 años antes». **Esa evidencia es más fuerte que el barrido** — el barrido dice que
+una grafía existe en datos viejos; esto dice que el CRM **entiende** un valor escrito por API.
+El módulo conserva la diferencia en `_REC_TIEMPOS_EN_DATOS` y `_REC_TIEMPOS_CONFIRMADOS_UI`.
+
+**Por qué tanto cuidado con cinco cadenas:** equivocarse aquí es **silencioso**. Una grafía mala
+se serializa, se guarda sin error, y el recordatorio no salta nunca.
+
+**Los calendarios a asociar («Selecciona calendario para asociar este evento») NO hay que
+escribirlos.** Salen ya poblados —`Nikolai_Tyukhay` y `Oficina del Despacho Principal`— en
+eventos creados por API sin tocar ese control. Si es un defecto de la UI o un valor que asigna
+el CRM no se determinó; lo que consta es que el resultado es el correcto sin intervenir.
+
+### 15.12 ⚠️ Los eventos creados por API NO llegan a Google Calendar (2026-09-14)
+
+**Medido comparando `id_gcalendar` entre eventos de la UI y de la API:**
+
+| Evento | Origen | `id_gcalendar` |
+|---|---|---|
+| 20234, 20233, 20232 | UI | `94447353-…`, `413cc803-…`, `3eead598-…` |
+| 20235-20238, 20240-20243 | `crear_evento_calendario` | **vacío** |
+
+El evento existe en el CRM, se ve en el panel de la actuación y conserva sus recordatorios,
+pero **no se sincroniza**. Si el aviso lo dispara Google, **no salta**. Un evento que se ve y
+no avisa es peor que no tenerlo: parece que el vencimiento está cubierto.
+
+**Eso es lo que controla «Selecciona calendario para asociar este evento».** Las fichas
+(`Nikolai_Tyukhay`, `Oficina del Despacho Principal`) **no son una relación entre elementos** —
+descartado: el evento 20234, creado desde la UI **con** esas dos fichas, tiene exactamente las
+mismas relaciones que uno creado por API (`extrajudiciales` + `actuaciones`) y ninguna a un
+usuario. Tampoco son campos del evento: `Invitados` guarda `N;` y `tipo_sincronizacion` está
+vacío en todos. Y «Oficina del Despacho Principal» no existe como registro en `empleados`,
+`usuarios`, `organismos` ni `proveedores`.
+
+**El modelo que queda en pie:** son calendarios de Google, y la selección la maneja el **host de
+calendario** `api-calendar-commons-pro.sudespacho.biz` (§14.1), que es otra API. `/api/calendar/
+meetingroom` del host REST devuelve el censo de los 5 usuarios, pero no los calendarios.
+
+**Para cerrarlo hace falta un HAR** de la UI guardando ese control. Es el caso que el §14.6
+contempla: descubrir una escritura sin HAR funciona cuando la escritura va por el API de
+elementos, y esto no va por ahí.
+

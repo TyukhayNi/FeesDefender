@@ -42,6 +42,10 @@ class _Cliente:
             raise r
         return r
 
+    def put(self, url, **kw):
+        self.peticiones.append(("PUT", url, kw))
+        return self.puts.pop(0) if getattr(self, "puts", None) else _Resp(200, {})
+
     def post(self, url, **kw):
         self.peticiones.append(("POST", url, kw))
         r = self.posts.pop(0) if self.posts else _Resp(201, {"id": 1})

@@ -605,14 +605,76 @@ def test_el_evento_lleva_EL_MISMO_asunto_que_su_actuacion():
 @pytest.mark.parametrize("tiempo", ["day", "minute", "month", "hour", "year"])
 def test_los_cinco_tiempos_del_desplegable_se_aceptan(tiempo):
     """La UI ofrece cinco: Minutos · Horas · Días · Meses · Años. El barrido de los 2.309
-    eventos con recordatorio del tenant solo acredita la grafía de tres (`day`, `minute`,
-    `month`); `hour` y `year` se infieren del patrón. Se separan a propósito en el módulo:
-    de unos consta el dato y de otros la inferencia, y una grafía mala **no da error** — el
-    recordatorio se guarda y no salta nunca."""
+    eventos con recordatorio del tenant acredita la grafía de tres (`day`, `minute`, `month`).
+    `hour` y `year` no aparecían en ningún dato: se escribieron por API en dos sondas y **la UI
+    los pintó** como «3 horas antes» y «3 años antes» (2026-09-14). Se separan en el módulo
+    porque las dos vías no valen lo mismo, y una grafía mala **no da error**: el recordatorio
+    se guarda y no salta nunca."""
     sa._validar_recordatorios([{"tipo": "correo_electronico", "cuanto": 1, "tiempo": tiempo}])
 
 
 def test_las_dos_fuentes_del_vocabulario_se_declaran_por_separado():
-    assert set(sa._REC_TIEMPOS_MEDIDOS) == {"day", "minute", "month"}
-    assert set(sa._REC_TIEMPOS_INFERIDOS) == {"hour", "year"}
-    assert not (set(sa._REC_TIEMPOS_MEDIDOS) & set(sa._REC_TIEMPOS_INFERIDOS))
+    """Los cinco están acreditados, por dos vías que **no valen lo mismo**. El barrido prueba
+    que la grafía existe en datos viejos; la confirmación por UI prueba que el CRM **entiende**
+    un valor escrito por API — que es más fuerte. Separarlas conserva cuánta confianza merece
+    cada valor, en un campo donde equivocarse no da error: el recordatorio simplemente no salta.
+    """
+    assert set(sa._REC_TIEMPOS_EN_DATOS) == {"day", "minute", "month"}
+    assert set(sa._REC_TIEMPOS_CONFIRMADOS_UI) == {"hour", "year"}
+    assert not (set(sa._REC_TIEMPOS_EN_DATOS) & set(sa._REC_TIEMPOS_CONFIRMADOS_UI))
+
+
+# ---------------------------------------------------------------------------
+# Cerrar la actuación: de Planificado a Hecho
+# ---------------------------------------------------------------------------
+
+
+def _releida(coincide=True, act_id="21393"):
+    """La relectura del paso de verificación, **como la haría el servidor**.
+
+    `_estado_es` consulta filtrando por `Estado` y busca el id entre los resultados —no filtra
+    por `id`, porque sobre `actuaciones` ese filtro devuelve vacío (medido)—. Así que el doble
+    tiene que devolver la fila **solo si el estado coincide**: un doble que ignora el filtro
+    devuelve la fila siempre y hace que el test apruebe lo contrario de lo que dice probar.
+    """
+    return _Resp(200, {"items": [{"id": act_id, "values": []}] if coincide else []})
+
+
+def test_cerrar_una_actuacion_le_pone_estado_y_FECHA_DE_FIN():
+    """Las dos cosas van juntas: de las actuaciones reales en `Hecho`, la fecha de fin viene
+    poblada. Una actuación cerrada sin fecha no dice cuándo se hizo, que es lo que se factura.
+    """
+    c = _Cliente(gets=[_releida()], posts=[])
+    sa.cerrar_actuacion("21393", duracion_s=1200, client=c)
+    cuerpo = [kw for m, u, kw in c.peticiones if m == "PUT"][0]["json"]
+    assert cuerpo["Estado"] == "Hecho"
+    assert cuerpo["fecha_fin"], "una actuación hecha sin fecha de fin no dice cuándo se hizo"
+    assert cuerpo["duracion"] == "00:20:00"
+
+
+def test_un_200_del_PUT_no_acredita_que_quedara_HECHA():
+    """**La regla dura de este CRM, y en esta misma pieza ya mordió**: un `POST` de relación
+    devolvía 201 sin crear nada. Aquí el `PUT` devuelve 200 y la relectura dice `Planificado`:
+    no se da por cerrada."""
+    c = _Cliente(gets=[_releida(coincide=False)])
+    with pytest.raises(ActuacionError, match="verificar por resultado"):
+        sa.cerrar_actuacion("21393", client=c)
+
+
+def test_si_no_se_puede_releer_tampoco_se_da_por_cerrada():
+    """No poder comprobar NO es haber comprobado."""
+    c = _Cliente(gets=[_Resp(500, {})])
+    with pytest.raises(ActuacionError):
+        sa.cerrar_actuacion("21393", client=c)
+
+
+def test_una_actuacion_no_facturable_tampoco_declara_tarifa():
+    """Si no se factura, no hay tarifa que declarar. Dos campos diciendo cosas distintas sobre
+    lo mismo es exactamente el defecto que esta pieza ya pagó una vez."""
+    c = _Cliente(gets=[_destino_ok(), _Resp(200, {"items": []}), _verificacion_ok()])
+    _alta(c, facturar=False)
+    cuerpo = [kw for m, u, kw in c.peticiones
+              if m == "POST" and "element_register/actuaciones" in u][0]["json"]
+    assert cuerpo["facturar"] is False
+    assert cuerpo["precio_hora"] == "0.00"
+    assert cuerpo["tipo_facturacion"] == ""

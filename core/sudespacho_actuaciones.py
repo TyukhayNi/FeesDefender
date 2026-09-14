@@ -653,7 +653,10 @@ def crear_actuacion(
         # sigue sin cobrar: el CRM no sabe por qué eje facturarla. Los tres campos van juntos.
         "tipo_facturacion": tipo_facturacion if facturar else "",
         "fecha_alta": fecha or datetime.now().strftime("%Y-%m-%d"),
-        "precio_hora": _precio_de(profesional),
+        # **La terna entera o nada.** Si no se factura, no se declara tarifa: dos campos
+        # diciendo cosas distintas sobre lo mismo es el defecto que esta pieza ya pagó una vez
+        # (`SENIOR - …` en el asunto y `0,00` en el precio).
+        "precio_hora": _precio_de(profesional) if facturar else "0.00",
     }
     if vence:
         cuerpo["fecha_vencimiento"] = vence
@@ -688,6 +691,58 @@ def crear_actuacion(
     if not act_id:
         raise ActuacionError("POST actuaciones devolvió 201 sin id: no hay recibo que reanudar")
     return act_id
+
+
+def cerrar_actuacion(act_id: str, *, fecha_fin: str | None = None,
+                     duracion_s: int | None = None, client=None) -> None:
+    """Pasa una actuación de `Planificado` a `Hecho`. **Y le pone su fecha de fin.**
+
+    Las dos cosas van juntas porque así están en los datos: de las actuaciones reales en
+    `Hecho`, la fecha de fin viene poblada (3 de 4 en la muestra del 2026-09-14), y una
+    actuación cerrada sin fecha no dice cuándo se hizo — que es justo lo que se factura.
+    `fecha_fin` por defecto es **hoy**.
+
+    **Verifica por lectura, no por status.** El `PUT` de este CRM devuelve 200 con soltura;
+    lo que acredita el cambio es releer el registro. Es la regla dura del §14.6 y en esta
+    misma pieza ya mordió: un `POST` de relación devolvía 201 sin crear nada.
+    """
+    cuerpo: dict[str, Any] = {
+        "Estado": "Hecho",
+        "fecha_fin": fecha_fin or datetime.now().strftime("%Y-%m-%d"),
+    }
+    if duracion_s is not None:
+        h, resto = divmod(int(duracion_s), 3600)
+        m, sg = divmod(resto, 60)
+        cuerpo["duracion"] = f"{h:02d}:{m:02d}:{sg:02d}"
+
+    c = _cliente(client)
+    r = c.put(f"/api/element_register/actuaciones/{act_id}", json=cuerpo)
+    if getattr(r, "status_code", 0) != 200:
+        raise ActuacionError(
+            f"PUT actuaciones/{act_id} → HTTP {r.status_code}: "
+            f"{getattr(r, 'text', '')[:200]}")
+    if not _estado_es(act_id, "Hecho", client=c):
+        raise ActuacionError(
+            f"el PUT sobre la actuación {act_id} devolvió 200 y al releerla NO está en "
+            "'Hecho'. No se da por cerrada: verificar por resultado, nunca por status.")
+
+
+def _estado_es(act_id: str, esperado: str, *, client) -> bool:
+    """¿Está la actuación en ese estado? Releyéndola, que es lo único que lo acredita."""
+    try:
+        r = client.get("/api/element_registries/actuaciones", params={
+            "properties[0]": "Estado",
+            "filterGroup[condition]": "AND",
+            "filterGroup[filterGroups][0][condition]": "AND",
+            "filterGroup[filterGroups][0][filters][0][operator]": "equal",
+            "filterGroup[filterGroups][0][filters][0][property]": "Estado",
+            "filterGroup[filterGroups][0][filters][0][value]": esperado,
+        })
+        if getattr(r, "status_code", 0) != 200:
+            return False
+        return any(str(f.get("id") or "") == str(act_id) for f in _items(r))
+    except Exception:  # noqa: BLE001 — no poder comprobar NO es haber comprobado
+        return False
 
 
 def vincular_actuacion(elemento: str, exp_id: str, act_id: str, *, client=None) -> None:
@@ -740,24 +795,25 @@ def verificar_actuacion_vinculada(
 _TIPOS_EVENTO = ("Aviso", "Evento", "Llamada", "Recordatorio", "Señalamiento", "Vencimiento")
 
 #: Vocabulario de `recordatorios`. **No es un enum declarado**: vive dentro de un blob
-#: serializado y ningún endpoint lo lista, al contrario que `Prioridad`. Se cruzan dos fuentes
-#: y **no valen lo mismo**, así que se dice cuál respalda cada valor:
+#: serializado y ningún endpoint lo lista — se comprobó, y `/api/view/enums/calendario/
+#: recordatorios` da 500, `/api/lists` devuelve `[]` y el campo sale como `TextArea` pelado.
 #:
-#: - **Barrido de los 2.309 eventos con recordatorio del tenant** (2026-09-14): `tipo` da
-#:   `correo_electronico` (229) y `ventana_emergente` (124); `tiempo` da `day` (284),
-#:   `minute` (67) y `month` (2).
-#: - **El desplegable de la UI**, que es el control del propio CRM: ofrece exactamente esos
-#:   dos tipos, y **cinco** tiempos — Minutos · Horas · Días · Meses · Años.
+#: Los cinco valores están acreditados, pero **por dos vías que no valen lo mismo**, y la
+#: distinción se conserva porque dice cuánta confianza merece cada uno:
 #:
-#: O sea: de `hour` y `year` consta que la **opción existe** y no consta su **grafía**
-#: almacenada. Se aceptan por el patrón singular inglés de las otras tres, y queda dicho que
-#: son inferidas. **El riesgo de equivocarse es silencioso**: una grafía mala se guarda igual
-#: y el recordatorio no salta nunca. Si hace falta certeza, basta con poner uno de cada desde
-#: la UI y releerlo.
+#: - `_EN_DATOS` — aparecen en el barrido de los **2.309** eventos con recordatorio del tenant
+#:   (2026-09-14): `day` (284), `minute` (67), `month` (2). Acredita que la grafía **existe**.
+#: - `_CONFIRMADOS_UI` — `hour` y `year` **no aparecían en ningún dato**. Se escribieron por
+#:   API en dos actuaciones sonda y **la UI los pintó** como «3 horas antes» y «3 años antes».
+#:   Eso es más fuerte que el barrido: prueba que el CRM **entiende** el valor, no solo que
+#:   alguien lo guardó alguna vez.
+#:
+#: Se hizo así porque equivocarse aquí es **silencioso**: una grafía mala se serializa, se
+#: guarda sin error y el recordatorio no salta nunca.
 _REC_TIPOS = ("correo_electronico", "ventana_emergente")
-_REC_TIEMPOS_MEDIDOS = ("day", "minute", "month")
-_REC_TIEMPOS_INFERIDOS = ("hour", "year")
-_REC_TIEMPOS = _REC_TIEMPOS_MEDIDOS + _REC_TIEMPOS_INFERIDOS
+_REC_TIEMPOS_EN_DATOS = ("day", "minute", "month")
+_REC_TIEMPOS_CONFIRMADOS_UI = ("hour", "year")
+_REC_TIEMPOS = _REC_TIEMPOS_EN_DATOS + _REC_TIEMPOS_CONFIRMADOS_UI
 
 
 def _php(valor) -> str:
