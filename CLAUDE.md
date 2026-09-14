@@ -306,6 +306,34 @@ Atajo: `/status` ejecuta los 3 comandos y muestra un resumen.
   `docs/RUNBOOK_APERTURA_EXPEDIENTE.md` (fuente única operativa, con los gotchas
   embebidos y punteros a `INTEGRACION_SUDESPACHO.md` como SSOT del detalle CRM).
 
+### Las skills de superpowers se invocan por FASE, no cuando uno se acuerda
+
+**Cada fase del trabajo tiene su skill, y se invoca antes de empezar esa fase:**
+
+| Cuando… | Skill |
+|---|---|
+| vas a diseñar algo nuevo, **antes** de escribir el spec | `superpowers:brainstorming` |
+| tienes spec y toca implementar | `superpowers:writing-plans` → `superpowers:executing-plans` |
+| vas a escribir código de producción | `superpowers:test-driven-development` |
+| te encuentras un bug o un rojo inexplicable | `superpowers:systematic-debugging` |
+| vas a decir «está hecho» | `superpowers:verification-before-completion` |
+| las tareas están cerradas y toca PR | `superpowers:finishing-a-development-branch` |
+
+**Por qué está escrito aquí, con la medición delante.** El hook de arranque ya inyecta
+`using-superpowers`, que ordena invocarlas «si hay un 1 % de posibilidad de que apliquen», y
+**no basta**: el 2026-09-14, en la sesión de P4 y P6, tenía las catorce disponibles y el hook
+activo, y no invoqué ninguna hasta que Nikolai me lo dijo **dos veces**. Una exhortación
+genérica pierde contra un flujo específico y escrito —el de esta misma sección—, y este
+fichero citaba `docs/superpowers/` una docena de veces **siempre como carpeta de specs y
+plans**, nunca como skills. Lo que falla no es la voluntad: es que el disparador no estaba
+atado a ninguna fase de las que aquí se describen.
+
+**Y lo que NO son, para no confundir dos controles distintos.** `requesting-code-review`
+despacha un subagente que lee el *work product*; la **revisión adversarial de la casa** la
+ejecuta **Codex**, la adjudica Claude contra la fuente y deja **acta hermana** (§«Revisión
+adversarial»). No se sustituyen: son dos lecturas independientes y el mismo día han encontrado
+cosas distintas. La obligatoria sigue siendo la de Codex.
+
 ### Cierre de sesión
 
 ```powershell

@@ -28,6 +28,24 @@ una instrucción divergente es peor que ninguna.
 - **Skills:** se editan **siempre** en `.claude/skills/` (fuente única de desarrollo, con
   helpers en `.claude/skills/_shared/`). El árbol `.agents/skills/` es un espejo local **no
   versionado** que ya ha divergido de la fuente; no lo edites ni te fíes de él. Ver `MEJORAS #97`.
+- **Tienes superpowers instalado, y tres de sus skills son tuyas** (comprobado el 2026-09-14 en
+  `~/.codex/plugins/cache/superpowers-marketplace/superpowers/6.3.0`, con las catorce; el propio
+  plugin trae un `references/codex-tools.md` que contempla tu caso —sandbox en *detached HEAD*,
+  sin poder crear rama—). Como **revisas en solo lectura y no implementas**, la mayoría no te
+  aplica: `writing-plans`, `executing-plans` y `finishing-a-development-branch` son de quien
+  escribe el código. Las que sí:
+
+  | Cuando… | Skill |
+  |---|---|
+  | vas a **reproducir** un defecto en vez de deducirlo | `superpowers:systematic-debugging` |
+  | vas a **declarar** un hallazgo, o a decir que algo está bien | `superpowers:verification-before-completion` |
+  | el autor te responde y toca releer tu propio hallazgo | `superpowers:receiving-code-review` |
+
+  **Y dos que NO puedes usar hoy, para que no las intentes:** `dispatching-parallel-agents` y
+  `subagent-driven-development` exigen `multi_agent = true` en `~/.codex/config.toml`, y **no
+  está activado** (comprobado el 2026-09-14). Si algún día se activa, entran; hasta entonces,
+  intentarlo es gastar la ronda.
+
 - **Codex es el revisor adversarial del proyecto** (desde 2026-08-01; sustituye a Gemini/`agy`, que
   se retiró por cupo agotado — ver `docs/DEAD_ENDS.md`). Contrata así:
 
