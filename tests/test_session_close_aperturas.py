@@ -163,3 +163,44 @@ def test_el_aviso_no_rompe_el_cierre_si_el_lector_lanza(tmp_path, monkeypatch, c
         sc._avisar_aperturas_sin_fichar(tmp_path)
     except RuntimeError:
         raise AssertionError("el aviso dejo escapar la excepcion")
+
+
+def test_una_linea_en_blanco_dentro_del_frontmatter_no_estorba(tmp_path):
+    con_hueco = "---\ncaso: W-1\n\nfecha: 2026-09-14\nestado: pendiente\n---\n"
+    _escribir(tmp_path, "hueco.md", con_hueco)
+
+    pendientes, ilegibles = sc._leer_aperturas(tmp_path)
+
+    assert [c for _, c, _ in pendientes] == ["W-1"]
+    assert ilegibles == []
+
+
+def test_lo_que_no_se_puede_leer_se_declara_y_no_tumba_el_recorrido(tmp_path):
+    # Un directorio llamado `x.md` casa el glob y revienta al leerse: es el caso
+    # real de «no se pudo leer», y lo que importa es que el recorrido SIGA.
+    (tmp_path / "roto.md").mkdir(parents=True)
+    _escribir(tmp_path, "zbueno.md", _PENDIENTE)
+
+    pendientes, ilegibles = sc._leer_aperturas(tmp_path)
+
+    assert [c for _, c, _ in pendientes] == ["W-02UDC1"], "el fallo de uno se llevo al otro"
+    assert [f for f, _ in ilegibles] == ["roto.md"]
+    assert "no se pudo leer" in ilegibles[0][1]
+
+
+def test_sin_estado_es_ilegible(tmp_path):
+    _escribir(tmp_path, "s.md", "---\ncaso: W-1\nfecha: 2026-09-14\n---\n")
+
+    pendientes, ilegibles = sc._leer_aperturas(tmp_path)
+
+    assert pendientes == []
+    assert ilegibles == [("s.md", "falta estado:")]
+
+
+def test_sin_fecha_es_ilegible(tmp_path):
+    _escribir(tmp_path, "f.md", "---\ncaso: W-1\nestado: pendiente\n---\n")
+
+    pendientes, ilegibles = sc._leer_aperturas(tmp_path)
+
+    assert pendientes == []
+    assert ilegibles == [("f.md", "falta fecha:")]
