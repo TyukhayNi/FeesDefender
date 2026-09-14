@@ -36,6 +36,8 @@ CLI = "scripts/crm_ficha.py"
 T_71 = "tests/test_resolver_parte_aper71.py"
 T_63 = "tests/test_crm_ficha_n_contrarios.py"
 T_ACT = "tests/test_sudespacho_actuaciones.py"
+T_R2 = "tests/test_sudespacho_actuaciones_r2.py"
+VAL = "core/crm_ficha_validacion.py"
 
 #: (nombre, fichero a mutar, texto original, texto mutado, test que DEBE ponerse rojo).
 MUTANTES: list[tuple[str, str, str, str, str]] = [
@@ -71,8 +73,8 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      f"{T_71}::test_la_ficha_del_buzon_sin_nif_para_en_vez_de_crear"),
 
     ("M07 la consulta por email deja de pedir el documento", REL,
-     '_buscar_registros(elemento, "email", (email or "").strip(), properties=(prop_nif,))',
-     '_buscar_registros(elemento, "email", (email or "").strip())',
+     "                          properties=(prop_nif,), limite=_LIMITE_BUZON)",
+     "                          limite=_LIMITE_BUZON)",
      f"{T_71}::test_la_consulta_por_email_pide_tambien_el_nif"),
 
     ("M08 `resuelta` deja de mirar el motivo", REL,
@@ -117,10 +119,9 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      '        return IdPredefinido("no_aplica", motivo="")',
      f"{T_ACT}::test_cero_filas_no_es_lo_mismo_que_filas_sin_campo"),
 
-    ("M16 [H-06] el destino deja de contrastarse", ACT,
-     "    if not esperados or not leidos or not (esperados & leidos):",
-     "    if False:",
-     f"{T_ACT}::test_un_expediente_de_OTRO_caso_con_el_mismo_numero_no_se_acredita"),
+    # M16 («el destino deja de contrastarse») lo ABSORBE M29 tras la R2: el contraste ya no
+    # es una intersección de subcadenas sino `wcode_match`, y atacar aquello sería atacar un
+    # texto que ya no existe.
 
     ("M17 [H-06] no poder leer el destino pasa por acreditarlo", ACT,
      '        raise DestinoNoAcreditado(\n            f"no se pudo leer {elemento}/{exp_id} (HTTP {r.status_code}). No se escribe nada.")',
@@ -128,12 +129,12 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      f"{T_ACT}::test_un_destino_que_no_se_puede_leer_tampoco_se_acredita"),
 
     ("M18 [H-04] el recibo pierde el id de la actuación creada", ACT,
-     '        return Recibo("incompleta", act_id=act_id, paso=4, motivo=(',
-     '        return Recibo("incompleta", act_id=None, paso=4, motivo=(',
+     "    recibo = dict(act_id=act_id, elemento=destino.elemento, exp_id=destino.exp_id)",
+     "    recibo = dict(act_id=None, elemento=destino.elemento, exp_id=destino.exp_id)",
      f"{T_ACT}::test_si_el_vinculo_falla_el_recibo_conserva_el_id_creado"),
 
     ("M19 [H-04] reanudar vuelve a crear una actuación", ACT,
-     "    act_id = desde.act_id if (desde and desde.act_id) else None",
+     "    act_id = desde.act_id if desde else None",
      "    act_id = None",
      f"{T_ACT}::test_reanudar_desde_el_recibo_no_crea_otra_actuacion"),
 
@@ -143,8 +144,12 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      f"{T_ACT}::test_no_declara_exito_sin_la_verificacion_del_paso_6"),
 
     ("M21 un POST sin respuesta se trata como incompleta y no como incierta", ACT,
-     '            return Recibo("incierta", paso=4, motivo=(\n                f"el POST no dio recibo',
-     '            return Recibo("incompleta", paso=4, motivo=(\n                f"el POST no dio recibo',
+     '            return Recibo("incierta", paso=4, elemento=destino.elemento,\n'
+     '                          exp_id=destino.exp_id, motivo=(\n'
+     '                              f"el POST no dio recibo',
+     '            return Recibo("incompleta", paso=4, elemento=destino.elemento,\n'
+     '                          exp_id=destino.exp_id, motivo=(\n'
+     '                              f"el POST no dio recibo',
      f"{T_ACT}::test_un_post_sin_recibo_deja_el_estado_INCIERTO"),
 
     ("M22 el asunto canónico gana un defecto de firmante", ACT,
@@ -158,8 +163,8 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      f"{T_ACT}::test_un_firmante_desconocido_no_elige_tarifa_por_su_cuenta"),
 
     ("M24 el prefijo de OTRO se corrige en silencio", ACT,
-     "            if p != prefijo:\n                raise ValueError(",
-     "            if False:\n                raise ValueError(",
+     "        if hallado != prefijo:",
+     "        if False:",
      f"{T_ACT}::test_un_asunto_con_el_prefijo_de_OTRO_se_rechaza"),
 
     ("M25 [H-07] una ronda sin cerrar vale cero en vez de None", ACT,
@@ -171,6 +176,67 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      "    if seg < 0:",
      "    if False:",
      f"{T_ACT}::test_extremos_invertidos_se_rechazan"),
+    # --- [R2] Los remedios de la segunda ronda, cada uno con su mutante -----------------
+    ("M27 [R2] el parseo vuelve a quedar fuera del try: se pierde el recibo", ACT,
+     "    try:\n        data = resp.json()\n    except Exception as exc:  # noqa: BLE001 — cualquier cuerpo que no se pueda interpretar\n        raise CuerpoIlegible(f\"respuesta con cuerpo ilegible: {exc!r}\") from exc",
+     "    data = resp.json()",
+     f"{T_R2}::test_un_cuerpo_no_json_en_el_paso_6_no_pierde_el_recibo"),
+
+    ("M28 [R2] el destino vuelve a leer la PRIMERA fila", ACT,
+     '    propia = [f for f in filas if str(f.get("id") or "").strip() == str(exp_id)]',
+     "    propia = filas",
+     f"{T_R2}::test_el_destino_se_acredita_con_LA_FILA_pedida_no_con_la_primera"),
+
+    ("M29 [R2] el W-code vuelve a compararse por subcadena", ACT,
+     "    if not wcode_match(referencia_esperada, leida):",
+     "    if not ({m.upper() for m in _RE_WCODE.findall(referencia_esperada or '')}\n"
+     "            & {m.upper() for m in _RE_WCODE.findall(leida)}):",
+     f"{T_R2}::test_el_w_code_se_compara_ENTERO_y_como_principal"),
+
+    ("M30 [R2] un recibo incierto vuelve a ser reanudable", ACT,
+     '        if desde.estado == "incierta" or not desde.act_id:',
+     "        if False:",
+     f"{T_R2}::test_reanudar_un_recibo_INCIERTO_no_crea_otra_actuacion"),
+
+    ("M31 [R2] el recibo de otro expediente vuelve a aceptarse", ACT,
+     "        if desde.elemento and (desde.elemento, desde.exp_id) != (destino.elemento, destino.exp_id):",
+     "        if False:",
+     f"{T_R2}::test_reanudar_con_el_recibo_de_OTRO_expediente_se_rechaza"),
+
+    ("M32 [R2] el paso 1 vuelve a consultar el asunto crudo", ACT,
+     "        pre = aprender_id_predefinido(canonico, client=client)",
+     "        pre = aprender_id_predefinido(asunto, client=client)",
+     f"{T_R2}::test_el_paso_1_consulta_el_asunto_QUE_SE_VA_A_ESCRIBIR"),
+
+    ("M33 [R2] «no pude mirar el catálogo» vuelve a seguir adelante", ACT,
+     '        if pre.estado == "sin_comprobar":',
+     "        if False:",
+     f"{T_R2}::test_no_poder_mirar_el_catalogo_NO_sigue_adelante"),
+
+    ("M34 [R2] `extra` vuelve a pisar lo validado", ACT,
+     "    invasores = sorted(set(extra or {}) & _CAMPOS_DECIDIDOS)",
+     "    invasores = []",
+     f"{T_R2}::test_extra_no_puede_sobrescribir_lo_que_se_acaba_de_validar"),
+
+    ("M35 [R2] el prefijo vuelve a exigir formato exacto", ACT,
+     "    m = _RE_PREFIJO.match(texto)",
+     '    m = re.match(r"^(SENIOR|ABOGADO) - ", texto)',
+     f"{T_R2}::test_un_prefijo_contradictorio_se_detecta_aunque_varie_el_formato"),
+
+    ("M36 [R2] la duración vuelve a aceptar fechas sin zona", ACT,
+     '    sin_zona = [c for c, v in (("iniciada", ini), ("terminada", fin)) if v.tzinfo is None]',
+     "    sin_zona = []",
+     f"{T_R2}::test_la_duracion_exige_zona_en_LOS_DOS_extremos"),
+
+    ("M37 [R2] el buzón truncado vuelve a autorizar la creación", REL,
+     "    if len(c_mail.registros) >= _LIMITE_BUZON:",
+     "    if False:",
+     f"{T_71}::test_r2_un_buzon_truncado_no_autoriza_a_crear"),
+
+    ("M38 [R2] el validador vuelve a anclar solo el primer contrario", VAL,
+     "    for idx, c in enumerate(ficha.contrarios):",
+     "    for idx, c in enumerate(ficha.contrarios[:1]):",
+     f"{T_63}::test_r2_el_validador_ancla_TODOS_los_contrarios"),
 ]
 
 #: (nombre, motivo). Mutantes que se conservan sin exigirles muerte, con su razón escrita.

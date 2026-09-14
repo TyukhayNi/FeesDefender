@@ -55,8 +55,11 @@ class _Cliente:
         return r
 
 
-def _fila(**props):
-    return {"id": "1", "values": [{"property": {"name": k}, "value": v}
+def _fila(fid="1", **props):
+    """Una fila del CRM. **El `id` importa**: desde la R2, `resolver_destino` exige que la fila
+    que lee sea la que pidió — leer `filas[0]` acreditaba el destino con la referencia de otro
+    expediente si el filtro no mordía."""
+    return {"id": fid, "values": [{"property": {"name": k}, "value": v}
                                   for k, v in props.items()]}
 
 
@@ -120,7 +123,7 @@ def test_un_expediente_de_OTRO_caso_con_el_mismo_numero_no_se_acredita():
     Y la verificación del paso 6 no lo caza, porque usa la misma dirección que la escritura:
     verificar la llegada no verifica la intención.
     """
-    c = _Cliente(gets=[_Resp(200, {"items": [_fila(referencia_cliente="OTRO (W-0XXXXX) - x")]})])
+    c = _Cliente(gets=[_Resp(200, {"items": [_fila("464", referencia_cliente="OTRO (W-0XXXXX) - x")]})])
     with pytest.raises(act.DestinoNoAcreditado):
         act.resolver_destino("expedientes_judiciales", "464",
                              "BaRS10 - Calle (W-02VEKE) - Negativa", client=c)
@@ -128,7 +131,7 @@ def test_un_expediente_de_OTRO_caso_con_el_mismo_numero_no_se_acredita():
 
 def test_el_destino_correcto_se_acredita_con_su_evidencia():
     c = _Cliente(gets=[_Resp(200, {"items": [
-        _fila(referencia_cliente="BaRS10 - Calle (W-02VEKE) - Negativa")]})])
+        _fila("540", referencia_cliente="BaRS10 - Calle (W-02VEKE) - Negativa")]})])
     d = act.resolver_destino("expedientes_judiciales", "540",
                              "BaRS10 - Calle (W-02VEKE) - Negativa", client=c)
     assert d.exp_id == "540" and "W-02VEKE" in d.evidencia
@@ -142,7 +145,7 @@ def test_un_destino_que_no_se_puede_leer_tampoco_se_acredita():
 
 
 def test_acreditar_el_destino_no_escribe_nada():
-    c = _Cliente(gets=[_Resp(200, {"items": [_fila(Referencia_Cliente="X (W-02VEKE)")]})])
+    c = _Cliente(gets=[_Resp(200, {"items": [_fila("464", Referencia_Cliente="X (W-02VEKE)")]})])
     act.resolver_destino("extrajudiciales", "464", "X (W-02VEKE)", client=c)
     assert all(m == "GET" for m, _ in c.peticiones), c.peticiones
 
@@ -164,7 +167,7 @@ def _gets_destino_ok(*resto):
     `test_no_declara_exito_sin_la_verificacion_del_paso_6` pasaba por la razón equivocada.
     """
     return [
-        _Resp(200, {"items": [_fila(Referencia_Cliente="BaRS10 (W-02VEKE)")]}),  # paso 3
+        _Resp(200, {"items": [_fila("464", Referencia_Cliente="BaRS10 (W-02VEKE)")]}),  # paso 3
         _Resp(200, {"items": []}),                                               # paso 1
         *resto,
     ]
@@ -172,7 +175,7 @@ def _gets_destino_ok(*resto):
 
 def _gets_reanudando(*resto):
     """Al reanudar **no** se llama al paso 1: el id ya existe y no se aprende nada."""
-    return [_Resp(200, {"items": [_fila(Referencia_Cliente="BaRS10 (W-02VEKE)")]}), *resto]
+    return [_Resp(200, {"items": [_fila("464", Referencia_Cliente="BaRS10 (W-02VEKE)")]}), *resto]
 
 
 def test_si_el_vinculo_falla_el_recibo_conserva_el_id_creado():
@@ -239,7 +242,7 @@ def test_el_camino_feliz_verifica_del_lado_del_expediente():
 
 
 def test_un_destino_no_acreditado_no_llega_a_crear_nada():
-    c = _Cliente(gets=[_Resp(200, {"items": [_fila(Referencia_Cliente="OTRO (W-0XXXXX)")]})])
+    c = _Cliente(gets=[_Resp(200, {"items": [_fila("464", Referencia_Cliente="OTRO (W-0XXXXX)")]})])
     with pytest.raises(act.DestinoNoAcreditado):
         act.alta_actuacion(*_DESTINO, asunto="X", firmante="Nikolai_Tyukhay", client=c)
     assert not [m for m, _ in c.peticiones if m == "POST"]

@@ -321,3 +321,45 @@ def test_el_error_de_un_nif_no_interpretable_no_habla_de_varias_fichas(monkeypat
     with pytest.raises(sr.ConflictoDeIdentidad) as exc:
         sr._exigir_identidad_cierta(r, elemento=ELEM, nif=" -- ", email="casa@ejemplo.es")
     assert "VARIAS fichas" not in str(exc.value), str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# R2 — «todas descartadas» no se puede concluir sobre una PÁGINA
+# ---------------------------------------------------------------------------
+
+
+def test_r2_un_buzon_truncado_no_autoriza_a_crear(monkeypatch):
+    """**El hallazgo que más enseña de la R2.**
+
+    La tabla concluye «todas las fichas descartadas → se crea», y decidía sobre las cinco
+    primeras (el `itemsPerPage` por defecto de `_buscar_registros`). Con seis fichas en un
+    buzón familiar, **la misma entrada creaba o paraba según el tamaño de página**.
+
+    Antes de esta pieza era inocuo —con dos o más fichas se paraba igual por ambigüedad—; el
+    remedio de `[APER-71]` lo volvió peligroso, porque esta rama ahora **autoriza una
+    creación**. La lección: un remedio cambia qué estados son alcanzables, y obliga a volver a
+    mirar los que antes no importaban.
+    """
+    llenos = [_registro(f"F{i}", nif=f"{i}{i}{i}{i}{i}{i}{i}{i}H", email="casa@ejemplo.es")
+              for i in range(1, sr._LIMITE_BUZON + 1)]
+
+    def fake(elemento, propiedad, valor, *, operador="equal", limite=5, properties=()):
+        if propiedad == "nif_cif":
+            return sr.Consulta()                       # el NIF propio no casa nada
+        return sr.Consulta(registros=llenos[:limite])  # el servidor TRUNCA, como cualquier API
+
+    monkeypatch.setattr(sr, "_buscar_registros", fake)
+    r = sr.resolver_parte(ELEM, nif="99999999R", email="casa@ejemplo.es")
+
+    assert not r.resuelta, "autorizó crear sin haber contrastado todas las fichas del buzón"
+    assert "truncada" in (r.motivo or "").lower(), r.motivo
+
+
+def test_r2_un_buzon_que_cabe_entero_si_decide(monkeypatch):
+    """El otro lado: si la lista está completa, la tabla decide como siempre."""
+    _censo(monkeypatch, [
+        _registro("A", nif="11111111H", email="casa@ejemplo.es"),
+        _registro("B", nif="22222222J", email="casa@ejemplo.es"),
+    ])
+    r = sr.resolver_parte(ELEM, nif="33333333P", email="casa@ejemplo.es")
+    assert r.resuelta and r.id is None, "no existe y todas se descartaron: se crea"

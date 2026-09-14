@@ -58,7 +58,10 @@ _PREFIJO_POR_FIRMANTE = {
 }
 
 _PREFIJOS = tuple(sorted(set(_PREFIJO_POR_FIRMANTE.values())))
-_RE_WCODE = re.compile(r"W-[0-9A-Z]{5,6}", re.I)
+#: Campos del POST que materializan una decisión ya validada: `extra` no los toca.
+_CAMPOS_DECIDIDOS = frozenset({"Subject", "profesional_asignado", "id_predefinido"})
+#: Un prefijo al principio del asunto, tolerando caja y espacios de más.
+_RE_PREFIJO = re.compile(r"^\s*(" + "|".join(_PREFIJOS) + r")\s*-\s*", re.I)
 
 
 class ActuacionError(RuntimeError):
@@ -91,14 +94,31 @@ def _cliente(client=None):
                  "Content-Type": "application/json"})
 
 
+class CuerpoIlegible(ActuacionError):
+    """Un `200` cuyo cuerpo no se puede interpretar. **No es una lista vacía.**"""
+
+
 def _items(resp) -> list[dict]:
     """Las filas de un `element_registries`, con las dos formas que devuelve el CRM.
 
     Cuál llega **la elige la cabecera `Accept`**: `application/json` exacto da `items`;
     `ld+json`, `*/*` o ninguna dan `hydra:member`. No es una forma sustituyendo a otra
     (`INTEGRACION_SUDESPACHO.md §15.6`), así que se aceptan las dos.
+
+    **El parseo entero va cubierto, y esto ya se pagó una vez en el módulo hermano.**
+    `sudespacho_relations._buscar_registros` documenta que una ronda anterior midió que su
+    `try` «solo envolvía `r.json()`» y que ahora cubre el parseo completo. Aquí se repitió el
+    defecto: un `200` con cuerpo no-JSON levantaba desde dentro de `_items`, la excepción
+    atravesaba `alta_actuacion` —que no envuelve el paso 6— y el llamador recibía una
+    excepción **en vez del recibo con el `act_id`**, justo después de escribir en el CRM. La
+    respuesta natural a una excepción es repetir el alta, y eso deja una actuación huérfana.
+
+    Levanta `CuerpoIlegible`, que es del módulo: quien captura `ActuacionError` lo captura.
     """
-    data = resp.json()
+    try:
+        data = resp.json()
+    except Exception as exc:  # noqa: BLE001 — cualquier cuerpo que no se pueda interpretar
+        raise CuerpoIlegible(f"respuesta con cuerpo ilegible: {exc!r}") from exc
     if not isinstance(data, dict):
         return []
     return [i for i in (data.get("items") or data.get("hydra:member") or [])
@@ -160,7 +180,10 @@ def aprender_id_predefinido(asunto: str, *, client=None) -> IdPredefinido:
     if getattr(r, "status_code", 0) != 200:
         return IdPredefinido("sin_comprobar", motivo=f"HTTP {r.status_code}")
 
-    filas = _items(r)
+    try:
+        filas = _items(r)
+    except CuerpoIlegible as exc:
+        return IdPredefinido("sin_comprobar", motivo=str(exc))
     if not filas:
         return IdPredefinido("sin_filas", motivo=f"ninguna actuación casa {asunto!r}")
     for f in filas:
@@ -247,14 +270,35 @@ def resolver_destino(
         raise DestinoNoAcreditado(
             f"no se pudo leer {elemento}/{exp_id} (HTTP {r.status_code}). No se escribe nada.")
 
-    filas = _items(r)
+    try:
+        filas = _items(r)
+    except CuerpoIlegible as exc:
+        raise DestinoNoAcreditado(
+            f"no se pudo interpretar la respuesta de {elemento}/{exp_id} ({exc}). "
+            "No se escribe nada.") from exc
     if not filas:
         raise DestinoNoAcreditado(f"{elemento}/{exp_id} no devolvió ninguna fila")
-    leida = str(_values(filas[0]).get(prop) or "")
 
-    esperados = {m.upper() for m in _RE_WCODE.findall(referencia_esperada or "")}
-    leidos = {m.upper() for m in _RE_WCODE.findall(leida)}
-    if not esperados or not leidos or not (esperados & leidos):
+    # **La fila que se lee es la que se pidió.** El filtro va por `id`, pero leer `filas[0]`
+    # sin comprobarlo acredita el destino con la referencia de OTRO expediente si el filtro no
+    # muerde o si el CRM devuelve más de una fila — en la función cuyo cometido entero es
+    # «verificar por resultado, nunca por status».
+    propia = [f for f in filas if str(f.get("id") or "").strip() == str(exp_id)]
+    if not propia:
+        raise DestinoNoAcreditado(
+            f"{elemento}/{exp_id}: la consulta devolvió {len(filas)} fila(s) y ninguna tiene "
+            f"ese id ({[str(f.get('id')) for f in filas]}). No se escribe nada.")
+    leida = str(_values(propia[0]).get(prop) or "")
+
+    # **El W-code se compara ENTERO, con el helper del módulo hermano.** La regex propia
+    # capturaba 5-6 caracteres sin fronteras, así que `W-ABCDEF1` y `W-ABCDEF2` colapsaban en
+    # el mismo código y acreditaban el mismo destino. `wcode_match` admite 5-8 con fronteras y
+    # compara el código PRINCIPAL, así que una referencia leída que solo menciona el esperado
+    # de pasada tampoco acredita. El plan ya mandaba usarlo; escribir una regex nueva teniendo
+    # el helper delante fue el defecto.
+    from core.sudespacho_relations import wcode_match
+
+    if not wcode_match(referencia_esperada, leida):
         raise DestinoNoAcreditado(
             f"{elemento}/{exp_id} tiene la referencia {leida!r} y se esperaba "
             f"{referencia_esperada!r}: cada elemento numera aparte y este par apunta a otro "
@@ -296,13 +340,19 @@ def asunto_canonico(base: str, *, firmante: str) -> str:
             "añádelo con su tarifa en vez de dejar que se elija una por defecto")
 
     texto = (base or "").strip()
-    for p in _PREFIJOS:
-        if texto.upper().startswith(f"{p} - "):
-            if p != prefijo:
-                raise ValueError(
-                    f"el asunto ya lleva el prefijo {p!r} y el firmante {f!r} factura como "
-                    f"{prefijo!r}. No se corrige en silencio: revisa cuál de los dos está mal.")
-            return texto
+    # **La detección tolera las variantes de formato.** Exigir `"ABOGADO - "` literal dejaba
+    # pasar `ABOGADO  -  X`, y el resultado era un asunto DOBLE (`SENIOR - ABOGADO  -  X`) en
+    # vez de la revisión humana que el runbook exige. Reconocer un valor estructurado obliga a
+    # decidir qué se hace con sus variantes ANTES de aplicar la política.
+    m = _RE_PREFIJO.match(texto)
+    if m:
+        hallado = m.group(1).upper()
+        if hallado != prefijo:
+            raise ValueError(
+                f"el asunto ya lleva el prefijo {hallado!r} y el firmante {f!r} factura como "
+                f"{prefijo!r}. No se corrige en silencio: revisa cuál de los dos está mal.")
+        # El catálogo es mayúsculas y el prefijo es la tarifa: no se conserva la caja de entrada.
+        return f"{prefijo} - {texto[m.end():].strip()}"
     return f"{prefijo} - {texto}"
 
 
@@ -342,6 +392,15 @@ def duracion_desde_ronda(case_dir: Path) -> int | None:
         return None
     ini = _fecha(ronda.iniciada, campo="iniciada")
     fin = _fecha(ronda.terminada, campo="terminada")
+    # **Zona en los DOS extremos** (diseño §4.4). `fromisoformat` admite fechas ingenuas, así
+    # que dos sin zona restaban y devolvían un número; y una mezclada levantaba `TypeError` de
+    # Python en vez de un error de dato legible. Poder restar dos representaciones temporales
+    # no acredita una duración entre instantes.
+    sin_zona = [c for c, v in (("iniciada", ini), ("terminada", fin)) if v.tzinfo is None]
+    if sin_zona:
+        raise ValueError(
+            f"{' y '.join(sin_zona)} sin zona horaria: no se puede saber a qué instante "
+            "corresponde, así que la resta no sería una duración")
     seg = (fin - ini).total_seconds()
     if seg < 0:
         raise ValueError(
@@ -376,6 +435,12 @@ class Recibo:
     estado: str
     act_id: str | None = None
     paso: int = 0
+    #: A qué expediente pertenece `act_id`. **Acreditar el destino no acredita el objeto que se
+    #: le vincula**: son dos identidades, y sin esto reanudar con el recibo equivocado vincula
+    #: una actuación ajena — y el paso 6 la da por verificada, porque sí aparece del lado de
+    #: ESE expediente.
+    elemento: str = ""
+    exp_id: str = ""
     motivo: str = ""
 
 
@@ -403,6 +468,18 @@ def crear_actuacion(
         h, resto = divmod(int(duracion_s), 3600)
         m, s = divmod(resto, 60)
         cuerpo["duracion"] = f"{h:02d}:{m:02d}:{s:02d}"
+    # **`extra` no puede pisar lo que se acaba de validar.** Iba detrás de la construcción,
+    # así que permitía sustituir `Subject`, `profesional_asignado` e `id_predefinido` — y con
+    # eso se eluden a la vez el prefijo del firmante (que ES la tarifa), la prohibición de
+    # pasar un id numérico de empleado y la evidencia del paso 1. La frontera: la validación
+    # se aplica al objeto FINAL que cruza la frontera de escritura, no a un borrador que luego
+    # se puede sobrescribir. Los extras legítimos —`fecha_vencimiento`— siguen entrando.
+    invasores = sorted(set(extra or {}) & _CAMPOS_DECIDIDOS)
+    if invasores:
+        raise ValueError(
+            f"`extra` intenta sobrescribir campos ya validados: {', '.join(invasores)}. "
+            "Esos los decide la propia función (el prefijo es la tarifa, el profesional es un "
+            "username y el id_predefinido se aprende): pásalos por sus parámetros.")
     cuerpo.update(extra or {})
 
     r = c.post("/api/element_register/actuaciones", json=cuerpo)
@@ -454,7 +531,10 @@ def verificar_actuacion_vinculada(
         return False
     if getattr(r, "status_code", 0) != 200:
         return False
-    return any(str(i.get("id") or "") == str(act_id) for i in _items(r))
+    try:
+        return any(str(i.get("id") or "") == str(act_id) for i in _items(r))
+    except CuerpoIlegible:
+        return False        # no poder verificar NO es haber verificado
 
 
 def alta_actuacion(
@@ -470,38 +550,78 @@ def alta_actuacion(
 
     El destino se acredita **siempre**, también al reanudar: es barato y es lo que impide
     escribir en el expediente de otro caso.
+
+    **Esta función existe para encadenar, no para aplanar.** La R2 encontró seis defectos con
+    una sola frontera detrás: *cada helper distingue estados que su único llamador colapsa*.
+    Cada bloque de abajo conserva una distinción que antes se perdía aquí — el estado del paso
+    1, el asunto que de verdad se escribe, la validación frente al fallo de red, y a qué
+    expediente pertenece la actuación que se reanuda.
     """
     destino = resolver_destino(elemento, exp_id, referencia_esperada, client=client)
 
-    act_id = desde.act_id if (desde and desde.act_id) else None
+    # **Reanudar es reanudar, no crear.** `incierta` significa «el POST pudo crear algo y no sé
+    # el id»: su `act_id` es `None` por definición, así que caía al camino de creación sin
+    # decir nada — justo lo que el diseño prohíbe, y en el único estado donde la API no podía
+    # protegerse. La prohibición vivía en el docstring y no en el código.
+    if desde is not None:
+        if desde.estado == "incierta" or not desde.act_id:
+            raise ActuacionError(
+                f"no se reanuda un recibo en estado {desde.estado!r}: puede haber una "
+                "actuación creada cuyo id no conocemos. Búscala en el CRM y concilia a mano; "
+                "reintentar aquí crearía una segunda.")
+        if desde.elemento and (desde.elemento, desde.exp_id) != (destino.elemento, destino.exp_id):
+            raise ActuacionError(
+                f"el recibo es de {desde.elemento}/{desde.exp_id} y se está reanudando sobre "
+                f"{destino.elemento}/{destino.exp_id}: acreditar el destino no acredita el "
+                "objeto que se le vincula. No se escribe nada.")
+
+    act_id = desde.act_id if desde else None
     if act_id is None:
-        pre = aprender_id_predefinido(asunto, client=client)
+        # **El asunto que se aprende es el que se va a escribir.** Se consultaba el crudo y se
+        # escribía el canónico: con `like` y sin prefijo, una consulta casa las filas `SENIOR`
+        # **y** las `ABOGADO`, así que se aprendía la plantilla de la otra tarifa. El docstring
+        # del propio paso 1 lo advierte, y su único llamador lo incumplía.
+        #
+        # Y la validación va FUERA del `try` que clasifica los fallos del POST: un firmante
+        # vacío salía como «puede haberse creado una actuación: concilia a mano» **sin haber
+        # tocado el CRM**. El diseño §4.3 dice que para y lo dice; paraba y decía otra cosa.
+        canonico = asunto_canonico(asunto, firmante=firmante)
+        resolver_profesional(firmante)
+
+        pre = aprender_id_predefinido(canonico, client=client)
+        # **Las cuatro salidas del paso 1 las consume alguien.** `alta_actuacion` leía solo
+        # `pre.valor`, así que «no pude mirar el catálogo» era indistinguible de «no aplica» —
+        # en un módulo cuya política declarada es fallar cerrado ante lo no comprobado.
+        if pre.estado == "sin_comprobar":
+            return Recibo("incompleta", paso=1, elemento=destino.elemento,
+                          exp_id=destino.exp_id, motivo=(
+                              f"no se pudo comprobar el id_predefinido de {canonico!r} "
+                              f"({pre.motivo}). No se escribe sin saberlo."))
         try:
             act_id = crear_actuacion(
-                asunto_canonico(asunto, firmante=firmante),
-                profesional=firmante,
-                id_predefinido=pre.valor,
-                duracion_s=duracion_s,
-                extra=extra,
-                client=client,
+                canonico, profesional=firmante, id_predefinido=pre.valor,
+                duracion_s=duracion_s, extra=extra, client=client,
             )
         except ActuacionError as exc:
-            return Recibo("incierta", paso=4, motivo=str(exc))
+            return Recibo("incierta", paso=4, elemento=destino.elemento,
+                          exp_id=destino.exp_id, motivo=str(exc))
         except Exception as exc:  # noqa: BLE001 — sin respuesta, hasta el id está en duda
-            return Recibo("incierta", paso=4, motivo=(
-                f"el POST no dio recibo ({exc!r}): puede haberse creado una actuación. "
-                "NO se reintenta a ciegas; concilia a mano."))
+            return Recibo("incierta", paso=4, elemento=destino.elemento,
+                          exp_id=destino.exp_id, motivo=(
+                              f"el POST no dio recibo ({exc!r}): puede haberse creado una "
+                              "actuación. NO se reintenta a ciegas; concilia a mano."))
 
+    recibo = dict(act_id=act_id, elemento=destino.elemento, exp_id=destino.exp_id)
     try:
         vincular_actuacion(destino.elemento, destino.exp_id, act_id, client=client)
     except Exception as exc:  # noqa: BLE001
-        return Recibo("incompleta", act_id=act_id, paso=4, motivo=(
+        return Recibo("incompleta", paso=4, motivo=(
             f"la actuación {act_id} EXISTE y no quedó vinculada ({exc!r}). "
-            "Reanuda con desde=<este recibo>; no repitas el alta."))
+            "Reanuda con desde=<este recibo>; no repitas el alta."), **recibo)
 
     if not verificar_actuacion_vinculada(destino.elemento, destino.exp_id, act_id,
                                          client=client):
-        return Recibo("incompleta", act_id=act_id, paso=5, motivo=(
+        return Recibo("incompleta", paso=5, motivo=(
             f"la actuación {act_id} se creó y se vinculó, pero no aparece del lado del "
-            "expediente. Reanuda con desde=<este recibo>; no repitas el alta."))
-    return Recibo("verificada", act_id=act_id, paso=6)
+            "expediente. Reanuda con desde=<este recibo>; no repitas el alta."), **recibo)
+    return Recibo("verificada", paso=6, **recibo)

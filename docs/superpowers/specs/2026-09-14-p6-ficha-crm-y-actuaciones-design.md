@@ -267,3 +267,57 @@ ante permutar resultados múltiples, y fallar cerrado ante una ficha sin NIF.
 **Y una errata que detectó sin elevarla a hallazgo:** la rev. 1 invertía verbalmente clave/id al
 describir `cliente_propio`. Corregida: `[APER-63]` dice que lleva **la clave** (`EV_MMC_SPAIN`),
 y el id `"2"` aborta — que es el comportamiento correcto.
+
+## 7. Adjudicación de la R2 (Codex + revisor de skill, 2026-09-14) — NO-SHIP los dos, remediado
+
+- **Objeto revisado:** el diff `530d033..8aed442`
+- **Ronda:** 2 de 2 del presupuesto autorizado. **Nikolai autorizó una R3 tras leer esto.**
+- **Revisores:** **dos, en paralelo e independientes** — Codex CLI `0.153.4` (acta
+  `…-r2-adversarial-review.md`, **11 hallazgos**, 8 `ALTO`, uno preexistente) y un subagente
+  despachado con `superpowers:requesting-code-review` (**13 hallazgos**, 1 crítico).
+- **Coinciden en cinco**, y cada uno vio lo que el otro no. **Ninguno refutado.**
+- **Remediado en:** `tests/test_sudespacho_actuaciones_r2.py` (18 casos) y el diff que los pasa.
+
+**La frontera, y es una sola para quince hallazgos:** *cada helper distingue estados que su
+único llamador colapsa.* Los helpers se escribieron con cuidado —cuatro salidas en el paso 1,
+firmante frente a operador, validación frente a fallo de red, un payload validado— y
+`alta_actuacion` los aplanaba. Remediar los quince casos uno a uno habría dejado el dieciséis;
+por eso el remedio reescribe el orquestador y no los parches.
+
+| | Hallazgo | Adjudicación |
+|---|---|---|
+| **Parseo** | `CRÍTICO` — `_items` hacía `resp.json()` fuera del `try`: un `200` ilegible atravesaba `alta_actuacion` y el llamador recibía una excepción **en vez del recibo con el `act_id`**, tras escribir en el CRM | **CONFIRMADO, y es el mismo defecto que el módulo hermano documenta como ya pagado.** `_items` levanta `CuerpoIlegible`, y los tres consumidores lo tratan |
+| **Paginación** | `ALTO` — «todas descartadas» se concluía sobre `itemsPerPage=5`: con seis fichas en el buzón, la decisión de **crear** depende del tamaño de página | **CONFIRMADO.** Ver §7.1 |
+| **Validador** | `ALTO` — se escriben N contrarios y `crm_ficha_validacion` sigue anclando **el primero** | **CONFIRMADO.** Es «antes de cambiar un campo, enumera quién lo LEE»: enumeré el CLI y no el validador |
+| **Recibo incierto** | `ALTO` — reanudarlo creaba otra actuación: su `act_id` es `None` por definición | **CONFIRMADO**, y lo había encontrado yo antes del informe. La prohibición vivía en el docstring y no en el código |
+| **Recibo sin destino** | `ALTO` — el recibo no acreditaba a qué expediente pertenece su actuación | **CONFIRMADO.** `Recibo` lleva `elemento`/`exp_id` y reanudar contra otro destino levanta |
+| **Paso 1 con otro asunto** | `ALTO` — se aprendía del asunto **crudo** y se escribía el **canónico**: con `like`, se aprende la plantilla de la otra tarifa | **CONFIRMADO.** El docstring del paso 1 lo advertía y su único llamador lo incumplía |
+| **Cuatro salidas** | `ALTO` — `alta_actuacion` leía `pre.valor` y nunca `pre.estado`: «no pude mirar» era indistinguible de «no aplica» | **CONFIRMADO.** La pieza construida que nadie encadena |
+| **Validación disfrazada** | `ALTO` — un firmante vacío salía como «puede haberse creado una actuación: concilia a mano» **sin tocar el CRM** | **CONFIRMADO.** La validación va fuera del `try` del POST |
+| **Destino** | `ALTO` — se leía `filas[0]` sin comprobar su id, y la regex de W-code **truncaba** (`W-ABCDEF1` = `W-ABCDEF2`) | **CONFIRMADO.** Se exige la fila pedida y se usa `wcode_match` del módulo hermano — que el plan ya mandaba usar |
+| **`extra`** | `ALTO` — sobrescribía `Subject`, `profesional_asignado` e `id_predefinido` **después** de validarlos | **CONFIRMADO.** La validación se aplica al objeto final que cruza la frontera de escritura |
+| **Zona horaria** | `MEDIO` — dos fechas sin zona restaban y devolvían un número | **CONFIRMADO.** El §4.4 ya lo exigía |
+| **Prefijo con espacios** | `MEDIO` — `ABOGADO  -  X` no se detectaba y producía un asunto **doble** | **CONFIRMADO.** La detección tolera caja y espacios, y normaliza a mayúsculas |
+| **Test que llama al CRM** | `MEDIO`, **preexistente** — `test_ensure_contrario_vinculado_existente` intenta leer del tenant y pasa porque `_completar_contrario_existente` absorbe la excepción | **CONFIRMADO y NO remediado aquí**: es anterior al diff y tocarlo mezclaría dos cosas. Ver §7.2 |
+
+### 7.1 La paginación, que es el que más enseña de los quince
+
+`_resolver_por_buzon_compartido` concluye «todas las fichas descartadas → se crea», y decidía
+sobre las **cinco primeras** (`itemsPerPage` por defecto de `_buscar_registros`). Con seis fichas
+en un buzón familiar, **la misma entrada crea o para según cuántas filas devuelva el servidor**.
+
+Antes del diff esto era inocuo —con dos o más fichas se paraba igual por ambigüedad—; el remedio
+de `[APER-71]` lo volvió peligroso, porque ahora esa rama **autoriza una creación**. Es la misma
+lección que la R1: *un remedio cambia qué estados son alcanzables, y hay que volver a mirar los
+que antes no importaban*.
+
+**Remedio:** la consulta por email pide explícitamente más filas de las que un buzón real puede
+tener y **detecta el truncamiento**; si la lista puede estar incompleta, se para. No se puede
+concluir «todas» sobre una página.
+
+### 7.2 Lo que NO se remedia aquí, y por qué
+
+El test preexistente que intenta alcanzar el CRM (`tests/test_sudespacho_relations.py`) es
+anterior a este diff y su remedio toca el aislamiento de la suite, no P6. Se **declara** aquí
+—la suite no está tan aislada como decimos— y se ficha aparte. Mezclarlo con esta pieza haría
+irrevisable el diff, que es justo lo que el techo de rondas intenta evitar.

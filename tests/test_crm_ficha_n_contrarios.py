@@ -109,3 +109,36 @@ def test_el_firmante_se_lee_del_yaml(tmp_path):
 def test_sin_firmante_el_campo_queda_vacio_y_no_se_inventa(tmp_path):
     d = crm_ficha.cargar_ficha_yaml(_escribir(tmp_path, {"notas_html": "x"}))
     assert d.firmante == ""
+
+
+def test_r2_el_validador_ancla_TODOS_los_contrarios(tmp_path):
+    """Se escriben N partes y se validaba **una** (R2).
+
+    `contrario` pasó a ser una propiedad derivada que devuelve el primero, así que
+    `crm_ficha_validacion.datos_de_ficha` compilaba igual y su significado cambió sin que
+    nadie lo tocara: los datos de la segunda parte llegaban al CRM **sin entrar nunca en el
+    denominador** del anclaje a documental, y el informe salía limpio sobre la mitad.
+
+    Es la frontera de «antes de cambiar un campo, enumera quién lo LEE»: el diff enumeró el
+    CLI y no el validador.
+    """
+    from core import crm_ficha_validacion as val
+
+    d = crm_ficha.cargar_ficha_yaml(_escribir(tmp_path, {"contrario": [
+        {"nombre": "PRIMERA", "nif": "1234567K", "poblacion": "BARCELONA"},
+        {"nombre": "SEGUNDA", "nif": "7654321M", "poblacion": "MADRID"},
+    ]}))
+    claves = {dato.campo for dato in val.datos_de_ficha(d)}
+
+    assert any("7654321M" == dato.valor for dato in val.datos_de_ficha(d)), (
+        f"el NIF de la segunda parte no entra en el denominador: {claves}")
+    assert any("MADRID" == dato.valor for dato in val.datos_de_ficha(d))
+
+
+def test_r2_con_un_solo_contrario_la_clave_no_cambia(tmp_path):
+    """Compatibilidad: el informe de un caso de una parte sigue diciendo `contrario.nif`."""
+    from core import crm_ficha_validacion as val
+
+    d = crm_ficha.cargar_ficha_yaml(_escribir(tmp_path, {"contrario": {
+        "nombre": "UNICA", "nif": "1234567K"}}))
+    assert "contrario.nif" in {dato.campo for dato in val.datos_de_ficha(d)}

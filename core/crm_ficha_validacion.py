@@ -232,8 +232,15 @@ def datos_de_ficha(ficha: FichaCRMInput) -> list[Dato]:
     """
     datos: list[Dato] = []
 
-    c = ficha.contrario
-    if c is not None:
+    # **TODOS los contrarios, no solo el primero** (R2). `contrario` pasó a ser una propiedad
+    # derivada que devuelve el primero de N, así que esto compilaba igual y su significado
+    # cambió sin que nadie lo tocara: el CLI escribía N partes y el anclaje a documental
+    # validaba una. Los datos de la segunda —NIF, email, dirección— llegaban al CRM **sin
+    # entrar nunca en el denominador**, y el informe salía limpio sobre la mitad del contenido.
+    #
+    # Es la frontera de «antes de cambiar un campo, enumera quién lo LEE»: el diff enumeró
+    # `scripts/crm_ficha.py` y no este fichero.
+    for idx, c in enumerate(ficha.contrarios):
         # TODOS los campos del contrario. R1/H-05: quitar `apellido1`/`apellido2` los
         # hacia desaparecer del denominador —una errata en ellos no salia ni como
         # encontrada ni como faltante—, y ademas `cp`, `provincia` y `telefono` se
@@ -254,7 +261,9 @@ def datos_de_ficha(ficha: FichaCRMInput) -> list[Dato]:
             ("provincia", c.provincia, "texto"),
         ):
             if (valor or "").strip():
-                datos.append(Dato(f"contrario.{campo}", valor.strip(), clase))
+                clave = ("contrario" if len(ficha.contrarios) == 1
+                         else f"contrario[{idx}]")
+                datos.append(Dato(f"{clave}.{campo}", valor.strip(), clase))
 
     for i, col in enumerate(ficha.colaboradores):
         for campo, valor, clase in (

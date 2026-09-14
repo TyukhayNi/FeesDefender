@@ -1025,6 +1025,13 @@ def update_cliente_contrario(contrario_id: str, cambios: dict) -> dict:
 #: `_resolver_colaborador` abortaba el alta en cuanto la ficha traía un NIF. O sea: la
 #: dedup por NIF del colaborador no ha funcionado nunca. El atlas ya lo decía bien;
 #: era este dict el que lo contradecía.
+#: Cuántas fichas se piden al consultar un buzón. Muy por encima de lo que un correo
+#: doméstico real puede tener, **y se comprueba el truncamiento**: la tabla del buzón
+#: compartido concluye «todas descartadas → crear», y eso no se puede afirmar sobre una
+#: página. Con el defecto de `_buscar_registros` (5), un buzón de seis dejaba la sexta
+#: invisible y la decisión dependía del tamaño de página (R2).
+_LIMITE_BUZON = 50
+
 _PROP_NIF = {
     "clientes_contrarios": "nif_cif",
     "clientes_propios": "nif_cif",
@@ -1216,7 +1223,8 @@ def resolver_parte(elemento: str, *, nif: str = "", email: str = "") -> Resoluci
     # tabla del buzon compartido, y `_buscar_registros` ya acepta properties extra: sin
     # esto habria que preguntar una vez por ficha, o —peor— decidir sin el dato.
     c_mail = (
-        _buscar_registros(elemento, "email", (email or "").strip(), properties=(prop_nif,))
+        _buscar_registros(elemento, "email", (email or "").strip(),
+                          properties=(prop_nif,), limite=_LIMITE_BUZON)
         if (email or "").strip() else Consulta()
     )
 
@@ -1293,6 +1301,19 @@ def _resolver_por_buzon_compartido(
     la deja pasar sin restriccion—, asi que solo se devuelve cuando la evidencia es
     comparable en todas las fichas del buzon.
     """
+    # **«Todas» no se puede concluir sobre una PÁGINA** (R2). La consulta venía con el
+    # `itemsPerPage` por defecto de `_buscar_registros`, que es 5: con seis fichas en un buzón
+    # familiar, la sexta era invisible y **la decisión de crear dependía del tamaño de página**.
+    #
+    # Antes de esta pieza era inocuo —con dos o más fichas se paraba igual por ambigüedad—; el
+    # remedio de `[APER-71]` lo volvió peligroso, porque esta rama ahora **autoriza una
+    # creación**. Es la misma lección que la R1: un remedio cambia qué estados son alcanzables,
+    # y obliga a volver a mirar los que antes no importaban.
+    if len(c_mail.registros) >= _LIMITE_BUZON:
+        return ResolucionParte(motivo=(
+            f"el email devolvió {len(c_mail.registros)} fichas, el máximo que se pidió: la "
+            "lista puede estar truncada y no se puede afirmar que se hayan contrastado TODAS"))
+
     mio = _canonizar_documento(nif)
     for reg in c_mail.registros:
         fid = str(reg.get("id") or "").strip()
