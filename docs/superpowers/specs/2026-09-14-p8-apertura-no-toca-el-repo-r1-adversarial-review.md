@@ -50,6 +50,23 @@ lector devuelva siempre vacío— produjo **13 fallos**, así que el control pos
 decorativo. Y declaró SIN VERIFICAR, correctamente, la suite completa, las dos semillas de
 aceptación, las ACL nativas de Windows y una apertura real.
 
+## 1. Informe recibido de Codex, sin modificar
+
+El mandato que se le dio y el informe que devolvió van literales más abajo, entre marcadores con
+nonce `p8r1`. No se ha tocado ni una palabra de ninguno de los dos: el acta es el archivo de la
+voz del revisor, y sin el original nadie puede contrastar **qué dijo** con **qué decidí yo que
+dijo** — que es justo lo que el acta existe para permitir, siendo yo la parte revisada.
+
+## 2. Evidencia verificada por mí
+
+| Qué | Resultado |
+|---|---|
+| `sha256` del informe | `ce3c4bb551a14d7f32f49ad74b8b628924f49fc02779721c48deb96b25260ccb` — **recomputado por mí** sobre el fichero crudo; **coincide** con el que el revisor devolvió en su último mensaje |
+| No mutación del objeto | los `sha256` de `session_close.py` y del guard son **idénticos** al abrir y al cerrar, según el propio revisor, que además recalculó tras sus mutantes |
+| Los seis hallazgos | **reproducidos por mí** contra el código, en una sonda propia (`([], [])` en los cinco silencios) — no dados por buenos desde el informe |
+| Los tres mutantes (M1, M2, M3) | **aplicados y vistos ROJOS** tras el remedio, y revertidos; antes dejaban 72 tests verdes |
+| Veredicto adjudicado | 6 confirmados, 0 refutados — con H-06 confirmado **con matiz**, dicho en la adjudicación |
+
 <!-- mandato-literal:inicio:p8r1 -->
 
 # Revisión adversarial — P8: una sesión de apertura no toca el repo (R1, sobre el DIFF)

@@ -231,9 +231,15 @@ guards no quedan exentos nunca. El aviso, además, es código nuevo en el camino
 
 ## 13. Adjudicación de la revisión adversarial (Codex, 2026-09-14) — LISTA-CON-CAMBIOS, remediado
 
-Acta literal con su digest: [`…-r1-adversarial-review.md`](2026-09-14-p8-apertura-no-toca-el-repo-r1-adversarial-review.md).
-Objeto: el diff `aba9656..7a78385`. **6 hallazgos, 6 confirmados, 0 refutados.** Cada uno se
-contrastó contra el código reproduciéndolo en una sonda propia, no contra el informe.
+- **Objeto revisado:** el diff `aba9656..7a78385` — 8 ficheros: el lector y el aviso en `scripts/session_close.py`, el guard, los tests, el RUNBOOK, `CLAUDE.md`, `PLAN.md` y el spec.
+- **Ronda:** 1 de 1, por radio de daño — no decide quién escribe sobre qué copia ni corrompe datos de cliente.
+- **Revisor:** Codex CLI `0.153.4`, modelo `gpt-6-astra`, `model_reasoning_effort=high`, binario `7ac07f4ce733f89a`.
+- **Informe recibido:** [`…-r1-adversarial-review.md`](2026-09-14-p8-apertura-no-toca-el-repo-r1-adversarial-review.md), `sha256` `ce3c4bb551a14d7f32f49ad74b8b628924f49fc02779721c48deb96b25260ccb`, recomputado por mí y coincidente con el que devolvió el revisor.
+- **Hallazgos:** 6 (0 `ALTO`, 4 `MEDIO`, 2 `BAJO`) — **6 confirmados, 0 refutados**; H-06 confirmado **con matiz**.
+- **Remediado en:** `13d6945` (código, guard y tests) y este mismo commit (la prosa).
+
+Cada hallazgo se contrastó contra el código reproduciéndolo en una sonda propia, no contra el
+informe.
 
 **Los seis son DOS fronteras. Remediar los seis casos por separado habría sido el error de las
 cuatro rondas del mutex.**
