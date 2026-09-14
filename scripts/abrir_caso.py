@@ -995,17 +995,29 @@ def _recibo_path(case_dir: Path) -> Path:
     return Path(case_dir) / "00_Input" / "_recibo_actuacion.json"
 
 
+class ReciboIlegible(Exception):
+    """El recibo EXISTE y no se pudo interpretar. **No es lo mismo que no tenerlo.**
+
+    Un fichero ausente acredita que no hubo intento; uno corrupto no acredita nada —
+    puede haber una actuacion creada cuyo recibo se estropeo—. Tratarlos igual daba
+    permiso para crear una segunda (R2/H-02). Es la misma frontera que P8 cerro.
+    """
+
+
 def _leer_recibo(case_dir: Path):
-    """El recibo guardado, o `None` si no hay o no se puede interpretar."""
-    try:
-        crudo = json.loads(_recibo_path(case_dir).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    """El recibo guardado, o `None` si NO HAY. Si lo hay y no se interpreta, LEVANTA."""
+    ruta = _recibo_path(case_dir)
+    if not ruta.exists():
         return None
+    try:
+        crudo = json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ReciboIlegible(f"{type(exc).__name__}: {exc}") from exc
     from core import sudespacho_actuaciones as sa
     try:
         return sa.Recibo(**crudo)
-    except TypeError:
-        return None
+    except TypeError as exc:
+        raise ReciboIlegible(f"no casa con el contrato de Recibo: {exc}") from exc
 
 
 def _guardar_recibo(case_dir: Path, recibo) -> None:
@@ -1040,16 +1052,28 @@ def _expediente_del_caso(case_dir: Path):
     return None
 
 
+class FichaIlegible(Exception):
+    """El `_ficha_crm.yaml` EXISTE y no se pudo interpretar (R2/H-06).
+
+    Misma frontera que `ReciboIlegible`: que no este es un estado normal —nadie la ha
+    escrito aun—; que este y no se lea significa que alguien la escribio creyendo que
+    servia, y devolver "" la hacia indistinguible de la ausencia.
+    """
+
+
 def _firmante_de(case_dir: Path) -> str:
-    """`firmante:` de `_ficha_crm.yaml`, o "" si no hay fichero o no lo declara."""
+    """`firmante:` de `_ficha_crm.yaml`; "" si NO HAY ficha o no declara el campo.
+
+    Si la ficha existe y no se puede interpretar, **levanta** `FichaIlegible`.
+    """
     from core import crm_ficha as cf
     ruta = Path(case_dir) / "00_Input" / "_ficha_crm.yaml"
     if not ruta.exists():
         return ""
     try:
         return cf.cargar_ficha_yaml(ruta).firmante or ""
-    except Exception:  # noqa: BLE001
-        return ""
+    except Exception as exc:  # noqa: BLE001
+        raise FichaIlegible(f"{type(exc).__name__}: {exc}") from exc
 
 
 def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
@@ -1071,7 +1095,17 @@ def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
             nombre="actuacion", estado="saltada",
             detalle="escritura al CRM no autorizada (--crm skip)",
             pendientes=(_PENDIENTE_NO_AUTORIZADO,))
-    quien = firmante if firmante is not None else _firmante_de(case_dir)
+    try:
+        quien = firmante if firmante is not None else _firmante_de(case_dir)
+    except FichaIlegible as exc:
+        # R2/H-06: existe y no se puede leer. Presentarlo como «sin firmante» lo haria
+        # indistinguible de no haberla escrito nunca.
+        return av1.EtapaResultado(
+            nombre="actuacion", estado="fallo",
+            detalle=f"_ficha_crm.yaml existe pero no se pudo interpretar: {exc}",
+            pendientes=(av1.Pendiente(
+                codigo="ficha_crm_ilegible",
+                detalle="Arregla el YAML de la ficha: alguien lo escribio y no se lee."),))
     if not quien:
         return av1.EtapaResultado(
             nombre="actuacion", estado="saltada",
@@ -1082,11 +1116,19 @@ def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
                         "prefijo del asunto es la tarifa, asi que no se infiere del "
                         "operador."),))
 
-    previo = _leer_recibo(case_dir)
-    if previo is not None and previo.estado == "verificada":
+    try:
+        previo = _leer_recibo(case_dir)
+    except ReciboIlegible as exc:
+        # R2/H-02. Un recibo corrupto NO acredita que no hubiera escritura: puede haber
+        # una actuacion creada cuyo recibo se estropeo. Fallar cerrado.
         return av1.EtapaResultado(
-            nombre="actuacion", estado="saltada",
-            detalle=f"ya hay actuacion verificada (id={previo.act_id}); no se crea otra")
+            nombre="actuacion", estado="fallo",
+            detalle=f"hay un recibo de actuacion y no se puede interpretar ({exc}): "
+                    f"no se crea otra sin mirar el expediente en el CRM",
+            pendientes=(av1.Pendiente(
+                codigo="actuacion_recibo_ilegible",
+                detalle=f"Mira el expediente en el CRM y arregla o borra "
+                        f"{_recibo_path(case_dir)}. Crear otra a ciegas duplicaria."),))
 
     # A QUE se cuelga la actuacion. Sin expediente vinculado no hay destino, y eso es
     # un pendiente —el alta puede venir en esta misma corrida o en otra—, no un fallo.
@@ -1100,6 +1142,23 @@ def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
                 detalle="Da de alta el expediente (etapa `crm_alta`) y relanza "
                         "`--hasta actuacion`."),))
     elemento, exp_id = destino
+
+    # **El atajo se comprueba AQUI, con el destino delante** (R2/H-04). Antes iba
+    # arriba y no miraba a que expediente pertenecia el recibo: uno copiado de otro
+    # caso daba por hecha una actuacion que aqui no existe. Un recibo de otro destino
+    # no es un atajo: es una anomalia, y se declara.
+    if previo is not None and previo.estado == "verificada":
+        if str(getattr(previo, "exp_id", "")) == str(exp_id):
+            return av1.EtapaResultado(
+                nombre="actuacion", estado="saltada",
+                detalle=f"ya hay actuacion verificada (id={previo.act_id}); no se crea otra")
+        return av1.EtapaResultado(
+            nombre="actuacion", estado="fallo",
+            detalle=f"el recibo guardado es del expediente {previo.exp_id} y este caso "
+                    f"apunta al {exp_id}: no acredita nada aqui",
+            pendientes=(av1.Pendiente(
+                codigo="actuacion_recibo_ajeno",
+                detalle=f"Revisa {_recibo_path(case_dir)}: pertenece a otro expediente."),))
 
     def _alta_real(**kw):
         from core import sudespacho_actuaciones as sa
@@ -1158,7 +1217,16 @@ def etapa_verificar(ident, case_dir: Path, *, crm: str = "api",
     """
     def _verificar_real(cd):
         from core import verificar_apertura as va
-        return va.verificar(cd)
+        # **Con fuentes REALES cuando la corrida autorizo el CRM** (R2/H-01). Sin
+        # ellas `verificar` cae a `SinRed` y sus cinco comprobaciones de red salen en
+        # `fallo`; como dos de las tres decisorias son de red, la etapa habria dado
+        # `fallo` SIEMPRE y el bloqueo no habria significado nada. Con `skip` no hay
+        # nada que consultar y no se sale: costaria tiempo y puede renovar tokens.
+        fuentes = None
+        if crm == "api":
+            from core.verificar_apertura_fuentes import DeLaRed
+            fuentes = DeLaRed()
+        return va.verificar(cd, fuentes)
 
     try:
         informe = (verificar or _verificar_real)(case_dir)

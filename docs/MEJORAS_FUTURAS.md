@@ -11974,3 +11974,25 @@ fallback es la única opción irreversible y hoy no se puede justificar con dato
 **Disparador.** Se cierra junto con `#259`, o antes si una apertura produce un expediente
 duplicado. **Ya no depende de `#258`**, que se resolvió el mismo día: el remedio se puede acreditar
 releyendo con `?properties=…`.
+
+
+## 261. La vida del recibo de la actuación entre copias del caso
+
+**Qué pasa.** V2 introduce `00_Input/_recibo_actuacion.json`, que es lo que impide crear una
+segunda actuación al relanzar la secuencia. Está declarado como protocolo
+(`core/intake_control.RAIZ`, R2/H-05), así que la sala de máquina ya no lo inventaría como
+documento del cliente — pero **nadie ha decidido qué le pasa cuando el caso cambia de copia**
+(checkout a local, checkin al Drive).
+
+**Por qué no se resolvió copiando lo de al lado.** La tentación era añadirlo a
+`MERGE_EXCLUSIONS` junto a `_apertura_v1.json`. El revisor lo desaconsejó con razón: aquel es
+estado **de la ronda y de la copia**, mientras que **perder este recibo al cambiar de copia puede
+volver a crear la actuación** en el CRM. Y dejarlo viajar sin política tampoco vale: dos copias
+con recibos distintos dan `CONFLICT` en el merge, tratadas como contenido concurrente.
+
+**Disparador.** La primera apertura que haga checkout/checkin con una actuación ya creada. O
+antes, si se construye la intención durable del §5.2 (`MEJORAS #260`), que probablemente cambia
+dónde vive este recibo.
+
+**Lo que hace falta:** decidir quién conserva y transporta el recibo entre copias, registrarlo, y
+probarlo — incluido el caso de dos copias con recibos distintos.

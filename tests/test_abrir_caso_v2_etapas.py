@@ -332,16 +332,11 @@ def test_si_el_recibo_no_se_puede_guardar_se_DICE(tmp_path, monkeypatch):
     assert "930" in res.detalle and "crearia otra" in res.detalle
 
 
-def test_un_recibo_corrupto_se_ignora_y_no_tumba_la_etapa(tmp_path):
-    # Un JSON que no casa con `Recibo` no puede impedir que la etapa corra: se
-    # trata como «no hay recibo previo».
-    ac._recibo_path(tmp_path).parent.mkdir(parents=True, exist_ok=True)
-    ac._recibo_path(tmp_path).write_text('{"campo_que_no_existe": 1}', encoding="utf-8")
-
-    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay",
-                             alta=lambda **kw: _ReciboFalso("verificada", act_id=931))
-
-    assert res.estado == "hecha"
+# **RETIRADO el 2026-09-14: afirmaba una propiedad EQUIVOCADA.** Decia que un recibo
+# corrupto «se ignora» y la etapa sigue. La R2 de Codex (H-02) lo puso por su nombre:
+# un JSON roto NO acredita que no hubiera escritura, asi que ignorarlo era dar permiso
+# para crear una segunda actuacion. Su sustituto, con la propiedad correcta, es
+# `test_r2_h02_un_recibo_ILEGIBLE_no_da_permiso_para_crear_otra`.
 
 
 def test_el_firmante_sale_del_yaml_cuando_no_se_pasa(tmp_path):
@@ -363,15 +358,9 @@ def test_sin_yaml_no_hay_firmante_y_se_declara(tmp_path):
     assert [p.codigo for p in res.pendientes] == ["actuacion_sin_firmante"]
 
 
-def test_un_yaml_ilegible_no_inventa_firmante(tmp_path):
-    (tmp_path / "00_Input").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "00_Input" / "_ficha_crm.yaml").write_text(
-        "esto: [no es, yaml valido\n", encoding="utf-8")
-
-    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api")
-
-    assert res.estado == "saltada"
-    assert [p.codigo for p in res.pendientes] == ["actuacion_sin_firmante"]
+# **RETIRADO el 2026-09-14 por la misma razon que el anterior** (R2/H-06): daba por
+# buena la confusion entre «no hay ficha» y «la ficha no se puede leer». Sustituto:
+# `test_r2_h06_un_yaml_INVALIDO_no_se_confunde_con_uno_ausente`.
 
 
 def test_verificar_por_el_camino_REAL_llama_al_verificador(tmp_path, monkeypatch):
@@ -381,11 +370,16 @@ def test_verificar_por_el_camino_REAL_llama_al_verificador(tmp_path, monkeypatch
 
     llamadas = []
     monkeypatch.setattr(va, "verificar",
-                        lambda cd: llamadas.append(cd) or _InformeFalso([]))
+                        lambda cd, fuentes=None:
+                        llamadas.append((cd, fuentes)) or _InformeFalso([]))
 
     res = ac.etapa_verificar(_Ident(), tmp_path, crm="api")
 
-    assert llamadas == [tmp_path]
+    assert [c for c, _ in llamadas] == [tmp_path]
+    # La R2 critico con razon que este test, escrito para cerrar el patron del doble
+    # que tapa, seguia tapando: probaba que se llama e impedia ver que se llamaba SIN
+    # fuentes. Ahora tambien mira eso.
+    assert llamadas[0][1] is not None, "se llamo sin fuentes: ver R2/H-01"
     assert res.estado == "hecha"
 
 
@@ -401,3 +395,102 @@ def test_si_no_se_puede_leer_el_caso_no_hay_destino(tmp_path, monkeypatch):
 
     assert res.estado == "saltada"
     assert [p.codigo for p in res.pendientes] == ["actuacion_sin_expediente"]
+
+
+# --------------------------------------------------------------------------
+# R2: los siete hallazgos. Cada test nombra el suyo.
+# --------------------------------------------------------------------------
+
+def test_r2_h01_la_verificacion_decisoria_SALE_A_LA_RED(tmp_path, monkeypatch):
+    """R2/H-01. `va.verificar(cd)` sin fuentes usa `SinRed`, y con eso **las cinco
+    comprobaciones de red salen en `fallo`** — lo dice el comentario de la propia
+    funcion. Como dos de las tres decisorias son de red, con `--crm api` la etapa
+    daria `fallo` SIEMPRE y la secuencia acabaria `bloqueado` en toda corrida real.
+    Ningun test lo veia porque todos doblaban el verificador.
+    """
+    from core import verificar_apertura as va
+
+    vistas = []
+    monkeypatch.setattr(va, "verificar",
+                        lambda cd, fuentes=None: vistas.append(fuentes) or _InformeFalso([]))
+
+    ac.etapa_verificar(_Ident(), tmp_path, crm="api")
+
+    assert vistas and vistas[0] is not None, (
+        "la comprobacion decisoria se hizo SIN fuentes: con SinRed las de red fallan "
+        "siempre y el bloqueo no significa nada")
+
+
+def test_r2_h01_sin_autorizacion_no_sale_a_la_red(tmp_path, monkeypatch):
+    # Con `skip` no hay nada que consultar en el CRM, y salir a la red costaria
+    # tiempo y podria renovar tokens sin motivo.
+    from core import verificar_apertura as va
+
+    vistas = []
+    monkeypatch.setattr(va, "verificar",
+                        lambda cd, fuentes=None: vistas.append(fuentes) or _InformeFalso([]))
+
+    ac.etapa_verificar(_Ident(), tmp_path, crm="skip")
+
+    assert vistas == [None]
+
+
+def test_r2_h02_un_recibo_ILEGIBLE_no_da_permiso_para_crear_otra(tmp_path):
+    """R2/H-02. `None` significaba «no hay» y tambien «no lo pude interpretar», y lo
+    segundo NO acredita que no hubiera escritura: puede haber una actuacion creada
+    cuyo recibo se corrompio. Es la misma frontera que P8 remedio esta manana.
+    """
+    ac._recibo_path(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    ac._recibo_path(tmp_path).write_text('{"campo_que_no_existe": 1}', encoding="utf-8")
+
+    def _no_debe_llamarse(**_kw):
+        pytest.fail("un recibo ilegible NO puede autorizar una actuacion nueva")
+
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay",
+                             alta=_no_debe_llamarse)
+
+    assert res.estado == "fallo"
+    assert [p.codigo for p in res.pendientes] == ["actuacion_recibo_ilegible"]
+
+
+def test_r2_h04_un_recibo_de_OTRO_expediente_no_vale_de_atajo(tmp_path):
+    """R2/H-04. El atajo de `verificada` no miraba a que expediente pertenecia: un
+    recibo copiado de otro caso daba por hecha una actuacion que aqui no existe."""
+    ac._recibo_path(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    ac._guardar_recibo(tmp_path, _ReciboFalso("verificada", act_id=950, exp_id="999"))
+
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay",
+                             alta=lambda **kw: _ReciboFalso("verificada", act_id=951))
+
+    assert res.estado != "saltada", "un recibo de otro expediente no acredita nada aqui"
+
+
+def test_r2_h06_un_yaml_INVALIDO_no_se_confunde_con_uno_ausente(tmp_path):
+    """R2/H-06. Misma frontera que H-02: que la ficha exista y no se pueda leer NO es
+    lo mismo que no tenerla. Alguien la escribio creyendo que servia."""
+    (tmp_path / "00_Input").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "00_Input" / "_ficha_crm.yaml").write_text(
+        "esto: [no es, yaml valido\n", encoding="utf-8")
+
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api")
+
+    assert res.estado == "fallo"
+    assert [p.codigo for p in res.pendientes] == ["ficha_crm_ilegible"]
+
+
+def test_r2_h07_el_guard_exige_las_TRES_no_un_subconjunto(tmp_path):
+    """R2/H-07. Con `<=` el conjunto podia quedarse con una de tres y seguir verde:
+    dos comprobaciones dejarian de bloquear sin que nadie se enterase."""
+    from core import verificar_apertura as va
+
+    assert ac.COMPROBACIONES_DE_V2 == frozenset(
+        {"crm_ficha", "crm_actuacion", "cuantia_coherente"})
+    assert ac.COMPROBACIONES_DE_V2 <= set(va.IMPLEMENTADAS)
+
+
+def test_r2_h05_el_recibo_es_PROTOCOLO_no_un_documento_del_expediente(tmp_path):
+    """R2/H-05. Sin declararlo, la sala de maquina lo inventariaba con hash y
+    extension JSON como si fuera un documento del caso del cliente."""
+    from core.intake_control import es_fichero_de_protocolo
+
+    assert es_fichero_de_protocolo(ac._recibo_path(tmp_path).name)

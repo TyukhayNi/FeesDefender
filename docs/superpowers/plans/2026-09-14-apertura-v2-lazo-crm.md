@@ -694,7 +694,12 @@ entrega no la construye**, y decirlo es parte del trabajo:
   duplicados**; si REST hizo commit y se perdió la respuesta, hay dos creaciones. V2 **no empeora**
   esto: lo hace alcanzable desde la secuencia. Lo que sí aporta es que el estado `fallo_registro`
   conserve el `exp_id`, para que un expediente creado y no vinculado se pueda encontrar.
-- **La actuación sí queda cubierta**, porque su recibo se persiste y `desde` reanuda (Task 4).
+- **La actuación queda cubierta SOLO a partir del recibo, y eso NO es «cubierta»** (R2/H-03,
+  confirmado). El recibo se guarda **después** del efecto remoto: un corte entre el POST y
+  el guardado deja la actuación creada sin recibo, y la corrida siguiente crea otra. Lo que
+  sí está cubierto es la reentrada **normal** —proceso vivo, recibo escrito— y el corte
+  posterior al guardado. La ventana entre el efecto y su recibo **sigue abierta**, y decir
+  lo contrario era la clase de afirmación de cobertura que esta casa persigue.
 - **Lo que queda abierto:** un corte entre el commit remoto del alta y la escritura del vínculo
   local. Se detecta —`fallo_registro` con su `exp_id`— pero se concilia **a mano**.
 
@@ -751,3 +756,66 @@ a tarea.
 
 **Decisión de alcance de Nikolai (2026-09-14), tomada al ver estos hallazgos:** V2 se recorta a
 `crm_alta` + `actuacion` + `verificar`. `crm_ficha` se difiere, que es lo que elimina H-05 de raíz.
+
+## 9. Adjudicación de la revisión adversarial (Codex, 2026-09-14) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff `c8c4c48..318a081` — 8 ficheros, la implementación completa de V2.
+- **Ronda:** 2 de 2, por radio de daño. La R1 fue sobre el plan; ésta sobre el código.
+- **Revisor:** Codex CLI `0.153.4`, modelo `gpt-6-astra`, `model_reasoning_effort=high`.
+- **Informe recibido:** [`…-r2-adversarial-review.md`](2026-09-14-apertura-v2-lazo-crm-r2-adversarial-review.md), `sha256` `7c15f415909d53233f98be3da00e5df99a677bd2ab6a0a7d95053cc44d60718e`, recomputado por mí y coincidente con el que devolvió el revisor.
+- **Hallazgos:** 7 (3 `ALTO`, 4 `MEDIO`) — **7 confirmados, 0 refutados**.
+- **Remediado en:** este commit; H-03 y la política de copias de H-05 **se declaran como deuda** por decisión de Nikolai.
+
+**Lo que la ronda NO encontró, y era el mayor riesgo de esta pieza.** Se le pidió expresamente que
+atacara los **nueve tests reexpresados** buscando relajaciones, comparando aserto por aserto contra
+la base. Concluye: *«No encuentro una relajación injustificada de los asertos antiguos bajo el
+nuevo contrato autorizado»*. Esa validación vale porque venía de alguien sin nada invertido.
+
+### Los tres ALTO, y por qué ninguno lo veía la suite verde
+
+| | Qué pasaba | Remedio |
+|---|---|---|
+| **H-01** | `etapa_verificar` llamaba `va.verificar(cd)` **sin fuentes** → `SinRed`, y entonces «las cinco comprobaciones de red salen en `fallo`». Como dos de las tres decisorias son de red, **con `--crm api` la etapa habría dado `fallo` siempre** y la secuencia habría acabado `bloqueado` en toda corrida real | se cablea `DeLaRed` cuando la corrida autorizó el CRM; con `skip` no se sale a la red, que no habría nada que consultar |
+| **H-02** | `_leer_recibo` devolvía `None` tanto para «no hay» como para «no se pudo interpretar», y lo segundo **daba permiso para crear una segunda actuación** | `ReciboIlegible`: un recibo corrupto es `fallo` con su pendiente, no vía libre |
+| **H-03** | el §7 declaraba cubierta la actuación, y **era falso** | se corrige el §7 y se declara la deuda (abajo) |
+
+**H-02 es la tercera vez en el día que incumplo la misma frontera.** P8 la cerró por la mañana
+—«no pude interpretarlo» no es «no hay nada»—, su R1 la encontró en tres vías, y aquí reaparece en
+el recibo y otra vez en la ficha (**H-06**). No es descuido puntual: es que la frontera hay que
+comprobarla **en cada lectura que se escribe**, no recordarla.
+
+### Los cuatro MEDIO
+
+- **H-04:** el atajo de `verificada` no miraba a qué expediente pertenecía el recibo. Ahora se
+  comprueba **con el destino delante**, y un recibo de otro expediente es anomalía declarada.
+- **H-06:** ficha presente e ilegible se presentaba como ausente. Misma frontera que H-02.
+- **H-07:** el guard usaba `<=`, así que el conjunto decisorio podía quedarse con una de tres y
+  seguir verde. Ahora exige igualdad.
+- **H-05:** el recibo no estaba declarado como protocolo y la sala de máquina lo habría
+  inventariado **como un documento del expediente del cliente**. Se añade a `intake_control.RAIZ`.
+
+### Y una crítica que se acepta entera
+
+El test `test_verificar_por_el_camino_REAL_llama_al_verificador`, escrito precisamente para cerrar
+el patrón del *doble que tapa*, **seguía tapando**: probaba que se llama e impedía ver que se
+llamaba sin fuentes — que es H-01. Ahora comprueba también las fuentes.
+
+**Tres tests propios se retiraron por afirmar la propiedad equivocada**, con su nota en el
+fichero: los de recibo corrupto y YAML ilegible daban por buena justamente la confusión que la
+ronda señaló. No es debilitar para poner verde: es que lo que afirmaban era incorrecto, lo dijo un
+revisor independiente y se comprobó contra la fuente.
+
+### Deuda declarada, por decisión de Nikolai (2026-09-14)
+
+1. **La ventana entre el efecto remoto y su recibo sigue abierta** (H-03). Cerrarla exige la
+   intención durable del §5.2, que este plan declara fuera de alcance desde la rev. 2. Lo que
+   cambia es que **ya no se dice que está cubierta**.
+2. **La vida del recibo entre copias no está definida** (H-05). Excluirlo del inventario es
+   acotado y se hizo; **no** se copia a ciegas la exclusión de merge de `_apertura_v1.json`,
+   porque el revisor advierte con razón que aquello es estado de la copia mientras que perder
+   este recibo al cambiar de copia **puede recrear la actuación**. Hace falta una política
+   explícita, con su registro y sus pruebas. Se ficha.
+
+**No hay R3.** El presupuesto de dos rondas está agotado y el techo duro exige autorización
+expresa para una tercera. **La remediación de esta R2 no ha pasado por ninguna ronda**, y eso se
+dice aquí y en el PR en lugar de dejarlo implícito.
