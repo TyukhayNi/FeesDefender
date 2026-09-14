@@ -1025,6 +1025,13 @@ def update_cliente_contrario(contrario_id: str, cambios: dict) -> dict:
 #: `_resolver_colaborador` abortaba el alta en cuanto la ficha traía un NIF. O sea: la
 #: dedup por NIF del colaborador no ha funcionado nunca. El atlas ya lo decía bien;
 #: era este dict el que lo contradecía.
+#: Cuántas fichas se piden al consultar un buzón. Muy por encima de lo que un correo
+#: doméstico real puede tener, **y se comprueba el truncamiento**: la tabla del buzón
+#: compartido concluye «todas descartadas → crear», y eso no se puede afirmar sobre una
+#: página. Con el defecto de `_buscar_registros` (5), un buzón de seis dejaba la sexta
+#: invisible y la decisión dependía del tamaño de página (R2).
+_LIMITE_BUZON = 50
+
 _PROP_NIF = {
     "clientes_contrarios": "nif_cif",
     "clientes_propios": "nif_cif",
@@ -1047,6 +1054,21 @@ class Consulta:
     #: False cuando la consulta no se pudo completar. NO es «no hay resultados».
     ok: bool = True
     motivo: str = ""
+    #: Cuantos registros dice el CUERPO que hay en total, si lo dice. `None` = no consta.
+    #: R3/H-05: se descartaba antes de que nadie pudiera mirarlo, y es la unica senal que
+    #: distingue «estos son todos» de «estos son los que cabian».
+    total_declarado: int | None = None
+
+    @property
+    def truncada(self) -> bool:
+        """¿Consta que faltan registros por ver?
+
+        **Solo dice que si con evidencia.** Sin total declarado devuelve False, que no
+        significa «estan todos» sino «no consta que falten»: afirmar incompletitud sin dato
+        bloquearia toda resolucion por buzon, y afirmar exhaustividad sin dato es el defecto
+        que esto viene a cerrar. Quien decide crear tiene que mirar ademas la longitud.
+        """
+        return self.total_declarado is not None and self.total_declarado > len(self.registros)
 
     @property
     def ids(self) -> list[str]:
@@ -1062,6 +1084,23 @@ def _canonizar_documento(valor: str) -> str:
     Se canoniza aqui igualmente para no depender de que el backend siga haciendolo.
     """
     return "".join(c for c in (valor or "") if c.isalnum()).upper()
+
+
+def _estado_documento(valor: str) -> str:
+    """`ausente` | `utilizable` | `no_interpretable`. **Son TRES, y la R1 lo midió.**
+
+    `_canonizar_documento` elimina separadores, así que `" -- . "` se convierte en `""`.
+    Tratar eso como «no se aportó» activaba la política de email **en silencio** sobre un
+    dato que sí se aportó: la sonda de la R1 (H-01) vinculó la ficha de otra persona y le
+    escribió el CP del titular que se estaba dando de alta.
+
+    La frontera: **la pérdida de información al normalizar no puede degradar un documento
+    aportado hasta cambiar de criterio de identidad.** Un dato presente que no se puede
+    comparar es un estado propio, y su respuesta es parar, no elegir otro camino.
+    """
+    if not (valor or "").strip():
+        return "ausente"
+    return "utilizable" if _canonizar_documento(valor) else "no_interpretable"
 
 
 def _buscar_registros(
@@ -1125,7 +1164,16 @@ def _buscar_registros(
     try:
         data = r.json()
         items = data.get("items") or data.get("hydra:member") or []
-        return Consulta(registros=[i for i in items if isinstance(i, dict)])
+        # El total viene con un nombre u otro segun el `Accept` (§14 de INTEGRACION). Un
+        # total ilegible se descarta en silencio: este contrato dice «nunca lanza», y no
+        # poder leer el total no invalida los registros que si se leyeron.
+        crudo = data.get("totalItems", data.get("hydra:totalItems"))
+        try:
+            total = int(crudo) if crudo is not None else None
+        except (TypeError, ValueError):
+            total = None
+        return Consulta(registros=[i for i in items if isinstance(i, dict)],
+                        total_declarado=total)
     except Exception as exc:  # noqa: BLE001 — cuerpo con forma inesperada
         return Consulta(ok=False, motivo=f"cuerpo inesperado: {exc!r}")
 
@@ -1150,11 +1198,19 @@ class ResolucionParte:
     ambiguo: tuple[str, ...] = ()
     #: Criterios que no se pudieron consultar. Vacio NO implica que no existan.
     sin_comprobar: tuple[str, ...] = ()
+    #: Por que no esta resuelta, cuando el motivo NO es «varias fichas». Vacio si no aplica.
+    #:
+    #: Existe porque `ambiguo` lleva **ids de ficha**, y los estados que abrio la R1 no los
+    #: tienen: un NIF no interpretable, o una ficha del buzon cuyo documento no se puede
+    #: comparar. Sin este campo, `_exigir_identidad_cierta` decia «la busqueda devolvio
+    #: VARIAS fichas» para esos casos — un mensaje falso que manda a deduplicar en el CRM
+    #: algo que no esta duplicado.
+    motivo: str = ""
 
     @property
     def resuelta(self) -> bool:
         """True solo si se sabe con certeza a que ficha corresponde (o que no hay)."""
-        return not (self.conflicto or self.ambiguo or self.sin_comprobar)
+        return not (self.conflicto or self.ambiguo or self.sin_comprobar or self.motivo)
 
 
 def resolver_parte(elemento: str, *, nif: str = "", email: str = "") -> ResolucionParte:
@@ -1182,12 +1238,19 @@ def resolver_parte(elemento: str, *, nif: str = "", email: str = "") -> Resoluci
     """
     prop_nif = _PROP_NIF.get(elemento, "nif_cif")
     nif_canon = _canonizar_documento(nif)
+    estado_nif = _estado_documento(nif)
 
     sin: list[str] = []
-    ambiguo: list[str] = []
 
     c_nif = _buscar_registros(elemento, prop_nif, nif_canon) if nif_canon else Consulta()
-    c_mail = _buscar_registros(elemento, "email", (email or "").strip()) if (email or "").strip() else Consulta()
+    # **La consulta por email trae tambien el documento de cada ficha.** Lo necesita la
+    # tabla del buzon compartido, y `_buscar_registros` ya acepta properties extra: sin
+    # esto habria que preguntar una vez por ficha, o —peor— decidir sin el dato.
+    c_mail = (
+        _buscar_registros(elemento, "email", (email or "").strip(),
+                          properties=(prop_nif,), limite=_LIMITE_BUZON)
+        if (email or "").strip() else Consulta()
+    )
 
     if nif_canon and not c_nif.ok:
         sin.append(f"NIF ({c_nif.motivo})")
@@ -1196,26 +1259,109 @@ def resolver_parte(elemento: str, *, nif: str = "", email: str = "") -> Resoluci
 
     ids_nif = set(c_nif.ids)
     ids_mail = set(c_mail.ids)
+
+    # 1. «No pude mirar» manda sobre todo lo demas, y conserva su precedencia. La R1 intento
+    #    refutar este guard y no pudo: bloquea con y sin match de NIF.
+    if sin:
+        return ResolucionParte(sin_comprobar=tuple(sin))
+
+    # 2. Un documento aportado que no se puede comparar NO cae a la politica de email.
+    if estado_nif == "no_interpretable":
+        return ResolucionParte(
+            motivo=f"el NIF {nif!r} no es interpretable como documento")
+
+    # 3. **El NIF manda, y su unicidad no la tapa la multiplicidad del email** (R1/H-03).
+    #    Esta comprobacion iba DESPUES de `if len(ids_mail) > 1: ambiguo`, asi que
+    #    `ids_nif={B}` con `ids_mail={A,B}` salia ambiguo teniendo la respuesta univoca
+    #    delante — y ese es exactamente el estado que crea el paso 5 al dar de alta a la
+    #    segunda persona del buzon. La version anterior de este remedio funcionaba la
+    #    primera corrida y bloqueaba la siguiente para siempre.
+    if len(ids_nif) == 1:
+        unico = next(iter(ids_nif))
+        if ids_mail and unico not in ids_mail:
+            return ResolucionParte(conflicto=(unico, sorted(ids_mail)[0]))
+        return ResolucionParte(id=unico, por="nif")
+
+    # 4. Varias fichas para el criterio FUERTE: no hay nada que desempate.
     if len(ids_nif) > 1:
-        ambiguo.extend(sorted(ids_nif))
+        return ResolucionParte(ambiguo=tuple(sorted(ids_nif)))
+
+    # 5. NIF utilizable que no caso ninguna ficha, y el buzon si caso alguna.
+    if estado_nif == "utilizable" and ids_mail:
+        return _resolver_por_buzon_compartido(nif, c_mail, prop_nif)
+
+    # 6. Sin NIF que contrastar, el email es lo unico posible.
     if len(ids_mail) > 1:
-        ambiguo.extend(sorted(ids_mail))
-
-    if sin or ambiguo:
-        return ResolucionParte(sin_comprobar=tuple(sin), ambiguo=tuple(dict.fromkeys(ambiguo)))
-
-    if ids_nif and ids_mail:
-        comun = ids_nif & ids_mail
-        if not comun:
-            return ResolucionParte(
-                conflicto=(sorted(ids_nif)[0], sorted(ids_mail)[0]))
-        if len(comun) > 1:
-            return ResolucionParte(ambiguo=tuple(sorted(comun)))
-        return ResolucionParte(id=comun.pop(), por="nif")
-    if ids_nif:
-        return ResolucionParte(id=ids_nif.pop(), por="nif")
+        return ResolucionParte(ambiguo=tuple(sorted(ids_mail)))
     if ids_mail:
-        return ResolucionParte(id=ids_mail.pop(), por="email")
+        return ResolucionParte(id=next(iter(ids_mail)), por="email")
+    return ResolucionParte()
+
+
+def _resolver_por_buzon_compartido(
+    nif: str, c_mail: "Consulta", prop_nif: str,
+) -> "ResolucionParte":
+    """El NIF aportado es utilizable y no caso ninguna ficha; el buzon si caso alguna.
+
+    **Un email identifica un BUZON, no a una persona.** El correo domestico de un matrimonio
+    —la norma entre propietarios— es uno solo, asi que cada ficha del buzon se contrasta por
+    su documento, y **crear exige que TODAS queden descartadas**.
+
+    Los tres resultados por ficha, y ninguno se puede colapsar (R1/H-01, H-02):
+
+    - documento **utilizable y distinto** -> es otra persona: se descarta como candidata;
+    - documento **utilizable e igual** -> la consulta por NIF debio encontrarla y no lo hizo:
+      algo no cuadra (probablemente la forma en que esta escrito) y no se adivina;
+    - documento **ausente o no interpretable** -> no se puede distinguir «la misma sin NIF
+      registrado» de «otra distinta».
+
+    La comparacion es entre **formas canonicas en los dos lados**: `nn.nnn.nnn-x` y
+    `nnnnnnnnX` son el mismo documento —misma convencion de escritura que
+    `_canonizar_documento`, y por la misma razon: aqui no se transcribe ninguno real—, y
+    compararlos como texto elegiria «difiere -> crear» y **duplicaria una ficha legitima**
+    (R1/H-02).
+
+    Y devolver `ResolucionParte()` vacia **autoriza una creacion** —`_exigir_identidad_cierta`
+    la deja pasar sin restriccion—, asi que solo se devuelve cuando la evidencia es
+    comparable en todas las fichas del buzon.
+    """
+    # **«Todas» no se puede concluir sobre una PÁGINA** (R2). La consulta venía con el
+    # `itemsPerPage` por defecto de `_buscar_registros`, que es 5: con seis fichas en un buzón
+    # familiar, la sexta era invisible y **la decisión de crear dependía del tamaño de página**.
+    #
+    # Antes de esta pieza era inocuo —con dos o más fichas se paraba igual por ambigüedad—; el
+    # remedio de `[APER-71]` lo volvió peligroso, porque esta rama ahora **autoriza una
+    # creación**. Es la misma lección que la R1: un remedio cambia qué estados son alcanzables,
+    # y obliga a volver a mirar los que antes no importaban.
+    # **Dos truncamientos distintos, y la longitud solo delata uno** (R3/H-05). Que lleguen
+    # tantas como se pidieron es sospecha de que hay más; que el cuerpo declare un total mayor
+    # del que mandó es la CERTEZA de que los hay, y esa señal se estaba tirando en
+    # `_buscar_registros`. Concluir «todas descartadas» sobre una página incompleta, en la
+    # rama que autoriza CREAR una ficha, es el defecto entero de esta función.
+    if c_mail.truncada:
+        return ResolucionParte(motivo=(
+            f"el email devolvió {len(c_mail.registros)} fichas y el propio cuerpo declara "
+            f"{c_mail.total_declarado}: la lista está truncada y no se puede afirmar que se "
+            "hayan contrastado TODAS"))
+    if len(c_mail.registros) >= _LIMITE_BUZON:
+        return ResolucionParte(motivo=(
+            f"el email devolvió {len(c_mail.registros)} fichas, el máximo que se pidió: la "
+            "lista puede estar truncada y no se puede afirmar que se hayan contrastado TODAS"))
+
+    mio = _canonizar_documento(nif)
+    for reg in c_mail.registros:
+        fid = str(reg.get("id") or "").strip()
+        suyo = str(_values_dict(reg).get(prop_nif) or "")
+        estado = _estado_documento(suyo)
+        if estado == "utilizable" and _canonizar_documento(suyo) != mio:
+            continue                      # otra persona que comparte el buzon
+        if estado == "utilizable":
+            return ResolucionParte(motivo=(
+                f"la ficha {fid} comparte el email y tiene el MISMO documento, pero la "
+                "consulta por NIF no la encontro: revisa como esta escrito en el CRM"))
+        return ResolucionParte(motivo=(
+            f"la ficha {fid} comparte el email y no tiene un documento comparable: no se "
+            "puede saber si es la misma parte"))
     return ResolucionParte()
 
 
@@ -1238,6 +1384,15 @@ def _exigir_identidad_cierta(r: ResolucionParte, *, elemento: str, nif: str, ema
             f"En {elemento}, la busqueda devolvio VARIAS fichas ({', '.join(r.ambiguo)}) "
             "para la misma parte. Elegir una seria elegirla por el orden en que el CRM "
             "devuelve las filas. Deduplica en el CRM y repite."
+        )
+    if r.motivo:
+        # **El mensaje tiene que decir la verdad.** Los estados que abrio la R1 no son
+        # «varias fichas»: un NIF no interpretable, o una ficha del buzon sin documento
+        # comparable. Decirlos con el texto de arriba manda a deduplicar algo que no esta
+        # duplicado, que es mandar a buscar donde no esta.
+        raise ConflictoDeIdentidad(
+            f"En {elemento}, no se puede decidir la identidad de esta parte: {r.motivo}. "
+            "No se crea ni se vincula nada."
         )
     if r.sin_comprobar:
         raise IdentidadSinComprobar(

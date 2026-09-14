@@ -1573,6 +1573,14 @@ def test_ensure_contrario_vinculado_existente(monkeypatch):
 
     Desde 2026-09-04 la identidad la resuelve `resolver_parte` (NIF **o** email), no
     `find_cliente_contrario_by_nif`. La propiedad que este test defiende no cambia.
+
+    **Y le faltaba un doble: el de la complecion** (R3/H-09). Con el contrario ya existente,
+    `ensure_contrario_vinculado` llama despues a `_completar_contrario_existente`, que sale al
+    CRM; la clave ficticia daba un 401, la excepcion la absorbia esa funcion —que tolera no
+    poder completar, y hace bien— y el test **pasaba igual**. O sea: verde, con una peticion
+    saliendo hacia el tenant en cada corrida de la suite. Es exactamente el defecto que el
+    test de al lado documenta en su docstring desde el 2026-09-04, sin que nadie lo aplicara
+    aqui: una tolerancia operativa no es aislamiento de una prueba.
     """
     monkeypatch.setenv("SUDESPACHO_API_KEY", "test-api-key")
     from core.sudespacho_relations import ResolucionParte
@@ -1580,13 +1588,15 @@ def test_ensure_contrario_vinculado_existente(monkeypatch):
                return_value=ResolucionParte(id="1099", por="nif")):
         with patch("core.sudespacho_relations.create_cliente_contrario") as mock_create:
             with patch("core.sudespacho_relations.link_contrario") as mock_link:
-                contrario_id, created = ensure_contrario_vinculado(
-                    "624", NuevoClienteContrario(nombre="Ivanna Loreto", nif="20794383Z"),
-                )
+                with patch("core.sudespacho_relations._completar_contrario_existente") as mock_comp:
+                    contrario_id, created = ensure_contrario_vinculado(
+                        "624", NuevoClienteContrario(nombre="Ivanna Loreto", nif="20794383Z"),
+                    )
     assert contrario_id == "1099"
     assert created is False
     mock_create.assert_not_called()
     mock_link.assert_called_once_with("624", "1099")
+    mock_comp.assert_called_once()
 
 
 def test_ensure_contrario_vinculado_nuevo(monkeypatch):
