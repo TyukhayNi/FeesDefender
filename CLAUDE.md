@@ -317,6 +317,21 @@ Atajo: `/status` ejecuta los 3 comandos y muestra un resumen.
   `docs/RUNBOOK_APERTURA_EXPEDIENTE.md` (fuente única operativa, con los gotchas
   embebidos y punteros a `INTEGRACION_SUDESPACHO.md` como SSOT del detalle CRM).
 
+### Apertura y reparación no se mezclan (P8 (b), decisión de Nikolai del 2026-09-13)
+
+**Una sesión de apertura no toca el repo, y como mucho hay UNA sesión de reparación en
+paralelo, que es la dueña del código.** La apertura anota los defectos que encuentra en
+`%LOCALAPPDATA%\FeesDefender\aperturas\<AAAA-MM-DD>_<W-code>.md` y los ficha al cerrar, leyendo
+`origin/main` al escribir; el detalle operativo está en `RUNBOOK_APERTURA_EXPEDIENTE.md`
+`[APER-73]`, y `session_close` avisa de lo que quede sin fichar — aviso, nunca verja.
+
+**Por qué está aquí y no solo en el runbook:** la sesión de reparación no está abriendo nada,
+luego nunca lee el runbook de apertura. Una regla en el sitio equivocado no gobierna a nadie.
+
+**La evidencia, medida:** las 838 líneas huérfanas de la fila #29 fueron una sesión de apertura
+que se puso a reparar y dejó código sin commitear sobre una base 21 commits atrás — duplicando
+algo que otra vía había construido un día después.
+
 ### Las skills de superpowers se invocan por FASE, no cuando uno se acuerda
 
 **Cada fase del trabajo tiene su skill, y se invoca antes de empezar esa fase:**
@@ -363,6 +378,12 @@ STATUS mantiene solo estado vigente + puntero a la bitácora (el aviso E1 de
 `session_close` avisa si STATUS crece >400 líneas). Fundamento:
 `docs/GOBERNANZA_FUENTES_VERDAD.md`. La memoria persistente (en mi memoria
 global, no en el repo) la actualizo yo en el chat antes de cerrar.
+
+**Las aperturas del día van en UN bloque, no en un cierre numerado por caso** (P8 (d), decisión
+de Nikolai del 2026-09-13). En `docs/bitacora/AAAA.md`, un solo bloque «aperturas del día» que
+las narre todas, con sus W-codes y lo que quedó pendiente. El 101º cierre ya concluyó que un
+cierre se cita por fecha y no por ordinal; numerar uno por expediente multiplica los ordinales
+sin añadir información.
 
 **La fecha se toma del sistema, NUNCA del contexto de la sesión.** Antes de escribir
 cualquier fecha —el bloque de cierre, un `Confirmado:` de `DEAD_ENDS`, un `creado:` de
