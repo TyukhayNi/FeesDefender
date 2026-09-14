@@ -759,7 +759,11 @@ git commit -m "El arnés de P6: cada mutante apunta a su test"
   infiere, y la tarifa efectiva sigue sin acreditarse por un `Subject`.
 - [x] **Paso 2:** `MEJORAS #209` cerrada con su PR.
 - [x] **Paso 3:** fila #33 en `PLAN.md` con las dos rondas y sus actas.
-- [ ] **Paso 4: la verja.** Run: `python -m scripts.session_close`
+- [x] **Paso 4: la verja.** Run: `python -m scripts.session_close`
+  **Corrida el 2026-09-14:** dos semillas verdes (777, 31337), cobertura del diff
+  **92%**. Suite **5.684 recogidos, 0 fallos, 94 `skipped`** por JUnit XML — **+72
+  sobre el árbol que revisó la R3, y cuadra al test**: 61 de
+  `test_sudespacho_actuaciones_r3.py` y 11 de `test_resolver_parte_r3.py`.
   Esperado: dos semillas (777, 31337) verdes. Explicar la variación del conteo.
 - [x] **Paso 5: R2 adversarial sobre el diff**, adjudicar, acta hermana `…-r2-…`.
 - [ ] **Paso 6:** PR. **No mergear**: lo decide Nikolai.
