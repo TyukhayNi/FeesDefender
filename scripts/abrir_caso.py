@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
 import os
 from collections import namedtuple
 import stat
@@ -925,8 +926,237 @@ def codigo_de_salida(estado: str) -> int:
     return 1 if estado == av1.EstadoV1.BLOQUEADO else 0
 
 
-def secuencia_v1(ident, case_dir, *, folder_id, team_id, hasta=None, etapas=None):
-    """El orden completo de V1 (spec §24 D3): Drive -> CRM -> sala de maquina.
+# --- Etapas de V2: el lazo del CRM ------------------------------------------
+#: Las comprobaciones de `verificar_apertura` cuyo fallo SI es un fallo de V2. El resto
+#: diagnostica fases ajenas —la sala de lectura y la viabilidad son V3— y viaja como
+#: pendiente: avanzar a medias en algo fuera de alcance no puede bloquear el cierre del
+#: lazo del CRM (R1/H-07). Los nombres salen de `verificar_apertura.IMPLEMENTADAS` y un
+#: test comprueba que existen: si alguno no existiera, el conjunto se quedaria corto y
+#: ningun fallo bloquearia nunca.
+COMPROBACIONES_DE_V2 = frozenset({"crm_ficha", "crm_actuacion", "cuantia_coherente"})
+
+#: Como se traduce cada desenlace del alta al vocabulario de etapas. `ya_vinculado` y
+#: `declinado` son `saltada` —la etapa decidio, con razon declarada, que no habia nada
+#: que hacer—; los dos fallos son `fallo`.
+_ALTA_A_ETAPA = {
+    "creado": "hecha",
+    "ya_vinculado": "saltada",
+    "declinado": "saltada",
+    "omitido": "saltada",
+    "fallo_post": "fallo",
+    "fallo_registro": "fallo",
+}
+
+_PENDIENTE_NO_AUTORIZADO = av1.Pendiente(
+    codigo="crm_no_autorizado",
+    detalle="No se toco el CRM: la corrida no lo autorizo (--crm skip). Relanza con "
+            "--crm api si quieres que esta etapa escriba.")
+
+
+def etapa_crm_alta(ident, case_dir: Path, *, crm: str, alta=None) -> av1.EtapaResultado:
+    """Etapa 4 (V2): alta del expediente en el CRM, si se autorizo y no la hay ya.
+
+    **No reimplementa el alta**: invoca `_alta_crm`, que ya resuelve duplicados con
+    `core.alta_crm_politica`, tags, telefono y evento. Lo que esta etapa aporta es
+    traducir sus SEIS desenlaces sin colapsarlos — la rev. 1 del plan describia un
+    timeout como «ya tiene expediente vinculado» (R1/H-02).
+    """
+    if crm != "api":
+        return av1.EtapaResultado(
+            nombre="crm_alta", estado="saltada",
+            detalle="escritura al CRM no autorizada (--crm skip)",
+            pendientes=(_PENDIENTE_NO_AUTORIZADO,))
+    try:
+        r = (alta or (lambda: _alta_crm(
+            ident, cuantia=None, crm_mode=crm, yes=True)))()
+    except Exception as exc:  # noqa: BLE001
+        return av1.EtapaResultado(nombre="crm_alta", estado="fallo",
+                                  detalle=f"{type(exc).__name__}: {exc}")
+    detalle = {
+        "creado": f"expediente CRM {r.exp_id}",
+        "ya_vinculado": f"ya vinculado a {r.exp_id}; no se da de alta otro",
+        "declinado": "alta declinada en el gate",
+        "omitido": "alta omitida",
+        "fallo_post": f"el alta no se pudo confirmar: {r.detalle}",
+        "fallo_registro": (f"expediente {r.exp_id} CREADO en el CRM pero NO vinculado "
+                           f"en local: {r.detalle}. NO reintentes el alta."),
+    }[r.estado]
+    return av1.EtapaResultado(nombre="crm_alta",
+                              estado=_ALTA_A_ETAPA[r.estado], detalle=detalle)
+
+
+def _recibo_path(case_dir: Path) -> Path:
+    """Donde vive el recibo de la actuacion. **Durable a proposito.**
+
+    Un `Recibo` en memoria muere con el proceso, que es justo el caso que el §5.2
+    describe: sin persistirlo, relanzar crea una SEGUNDA actuacion (R1/H-03, que el
+    revisor reprodujo con los ids 900 y 901).
+    """
+    return Path(case_dir) / "00_Input" / "_recibo_actuacion.json"
+
+
+def _leer_recibo(case_dir: Path):
+    """El recibo guardado, o `None` si no hay o no se puede interpretar."""
+    try:
+        crudo = json.loads(_recibo_path(case_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    from core import sudespacho_actuaciones as sa
+    try:
+        return sa.Recibo(**crudo)
+    except TypeError:
+        return None
+
+
+def _guardar_recibo(case_dir: Path, recibo) -> None:
+    ruta = _recibo_path(case_dir)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    ruta.write_text(
+        json.dumps(dataclasses.asdict(recibo), ensure_ascii=False, indent=2),
+        encoding="utf-8")
+
+
+def _firmante_de(case_dir: Path) -> str:
+    """`firmante:` de `_ficha_crm.yaml`, o "" si no hay fichero o no lo declara."""
+    from core import crm_ficha as cf
+    ruta = Path(case_dir) / "00_Input" / "_ficha_crm.yaml"
+    if not ruta.exists():
+        return ""
+    try:
+        return cf.cargar_ficha_yaml(ruta).firmante or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
+                    firmante=None) -> av1.EtapaResultado:
+    """Etapa 5 (V2): la actuacion de apertura, con recibo reanudable y DURABLE.
+
+    **El `firmante` no se infiere nunca.** El prefijo del asunto ES la tarifa —`SENIOR`
+    factura 103,00 €/h y `ABOGADO` 77,00— y quien firma no es quien opera: Ana puede
+    tramitar lo que firma Nikolai. Sin ese dato, `Pendiente`. Al CRM va el **username**
+    (`Nikolai_Tyukhay`), no el nombre con espacios.
+
+    **Los cuatro estados del recibo NO se colapsan** (R1/H-03): `verificada` es `hecha`;
+    `incompleta` se reanuda pasando `desde`; `incierta` es `fallo` con su pendiente,
+    porque no se sabe si el efecto ocurrio y declararlo hecho seria la mentira que el
+    §5.2 existe para impedir.
+    """
+    if crm != "api":
+        return av1.EtapaResultado(
+            nombre="actuacion", estado="saltada",
+            detalle="escritura al CRM no autorizada (--crm skip)",
+            pendientes=(_PENDIENTE_NO_AUTORIZADO,))
+    quien = firmante if firmante is not None else _firmante_de(case_dir)
+    if not quien:
+        return av1.EtapaResultado(
+            nombre="actuacion", estado="saltada",
+            detalle="sin firmante declarado: la actuacion decide la tarifa",
+            pendientes=(av1.Pendiente(
+                codigo="actuacion_sin_firmante",
+                detalle="Declara `firmante:` (username del CRM) en _ficha_crm.yaml. El "
+                        "prefijo del asunto es la tarifa, asi que no se infiere del "
+                        "operador."),))
+
+    previo = _leer_recibo(case_dir)
+    if previo is not None and previo.estado == "verificada":
+        return av1.EtapaResultado(
+            nombre="actuacion", estado="saltada",
+            detalle=f"ya hay actuacion verificada (id={previo.act_id}); no se crea otra")
+
+    def _alta_real(**kw):
+        from core import sudespacho_actuaciones as sa
+        return sa.alta_actuacion(**kw)
+
+    try:
+        recibo = (alta or _alta_real)(firmante=quien, desde=previo)
+    except Exception as exc:  # noqa: BLE001
+        return av1.EtapaResultado(nombre="actuacion", estado="fallo",
+                                  detalle=f"{type(exc).__name__}: {exc}")
+
+    try:
+        _guardar_recibo(case_dir, recibo)
+    except OSError as exc:
+        # El efecto remoto SI ocurrio; lo que fallo es poder reanudarlo.
+        return av1.EtapaResultado(
+            nombre="actuacion", estado="fallo",
+            detalle=f"actuacion {recibo.act_id} creada pero su recibo no se pudo "
+                    f"guardar ({exc}): un relanzamiento crearia otra.")
+
+    if recibo.estado == "verificada":
+        return av1.EtapaResultado(nombre="actuacion", estado="hecha",
+                                  detalle=f"actuacion {recibo.act_id}, firma {quien}")
+    if recibo.estado == "incierta":
+        return av1.EtapaResultado(
+            nombre="actuacion", estado="fallo",
+            detalle=f"no se sabe si la actuacion se creo: {recibo.motivo}",
+            pendientes=(av1.Pendiente(
+                codigo="actuacion_incierta",
+                detalle="Mira el expediente en el CRM antes de relanzar: el efecto pudo "
+                        "ocurrir. El recibo queda guardado para reanudar."),))
+    return av1.EtapaResultado(
+        nombre="actuacion", estado="fallo",
+        detalle=f"actuacion {recibo.estado} en el paso {recibo.paso}: {recibo.motivo}",
+        pendientes=(av1.Pendiente(
+            codigo=f"actuacion_{recibo.estado}",
+            detalle="Relanza la etapa: el recibo guardado la reanuda sin crear otra."),))
+
+
+def etapa_verificar(ident, case_dir: Path, *, verificar=None) -> av1.EtapaResultado:
+    """Etapa 6 (V2): el «OK» del EXPEDIENTE, no el del paso.
+
+    Reutiliza `core.verificar_apertura.verificar`, que **ya existe**: la rev. 1 del plan
+    proponia crear un agregador que llevaba ahi desde antes (R1/H-06).
+
+    **Solo las comprobaciones de V2 deciden el estado.** Un `fallo` de la sala de lectura
+    o de la viabilidad —fases de V3— viaja como pendiente y no bloquea: avanzar a medias
+    en algo fuera de alcance no puede tumbar el lazo del CRM (R1/H-07). Y los CUATRO
+    estados se traducen, `sin_implementar` incluido.
+    """
+    def _verificar_real(cd):
+        from core import verificar_apertura as va
+        return va.verificar(cd)
+
+    try:
+        informe = (verificar or _verificar_real)(case_dir)
+    except Exception as exc:  # noqa: BLE001
+        return av1.EtapaResultado(nombre="verificar", estado="fallo",
+                                  detalle=f"{type(exc).__name__}: {exc}")
+
+    filas = list(getattr(informe, "resultados", ()) or ())
+    fallos_v2 = sorted(r.id for r in filas
+                       if r.estado == "fallo" and r.id in COMPROBACIONES_DE_V2)
+    pendientes = tuple(
+        av1.Pendiente(codigo=f"verificacion:{r.id}", detalle=(r.detalle or r.id))
+        for r in filas
+        if r.estado in ("pendiente", "sin_implementar", "fallo")
+        and r.id not in fallos_v2)
+    if fallos_v2:
+        return av1.EtapaResultado(
+            nombre="verificar", estado="fallo",
+            detalle="comprobaciones de V2 en fallo: " + ", ".join(fallos_v2),
+            pendientes=pendientes)
+    return av1.EtapaResultado(nombre="verificar", estado="hecha",
+                              detalle=f"{len(filas)} comprobaciones",
+                              pendientes=pendientes)
+
+
+def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm):
+    """Las seis etapas de V2, en el orden de `ETAPAS_V2`."""
+    return [
+        av1.Etapa("drive", lambda: etapa_drive(
+            ident, case_dir, folder_id=folder_id, team_id=team_id)),
+        av1.Etapa("crm", lambda: etapa_crm(ident, case_dir)),
+        av1.Etapa("sala_maquina", lambda: etapa_sala_maquina(ident)),
+        av1.Etapa("crm_alta", lambda: etapa_crm_alta(ident, case_dir, crm=crm)),
+        av1.Etapa("actuacion", lambda: etapa_actuacion(ident, case_dir, crm=crm)),
+        av1.Etapa("verificar", lambda: etapa_verificar(ident, case_dir)),
+    ]
+
+
+def secuencia_v1(ident, case_dir, *, folder_id, team_id, crm="skip", hasta=None,
+                 etapas=None):
+    """El orden completo de la secuencia: V1 (Drive -> CRM -> sala de maquina) + V2.
 
     La atomizacion del correo depositado va DENTRO de la tercera, que es donde el cableado
     de 2026-07-27 la puso; por eso el gotcha del runbook —atomizar y pull antes del OCR—
@@ -935,12 +1165,8 @@ def secuencia_v1(ident, case_dir, *, folder_id, team_id, hasta=None, etapas=None
     `etapas` es el punto de inyeccion de los tests. En produccion se construyen aqui.
     """
     if etapas is None:
-        etapas = [
-            av1.Etapa("drive", lambda: etapa_drive(
-                ident, case_dir, folder_id=folder_id, team_id=team_id)),
-            av1.Etapa("crm", lambda: etapa_crm(ident, case_dir)),
-            av1.Etapa("sala_maquina", lambda: etapa_sala_maquina(ident)),
-        ]
+        etapas = _etapas_v2(ident, case_dir, folder_id=folder_id, team_id=team_id,
+                            crm=crm)
     return av1.secuenciar(etapas, hasta=hasta)
 
 
@@ -1596,7 +1822,7 @@ def main(
                 arranque = now_iso_utc()
                 ronda = estado_v1.abrir(case_dir, ronda_id=arranque, ahora=arranque)
                 resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
-                                            team_id=team_id, hasta=hasta)
+                                            team_id=team_id, crm=crm, hasta=hasta)
                 # **revalidar -> publicar -> liberar**, en ese orden e indivisible.
                 #
                 # La rev. anterior publicaba FUERA del bloque «para no afirmar un exito
