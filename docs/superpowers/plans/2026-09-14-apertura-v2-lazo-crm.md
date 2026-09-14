@@ -2,204 +2,152 @@
 tipo: plan
 estado: vigente
 creado: 2026-09-14
+rev: "2"
 spec: docs/superpowers/specs/2026-08-15-orquestador-apertura-expediente-design.md §§5, 5.1, 5.2, 21.3
 ---
 
-# V2 — el lazo del CRM dentro de la secuencia (P1, primera mitad)
+# V2 — el lazo del CRM dentro de la secuencia (P1, primera mitad) — rev. 2
 
 > **Para trabajadores agénticos:** SUB-SKILL REQUERIDA: usar `superpowers:subagent-driven-development`
 > o `superpowers:executing-plans` para ejecutar este plan tarea a tarea. Los pasos usan casillas
 > (`- [ ]`) para el seguimiento.
 
-**Goal:** que `--modo v1` deje de exigir `--crm skip` y pueda cerrar el lazo del CRM —alta, ficha,
-actuación y verificación— como cuatro etapas más del secuenciador que ya existe.
+**Goal:** que el modo secuenciado pueda dar de alta el expediente en el CRM, registrar la actuación
+de apertura y verificar el resultado, sin escribir nada que el operador no haya autorizado y sin
+duplicar nada al relanzar.
 
-**Architecture:** cuatro `Etapa` nuevas en `scripts/abrir_caso.py`, construidas sobre funciones que
-**ya están escritas** (`_alta_crm`, `scripts/crm_ficha`, `core.sudespacho_actuaciones.alta_actuacion`,
-`core.verificar_apertura`). `core/apertura_v1.py::secuenciar` **no se toca**: recibe las etapas como
-invocables y añadir etapas no cambia su contrato. Lo único que se sustituye es la puerta del
-`--crm skip`.
+**Architecture:** tres `Etapa` nuevas en `scripts/abrir_caso.py` sobre el `secuenciar` que ya
+existe (**no se toca**). Cada efecto remoto se pide a la función que ya lo implementa; lo que este
+plan construye es el **contrato de resultado** que hoy falta: `_alta_crm` devuelve `None` en cinco
+situaciones distintas y `alta_actuacion` devuelve un `Recibo` que nadie conserva.
 
 **Tech Stack:** Python 3, `typer`, `pytest`. Sin dependencias nuevas.
 
+---
+
+## 0. Qué cambia respecto a la rev. 1, y por qué
+
+La rev. 1 recibió una **R1 adversarial con veredicto NO-SHIP: 8 hallazgos, 8 confirmados, 0
+refutados** ([acta](2026-09-14-apertura-v2-lazo-crm-r1-adversarial-review.md)). Tres fronteras, y
+esta revisión las cierra en el diseño, no caso a caso:
+
+| Frontera | Qué pasaba | Qué cambia en rev. 2 |
+|---|---|---|
+| **Escribí contra firmas no verificadas** (H-02, H-03, H-04, H-06) | tres llamadas no compilaban, y proponía crear un agregador `verificar()` **que ya existía** | Task 0: **toda firma se verifica con `inspect.signature` antes de escribir su tarea**, y el plan cita la firma real |
+| **Exclusión nominal ≠ exclusión material** (H-05, H-07) | decía «la §8.1 no entra» y el comando invocado **crea y actualiza contrarios**; decía que sala y viabilidad no entraban, y su fallo dejaba V2 `bloqueado` | **`crm_ficha` sale del alcance** (decisión de Nikolai, 2026-09-14), y el éxito de V2 se separa del diagnóstico global |
+| **Capturar una excepción no es recuperación** (H-01, H-08) | el default de `--crm` es `api` y la secuencia no recibía ese dato; traducir excepción a `fallo` no es la intención durable del §5.2 | autorización explícita y propagada; recibo persistido; y la deuda del §5.2 en el alta **declarada**, no fingida |
+
+**Alcance de esta entrega: `crm_alta`, `actuacion`, `verificar`.** `crm_ficha` **no entra**: llevar
+el YAML al CRM ejecuta los efectos materiales de la §8.1 —vincular cliente propio, crear o
+actualizar contrarios, vincular colaboradores, escribir Notas— y el spec los sitúa **después de la
+sala de lectura y la viabilidad**, que son V3. El §21.3 permite a V2 construir DTOs y adaptadores;
+no ejecutar esa fase.
+
 ## Global Constraints
 
-- **NO hay spec nuevo.** El diseño vive en `§5` (alta inicial), `§5.1` (alta mínima y **ficha
-  diferida**), `§5.2` (resultado remoto desconocido) y `§21.3` (qué sale de V1) del spec orquestador,
-  ya revisado en cinco rondas. Este plan **no rediseña**: cablea.
-- **Esto es V2, NO V3.** `email`, `sala_lectura` y `viabilidad` **no entran** (`§21.3`). Y la
-  **ejecución de la fase 8.1** —la ficha *completa* del contrario— es **posterior a V3**: mandarla a
-  V2 suprimiría dos precondiciones suyas, y el spec ya llamó a eso «derogar, no diferir» tras una
-  adjudicación. La etapa `crm_ficha` de este plan lleva al CRM **el YAML que exista**, nada más.
-- **En medio la máquina no pregunta: declara `Pendiente`** (P0 del handoff). Ninguna etapa nueva
-  puede abortar la secuencia por falta de un dato humano.
+- **NO hay spec nuevo.** El diseño está en `§5`, `§5.1`, `§5.2` y `§21.3` del spec orquestador, ya
+  revisado en cinco rondas. Este plan cablea; no rediseña.
+- **Ninguna escritura sin autorización explícita.** En el modo secuenciado, omitir `--crm` es un
+  error: hay que declarar `api` o `skip`. El default `api` del modo **libre** no se toca — cambiarlo
+  sería una regresión para sus llamadores.
+- **`email`, `sala_lectura`, `viabilidad`, `crm_ficha` y la §8.1 NO entran.**
+- **En medio la máquina no pregunta: declara `Pendiente`** (P0). Con una excepción declarada: un
+  dato humano **presente y mal escrito** sí corta, porque alguien lo escribió creyendo que servía.
 - **El `firmante` no se infiere nunca.** El prefijo del asunto **es la tarifa** (`SENIOR` 103 €/h,
-  `ABOGADO` 77 €/h) y quien firma no es quien opera. Ausente → `Pendiente`.
+  `ABOGADO` 77 €/h). Y el valor que viaja al CRM es el **username** (`Nikolai_Tyukhay`), no el
+  nombre con espacios: la rev. 1 usaba el segundo y `alta_actuacion` levanta `ValueError`.
 - **Vocabulario cerrado:** `EtapaResultado.estado ∈ ("hecha", "saltada", "fallo")`;
-  `Pendiente(codigo, detalle)`. `saltada` **no** es `hecha`: significa que la etapa decidió, con
-  razón declarada, que no había nada que hacer.
+  `Pendiente(codigo, detalle)`.
 - **Windows + PowerShell**, UTF-8 sin BOM, ningún test escribe en el árbol de producción.
 - **La prueba de aceptación es CORRERLA** contra el expediente de prueba **636**, y borrar lo
-  creado. Medido el 2026-09-14: 5.612 tests verdes y 39 mutantes muertos no vieron tres defectos
-  que una sola ejecución real encontró.
+  creado. Verificar **por resultado, nunca por status**.
 
 ---
 
-### Task 1: `ETAPAS_V2` y la puerta que se sustituye, no se borra
+### Task 0: Verificar las firmas antes de escribir una línea
 
-**Files:**
-- Modify: `scripts/abrir_caso.py:55` (`ETAPAS_V1`) y `:1287-1292` (la puerta del `--crm skip`)
-- Test: `tests/test_abrir_caso_v2_puerta.py` (crear)
+**Files:** ninguno (sonda desechable en el scratchpad).
 
-**Interfaces:**
-- Produces: `ETAPAS_V2: tuple[str, ...]` = `("drive", "crm", "sala_maquina", "crm_alta",
-  "crm_ficha", "actuacion", "verificar")`; `ETAPAS_V1` se conserva con sus tres nombres.
+**Por qué esta tarea existe:** la rev. 1 tenía tres llamadas que no compilaban y proponía crear una
+función que ya existía. No fue mala suerte: fue escribir el plan de memoria. Esta tarea cuesta dos
+minutos y es la que impide repetirlo.
 
-**Por qué la puerta no se borra.** Hoy dice «`--modo v1` no escribe en el CRM: exige `--crm skip`».
-Esa puerta protege una propiedad real —que nadie escriba en el CRM por accidente— y la propiedad
-sigue valiendo. Lo que cambia es cómo se garantiza: en vez de prohibir la escritura, se exige que
-**toda escritura esté en el vocabulario de etapas** y que `--hasta` permita parar antes de
-cualquiera de ellas.
-
-- [ ] **Step 1: Escribir el test que falla**
-
-Crear `tests/test_abrir_caso_v2_puerta.py`:
-
-```python
-"""La puerta del CRM en el modo secuenciado: se sustituye, no se borra.
-
-`--modo v1` exigia `--crm skip` porque ninguna de sus tres etapas escribia en el
-CRM. V2 anade cuatro que si, asi que la puerta pasa de «prohibido escribir» a
-«solo se escribe lo que esta en el vocabulario de etapas».
-"""
-
-import scripts.abrir_caso as ac
-
-
-def test_las_etapas_de_v2_incluyen_las_tres_de_v1_en_orden():
-    # V2 AMPLIA V1, no lo reordena: un `--hasta sala_maquina` tiene que seguir
-    # parando donde paraba.
-    assert ac.ETAPAS_V2[:3] == ac.ETAPAS_V1
-
-
-def test_las_cuatro_etapas_nuevas_estan_y_en_orden():
-    assert ac.ETAPAS_V2[3:] == ("crm_alta", "crm_ficha", "actuacion", "verificar")
-
-
-def test_el_modo_v1_ya_no_exige_crm_skip():
-    errores = ac._errores_de_modo_v1(crm="api", hasta=None, fuente="drive_ev",
-                                     force=False, dry_run=False, folder_id="X",
-                                     case_id=None)
-    assert not [e for e in errores if "--crm skip" in e]
-
-
-def test_hasta_admite_una_etapa_nueva():
-    errores = ac._errores_de_modo_v1(crm="api", hasta="crm_ficha", fuente="drive_ev",
-                                     force=False, dry_run=False, folder_id="X",
-                                     case_id=None)
-    assert not [e for e in errores if "--hasta" in e]
-
-
-def test_hasta_sigue_rechazando_lo_que_no_es_etapa():
-    errores = ac._errores_de_modo_v1(crm="api", hasta="inventada", fuente="drive_ev",
-                                     force=False, dry_run=False, folder_id="X",
-                                     case_id=None)
-    assert [e for e in errores if "--hasta" in e], (
-        "un --hasta mal escrito no puede convertirse en «no pares»")
-```
-
-- [ ] **Step 2: Correr para verificar que falla**
+- [ ] **Step 1: Imprimir las firmas reales**
 
 ```bash
-python -m pytest tests/test_abrir_caso_v2_puerta.py -q --tb=short
+python -c "
+import inspect
+from scripts import abrir_caso as ac
+from core import crm_ficha, sudespacho_actuaciones as sa, verificar_apertura as va, apertura_v1 as av1
+for f in (ac._alta_crm, sa.alta_actuacion, va.verificar, av1.secuenciar):
+    print(f.__module__ + '.' + f.__name__, inspect.signature(f))
+print('ETAPAS_V1 =', ac.ETAPAS_V1)
+print('ESTADOS_ETAPA =', av1.ESTADOS_ETAPA)
+print('Resultado:', [c for c in dir(va) if c.startswith('c') and c[1].isdigit()])
+"
 ```
 
-Esperado: FAIL — `module 'scripts.abrir_caso' has no attribute 'ETAPAS_V2'`.
+**Firmas confirmadas el 2026-09-14** (si alguna difiere, **para y dilo**, no adaptes la llamada a
+ciegas):
 
-- [ ] **Step 3: Implementación mínima**
+- `scripts.abrir_caso._alta_crm(ident, *, cuantia, crm_mode, yes, force=False)` → hoy `-> None`.
+- `core.sudespacho_actuaciones.alta_actuacion(elemento, exp_id, referencia_esperada, *, asunto,
+  firmante, duracion_s=None, vence=None, agenda=True, recordatorios=None, invitados=None,
+  descripcion="", seguimientos=None, facturar=True, tipo_facturacion="duracion", unidades=None,
+  precio_unidad=None, extra=None, desde=None, client=None) -> Recibo`.
+- `core.verificar_apertura.verificar(case_dir, fuentes=None) -> Informe` — **ya existe**; no se
+  crea ningún agregador.
+- `core.apertura_v1.secuenciar(etapas, *, hasta=None) -> ResultadoV1`.
 
-En `scripts/abrir_caso.py`, junto a `ETAPAS_V1`:
-
-```python
-ETAPAS_V1 = ("drive", "crm", "sala_maquina")
-#: V2 AMPLIA V1 por la derecha: las tres primeras conservan su orden y su nombre, asi
-#: que un `--hasta sala_maquina` de antes sigue parando donde paraba. Las cuatro nuevas
-#: cierran el lazo del CRM (spec §§5, 5.1, 21.3).
-ETAPAS_V2 = ETAPAS_V1 + ("crm_alta", "crm_ficha", "actuacion", "verificar")
-```
-
-Extraer la validación del modo a una función testeable (hoy vive inline en el comando) y
-**sustituir** el bloque del `--crm skip`:
-
-```python
-def _errores_de_modo_v1(*, crm, hasta, fuente, force, dry_run, folder_id, case_id):
-    """Las puertas del modo secuenciado. Se valida ANTES de tocar nada.
-
-    La puerta del CRM NO desaparece con V2: cambia de forma. Antes prohibia escribir
-    («exige --crm skip») porque ninguna de las tres etapas lo hacia. Ahora la garantia
-    es otra y mas fuerte: lo unico que escribe son etapas con nombre, y `--hasta` deja
-    parar antes de cualquiera de ellas.
-    """
-    errores = []
-    if hasta is not None and hasta not in ETAPAS_V2:
-        errores.append(
-            f"--hasta {hasta!r} no es una etapa; validas: {list(ETAPAS_V2)}")
-    if crm not in ("api", "skip"):
-        errores.append(f"--crm solo admite api|skip (recibido: {crm!r})")
-    # ... el resto de puertas (fuente, force, dry_run, folder_id) se mueven aqui TAL CUAL
-    return errores
-```
-
-**Nota para quien implemente:** las demás puertas (`--fuente`, `--force`, `--dry-run`,
-`--folder-id`) se trasladan **sin cambiar ni una palabra de su mensaje**. Este plan solo sustituye
-la del CRM.
-
-- [ ] **Step 4: Correr para verificar que pasa**
+- [ ] **Step 2: Leer los estados del `Recibo` y del `Resultado`**
 
 ```bash
-python -m pytest tests/test_abrir_caso_v2_puerta.py -q --tb=short
+python -c "
+from core import sudespacho_actuaciones as sa, verificar_apertura as va
+import inspect
+print(inspect.getsource(sa.Recibo)[:900])
+print('---')
+print([n for n in dir(va) if 'ESTADO' in n.upper() or 'VEREDICTO' in n.upper()])
+"
 ```
 
-Esperado: PASS, 5 tests.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add scripts/abrir_caso.py tests/test_abrir_caso_v2_puerta.py
-git commit -m "V2: la puerta del CRM se sustituye, no se borra"
-```
+Anotar los estados exactos del `Recibo` (`no_intentada`, `incierta`, `incompleta`, `verificada`) y
+los **cuatro** del verificador (`ok`, `pendiente`, `fallo`, **`sin_implementar`**). La rev. 1
+ignoraba el cuarto y lo contaba como comprobación hecha.
 
 ---
 
-### Task 2: Etapa `crm_alta`
+### Task 1: Autorización explícita de escritura
 
 **Files:**
-- Modify: `scripts/abrir_caso.py` (función nueva junto a `etapa_sala_maquina`, ~:824)
-- Test: `tests/test_abrir_caso_v2_etapas.py` (crear)
+- Modify: `scripts/abrir_caso.py:55` (`ETAPAS_V1`), la validación del modo (`:1277-1330`) y
+  `secuencia_v1` (`:912`)
+- Test: `tests/test_abrir_caso_v2_autorizacion.py` (crear)
 
 **Interfaces:**
-- Consumes: `_alta_crm(...)` (ya existe, `:1012`), con su política de duplicados
-  (`core.alta_crm_politica.decidir`) y su mutex.
-- Produces: `etapa_crm_alta(ident, case_dir, *, alta=None) -> av1.EtapaResultado`.
+- Produces: `ETAPAS_V2 = ETAPAS_V1 + ("crm_alta", "actuacion", "verificar")`;
+  `_errores_de_modo(*, crm, hasta, fuente, force, dry_run, folder_id, case_id, crm_explicito)
+  -> list[str]`; `secuencia_v2(ident, case_dir, *, folder_id, team_id, crm, hasta=None,
+  etapas=None) -> av1.ResultadoV1`.
 
-**Lo que esta etapa NO hace:** reimplementar el alta. `_alta_crm` ya resuelve duplicados, tags,
-normalización telefónica y el evento; la etapa solo la invoca y traduce su resultado al vocabulario
-de V1. Duplicarla sería exactamente lo que costó las 838 líneas de la fila #29.
+**La propiedad que hay que conservar, dicha entera.** Hoy `--modo v1` exige `--crm skip`, y eso
+garantiza que el modo secuenciado **no escribe en el CRM por accidente**. R1/H-01 midió que
+nombrar las etapas no acredita nada: el default de `--crm` es `api`, así que omitir el flag
+escribiría. La garantía nueva tiene que ser igual de fuerte: **en modo secuenciado, `--crm` es
+obligatorio y explícito**, y `skip` deja las etapas escritoras en `saltada` con su `Pendiente`.
+
+**Y la parada es INCLUSIVA:** `--hasta crm_alta` **ejecuta** `crm_alta` y para después. No se
+cambia —`secuenciar` ya funciona así y V1 depende de ello— pero se documenta en la ayuda del flag,
+porque quien quiera evitar el alta debe pedir `--hasta sala_maquina`.
 
 - [ ] **Step 1: Escribir el test que falla**
 
-Crear `tests/test_abrir_caso_v2_etapas.py`:
-
 ```python
-"""Las cuatro etapas de V2, con sus dependencias INYECTADAS.
+"""La autorizacion de escritura del modo secuenciado.
 
-Ninguna toca el CRM real: cada etapa recibe su efecto por parametro, que es el
-mismo patron de `etapa_sala_maquina(ident, *, correr=None)`.
+R1/H-01: nombrar las etapas no acredita autorizacion. El default de `--crm` es
+`api`, asi que omitir el flag escribiria en el CRM sin que nadie lo pidiera.
 """
-
-import types
-
-import pytest
 
 import core.apertura_v1 as av1
 import scripts.abrir_caso as ac
@@ -209,30 +157,260 @@ class _Ident:
     case_id = "W-TEST1"
 
 
-def test_crm_alta_que_crea_el_expediente_sale_hecha(tmp_path):
-    res = ac.etapa_crm_alta(_Ident(), tmp_path, alta=lambda: "642")
+def test_omitir_crm_en_modo_secuenciado_es_ERROR():
+    errores = ac._errores_de_modo(
+        crm="api", crm_explicito=False, hasta=None, fuente="drive_ev",
+        force=False, dry_run=False, folder_id="X", case_id=None)
 
-    assert res.nombre == "crm_alta"
+    assert [e for e in errores if "--crm" in e], (
+        "omitir el flag no puede valer como autorizacion de escritura")
+
+
+def test_crm_skip_deja_las_escritoras_en_saltada(tmp_path):
+    etapas = ac._etapas_v2(_Ident(), tmp_path, folder_id="X", team_id="1", crm="skip")
+    por_nombre = {e.nombre: e for e in etapas}
+
+    res = por_nombre["crm_alta"].correr()
+
+    assert res.estado == "saltada"
+    assert [p.codigo for p in res.pendientes] == ["crm_no_autorizado"]
+
+
+def test_crm_api_explicito_autoriza():
+    errores = ac._errores_de_modo(
+        crm="api", crm_explicito=True, hasta=None, fuente="drive_ev",
+        force=False, dry_run=False, folder_id="X", case_id=None)
+
+    assert not [e for e in errores if "--crm" in e]
+
+
+def test_las_etapas_de_v2_amplian_v1_por_la_derecha():
+    assert ac.ETAPAS_V2[:3] == ac.ETAPAS_V1
+    assert ac.ETAPAS_V2[3:] == ("crm_alta", "actuacion", "verificar")
+
+
+def test_hasta_sigue_rechazando_lo_que_no_es_etapa():
+    errores = ac._errores_de_modo(
+        crm="skip", crm_explicito=True, hasta="inventada", fuente="drive_ev",
+        force=False, dry_run=False, folder_id="X", case_id=None)
+
+    assert [e for e in errores if "--hasta" in e]
+```
+
+- [ ] **Step 2: Correr para verificar que falla**
+
+```bash
+python -m pytest tests/test_abrir_caso_v2_autorizacion.py -q --tb=short
+```
+
+Esperado: FAIL — `has no attribute '_errores_de_modo'`.
+
+- [ ] **Step 3: Implementación mínima**
+
+```python
+ETAPAS_V1 = ("drive", "crm", "sala_maquina")
+#: V2 AMPLIA V1 por la derecha: las tres primeras conservan nombre y orden, asi que un
+#: `--hasta sala_maquina` de antes sigue parando donde paraba. `crm_ficha` NO esta:
+#: llevar el YAML al CRM ejecuta los efectos materiales de la §8.1, que el spec situa
+#: despues de la sala de lectura y la viabilidad (R1/H-05).
+ETAPAS_V2 = ETAPAS_V1 + ("crm_alta", "actuacion", "verificar")
+```
+
+En el comando, capturar si el flag vino puesto:
+
+```python
+crm_explicito = ctx.get_parameter_source("crm") is not ParameterSource.DEFAULT
+```
+
+Y en la validación, **sustituir** el bloque del `--crm skip`:
+
+```python
+    if not crm_explicito:
+        errores.append(
+            "--modo v1 exige declarar --crm api|skip. Omitirlo no autoriza a escribir: "
+            "el default del CLI es `api` y alcanzaria un POST de alta."
+        )
+    elif crm not in ("api", "skip"):
+        errores.append(f"--crm solo admite api|skip (recibido: {crm!r})")
+```
+
+`_etapas_v2` recibe `crm` y lo propaga a cada etapa escritora (Tasks 2 y 3 lo consumen).
+
+- [ ] **Step 4: Correr para verificar que pasa**
+
+```bash
+python -m pytest tests/test_abrir_caso_v2_autorizacion.py -q --tb=short
+```
+
+Esperado: PASS, 5 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add scripts/abrir_caso.py tests/test_abrir_caso_v2_autorizacion.py
+git commit -m "V2: la autorizacion de escritura se declara, no se hereda del default"
+```
+
+---
+
+### Task 2: `_alta_crm` deja de devolver `None` para cinco cosas distintas
+
+**Files:**
+- Modify: `scripts/abrir_caso.py:1012-1142` (`_alta_crm`) y su llamador del modo libre
+- Test: `tests/test_alta_crm_resultado.py` (crear)
+
+**Interfaces:**
+- Produces: `ResultadoAlta = namedtuple("ResultadoAlta", "estado exp_id detalle")` con
+  `estado ∈ ("creado", "ya_vinculado", "declinado", "fallo_post", "fallo_registro")`;
+  `_alta_crm(...) -> ResultadoAlta` (mismos parámetros que hoy).
+
+**R1/H-02, literal:** «el helper devuelve `None` si el caso ya estaba vinculado, si se declina el
+alta, si el POST lanza una excepción, si falla el registro local y también después de un alta
+correcta». La rev. 1 traducía **los cinco** a `saltada` con el detalle «el caso ya tiene expediente
+CRM vinculado» — es decir, **un timeout se describía como si la vinculación existiera**.
+
+**El modo libre no cambia de comportamiento:** su llamador ignora el retorno hoy y lo seguirá
+ignorando. Añadir un valor de retorno no rompe a nadie.
+
+- [ ] **Step 1: Escribir el test que falla**
+
+```python
+"""`_alta_crm` distingue sus cinco desenlaces.
+
+R1/H-02: devolvia `None` para los cinco, y el adaptador de la rev. 1 describia un
+timeout como «el caso ya tiene expediente vinculado».
+"""
+
+import pytest
+
+import scripts.abrir_caso as ac
+
+
+def test_alta_correcta_devuelve_creado_con_id(monkeypatch, _ident, _crm_ok):
+    res = ac._alta_crm(_ident, cuantia=None, crm_mode="api", yes=True)
+
+    assert (res.estado, res.exp_id) == ("creado", "644")
+
+
+def test_ya_vinculado_se_distingue_de_creado(monkeypatch, _ident, _crm_ya_vinculado):
+    res = ac._alta_crm(_ident, cuantia=None, crm_mode="api", yes=True)
+
+    assert res.estado == "ya_vinculado"
+
+
+def test_un_timeout_NO_se_describe_como_ya_vinculado(monkeypatch, _ident, _crm_timeout):
+    # El defecto exacto que midio R1/H-02.
+    res = ac._alta_crm(_ident, cuantia=None, crm_mode="api", yes=True)
+
+    assert res.estado == "fallo_post"
+    assert "vinculado" not in res.detalle.lower()
+
+
+def test_fallo_al_registrar_en_local_no_se_confunde_con_fallo_de_post(
+        monkeypatch, _ident, _crm_post_ok_registro_falla):
+    # El caso peor del §5.2: el POST hizo commit y el vinculo local no se escribio.
+    res = ac._alta_crm(_ident, cuantia=None, crm_mode="api", yes=True)
+
+    assert res.estado == "fallo_registro"
+    assert res.exp_id, "el id del expediente creado NO se puede perder"
+```
+
+**Nota para quien implemente:** las cuatro fixtures (`_ident`, `_crm_ok`, `_crm_ya_vinculado`,
+`_crm_timeout`, `_crm_post_ok_registro_falla`) se escriben en este mismo fichero, sustituyendo
+`sudespacho_create.create_expediente` y el registro local con `monkeypatch`. Ninguna toca el CRM.
+
+- [ ] **Step 2: Correr para verificar que falla**
+
+```bash
+python -m pytest tests/test_alta_crm_resultado.py -q --tb=short
+```
+
+Esperado: FAIL — `AttributeError: 'NoneType' object has no attribute 'estado'`.
+
+- [ ] **Step 3: Implementar el resultado**
+
+Añadir el `namedtuple` y sustituir **cada** `return` mudo de `_alta_crm` por su estado. No se
+cambia ninguna decisión del helper: solo se deja de tirar la información de qué pasó.
+
+- [ ] **Step 4: Correr para verificar que pasa, y que el modo libre no se movió**
+
+```bash
+python -m pytest tests/test_alta_crm_resultado.py tests/test_abrir_caso_modo_v1.py tests/test_abrir_caso_exit_bajo_mutex.py -q --tb=short
+```
+
+Esperado: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add scripts/abrir_caso.py tests/test_alta_crm_resultado.py
+git commit -m "V2: _alta_crm dice CUAL de sus cinco desenlaces ocurrio"
+```
+
+---
+
+### Task 3: Etapa `crm_alta`
+
+**Files:**
+- Modify: `scripts/abrir_caso.py`
+- Test: `tests/test_abrir_caso_v2_etapas.py` (crear)
+
+**Interfaces:**
+- Consumes: `_alta_crm(...) -> ResultadoAlta` (Task 2).
+- Produces: `etapa_crm_alta(ident, case_dir, *, crm, alta=None) -> av1.EtapaResultado`.
+
+- [ ] **Step 1: Escribir el test que falla**
+
+```python
+import core.apertura_v1 as av1
+import scripts.abrir_caso as ac
+from scripts.abrir_caso import ResultadoAlta
+
+
+class _Ident:
+    case_id = "W-TEST1"
+
+
+def test_sin_autorizacion_no_llama_al_alta(tmp_path):
+    llamadas = []
+    res = ac.etapa_crm_alta(_Ident(), tmp_path, crm="skip",
+                           alta=lambda: llamadas.append(1))
+
+    assert res.estado == "saltada"
+    assert llamadas == [], "con --crm skip no se puede tocar el CRM"
+
+
+def test_alta_creada_sale_hecha(tmp_path):
+    res = ac.etapa_crm_alta(_Ident(), tmp_path, crm="api",
+                           alta=lambda: ResultadoAlta("creado", "644", ""))
+
     assert res.estado == "hecha"
-    assert "642" in res.detalle
+    assert "644" in res.detalle
 
 
-def test_crm_alta_no_duplica_si_ya_hay_expediente(tmp_path):
-    # `saltada` NO es `hecha`: la etapa decidio, con razon declarada, que no
-    # habia nada que hacer.
-    res = ac.etapa_crm_alta(_Ident(), tmp_path, alta=lambda: None)
+def test_ya_vinculado_sale_saltada(tmp_path):
+    res = ac.etapa_crm_alta(_Ident(), tmp_path, crm="api",
+                           alta=lambda: ResultadoAlta("ya_vinculado", "640", ""))
 
     assert res.estado == "saltada"
 
 
-def test_crm_alta_traduce_un_fallo_sin_reventar(tmp_path):
-    def _explota():
-        raise RuntimeError("el CRM dijo 500")
-
-    res = ac.etapa_crm_alta(_Ident(), tmp_path, alta=_explota)
+def test_fallo_de_post_es_FALLO_y_no_dice_vinculado(tmp_path):
+    res = ac.etapa_crm_alta(_Ident(), tmp_path, crm="api",
+                           alta=lambda: ResultadoAlta("fallo_post", None, "timeout"))
 
     assert res.estado == "fallo"
-    assert "500" in res.detalle
+    assert "vinculado" not in res.detalle.lower()
+
+
+def test_post_ok_sin_registro_local_es_FALLO_que_conserva_el_id(tmp_path):
+    # El caso del §5.2: hay un expediente creado que nadie vinculo. Perder su id
+    # obligaria a buscarlo a mano.
+    res = ac.etapa_crm_alta(_Ident(), tmp_path, crm="api",
+                           alta=lambda: ResultadoAlta("fallo_registro", "645", "disco"))
+
+    assert res.estado == "fallo"
+    assert "645" in res.detalle
 ```
 
 - [ ] **Step 2: Correr para verificar que falla**
@@ -246,29 +424,43 @@ Esperado: FAIL — `has no attribute 'etapa_crm_alta'`.
 - [ ] **Step 3: Implementación mínima**
 
 ```python
-def etapa_crm_alta(ident, case_dir: Path, *, alta=None) -> av1.EtapaResultado:
-    """Etapa 4 (V2): alta del expediente en el CRM, si no lo hay ya.
+_ALTA_A_ETAPA = {
+    "creado": "hecha",
+    "ya_vinculado": "saltada",
+    "declinado": "saltada",
+    "fallo_post": "fallo",
+    "fallo_registro": "fallo",
+}
 
-    NO reimplementa el alta: invoca `_alta_crm`, que ya resuelve duplicados con
-    `core.alta_crm_politica`, tags, telefono y evento, y corre bajo el mutex.
 
-    `alta` se inyecta para poder probarla sin tocar el CRM, igual que `correr` en
-    `etapa_sala_maquina`.
+def etapa_crm_alta(ident, case_dir: Path, *, crm: str, alta=None) -> av1.EtapaResultado:
+    """Etapa 4 (V2): alta del expediente en el CRM, si se autorizo y no la hay ya.
+
+    NO reimplementa el alta: invoca `_alta_crm`, que resuelve duplicados con
+    `core.alta_crm_politica`, tags, telefono y evento. Lo que esta etapa aporta es
+    traducir sus CINCO desenlaces al vocabulario de V1 sin colapsarlos — la rev. 1
+    describia un timeout como «ya tiene expediente vinculado» (R1/H-02).
     """
-    def _alta():
-        return _alta_crm(ident, case_dir)
-
+    if crm != "api":
+        return av1.EtapaResultado(
+            nombre="crm_alta", estado="saltada",
+            detalle="escritura al CRM no autorizada (--crm skip)",
+            pendientes=(av1.Pendiente(
+                codigo="crm_no_autorizado",
+                detalle="El alta CRM no se intento: relanza con --crm api."),))
     try:
-        exp_id = (alta or _alta)()
+        r = (alta or (lambda: _alta_crm(ident, cuantia=None, crm_mode=crm, yes=True)))()
     except Exception as exc:  # noqa: BLE001
         return av1.EtapaResultado(nombre="crm_alta", estado="fallo",
                                   detalle=f"{type(exc).__name__}: {exc}")
-    if not exp_id:
-        return av1.EtapaResultado(
-            nombre="crm_alta", estado="saltada",
-            detalle="el caso ya tiene expediente CRM vinculado; no se da de alta otro")
-    return av1.EtapaResultado(nombre="crm_alta", estado="hecha",
-                              detalle=f"expediente CRM {exp_id}")
+    estado = _ALTA_A_ETAPA.get(r.estado, "fallo")
+    detalle = {"creado": f"expediente CRM {r.exp_id}",
+               "ya_vinculado": f"ya vinculado a {r.exp_id}; no se da de alta otro",
+               "declinado": "alta declinada por politica de duplicados",
+               "fallo_post": f"el alta no se pudo confirmar: {r.detalle}",
+               "fallo_registro": (f"expediente {r.exp_id} CREADO en el CRM pero NO "
+                                  f"vinculado en local: {r.detalle}")}[r.estado]
+    return av1.EtapaResultado(nombre="crm_alta", estado=estado, detalle=detalle)
 ```
 
 - [ ] **Step 4: Correr para verificar que pasa**
@@ -277,146 +469,18 @@ def etapa_crm_alta(ident, case_dir: Path, *, alta=None) -> av1.EtapaResultado:
 python -m pytest tests/test_abrir_caso_v2_etapas.py -q --tb=short
 ```
 
-Esperado: PASS, 3 tests.
+Esperado: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add scripts/abrir_caso.py tests/test_abrir_caso_v2_etapas.py
-git commit -m "V2: etapa crm_alta, que invoca el alta existente en vez de duplicarla"
+git commit -m "V2: etapa crm_alta, que no colapsa cinco desenlaces en uno"
 ```
 
 ---
 
-### Task 3: Etapa `crm_ficha` — la que declara pendientes en vez de preguntar
-
-**Files:**
-- Modify: `scripts/abrir_caso.py`
-- Test: `tests/test_abrir_caso_v2_etapas.py` (añadir)
-
-**Interfaces:**
-- Consumes: `core.crm_ficha.cargar_ficha_yaml(path) -> FichaCRMInput` (ya existe, `:144`).
-- Produces: `etapa_crm_ficha(ident, case_dir, *, llevar=None) -> av1.EtapaResultado`.
-
-**Esta es la etapa donde el P0 del handoff se gana o se pierde.** El `_ficha_crm.yaml` lo escribe
-un humano (con ayuda de `scripts.crm_colaboradores_firmas apply`, que rellena los colaboradores
-desde las firmas de los correos). Si no está, la etapa **no pregunta y no aborta**: declara un
-`Pendiente` y la secuencia continúa hasta el final.
-
-- [ ] **Step 1: Escribir el test que falla**
-
-Añadir a `tests/test_abrir_caso_v2_etapas.py`:
-
-```python
-def test_crm_ficha_sin_yaml_declara_pendiente_y_NO_aborta(tmp_path):
-    # El YAML lo teclea un humano. Su ausencia es un pendiente, no un fallo: si
-    # fuera fallo, `secuenciar` cortaria y las etapas siguientes no correrian.
-    (tmp_path / "00_Input").mkdir(parents=True)
-
-    res = ac.etapa_crm_ficha(_Ident(), tmp_path)
-
-    assert res.estado == "saltada", "sin YAML la secuencia SIGUE"
-    assert [p.codigo for p in res.pendientes] == ["ficha_crm_sin_yaml"]
-
-
-def test_crm_ficha_con_yaml_lo_lleva_al_crm(tmp_path):
-    (tmp_path / "00_Input").mkdir(parents=True)
-    (tmp_path / "00_Input" / "_ficha_crm.yaml").write_text(
-        "contrario:\n  nombre: FULANO DE TAL\n", encoding="utf-8")
-    llevadas = []
-
-    res = ac.etapa_crm_ficha(_Ident(), tmp_path, llevar=lambda f: llevadas.append(f))
-
-    assert res.estado == "hecha"
-    assert len(llevadas) == 1
-
-
-def test_crm_ficha_con_yaml_invalido_es_FALLO_no_pendiente(tmp_path):
-    # Un YAML que EXISTE y esta mal es distinto de uno que no esta: alguien lo
-    # escribio creyendo que servia. Tragarlo como «pendiente» lo haria invisible.
-    (tmp_path / "00_Input").mkdir(parents=True)
-    (tmp_path / "00_Input" / "_ficha_crm.yaml").write_text(
-        "contrario:\n  sin_nombre: x\n", encoding="utf-8")
-
-    res = ac.etapa_crm_ficha(_Ident(), tmp_path)
-
-    assert res.estado == "fallo"
-```
-
-- [ ] **Step 2: Correr para verificar que falla**
-
-```bash
-python -m pytest tests/test_abrir_caso_v2_etapas.py -q --tb=short -k crm_ficha
-```
-
-Esperado: FAIL — `has no attribute 'etapa_crm_ficha'`.
-
-- [ ] **Step 3: Implementación mínima**
-
-```python
-def etapa_crm_ficha(ident, case_dir: Path, *, llevar=None) -> av1.EtapaResultado:
-    """Etapa 5 (V2): lleva `_ficha_crm.yaml` al CRM, si lo hay.
-
-    **Ausencia y error NO son lo mismo, y esa distincion es el contenido de esta
-    etapa.** Que el YAML no exista es el estado normal de un caso cuyo humano aun
-    no lo ha escrito: `Pendiente`, y la secuencia sigue hasta el final (P0). Que
-    exista y no se pueda interpretar es otra cosa: alguien lo escribio creyendo
-    que servia, y tragarlo como pendiente lo haria invisible.
-
-    Esta etapa lleva **el YAML que haya**. La ficha COMPLETA del contrario (§8.1)
-    es posterior a V3: depende de la sala de lectura y de la viabilidad.
-    """
-    from core import crm_ficha as cf
-
-    ruta = Path(case_dir) / "00_Input" / "_ficha_crm.yaml"
-    if not ruta.exists():
-        return av1.EtapaResultado(
-            nombre="crm_ficha", estado="saltada",
-            detalle="no hay _ficha_crm.yaml: la ficha del CRM queda sin completar",
-            pendientes=(av1.Pendiente(
-                codigo="ficha_crm_sin_yaml",
-                detalle=f"Escribe {ruta} y relanza con --hasta crm_ficha. "
-                        "`python -m scripts.crm_colaboradores_firmas apply` rellena "
-                        "los colaboradores desde las firmas de los correos."),))
-    try:
-        ficha = cf.cargar_ficha_yaml(ruta)
-    except Exception as exc:  # noqa: BLE001
-        return av1.EtapaResultado(
-            nombre="crm_ficha", estado="fallo",
-            detalle=f"_ficha_crm.yaml existe pero no se pudo interpretar: {exc}")
-
-    def _llevar(f):
-        from scripts import crm_ficha as orquestador
-        return orquestador.main(case_id=ident.case_id)
-
-    try:
-        (llevar or _llevar)(ficha)
-    except Exception as exc:  # noqa: BLE001
-        return av1.EtapaResultado(nombre="crm_ficha", estado="fallo",
-                                  detalle=f"{type(exc).__name__}: {exc}")
-    return av1.EtapaResultado(nombre="crm_ficha", estado="hecha",
-                              detalle=f"{len(ficha.contrarios)} contrario(s), "
-                                      f"{len(ficha.colaboradores)} colaborador(es)")
-```
-
-- [ ] **Step 4: Correr para verificar que pasa**
-
-```bash
-python -m pytest tests/test_abrir_caso_v2_etapas.py -q --tb=short
-```
-
-Esperado: PASS, 6 tests.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add scripts/abrir_caso.py tests/test_abrir_caso_v2_etapas.py
-git commit -m "V2: etapa crm_ficha — ausencia es pendiente, error es fallo"
-```
-
----
-
-### Task 4: Etapa `actuacion`
+### Task 4: Etapa `actuacion` con recibo DURABLE
 
 **Files:**
 - Modify: `scripts/abrir_caso.py`
@@ -424,30 +488,71 @@ git commit -m "V2: etapa crm_ficha — ausencia es pendiente, error es fallo"
 
 **Interfaces:**
 - Consumes: `core.sudespacho_actuaciones.alta_actuacion(elemento, exp_id, referencia_esperada, *,
-  asunto, firmante, duracion_s=None, ...) -> Recibo` (ya existe, `:1077`).
-- Produces: `etapa_actuacion(ident, case_dir, *, alta=None, firmante=None) -> av1.EtapaResultado`.
+  asunto, firmante, desde=None, ...) -> Recibo`.
+- Produces: `etapa_actuacion(ident, case_dir, *, crm, alta=None, firmante=None)
+  -> av1.EtapaResultado`; `_recibo_path(case_dir) -> Path`.
+
+**R1/H-03 es el hallazgo que más dinero cuesta si se ignora.** El revisor lo reprodujo: dos
+corridas sin `desde` crean **dos actuaciones** (IDs 900 y 901); la tercera, con `desde`, reutiliza
+la 901. Además la rev. 1 declaraba `hecha` los cuatro estados del recibo, incluida `incierta`.
+
+**El recibo se persiste** en `<case_dir>/00_Input/_recibo_actuacion.json`. Sin persistencia no hay
+reentrada: un `Recibo` en memoria muere con el proceso, que es justo el caso que el §5.2 describe.
 
 - [ ] **Step 1: Escribir el test que falla**
 
 ```python
-def test_actuacion_sin_firmante_declara_pendiente(tmp_path):
-    # El prefijo del asunto ES la tarifa (SENIOR 103 €/h, ABOGADO 77 €/h) y quien
-    # firma no es quien opera. No se infiere JAMAS del actor de la UI.
-    res = ac.etapa_actuacion(_Ident(), tmp_path, firmante="")
+def test_sin_firmante_declara_pendiente(tmp_path):
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="")
 
     assert res.estado == "saltada"
     assert [p.codigo for p in res.pendientes] == ["actuacion_sin_firmante"]
 
 
-def test_actuacion_con_firmante_la_da_de_alta(tmp_path):
-    llamadas = []
+def test_relanzar_NO_crea_una_segunda_actuacion(tmp_path):
+    # R1/H-03, reproducido por el revisor: sin `desde`, dos corridas dan 900 y 901.
+    creadas = []
 
-    res = ac.etapa_actuacion(_Ident(), tmp_path, firmante="NIKOLAI TYUKHAY",
-                             alta=lambda **kw: llamadas.append(kw) or "recibo")
+    def _alta(**kw):
+        if kw.get("desde") is None:
+            creadas.append(len(creadas) + 900)
+        return _ReciboFalso("verificada", act_id=creadas[-1])
 
-    assert res.estado == "hecha"
-    assert llamadas[0]["firmante"] == "NIKOLAI TYUKHAY"
+    ac.etapa_actuacion(_Ident(), tmp_path, crm="api",
+                       firmante="Nikolai_Tyukhay", alta=_alta)
+    ac.etapa_actuacion(_Ident(), tmp_path, crm="api",
+                       firmante="Nikolai_Tyukhay", alta=_alta)
+
+    assert creadas == [900], "la segunda corrida creo otra actuacion"
+
+
+def test_un_recibo_incierto_NO_es_hecha(tmp_path):
+    # `incierta` significa que no se sabe si el efecto ocurrio. Declararlo `hecha`
+    # es exactamente la mentira que el §5.2 existe para impedir.
+    res = ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay",
+                             alta=lambda **kw: _ReciboFalso("incierta", act_id=None))
+
+    assert res.estado == "fallo"
+    assert [p.codigo for p in res.pendientes] == ["actuacion_incierta"]
+
+
+def test_un_recibo_incompleto_se_reanuda_con_desde(tmp_path):
+    vistos = []
+
+    def _alta(**kw):
+        vistos.append(kw.get("desde"))
+        return _ReciboFalso("incompleta" if len(vistos) == 1 else "verificada", act_id=910)
+
+    ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay", alta=_alta)
+    ac.etapa_actuacion(_Ident(), tmp_path, crm="api", firmante="Nikolai_Tyukhay", alta=_alta)
+
+    assert vistos[0] is None and vistos[1] is not None, "la reanudacion no paso `desde`"
 ```
+
+**Nota:** `_ReciboFalso` es un `dataclass` de tres campos (`estado`, `act_id`, `exp_id`) que se
+escribe en el propio fichero de test. **No se usa un `**kw` que trague cualquier cosa**: R1 señaló
+que el doble de la rev. 1 ocultaba firma, username y recibo. Este doble **valida** que `firmante`
+sea un username sin espacios y que `elemento`, `exp_id`, `referencia_esperada` y `asunto` vengan.
 
 - [ ] **Step 2: Correr para verificar que falla**
 
@@ -459,40 +564,10 @@ Esperado: FAIL — `has no attribute 'etapa_actuacion'`.
 
 - [ ] **Step 3: Implementación mínima**
 
-```python
-def etapa_actuacion(ident, case_dir: Path, *, alta=None, firmante=None
-                    ) -> av1.EtapaResultado:
-    """Etapa 6 (V2): la actuacion de apertura, con la receta de seis pasos.
-
-    **El `firmante` no se infiere nunca.** El prefijo del asunto ES la tarifa
-    —`SENIOR` factura 103,00 €/h y `ABOGADO` 77,00— y quien firma no es quien
-    opera: Ana puede tramitar lo que firma Nikolai. Sin ese dato, `Pendiente`.
-    """
-    quien = firmante if firmante is not None else _firmante_de(case_dir)
-    if not quien:
-        return av1.EtapaResultado(
-            nombre="actuacion", estado="saltada",
-            detalle="sin firmante declarado: la actuacion decide la tarifa",
-            pendientes=(av1.Pendiente(
-                codigo="actuacion_sin_firmante",
-                detalle="Declara `firmante:` en _ficha_crm.yaml. El prefijo del asunto "
-                        "es la tarifa, asi que este dato no se infiere del operador."),))
-
-    def _alta(**kw):
-        from core import sudespacho_actuaciones as sa
-        return sa.alta_actuacion(**kw)
-
-    try:
-        (alta or _alta)(firmante=quien, case_id=ident.case_id)
-    except Exception as exc:  # noqa: BLE001
-        return av1.EtapaResultado(nombre="actuacion", estado="fallo",
-                                  detalle=f"{type(exc).__name__}: {exc}")
-    return av1.EtapaResultado(nombre="actuacion", estado="hecha",
-                              detalle=f"actuacion de apertura, firma {quien}")
-```
-
-**Nota:** `_firmante_de(case_dir)` lee `firmante:` de `_ficha_crm.yaml` con
-`cf.cargar_ficha_yaml` y devuelve `""` si el fichero no existe. Se escribe en esta misma tarea.
+Traducir los cuatro estados del recibo: `verificada` → `hecha`; `incompleta` → reanudar con
+`desde` y, si sigue incompleta, `fallo` + `Pendiente`; `incierta` → `fallo` +
+`Pendiente(codigo="actuacion_incierta")`; `no_intentada` → `fallo`. Persistir el recibo tras
+**cada** intento, antes de devolver.
 
 - [ ] **Step 4: Correr para verificar que pasa**
 
@@ -500,54 +575,71 @@ def etapa_actuacion(ident, case_dir: Path, *, alta=None, firmante=None
 python -m pytest tests/test_abrir_caso_v2_etapas.py -q --tb=short
 ```
 
-Esperado: PASS, 8 tests.
+Esperado: PASS, 9 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add scripts/abrir_caso.py tests/test_abrir_caso_v2_etapas.py
-git commit -m "V2: etapa actuacion — el firmante no se infiere, se declara"
+git commit -m "V2: la actuacion conserva su recibo, y relanzar no crea otra"
 ```
 
 ---
 
-### Task 5: Etapa `verificar` y cableado de la secuencia
+### Task 5: Etapa `verificar` — diagnóstico sin bloquear V2
 
 **Files:**
-- Modify: `scripts/abrir_caso.py` (`etapa_verificar` + `secuencia_v1` → `secuencia_v2`)
+- Modify: `scripts/abrir_caso.py`
 - Test: `tests/test_abrir_caso_v2_etapas.py` (añadir)
 
 **Interfaces:**
-- Consumes: `core.verificar_apertura` (las nueve comprobaciones ya construidas, P2).
-- Produces: `etapa_verificar(ident, case_dir, *, verificar=None) -> av1.EtapaResultado` y
-  `secuencia_v2(ident, case_dir, *, folder_id, team_id, hasta=None, etapas=None) -> ResultadoV1`.
+- Consumes: `core.verificar_apertura.verificar(case_dir, fuentes=None) -> Informe` — **existe ya**.
+- Produces: `etapa_verificar(ident, case_dir, *, verificar=None) -> av1.EtapaResultado`;
+  `COMPROBACIONES_DE_V2: frozenset[str]`.
+
+**R1/H-07:** un `fallo` de cualquiera de las nueve dejaba V2 en `bloqueado`. Una sala de lectura a
+medio montar —fase de **V3**— bloquearía el cierre del lazo del CRM aunque éste terminara bien.
+
+**La regla:** solo las comprobaciones **de V2** deciden el estado de la etapa. Las demás viajan
+como `Pendiente`, visibles y sin bloquear. Y los **cuatro** estados se traducen, incluido
+`sin_implementar`, que la rev. 1 contaba como comprobación hecha.
 
 - [ ] **Step 1: Escribir el test que falla**
 
 ```python
-def test_verificar_traduce_cada_comprobacion_a_pendientes(tmp_path):
-    # `verificar_apertura` da ok|pendiente|fallo por comprobacion. La etapa NO
-    # colapsa eso en un booleano: cada `pendiente` viaja como Pendiente propio.
-    def _falso(_case_dir):
-        return [("c3_cobertura", "ok", ""),
-                ("c5_viabilidad", "pendiente", "faltan 37 filas")]
+def test_un_fallo_de_V3_no_bloquea_V2(tmp_path):
+    # Sala de lectura a medio montar: es V3. Visible como pendiente, nunca como
+    # fallo de V2 (R1/H-07).
+    informe = _InformeFalso([("c4_artefactos_de_la_sala", "fallo", "faltan 4 de 4"),
+                             ("c9_cuantia_crm", "ok", "")])
 
-    res = ac.etapa_verificar(_Ident(), tmp_path, verificar=_falso)
+    res = ac.etapa_verificar(_Ident(), tmp_path, verificar=lambda cd: informe)
 
     assert res.estado == "hecha"
-    assert [p.codigo for p in res.pendientes] == ["verificacion:c5_viabilidad"]
+    assert "c4_artefactos_de_la_sala" in [p.codigo.split(":")[1] for p in res.pendientes]
 
 
-def test_la_secuencia_v2_tiene_las_siete_etapas_en_orden(tmp_path):
-    etapas = ac._etapas_v2(_Ident(), tmp_path, folder_id="X", team_id="1")
+def test_un_fallo_de_V2_si_bloquea(tmp_path):
+    informe = _InformeFalso([("c9_cuantia_crm", "fallo", "la cuantia no cuadra")])
 
-    assert tuple(e.nombre for e in etapas) == ac.ETAPAS_V2
+    res = ac.etapa_verificar(_Ident(), tmp_path, verificar=lambda cd: informe)
+
+    assert res.estado == "fallo"
+
+
+def test_sin_implementar_no_pasa_por_comprobacion_hecha(tmp_path):
+    # Cuarto estado, que la rev. 1 ignoraba. Ruta real: falta `openpyxl`.
+    informe = _InformeFalso([("c5_viabilidad_completa", "sin_implementar", "sin openpyxl")])
+
+    res = ac.etapa_verificar(_Ident(), tmp_path, verificar=lambda cd: informe)
+
+    assert [p.codigo for p in res.pendientes] == ["verificacion:c5_viabilidad_completa"]
 ```
 
 - [ ] **Step 2: Correr para verificar que falla**
 
 ```bash
-python -m pytest tests/test_abrir_caso_v2_etapas.py -q --tb=short -k "verificar or secuencia_v2"
+python -m pytest tests/test_abrir_caso_v2_etapas.py -q --tb=short -k verificar
 ```
 
 Esperado: FAIL — `has no attribute 'etapa_verificar'`.
@@ -555,81 +647,37 @@ Esperado: FAIL — `has no attribute 'etapa_verificar'`.
 - [ ] **Step 3: Implementación mínima**
 
 ```python
-def etapa_verificar(ident, case_dir: Path, *, verificar=None) -> av1.EtapaResultado:
-    """Etapa 7 (V2): el «OK» del EXPEDIENTE, no el del paso.
-
-    Cada comprobacion viaja con su propio `Pendiente`: colapsar nueve resultados en
-    un booleano es exactamente lo que `verificar_apertura` existe para evitar.
-    """
-    def _verificar(cd):
-        from core import verificar_apertura as va
-        return va.todas(cd)
-
-    try:
-        filas = (verificar or _verificar)(case_dir)
-    except Exception as exc:  # noqa: BLE001
-        return av1.EtapaResultado(nombre="verificar", estado="fallo",
-                                  detalle=f"{type(exc).__name__}: {exc}")
-    pendientes = tuple(
-        av1.Pendiente(codigo=f"verificacion:{nombre}", detalle=detalle or nombre)
-        for nombre, veredicto, detalle in filas if veredicto == "pendiente")
-    fallos = [n for n, v, _ in filas if v == "fallo"]
-    if fallos:
-        return av1.EtapaResultado(nombre="verificar", estado="fallo",
-                                  detalle="comprobaciones en fallo: " + ", ".join(fallos),
-                                  pendientes=pendientes)
-    return av1.EtapaResultado(nombre="verificar", estado="hecha",
-                              detalle=f"{len(filas)} comprobaciones",
-                              pendientes=pendientes)
-
-
-def _etapas_v2(ident, case_dir, *, folder_id, team_id):
-    """Las siete etapas de V2, en el orden de `ETAPAS_V2`."""
-    return [
-        av1.Etapa("drive", lambda: etapa_drive(
-            ident, case_dir, folder_id=folder_id, team_id=team_id)),
-        av1.Etapa("crm", lambda: etapa_crm(ident, case_dir)),
-        av1.Etapa("sala_maquina", lambda: etapa_sala_maquina(ident)),
-        av1.Etapa("crm_alta", lambda: etapa_crm_alta(ident, case_dir)),
-        av1.Etapa("crm_ficha", lambda: etapa_crm_ficha(ident, case_dir)),
-        av1.Etapa("actuacion", lambda: etapa_actuacion(ident, case_dir)),
-        av1.Etapa("verificar", lambda: etapa_verificar(ident, case_dir)),
-    ]
-
-
-def secuencia_v2(ident, case_dir, *, folder_id, team_id, hasta=None, etapas=None):
-    """El orden completo de V2: V1 + el lazo del CRM.
-
-    `etapas` es el punto de inyeccion de los tests. En produccion se construyen aqui.
-    """
-    if etapas is None:
-        etapas = _etapas_v2(ident, case_dir, folder_id=folder_id, team_id=team_id)
-    return av1.secuenciar(etapas, hasta=hasta)
+#: Las comprobaciones cuyo fallo SI es un fallo de V2. El resto diagnostica fases
+#: ajenas (sala de lectura y viabilidad son V3) y viaja como pendiente: avanzar a
+#: medias en una fase fuera de alcance no puede bloquear el cierre del lazo del CRM.
+COMPROBACIONES_DE_V2 = frozenset({"c6_ficha_crm", "c7_actuacion", "c9_cuantia_crm"})
 ```
 
-**Nota:** si `core.verificar_apertura` no expone un agregador `todas(case_dir)`, esta tarea lo
-añade: una función que llama a las nueve `cN_*` existentes y devuelve
-`list[tuple[str, str, str]]` — `(nombre, veredicto, detalle)` con `veredicto ∈ ("ok",
-"pendiente", "fallo")`. No se reescribe ninguna comprobación.
+**Nota:** los nombres exactos salen de la Task 0. Si alguno no existe con ese nombre, **para y
+dilo**: inventarlo dejaría el conjunto vacío y ningún fallo bloquearía nunca.
+
+Y reconciliar con `_informar_v1_y_verificar`, que ya corre el diagnóstico **fuera del mutex** sin
+cambiar el código de salida (R1/H-07): con esta etapa dentro de la secuencia habría **dos**
+verificaciones con efectos distintos. Se conserva **una sola**: la de la etapa.
 
 - [ ] **Step 4: Correr para verificar que pasa**
 
 ```bash
-python -m pytest tests/test_abrir_caso_v2_etapas.py tests/test_abrir_caso_v2_puerta.py -q --tb=short
+python -m pytest tests/test_abrir_caso_v2_etapas.py tests/test_abrir_caso_v2_autorizacion.py -q --tb=short
 ```
 
-Esperado: PASS, 10 tests.
+Esperado: PASS, 17 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add scripts/abrir_caso.py core/verificar_apertura.py tests/
-git commit -m "V2: etapa verificar y la secuencia de siete etapas"
+git add scripts/abrir_caso.py tests/
+git commit -m "V2: el diagnostico de V3 se ve, pero no bloquea V2"
 ```
 
 ---
 
-### Task 6: La verja, y la prueba que de verdad acredita
+### Task 6: La verja, y la corrida real
 
 - [ ] **Step 1: Suite completa con las dos semillas**
 
@@ -637,46 +685,92 @@ git commit -m "V2: etapa verificar y la secuencia de siete etapas"
 python -m scripts.session_close
 ```
 
-Esperado: verde con 777 y 31337. **Cuadrar el conteo al test:** este plan añade **13** tests
-(5 + 3 + 3 + 2 de las tareas 1-5, más los 2 de la 5). Partiendo de 5.713, lo esperado es **5.726**.
-Cualquier otra cifra se explica, no se normaliza.
+**Cuadrar el conteo al test.** Este plan añade **22** tests: 5 (Task 1) + 4 (Task 2) + 5 (Task 3) +
+4 (Task 4) + 3 (Task 5) + 1 de reconciliación en Task 5. Partiendo de **5.713**, lo esperado es
+**5.735**. *(La rev. 1 anunciaba 13 y eran 15; el revisor lo corrigió. Esta cuenta está sumada
+tarea a tarea.)*
 
 - [ ] **Step 2: CORRERLA contra el expediente de prueba 636**
 
 Los dobles acreditan qué decide el código ante una respuesta; **nunca** que el payload sea
-aceptable. Medido el 2026-09-14: con 5.612 tests verdes y 39 mutantes muertos, tres rondas no
-vieron tres defectos que una sola ejecución real encontró (`Prioridad: "Normal"` inexistente →
-HTTP 404, `fecha_alta` vacía, y `precio_hora` a 0,00 facturando cero con aspecto de completa).
+aceptable. Medido el 2026-09-14: 5.612 tests verdes y 39 mutantes muertos no vieron tres defectos
+que una ejecución real encontró.
 
-```bash
-python -m scripts.abrir_caso --modo v1 --case-id W-TEST-636 --crm api --hasta verificar --folder-id <id>
-```
+Tres corridas, no una:
 
-Verificar **por resultado, nunca por status**: releer el expediente 636 en el CRM y comprobar la
-ficha, las relaciones y la actuación. **Borrar después lo que se haya creado.**
+1. `--crm skip` → las tres etapas nuevas salen `saltada`, **cero escrituras** (verificar releyendo).
+2. `--crm api` → alta + actuación; **releer el expediente 636** y comprobar por resultado.
+3. **`--crm api` otra vez** → `crm_alta` sale `ya_vinculado` y `actuacion` **no crea una segunda**.
+   Ésta es la corrida que prueba H-03, y es la que ningún doble acredita.
+
+**Borrar después lo creado.**
 
 - [ ] **Step 3: Declarar lo que la corrida enseñe**
 
-Todo defecto que aparezca aquí y no lo viera la suite se anota en el plan con su remedio: es el
-dato más caro de esta pieza.
+## 7. Deuda declarada, no fingida (R1/H-08)
+
+El §5.2 exige una **intención durable antes del POST** y conciliación antes de repetir. **Esta
+entrega no la construye**, y decirlo es parte del trabajo:
+
+- **El alta hereda la deuda que ya existe hoy en producción.** `create_expediente` captura
+  cualquier excepción del alta REST y reintenta por el frontal legacy **sin volver a consultar
+  duplicados**; si REST hizo commit y se perdió la respuesta, hay dos creaciones. V2 **no empeora**
+  esto: lo hace alcanzable desde la secuencia. Lo que sí aporta es que el estado `fallo_registro`
+  conserve el `exp_id`, para que un expediente creado y no vinculado se pueda encontrar.
+- **La actuación sí queda cubierta**, porque su recibo se persiste y `desde` reanuda (Task 4).
+- **Lo que queda abierto:** un corte entre el commit remoto del alta y la escritura del vínculo
+  local. Se detecta —`fallo_registro` con su `exp_id`— pero se concilia **a mano**.
+
+Construir la intención durable del §5.2 es una pieza propia, y es la que debería ir antes de V3.
 
 ## Self-review del plan (hecho)
 
-**Cobertura del diseño:** §5 (alta) → Task 2. §5.1 (**ficha diferida**) → Task 3, que es
-exactamente «alta mínima ahora, ficha cuando haya datos». §5.2 (resultado remoto desconocido) →
-Tasks 2 y 3, que traducen excepción a `fallo` sin inventar estado. §21.3 (qué sale de V1) → la
-constraint global: `email`, `sala_lectura` y `viabilidad` **no aparecen en ninguna tarea**, y la
-§8.1 tampoco.
+**Cobertura de los 8 hallazgos de R1:** H-01 → Task 1. H-02 → Task 2. H-03 → Task 4. H-04 →
+**desaparece**: `crm_ficha` sale del alcance. H-05 → **desaparece** por lo mismo. H-06 → Task 5
+(se reutiliza `verificar`, no se crea agregador) y Task 0 (los cuatro estados). H-07 → Task 5
+(`COMPROBACIONES_DE_V2` + una sola verificación). H-08 → §7, declarado y parcialmente cubierto.
 
-**Placeholders:** ninguno. Las dos «Notas» (el traslado de las puertas en Task 1, y el agregador
-`todas()` en Task 5) dicen exactamente qué hacer y con qué tipos.
+**Placeholders:** ninguno. Las tres «Notas» (fixtures de Task 2, `_ReciboFalso` de Task 4, nombres
+de comprobación de Task 5) dicen qué hacer, y dos de ellas mandan **parar** si la realidad difiere.
 
-**Consistencia de tipos:** las cuatro etapas devuelven `av1.EtapaResultado` con `estado ∈ ("hecha",
-"saltada", "fallo")` y `pendientes: tuple[av1.Pendiente, ...]`. `_etapas_v2` produce
-`list[av1.Etapa]` que `secuenciar` consume. `ETAPAS_V2` se define en Task 1 y lo leen Tasks 1 y 5.
+**Consistencia de tipos:** `ResultadoAlta(estado, exp_id, detalle)` se define en Task 2 y lo
+consumen Task 3 y sus tests. `etapa_*` devuelven `av1.EtapaResultado`. `_etapas_v2` recibe `crm` en
+Task 1 y lo propagan Tasks 3 y 4.
 
-**Riesgo que declaro:** `scripts/crm_ficha.main()` es un comando `typer`; invocarlo desde la etapa
-puede lanzar `typer.Exit` en vez de devolver. La Task 3 lo envuelve en `try/except Exception`, que
-**no** captura `typer.Exit` (hereda de `click.exceptions.Exit`, que deriva de `RuntimeError` en
-algunas versiones y de `Exception` en otras). Quien implemente la Task 3 debe **comprobarlo** y, si
-hace falta, capturar `typer.Exit` explícitamente como ya hace `etapa_sala_maquina:840`.
+**Lo que este plan NO hace, y es deliberado:** no toca `secuenciar`, no cambia el default del modo
+libre, no construye la intención durable del §5.2, y no ejecuta la §8.1.
+
+## 8. Adjudicación de la revisión adversarial (Codex, 2026-09-14) — NO-SHIP, remediado
+
+- **Objeto revisado:** el PLAN rev. 1 (`3d72cd8`), antes de la primera línea de código, con el árbol disponible para verificar contra la fuente.
+- **Ronda:** 1 de 2 — la segunda irá sobre el diff, por radio de daño (escribe en el CRM).
+- **Revisor:** Codex CLI `0.153.4`, modelo `gpt-6-astra`, `model_reasoning_effort=high`.
+- **Informe recibido:** [`…-r1-adversarial-review.md`](2026-09-14-apertura-v2-lazo-crm-r1-adversarial-review.md), `sha256` `2cc864cd29c1fa265e97994010b61c69895eacf4c9a398f7636e238df3b131e9`, recomputado por mí y coincidente con el que devolvió el revisor.
+- **Hallazgos:** 8 (6 `ALTO`, 2 `MEDIO`) — **8 confirmados, 0 refutados**.
+- **Remediado en:** esta rev. 2 del plan; H-04 y H-05 desaparecen al salir `crm_ficha` del alcance.
+
+**Verifiqué contra la fuente los cuatro decisivos**, no contra el informe: `_alta_crm(ident, *,
+cuantia, crm_mode, yes, force=False)` frente a la llamada `(ident, case_dir)` del plan;
+`verificar(case_dir, fuentes=None)` **ya existía** en `core/verificar_apertura.py:1134` cuando el
+plan proponía crearlo; `Exit -> RuntimeError -> Exception`, luego `except Exception` **sí** captura
+`typer.Exit` —mi nota afirmaba lo contrario—; y el fallback legacy de `create_expediente`.
+
+**Las tres fronteras, y la más incómoda es la primera.** (A) Escribí el plan contra firmas que no
+verifiqué una por una: **transcribí la firma correcta de `alta_actuacion` en el bloque «Interfaces»
+y dos párrafos después escribí `case_id=`, que no existe**. Es el mismo patrón que la R1 de P8
+—escribir la verdad en un sitio del documento y no aplicarla en otro del mismo documento—, dos
+veces el mismo día. De ahí sale la **Task 0**: verificar firmas con `inspect.signature` antes de
+escribir nada. (B) Confundí exclusión nominal con material: decir que la §8.1 no entra no impide
+que el comando invocado cree contrarios. (C) Capturar una excepción no conserva autorización ni
+implementa recuperación.
+
+**Lo que el revisor no pudo refutar, y queda registrado:** `secuenciar` acepta las estructuras del
+plan sin modificarse; el YAML ausente sí produce `saltada`+`Pendiente` sin preguntar; `_alta_crm`
+sí protege la reentrada de un expediente ya vinculado, con cero POST medidos; y las comprobaciones
+de sala y viabilidad son de lectura, no construyen esas fases.
+
+**Y corrigió mi aritmética:** anuncié 13 tests y eran 15. La cuenta de la rev. 2 está sumada tarea
+a tarea.
+
+**Decisión de alcance de Nikolai (2026-09-14), tomada al ver estos hallazgos:** V2 se recorta a
+`crm_alta` + `actuacion` + `verificar`. `crm_ficha` se difiere, que es lo que elimina H-05 de raíz.

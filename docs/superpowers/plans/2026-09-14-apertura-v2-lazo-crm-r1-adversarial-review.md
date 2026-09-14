@@ -8,7 +8,7 @@ revisor: Codex
 veredicto: NO-SHIP
 marcador_nonce: v2r1
 sha256_informe: 2cc864cd29c1fa265e97994010b61c69895eacf4c9a398f7636e238df3b131e9
-adjudicado_en: docs/superpowers/plans/2026-09-14-apertura-v2-lazo-crm.md §7
+adjudicado_en: docs/superpowers/plans/2026-09-14-apertura-v2-lazo-crm.md §8
 ---
 
 # Acta — R1 adversarial sobre el PLAN de V2 (el lazo del CRM)
