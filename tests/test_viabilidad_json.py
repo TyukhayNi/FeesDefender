@@ -50,6 +50,35 @@ def test_rechaza_importes_con_las_claves_de_la_262():
     assert any("precio" in p for p in problemas), "el error debe decir cual es la buena"
 
 
+@pytest.mark.parametrize("valor", [{"cantidad": 12000}, [12000]],
+                         ids=["objeto_anidado", "lista"])
+def test_rechaza_un_valor_de_importes_que_el_consumidor_no_puede_escribir(valor):
+    """H-03 de la revisión adversarial (2026-09-15): `validar` comprobaba el NOMBRE de
+    la clave de `importes` pero no el TIPO de su valor. `{"precio": {"cantidad":
+    12000}}` pasaba entera -"precio" es una clave válida-, `escribir` la persistía, y
+    el consumidor (`render_informe.py`) moría con `ValueError: Cannot convert {...} to
+    Excel` ya con el fichero escrito. La clave sigue siendo la correcta: lo que falla
+    es su forma."""
+    d = _valido()
+    d["importes"] = {"precio": valor}
+
+    problemas = vj.validar(d)
+
+    assert any("importes.precio" in p for p in problemas)
+
+
+def test_el_validador_admite_los_tipos_que_SI_caben_en_una_celda():
+    """Control positivo del de arriba: la validación de tipo no puede volverse una
+    validación de negocio. Texto, número, cero y booleano son formas legítimas de un
+    importe (una nota, un porcentaje con decimales, un pago a cero, un booleano
+    heredado de un JSON de origen) y ninguna debe rechazarse."""
+    d = _valido()
+    d["importes"] = {"precio": "12.000 €", "pct_honorarios": 5.5,
+                     "pagos_parciales": 0, "propuesta_pago": False}
+
+    assert vj.validar(d) == []
+
+
 def test_rechaza_motivos_impago_como_lista():
     """El consumidor hace `.strip()` y `.upper()`: una lista revienta con AttributeError."""
     d = _valido()

@@ -116,14 +116,38 @@ def _claves_ajenas(nombre, valor, conocidas) -> list[str]:
             for k in valor if k not in conocidas]
 
 
+#: Tipos que una celda de Excel puede recibir sin que `openpyxl` reviente al guardar
+#: (`Cell.value = ...`: un `dict` o una lista lanzan `ValueError: Cannot convert ... to
+#: Excel`, y lo hacen en el CONSUMIDOR, con el fichero ya escrito). `bool` esta incluido
+#: aposta -es lo que espera `bitacora_inicial` en otro campo, y en Python `bool` ya es
+#: `int`, asi que no hace falta nombrarlo aparte de `int`-. `None` no esta aqui: se
+#: acepta por separado, es la ausencia que el consumidor ya sabe leer (`imp.get(k) is
+#: not None`), no un tipo de celda.
+_TIPOS_DE_CELDA = (str, int, float, bool)
+
+
 def _problemas_de_importes(valor) -> list[str]:
     """Las claves de #262 llevan mensaje propio: el error tiene que decir cual es la
-    buena, no solo que esa no vale."""
+    buena, no solo que esa no vale.
+
+    Tambien valida el TIPO del valor de cada clave conocida (R1/H-03): antes solo se
+    miraba el NOMBRE de la clave, asi que `{"precio": {"cantidad": 12000}}` pasaba
+    -"precio" es una clave valida- y `escribir` lo persistia; el consumidor moria
+    despues con `ValueError: Cannot convert {...} to Excel`, ya con el fichero escrito.
+    No se exige mas que eso: cualquier tipo que quepa en una celda vale, sin convertir
+    esto en una validacion de negocio sobre lo que "tiene sentido" para un importe.
+    """
     if not isinstance(valor, dict):
         return []
     problemas = []
     for k in valor:
         if k in CLAVES_IMPORTES:
+            v = valor[k]
+            if v is not None and not isinstance(v, _TIPOS_DE_CELDA):
+                problemas.append(
+                    f"importes.{k}: se espera un valor de celda (texto, numero o "
+                    f"booleano) y llego {type(v).__name__} ({v!r}); el consumidor no "
+                    "puede escribirlo en Excel.")
             continue
         buena = _IMPORTES_DE_LA_262.get(k, "")
         if k in _IMPORTES_DE_LA_262:
