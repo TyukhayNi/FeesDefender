@@ -859,23 +859,36 @@ def test_NO_avisa_de_las_claves_de_equipo(tmp_path, capsys):
 
 def _contrato_cumplido():
     """El criterio de `test_los_dos_contratos_no_han_divergido`, factorizado para que
-    el control positivo de abajo (`test_el_guard_de_campos_conocidos_muerde_de_verdad`)
-    lo ejecute contra un `render_informe` mutado sin duplicar -y poder desviar- el
-    criterio real."""
-    for campo in vj.CAMPOS:
-        assert campo in render_informe.CAMPOS_CONOCIDOS, (
-            f"`{campo}` está en el contrato del core y "
-            f"render_informe.CAMPOS_CONOCIDOS no lo reconoce")
+    el control positivo de abajo (`test_el_guard_de_campos_conocidos_muerde_de_verdad`
+    y `test_el_guard_muerde_si_el_consumidor_tiene_una_clave_DE_MAS`) lo ejecute contra
+    un `render_informe` mutado sin duplicar -y poder desviar- el criterio real.
+
+    IGUALDAD de conjuntos, no pertenencia (R1/H-04): la versión anterior sólo
+    comprobaba que cada clave del core estuviera en el script, así que una clave DE MÁS
+    en el script -que el core no tiene- sobrevivía sin que nada lo dijera; el docstring
+    de `test_los_dos_contratos_no_han_divergido` prometía cazar un campo añadido «en
+    uno y no en el otro» y sólo mordía en una de las dos direcciones. `MARCA` entra
+    ahora en la comparación de primer nivel: `render_informe.CAMPOS_CONOCIDOS` la
+    reconoce a propósito (el productor la escribe, aunque el consumidor no la use) y
+    `vj.CAMPOS` no la lleva -no es un "campo" del contrato, es la marca-, así que hay
+    que sumarla a mano o la asimetría de siempre colaría una clave de más justo ahí.
+    """
+    esperado_primer_nivel = set(vj.CAMPOS) | {vj.MARCA}
+    real_primer_nivel = render_informe.CAMPOS_CONOCIDOS
+    assert esperado_primer_nivel == real_primer_nivel, (
+        f"asimetría en los campos de primer nivel — sólo en el core: "
+        f"{sorted(esperado_primer_nivel - real_primer_nivel)}; sólo en el script: "
+        f"{sorted(real_primer_nivel - esperado_primer_nivel)}")
 
     for nombre, claves_core, atributo in (
             ("equipo", vj.CLAVES_EQUIPO, "CLAVES_EQUIPO"),
             ("importes", vj.CLAVES_IMPORTES, "CLAVES_IMPORTES"),
             ("actividades", vj.CLAVES_ACTIVIDADES, "CLAVES_ACTIVIDADES")):
-        claves_script = getattr(render_informe, atributo, set())
-        for clave in claves_core:
-            assert clave in claves_script, (
-                f"`{nombre}.{clave}` está en el contrato del core y "
-                f"render_informe.{atributo} no lo reconoce")
+        esperado = set(claves_core)
+        real = set(getattr(render_informe, atributo, set()))
+        assert esperado == real, (
+            f"`{nombre}`: asimetría — sólo en el core: {sorted(esperado - real)}; "
+            f"sólo en el script: {sorted(real - esperado)}")
 
 
 def test_los_dos_contratos_no_han_divergido():
@@ -910,4 +923,25 @@ def test_el_guard_de_campos_conocidos_muerde_de_verdad(monkeypatch):
                         render_informe.CAMPOS_CONOCIDOS - {campo})
 
     with pytest.raises(AssertionError, match=re.escape(campo)):
+        _contrato_cumplido()
+
+
+@pytest.mark.parametrize("atributo", [
+    "CAMPOS_CONOCIDOS", "CLAVES_EQUIPO", "CLAVES_IMPORTES", "CLAVES_ACTIVIDADES"])
+def test_el_guard_muerde_si_el_consumidor_tiene_una_clave_DE_MAS(monkeypatch, atributo):
+    """CONTROL POSITIVO obligatorio de H-04: con la versión de PERTENENCIA, añadir una
+    clave SÓLO al script -que el core no tiene- sobrevivía en los CUATRO registros,
+    porque la comprobación nunca miraba esa dirección (sólo mordía si faltaba algo en
+    el script, nunca si sobraba). Ahora tiene que morder en los cuatro.
+
+    Verificado a mano (R1/H-04, «confirma el rojo, deshaz»): con `_contrato_cumplido`
+    vuelto a la versión de pertenencia, este test fallaba -no saltaba ningún
+    `AssertionError`- en los cuatro casos; con la versión de igualdad de conjuntos,
+    los cuatro mueren.
+    """
+    original = getattr(render_informe, atributo)
+    monkeypatch.setattr(render_informe, atributo,
+                        original | {"clave_de_mas_del_consumidor"})
+
+    with pytest.raises(AssertionError, match="clave_de_mas_del_consumidor"):
         _contrato_cumplido()
