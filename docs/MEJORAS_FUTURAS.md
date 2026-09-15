@@ -12037,7 +12037,7 @@ código y tiene tests contra el consumidor real; esto es su reflejo:
   "avisos": [{"n": 1, "tipo": "...", "aviso": "...", "impacto": "...", "fuente": "...",
               "severidad": "alta|media|baja", "accion": "...", "sube": "no", "estado": "abierto"}],
   "bitacora_inicial": true,
-  "_residuo": {"campos": ["..."], "por_que": {"...": "..."}}
+  "_residuo": {"campos": ["..."], "por_que": {"...": "..."}, "lo_remata": "..."}
 }
 ```
 
@@ -12085,9 +12085,24 @@ efímero para las corridas de apertura —`core/viabilidad_json.py` lo escribe e
 abierto:** los informes ya entregados no tienen JSON y no se pueden reproducir; esto solo
 cubre de aquí en adelante.
 
-**Dónde debería vivir, para cuando se decida:** junto al informe, dentro del expediente, y
-declarado como protocolo si no debe inventariarse como documento del cliente — la misma frontera
-que `MEJORAS #261` plantea para el recibo de la actuación.
+**Dónde debería vivir, para cuando se decida** —lo que planteaba esta ficha antes de la salida 3,
+y que se conserva porque el razonamiento sigue siendo válido como alternativa que se descartó, no
+como error—: junto al informe, dentro del expediente, y declarado como protocolo si no debe
+inventariarse como documento del cliente — la misma frontera que `MEJORAS #261` plantea para el
+recibo de la actuación.
+
+**Lo que de verdad se decidió, y por qué se apartó de esa sugerencia** (comentario junto a
+`NOMBRE_FICHERO` en `core/viabilidad_json.py`): vive en `00_Input/`, no junto al informe. Tres
+razones: hay precedente exacto (`_recibo_actuacion.json` de `MEJORAS #261`, en el mismo sitio);
+`core/intake_control.py` ya mantiene ahí la lista de ficheros de protocolo que no se inventarían
+como documento del cliente, así que no hacía falta inventar un sitio nuevo; y este JSON es la
+ENTRADA del informe, no una versión suya — vive donde vive la entrada, no donde vive la salida.
+
+**Despliegue pendiente, fuera del repo.** El consumidor (`render_informe.py`, skill
+`viabilidad-prerelleno`) corre en el SERVIDOR (Cowork), no en el PC, y `plugin update` compara por
+versión: sin re-empaquetar el `.skill` y re-importarlo a mano en Cowork, el aviso de claves
+desconocidas que trae esta salida 3 no llega a producción aunque el repo ya lo tenga. Detalle del
+paso en el plan, Step 5 de la PR 2 (`docs/superpowers/plans/2026-09-15-corrida-prepara-sesion-remata.md`).
 
 ## 263. El clasificador por LLM acierta el 13% — y se equivoca CONVENCIDO
 
