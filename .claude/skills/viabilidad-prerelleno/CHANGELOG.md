@@ -6,10 +6,21 @@
 ## 2026-09-15 — El consumidor avisa de toda clave que no lee (`MEJORAS #262`)
 
 - `render_informe.py` **avisa de toda clave que no lee**: campos de primer nivel, y las
-  de `importes` y `actividades`. Antes solo avisaba de hitos y preguntas desconocidos, y
-  esa asimetría dejaba pasar en silencio la clave `importes.principal` que publicó
-  `MEJORAS #262` como contrato: 12.000 € que no llegaban a ninguna celda con un `OK` en
-  pantalla. Medido el 2026-09-15.
+  de `importes`, `actividades` y `equipo`. Antes solo avisaba de hitos y preguntas
+  desconocidos, y esa asimetría dejaba pasar en silencio la clave `importes.principal`
+  que publicó `MEJORAS #262` como contrato: 12.000 € que no llegaban a ninguna celda con
+  un `OK` en pantalla. Medido el 2026-09-15.
+- **Corrección el mismo día**: la entrada de arriba decía «avisa de TODA clave» y no era
+  exacto — `equipo` se quedó fuera del recorrido. Es el campo de mayor riesgo de los
+  cuatro (`core/viabilidad_json.py::preparar` lo deja con sus cuatro claves vacías A
+  PROPÓSITO para que una sesión lo rellene a mano), así que es el que más probablemente
+  escriba un humano. Añadida `CLAVES_EQUIPO` (repetida a mano de la del core) y su
+  comprobación, con el mismo patrón que `importes`/`actividades`.
+- `test_los_dos_contratos_no_han_divergido` amplía su alcance a las tres tuplas de
+  subclaves (`CLAVES_EQUIPO`/`CLAVES_IMPORTES`/`CLAVES_ACTIVIDADES`), contra el registro
+  propio del script y no contra el texto entero — el texto entero no habría cazado el
+  hueco de `equipo`: `EQUIPO_CELLS` ya citaba esas cuatro claves para escribir su celda,
+  sin que `avisa_de_claves_ajenas` las reconociera.
 - Reconoce `_residuo`, el campo con el que `core/viabilidad_json.py` declara lo que la
   corrida de apertura no pudo derivar. No lo usa y no avisa de él.
 - `SKILL.md` estrena campo `version` en el frontmatter (`"1.0"`): la skill no lo tenía

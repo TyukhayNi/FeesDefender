@@ -79,6 +79,16 @@ CAMPOS_CONOCIDOS = {
 CLAVES_IMPORTES = {"precio", "pct_honorarios", "pagos_parciales", "propuesta_pago"}
 CLAVES_ACTIVIDADES = {"exposes_propiedad", "visitas_propiedad",
                       "exposes_buscador", "visitas_buscador"}
+# Repetida a mano de `core/viabilidad_json.py::CLAVES_EQUIPO`: el script corre en el
+# servidor y no puede importar del core. Se suma al recorrido el 2026-09-15 —más tarde
+# que `importes`/`actividades`— y es el campo de MAYOR riesgo de los cuatro:
+# `core/viabilidad_json.py::preparar` lo deja con sus claves vacías A PROPÓSITO para que
+# una sesión lo rellene a mano (el rol no existe como dato en la apertura), así que es
+# el que más probablemente escriba un humano. El lado productor ya lo trataba así:
+# `core/viabilidad_json.py::validar` llama a `_claves_ajenas` para `equipo` igual que
+# para `actividades`.
+CLAVES_EQUIPO = {"director_captador", "asesor_captador",
+                 "director_buscador", "asesor_buscador"}
 
 
 def avisa_de_claves_ajenas(d):
@@ -86,7 +96,8 @@ def avisa_de_claves_ajenas(d):
     for k in d:
         if k not in CAMPOS_CONOCIDOS:
             warn(f"campo '{k}' desconocido — se ignora.")
-    for nombre, conocidas in (("importes", CLAVES_IMPORTES),
+    for nombre, conocidas in (("equipo", CLAVES_EQUIPO),
+                              ("importes", CLAVES_IMPORTES),
                               ("actividades", CLAVES_ACTIVIDADES)):
         valor = d.get(nombre)
         if not isinstance(valor, dict):

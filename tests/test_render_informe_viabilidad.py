@@ -763,6 +763,20 @@ def test_avisa_de_una_clave_de_actividades_que_no_lee(tmp_path, capsys):
     assert "visitas_totales" in capsys.readouterr().err
 
 
+def test_avisa_de_una_clave_de_equipo_que_no_lee(tmp_path, capsys):
+    """El hueco medido en revisión: un typo en `equipo` no avisaba, y es el campo de
+    mayor riesgo de los cuatro. `core/viabilidad_json.py::preparar` lo deja con sus
+    cuatro claves vacías A PROPÓSITO para que una sesión lo rellene a mano —el rol no
+    existe como dato en la apertura—, así que es el que más probablemente escriba un
+    humano: justo el escenario para el que existe este aviso."""
+    datos = _preparado()
+    datos["equipo"] = {"asesor_captadorr": "Apellido, Nombre"}
+
+    _generar(tmp_path, datos)
+
+    assert "asesor_captadorr" in capsys.readouterr().err
+
+
 def test_NO_avisa_del_campo_de_marca_del_productor(tmp_path, capsys):
     """Es del contrato aunque el consumidor no lo use. Un aviso que sale en TODAS las
     corridas deja de leerse, y entonces el que importa se pierde en el ruido."""
@@ -784,11 +798,46 @@ def test_NO_avisa_de_las_claves_conocidas(tmp_path, capsys):
         assert f"'{clave}'" not in err, f"aviso de sobra sobre {clave}"
 
 
+def test_NO_avisa_de_las_claves_de_equipo(tmp_path, capsys):
+    """La otra mitad del control positivo, igual que en `importes`/`actividades`: las
+    cuatro claves que sí lee `EQUIPO_CELLS` no pueden generar aviso."""
+    datos = _preparado()
+    datos["equipo"] = {
+        "director_captador": "Apellido, Nombre", "asesor_captador": "Apellido, Nombre",
+        "director_buscador": "Apellido, Nombre", "asesor_buscador": "Apellido, Nombre",
+    }
+
+    _generar(tmp_path, datos)
+
+    err = capsys.readouterr().err
+    for clave in ("director_captador", "asesor_captador",
+                  "director_buscador", "asesor_buscador"):
+        assert f"'{clave}'" not in err, f"aviso de sobra sobre equipo.{clave}"
+
+
 def test_los_dos_contratos_no_han_divergido():
     """El core y la skill viven en dos sitios que no se importan —la skill corre en el
     servidor—. Este test es lo único que los ata: si alguien añade un campo en uno y no
-    en el otro, salta aquí."""
+    en el otro, salta aquí.
+
+    Los 12 campos de primer nivel se comprueban por texto —basta con que el script cite
+    la clave en algún sitio—, pero eso NO basta para las tres tuplas de subclaves: una
+    subclave de `equipo` ya aparecía citada en `EQUIPO_CELLS` (la celda que la escribe)
+    aunque `avisa_de_claves_ajenas` no la reconociera, y ese fue el hueco 1 que la
+    versión de texto entero no veía. Por eso las subclaves se comprueban contra el
+    registro PROPIO del script (`CLAVES_EQUIPO`/`CLAVES_IMPORTES`/`CLAVES_ACTIVIDADES`),
+    no contra el texto entero."""
     fuente = (SCRIPTS / "render_informe.py").read_text(encoding="utf-8")
     for campo in vj.CAMPOS:
         assert f'"{campo}"' in fuente, (
             f"`{campo}` está en el contrato del core y no aparece en render_informe.py")
+
+    for nombre, claves_core, atributo in (
+            ("equipo", vj.CLAVES_EQUIPO, "CLAVES_EQUIPO"),
+            ("importes", vj.CLAVES_IMPORTES, "CLAVES_IMPORTES"),
+            ("actividades", vj.CLAVES_ACTIVIDADES, "CLAVES_ACTIVIDADES")):
+        claves_script = getattr(render_informe, atributo, set())
+        for clave in claves_core:
+            assert clave in claves_script, (
+                f"`{nombre}.{clave}` está en el contrato del core y "
+                f"render_informe.{atributo} no lo reconoce")
