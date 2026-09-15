@@ -12115,7 +12115,7 @@ python -m scripts.medir_clasificador_llm --por-caso 15 --limite 75
 **Mientras tanto la decisión es no automatizarla**: la corrida deja el residuo marcado como
 pendiente y la lectura la sigue haciendo una sesión, que es lo que hace hoy y funciona.
 
-## 264. Sala de lectura y viabilidad no son dos cableados: son UNA decisión
+## 264. Sala de lectura y viabilidad no son dos cableados: son UNA decisión  [PROMOVIDO → PLAN.md]
 
 **Anotado 2026-09-14**, al cerrar la tanda P1/P8 y preguntarse qué falta para que la corrida de
 apertura llegue hasta el informe. Las tres piezas de este hueco ya estaban fichadas por separado
@@ -12169,3 +12169,12 @@ dice la entrada #48 de este mismo fichero—.
 **Disparador.** Que Nikolai elija cuál de las tres salidas quiere. Mientras no la elija, **no se
 cablea ninguna de las dos etapas**: montar el lazo sin haber decidido el lector produce una etapa
 que siempre sale `saltada`, que es el hueco de hoy con más código encima.
+
+**Elegida la salida 3 el 2026-09-14** (decisión de Nikolai): *la corrida prepara y una sesión
+remata*. Con ella entran también sus dos decisiones hermanas: el **correo entra** en la corrida, y
+el **clasificador por LLM queda cerrado** —`MEJORAS #263` no se reabre: no se prueba prompt ni
+modelo, y `scripts/medir_clasificador_llm.py` se queda quieto—.
+
+**Se cabla solo la mitad de viabilidad.** La etapa `sala_lectura` sigue esperando: depende del mismo
+lector, y montarla hoy produciría una etapa que siempre sale `saltada`.
+Diseño: [`2026-09-15-corrida-prepara-sesion-remata-design.md`](superpowers/specs/2026-09-15-corrida-prepara-sesion-remata-design.md).
