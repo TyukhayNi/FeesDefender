@@ -1333,6 +1333,20 @@ def _pendiente_de_viabilidad_existente(destino: Path) -> av1.Pendiente:
     # que la rama de abajo ya sabe decir, y aqui solo hay que no reventar antes.
     marca = datos.get(vj.MARCA) if isinstance(datos, dict) else None
     residuo = marca.get("campos") if isinstance(marca, dict) else None
+    # `residuo` tiene que ser una lista de cadenas para poder pasar por `join` (R1/H-01):
+    # un fichero editado a mano puede traer un entero o una lista de numeros -que
+    # revientan `join` con TypeError, y esta lectura corre FUERA del `try` que traduce
+    # excepciones, asi que tumbarian la corrida entera- o una cadena suelta -que NO
+    # revienta porque una cadena es iterable, pero `join` la trocea letra a letra y
+    # inventa un pendiente por cada una ("hitos" -> "h, i, t, o, s")-. `isinstance(...,
+    # list)` descarta los tres de una vez: ni un entero ni una cadena son una lista.
+    if residuo and not (isinstance(residuo, list)
+                        and all(isinstance(c, str) for c in residuo)):
+        return av1.Pendiente(
+            codigo="viabilidad_existente_marca_corrupta",
+            detalle=f"{destino.name} ya existe, pero su marca de residuo "
+                    f"(`{vj.MARCA}.campos`) no es una lista de nombres de campo "
+                    f"(llego {type(residuo).__name__}: {residuo!r}). Revisalo a mano.")
     if residuo:
         return av1.Pendiente(
             codigo="viabilidad_existente_sin_rematar",

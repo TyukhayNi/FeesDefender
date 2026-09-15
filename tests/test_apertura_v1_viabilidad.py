@@ -4,6 +4,8 @@ Spec: docs/superpowers/specs/2026-09-15-corrida-prepara-sesion-remata-design.md 
 """
 import json
 
+import pytest
+
 from core import viabilidad_json as vj
 from scripts import abrir_caso as cli
 
@@ -95,6 +97,29 @@ def test_saltada_con_json_ilegible_lo_dice_en_vez_de_fingir(tmp_path):
     assert r.estado == "saltada"
     assert r.pendientes
     assert r.pendientes[0].codigo == "viabilidad_existente_ilegible"
+
+
+@pytest.mark.parametrize("campos", [[1], 1, "hitos"],
+                         ids=["lista_de_numeros", "entero", "cadena"])
+def test_saltada_con_marca_corrupta_no_revienta_ni_inventa(tmp_path, campos):
+    """H-01 de la revisión adversarial (2026-09-15): un `_viabilidad.json` editado a
+    mano puede traer `_residuo.campos` como cualquier cosa, no solo la lista de
+    cadenas que escribe `vj.preparar`. Antes del arreglo esto reventaba la corrida
+    ENTERA con `TypeError` en los dos primeros casos —la lectura corre fuera del
+    `try` que traduce excepciones, y `core.apertura_v1.secuenciar` no captura la de
+    `etapa.correr()`—, y en el caso cadena no reventaba pero inventaba un pendiente
+    por LETRA (`"hitos"` -> `h, i, t, o, s`), que es peor: parece información y no lo
+    es.
+    """
+    (tmp_path / "00_Input").mkdir()
+    existente = {"ref": "LO QUE PUSO LA SESION", vj.MARCA: {"campos": campos}}
+    vj.ruta(tmp_path).write_text(json.dumps(existente), encoding="utf-8")
+
+    r = cli.etapa_viabilidad(_Ident(), tmp_path, hoy="2026-09-15")
+
+    assert r.estado == "saltada"
+    assert r.pendientes
+    assert r.pendientes[0].codigo == "viabilidad_existente_marca_corrupta"
 
 
 def test_fallo_al_escribir_deja_pendiente_diciendo_que_no_se_derivo_nada(tmp_path, monkeypatch):
