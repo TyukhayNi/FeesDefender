@@ -178,8 +178,16 @@ def ruta(case_dir) -> Path:
 def preparar(ident, *, hoy: str) -> dict:
     """El JSON con lo que la corrida SI puede derivar, y el residuo marcado.
 
-    Cuatro campos de once. Los 14 hitos y las 88 preguntas siguen siendo trabajo de una
-    sesion, y este modulo no finge lo contrario: por eso existe la marca.
+    El contrato (`CAMPOS`) tiene DOCE campos. Esta funcion deriva CUATRO con dato real
+    (`case_id`, `ref`, `fecha`, `observaciones`: los cuatro vienen de `ident`/`hoy`) y
+    deja SIETE marcados como residuo en `_POR_QUE_FALTA` (`equipo`, `importes`, `hitos`,
+    `preguntas`, `actividades`, `motivos_impago`, `avisos`) -los 14 hitos y las 88
+    preguntas siguen siendo trabajo de una sesion, y este modulo no finge lo contrario,
+    por eso existe la marca-. `bitacora_inicial` queda FUERA de las dos cuentas: se fija
+    a `True` sin leer el expediente (no viene de `ident`/`hoy`, no hay nada que derivar)
+    y tampoco esta en `_POR_QUE_FALTA` (no se declara residuo pendiente de una sesion).
+    4 + 7 + 1 = 12: quien recuente esto, que lo haga contra `CAMPOS` y `_POR_QUE_FALTA`,
+    no de memoria.
 
     `hoy` se RECIBE, no se lee aqui: una fecha que el modulo saca del reloj no se puede
     fijar en un test, y la regla de la casa es que la fecha se toma del sistema en el

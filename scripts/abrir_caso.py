@@ -1355,8 +1355,10 @@ def etapa_viabilidad(ident, case_dir: Path, *, hoy=None) -> av1.EtapaResultado:
     proposito —la verificacion tiene que ver tambien lo que esta etapa deposita—.
 
     **La corrida prepara y una sesion remata** — la salida 3 de `MEJORAS #264`, elegida
-    por Nikolai el 2026-09-14. Deja CUATRO de los once campos; los 14 hitos y las 88
-    preguntas siguen siendo trabajo de una sesion, y por eso el residuo va marcado.
+    por Nikolai el 2026-09-14. Deja CUATRO de los DOCE campos del contrato (la cuenta
+    completa -derivados, residuo, y el campo que no es ninguna de las dos cosas- vive
+    en el docstring de `viabilidad_json.preparar`); los 14 hitos y las 88 preguntas
+    siguen siendo trabajo de una sesion, y por eso el residuo va marcado.
 
     **Nunca sobrescribe.** Si el fichero existe, lo que contiene es el trabajo de la
     sesion que lo remato, que es lo unico caro de todo esto.
