@@ -107,13 +107,23 @@ def _conteos(dobles):
 def test_e2e_la_secuencia_recorre_las_tres_etapas_y_las_LLAMA(caso, dobles):
     r = cli.secuencia_v1(_Ident(), caso, folder_id="F", team_id="T")
 
-    # **V2 amplio la secuencia a SEIS etapas.** Las tres de V1 siguen corriendo igual;
-    # las tres del lazo del CRM salen `saltada` porque `secuencia_v1` no autoriza la
-    # escritura por defecto (`crm="skip"`). El aserto es mas fuerte que antes: ademas
+    # **V2 amplio la secuencia a SIETE etapas.** Las de V1 siguen corriendo igual; las
+    # tres del lazo del CRM salen `saltada` porque `secuencia_v1` no autoriza la
+    # escritura por defecto (`crm="skip"`), y `email` sale `saltada` porque esta
+    # invocacion no pasa --cuenta/--label. El aserto es mas fuerte que antes: ademas
     # del orden, dice que las nuevas NO tocan el CRM sin permiso.
+    #
+    # Por NOMBRE y no por indice de slice: con `email` insertada entre `drive` y `crm`
+    # las tres "hecha" originales (drive/crm/sala_maquina) ya no son un tramo contiguo,
+    # y un slice posicional es justo lo que se rompio cuando entro esta etapa.
     assert [e.nombre for e in r.etapas] == list(cli.ETAPAS_V2)
-    assert [e.estado for e in r.etapas][:3] == ["hecha", "hecha", "hecha"]
-    assert [e.estado for e in r.etapas][3:5] == ["saltada", "saltada"]
+    estados = {e.nombre: e.estado for e in r.etapas}
+    assert estados["drive"] == "hecha"
+    assert estados["email"] == "saltada"
+    assert estados["crm"] == "hecha"
+    assert estados["sala_maquina"] == "hecha"
+    assert estados["crm_alta"] == "saltada"
+    assert estados["actuacion"] == "saltada"
     assert _conteos(dobles) == {"drive": 1, "crm": 1, "ocr": 1}
     assert r.estado == av1.EstadoV1.PREPARADO_CON_PENDIENTES
     assert r.no_ejecutadas == ()
@@ -128,15 +138,18 @@ def test_e2e_el_evento_de_cierre_queda_en_el_log(caso, dobles):
     ev = [json.loads(l) for l in log.read_text(encoding="utf-8").splitlines() if l][-1]
     assert ev["event"] == "apertura_v1_terminada"
     assert ev["details"]["estado"] == "preparado_con_pendientes"
-    # Las SEIS etapas quedan en el evento, no solo las tres de V1: el registro dice qué
+    # Las SIETE etapas quedan en el evento, no solo las de V1: el registro dice qué
     # se hizo y qué se saltó, y «saltada» es información —la escritura al CRM no se
-    # autorizó—, no ruido que convenga esconder.
-    assert ev["details"]["etapas"][:3] == [
-        {"nombre": "drive", "estado": "hecha"},
-        {"nombre": "crm", "estado": "hecha"},
-        {"nombre": "sala_maquina", "estado": "hecha"}]
+    # autorizó, el correo no se pidió—, no ruido que convenga esconder. Por NOMBRE y
+    # no por slice posicional, misma razon que en el E2E hermano de arriba.
     assert [e["nombre"] for e in ev["details"]["etapas"]] == list(cli.ETAPAS_V2)
-    assert [e["estado"] for e in ev["details"]["etapas"]][3:5] == ["saltada", "saltada"]
+    estados = {e["nombre"]: e["estado"] for e in ev["details"]["etapas"]}
+    assert estados["drive"] == "hecha"
+    assert estados["email"] == "saltada"
+    assert estados["crm"] == "hecha"
+    assert estados["sala_maquina"] == "hecha"
+    assert estados["crm_alta"] == "saltada"
+    assert estados["actuacion"] == "saltada"
 
 
 def test_e2e_es_punto_fijo_MATERIAL_y_no_solo_de_estado(caso, dobles):
@@ -179,5 +192,7 @@ def test_e2e_un_fallo_del_crm_bloquea_y_la_sala_no_corre(caso, dobles, monkeypat
 def test_e2e_hasta_drive_no_consulta_el_crm_ni_el_ocr(caso, dobles):
     r = cli.secuencia_v1(_Ident(), caso, folder_id="F", team_id="T", hasta="drive")
     assert _conteos(dobles) == {"drive": 1, "crm": 0, "ocr": 0}
-    assert r.no_ejecutadas == ("crm", "sala_maquina", "crm_alta", "actuacion", "verificar")
+    # Todo lo que va detras de `drive` en ETAPAS_V2, dinamico y no una tupla literal:
+    # `email` entro justo ahi el 2026-09-15.
+    assert r.no_ejecutadas == cli.ETAPAS_V2[1:]
     assert dobles["_visto"]["force"] == [True]

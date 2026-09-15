@@ -54,7 +54,7 @@ app = typer.Typer(add_completion=False, help="Abrir un expediente E&V en una pas
 _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
 
 #: Nombres de las etapas de V1, en orden. Es tambien el vocabulario de `--hasta`.
-ETAPAS_V1 = ("drive", "crm", "sala_maquina")
+ETAPAS_V1 = ("drive", "email", "crm", "sala_maquina")
 #: V2 AMPLIA V1 por la derecha: las tres primeras conservan nombre y orden, asi que un
 #: `--hasta sala_maquina` de antes sigue parando donde paraba. `crm_ficha` NO esta:
 #: llevar el YAML al CRM ejecuta los efectos materiales de la §8.1, que el spec situa
@@ -282,7 +282,7 @@ def _reaparecido(p: Path, listadas: set[str]) -> Path | str | None:
 
 _FUENTES_CLI = ("drive_ev", "manual", "whatsapp", "email")
 _MODOS = ("libre", "v1")
-_FUENTES_V1 = ("drive_ev",)
+_FUENTES_V1 = ("drive_ev", "email")
 
 
 def _inventario_desde_hashes(
@@ -1310,11 +1310,13 @@ def etapa_verificar(ident, case_dir: Path, *, crm: str = "api",
                               pendientes=pendientes)
 
 
-def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm):
-    """Las seis etapas de V2, en el orden de `ETAPAS_V2`."""
+def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm, cuenta=None, label=None):
+    """Las etapas de V2, en el orden de `ETAPAS_V2`."""
     return [
         av1.Etapa("drive", lambda: etapa_drive(
             ident, case_dir, folder_id=folder_id, team_id=team_id)),
+        av1.Etapa("email", lambda: etapa_email(
+            ident, case_dir, cuenta=cuenta, label=label)),
         av1.Etapa("crm", lambda: etapa_crm(ident, case_dir)),
         av1.Etapa("sala_maquina", lambda: etapa_sala_maquina(ident)),
         av1.Etapa("crm_alta", lambda: etapa_crm_alta(ident, case_dir, crm=crm)),
@@ -1324,18 +1326,21 @@ def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm):
 
 
 def secuencia_v1(ident, case_dir, *, folder_id, team_id, crm="skip", hasta=None,
-                 etapas=None):
-    """El orden completo de la secuencia: V1 (Drive -> CRM -> sala de maquina) + V2.
+                 etapas=None, cuenta=None, label=None):
+    """El orden completo de la secuencia: V1 (Drive -> correo -> CRM -> sala de maquina)
+    + V2.
 
-    La atomizacion del correo depositado va DENTRO de la tercera, que es donde el cableado
+    La atomizacion del correo depositado va DENTRO de la cuarta, que es donde el cableado
     de 2026-07-27 la puso; por eso el gotcha del runbook —atomizar y pull antes del OCR—
-    se cumple por construccion y no por memoria del operador.
+    se cumple por construccion y no por memoria del operador. Y la propia etapa `email`
+    va ANTES de esa cuarta por la misma razon: un adjunto que llegue solo por correo tiene
+    que estar depositado antes de que la sala de maquina lo lea.
 
     `etapas` es el punto de inyeccion de los tests. En produccion se construyen aqui.
     """
     if etapas is None:
         etapas = _etapas_v2(ident, case_dir, folder_id=folder_id, team_id=team_id,
-                            crm=crm)
+                            crm=crm, cuenta=cuenta, label=label)
     return av1.secuenciar(etapas, hasta=hasta)
 
 
@@ -1674,6 +1679,8 @@ def validar_modo(
     folder_id: str | None = None,
     case_id: str | None = None,
     hasta: str | None = None,
+    cuenta: str | None = None,
+    label: str | None = None,
 ) -> list[str]:
     """Errores que impiden ejecutar en `modo`. Lista vacía = admisible.
 
@@ -1684,6 +1691,11 @@ def validar_modo(
     solo mirando `crm` y `fuente` admitía tres invocaciones que V1 prohíbe
     (H6-02, H6-03, H6-04). Llevan default para no regresar a los llamadores del
     modo `libre`, donde la función retorna antes de leerlos.
+
+    `cuenta` y `label` los añadió el levantamiento de la puerta de `--fuente email`
+    (2026-09-15): con `email` dentro de `_FUENTES_V1`, la ausencia de estos dos flags
+    deja de ser un error de "fuente ajena" y pasa a validarse aquí mismo, antes de
+    cualquier efecto (misma razón que los cuatro de arriba).
     """
     if modo not in _MODOS:
         return [f"Modo desconocido: {modo!r}. Válidos: {_MODOS}"]
@@ -1716,11 +1728,23 @@ def validar_modo(
             f"--crm solo admite {'|'.join(sorted(_CRM_MODOS))} (recibido: {crm!r}).")
     if fuente not in _FUENTES_V1:
         errores.append(
-            f"--modo v1 solo admite --fuente {_FUENTES_V1[0]} (recibido: {fuente!r}). "
-            "V1 no descubre ni exporta correo: `email` ejecuta email_export.export_label, "
-            "que llama a Gmail. La atomización local de V1 actúa sobre correo YA depositado "
-            "y la ejecuta la sala de máquina."
+            f"--modo v1 admite --fuente {' o '.join(_FUENTES_V1)} "
+            f"(recibido: {fuente!r}). `manual` y `whatsapp` actuan sobre material que "
+            "alguien deposita a mano, y V1 no tiene de donde sacarlo sin que se lo "
+            "digan caso por caso."
         )
+    # Los flags del correo se exigen AQUI, ademas de en `_validar_flags`, y no es
+    # duplicacion: `_validar_flags` corre despues de resolver identidad y de
+    # `ensure_case`, asi que abortar alli deja el esqueleto del caso ya creado. Es la
+    # leccion HA-06 de la R-A, que se compro con `--hasta`.
+    if fuente == "email":
+        if not cuenta:
+            errores.append(
+                "--fuente email exige --cuenta: sin ella no hay buzon del que exportar.")
+        if not label:
+            errores.append(
+                "--fuente email exige --label: sin ella no hay etiqueta que traer, y V1 "
+                "no descubre cual es.")
     # H6-02 (CRÍTICO). Criterio 33 del §14, que el §21.4 mete en los 24 de V1:
     # «--force nunca crea una carpeta sombra». La política de colisión de la spec
     # admite --force SOLO para reutilizar el caso canónico ya resuelto por
@@ -1774,10 +1798,11 @@ def main(
     modo: str = typer.Option(
         "libre", "--modo",
         help="libre|v1. `v1` es el discriminante de la primera vertical (spec §24 D3): "
-             "exige --crm skip y --fuente drive_ev, y valida antes de cualquier efecto."),
+             "exige declarar --crm (api|skip), admite --fuente drive_ev|email, y "
+             "valida antes de cualquier efecto."),
     hasta: str | None = typer.Option(
         None, "--hasta",
-        help="v1: para DESPUES de esta etapa (drive|crm|sala_maquina). Para reanudar, "
+        help="v1: para DESPUES de esta etapa (drive|email|crm|sala_maquina). Para reanudar, "
              "relanza con --case-id (los 6 flags de identidad darian ColisionCaso): las "
              "etapas ya hechas se REPITEN, y son idempotentes (Drive vuelve a consultar y "
              "rclone transfiere solo lo que difiere; el pull del CRM se repite; la sala de "
@@ -1807,7 +1832,7 @@ def main(
     errores_modo = validar_modo(
         modo, crm=crm, fuente=fuente,
         force=force, dry_run=dry_run, folder_id=folder_id, case_id=case_id,
-        hasta=hasta,
+        hasta=hasta, cuenta=cuenta, label=label,
     )
 
     if errores_modo:
@@ -1991,7 +2016,8 @@ def main(
                 arranque = now_iso_utc()
                 ronda = estado_v1.abrir(case_dir, ronda_id=arranque, ahora=arranque)
                 resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
-                                            team_id=team_id, crm=crm, hasta=hasta)
+                                            team_id=team_id, crm=crm, hasta=hasta,
+                                            cuenta=cuenta, label=label)
                 # **revalidar -> publicar -> liberar**, en ese orden e indivisible.
                 #
                 # La rev. anterior publicaba FUERA del bloque «para no afirmar un exito

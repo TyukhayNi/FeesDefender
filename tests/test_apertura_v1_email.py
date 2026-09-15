@@ -116,3 +116,66 @@ def test_exportar_none_construye_bien_la_llamada_a_email_export(tmp_path, monkey
     assert args == ("a@b.c", "CASO/X", destino)
     assert kwargs == {"case_id": ident.case_id, "extract_attachments": True}
     assert r.estado == "hecha"
+
+
+def test_v1_ya_admite_la_fuente_email():
+    errores = cli.validar_modo("v1", crm="skip", fuente="email", folder_id="F",
+                               cuenta="a@b.c", label="CASO/X")
+    assert not [e for e in errores if "--fuente" in e]
+
+
+def test_v1_sigue_rechazando_las_fuentes_que_no_entraron():
+    """La puerta se LEVANTA para email, no se borra: manual y whatsapp siguen fuera
+    y siguen diciendo por que."""
+    for fuente in ("manual", "whatsapp"):
+        errores = cli.validar_modo("v1", crm="skip", fuente=fuente, folder_id="F")
+        assert any("--fuente" in e for e in errores), fuente
+
+
+def test_email_sin_cuenta_o_sin_label_se_rechaza_EN_validar_modo():
+    """HA-06 de la R-A, aplicada a la fuente nueva.
+
+    `_validar_flags` ya los exige, pero corre en la linea 1904: DESPUES de resolver
+    identidad y de `ensure_case`. Abortar alli deja el esqueleto del caso ya creado,
+    que es exactamente el defecto que la R-A encontro con `--hasta`. La puerta de v1
+    vive en `validar_modo`, que es pura y corre antes de cualquier efecto.
+    """
+    sin_cuenta = cli.validar_modo("v1", crm="skip", fuente="email", folder_id="F",
+                                  cuenta=None, label="CASO/X")
+    sin_label = cli.validar_modo("v1", crm="skip", fuente="email", folder_id="F",
+                                 cuenta="a@b.c", label=None)
+
+    assert any("--cuenta" in e for e in sin_cuenta)
+    assert any("--label" in e for e in sin_label)
+
+
+def test_drive_ev_no_exige_los_flags_del_correo():
+    errores = cli.validar_modo("v1", crm="skip", fuente="drive_ev", folder_id="F")
+    assert not [e for e in errores if "--cuenta" in e or "--label" in e]
+
+
+def test_email_corre_antes_que_la_sala_de_maquina():
+    """La PROPIEDAD, no el indice: lo que importa es el orden relativo, porque es lo
+    que hace que el OCR vea los adjuntos del correo."""
+    nombres = list(cli.ETAPAS_V2)
+    assert nombres.index("email") < nombres.index("sala_maquina")
+
+
+def test_email_es_vocabulario_valido_de_hasta():
+    assert not cli.validar_modo("v1", crm="skip", fuente="drive_ev", folder_id="F",
+                                hasta="email")
+
+
+def test_la_secuencia_construida_lleva_la_etapa_email():
+    etapas = cli._etapas_v2(_Ident(), "/tmp/x", folder_id="F", team_id="T", crm="skip",
+                            cuenta=None, label=None)
+    assert [e.nombre for e in etapas] == list(cli.ETAPAS_V2)
+
+
+def test_el_pendiente_permanente_ya_no_dice_que_el_correo_no_entra():
+    """Se precisa el TEXTO, no el codigo: los cuatro ficheros que lo fijan comparan
+    la referencia y `.codigo`. Y la distincion importa: la corrida no DESCUBRE correo
+    —se le dice que etiqueta traer—, que es cosa distinta de no tocarlo."""
+    assert av1.PENDIENTE_FUENTES_V3.codigo == "fuentes_v3_sin_consultar"
+    assert "descubre" in av1.PENDIENTE_FUENTES_V3.detalle
+    assert "LeadHub" in av1.PENDIENTE_FUENTES_V3.detalle

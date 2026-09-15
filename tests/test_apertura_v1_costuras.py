@@ -123,7 +123,7 @@ def test_costura_main_PASA_el_hasta_a_la_secuencia(caso_v1, monkeypatch):
     # proposito: uno con `**kw` habria tragado el parametro nuevo sin decir nada, y esa
     # es la clase de doble que oculta un cambio de contrato.
     def _falsa(ident, case_dir, *, folder_id, team_id, crm="skip", hasta=None,
-               etapas=None):
+               etapas=None, cuenta=None, label=None):
         visto["hasta"] = hasta
         return av1.ResultadoV1(
             estado=av1.EstadoV1.PREPARADO_CON_PENDIENTES,
