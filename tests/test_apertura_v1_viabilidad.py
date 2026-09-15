@@ -49,6 +49,72 @@ def test_si_ya_existe_sale_saltada_y_NO_lo_pisa(tmp_path):
     assert vj.ruta(tmp_path).read_text(encoding="utf-8") == antes
 
 
+# --- I1 de la revisión de conjunto (2026-09-15): los TRES desenlaces dejan pendiente,
+# no solo `hecha`. El que dolía era `saltada`: si el JSON ya existía a medio rellenar,
+# la corrida no decía que faltara nada. -----------------------------------------------
+
+
+def test_saltada_con_residuo_en_el_fichero_dice_que_falta(tmp_path):
+    """El fichero existente sigue marcado con `_residuo` (una sesión anterior no lo
+    remató): el pendiente lo lee de ahí, no lo inventa."""
+    (tmp_path / "00_Input").mkdir()
+    existente = {"ref": "LO QUE PUSO LA SESION",
+                 vj.MARCA: {"campos": ["hitos", "preguntas"]}}
+    vj.ruta(tmp_path).write_text(json.dumps(existente), encoding="utf-8")
+
+    r = cli.etapa_viabilidad(_Ident(), tmp_path, hoy="2026-09-15")
+
+    assert r.estado == "saltada"
+    assert r.pendientes
+    assert r.pendientes[0].codigo == "viabilidad_existente_sin_rematar"
+    assert "hitos" in r.pendientes[0].detalle and "preguntas" in r.pendientes[0].detalle
+
+
+def test_saltada_sin_residuo_avisa_que_no_se_verifico(tmp_path):
+    """Mismo fixture que `test_si_ya_existe_sale_saltada_y_NO_lo_pisa`, pero mirando el
+    pendiente: sin `_residuo` en el fichero la etapa no puede AFIRMAR que está completo
+    -solo que esta corrida no lo ha comprobado, porque nunca lo toca-."""
+    (tmp_path / "00_Input").mkdir()
+    vj.ruta(tmp_path).write_text('{"ref": "LO QUE PUSO LA SESION"}', encoding="utf-8")
+
+    r = cli.etapa_viabilidad(_Ident(), tmp_path, hoy="2026-09-15")
+
+    assert r.estado == "saltada"
+    assert r.pendientes
+    assert r.pendientes[0].codigo == "viabilidad_existente_sin_verificar"
+
+
+def test_saltada_con_json_ilegible_lo_dice_en_vez_de_fingir(tmp_path):
+    """Un `_viabilidad.json` corrupto (editado a mano, o una escritura a medias que
+    esta etapa no produjo) no puede hacer que el pendiente finja haber leído algo."""
+    (tmp_path / "00_Input").mkdir()
+    vj.ruta(tmp_path).write_text("{esto no es json", encoding="utf-8")
+
+    r = cli.etapa_viabilidad(_Ident(), tmp_path, hoy="2026-09-15")
+
+    assert r.estado == "saltada"
+    assert r.pendientes
+    assert r.pendientes[0].codigo == "viabilidad_existente_ilegible"
+
+
+def test_fallo_al_escribir_deja_pendiente_diciendo_que_no_se_derivo_nada(tmp_path, monkeypatch):
+    """La rama `fallo` no tenía NINGÚN pendiente: un `EtapaResultado` mudo es
+    indistinguible de uno sin nada por decir."""
+    (tmp_path / "00_Input").mkdir()
+
+    def _revienta(case_dir, datos):
+        raise OSError("disco lleno (inyectado)")
+
+    monkeypatch.setattr(vj, "escribir", _revienta)
+
+    r = cli.etapa_viabilidad(_Ident(), tmp_path, hoy="2026-09-15")
+
+    assert r.estado == "fallo"
+    assert r.pendientes
+    assert r.pendientes[0].codigo == "viabilidad_no_escrita"
+    assert "OSError" in r.pendientes[0].detalle
+
+
 def test_case_dir_inexistente_no_tumba_la_corrida(tmp_path):
     """Antes `test_un_fallo_al_escribir_no_tumba_la_corrida`, del pliego: aceptaba
     `hecha` O `fallo` porque quien escribió el plan no sabía cuál de las dos saldría

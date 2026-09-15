@@ -1274,6 +1274,48 @@ def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
             detalle="Relanza la etapa: el recibo guardado la reanuda sin crear otra."),))
 
 
+def _pendiente_de_viabilidad_existente(destino: Path) -> av1.Pendiente:
+    """El pendiente de la rama `saltada` de `etapa_viabilidad`: el fichero YA existe y
+    esta funcion no lo toca (`vj.escribir` nunca sobrescribe), pero `saltada` no puede
+    callar si lo que hay esta a medio rematar -- si no, una relanzada que encuentra el
+    JSON de una sesion anterior sin terminar no dice que falte nada (I1 de la revision
+    de conjunto, 2026-09-15).
+
+    Se lee el propio residuo del fichero (`vj.MARCA`): lo escribe `vj.preparar` y la
+    sesion que remata lo borra al terminar, asi que su presencia ES la senal de "sigue
+    sin rematar" -- mas fiel que repetir aqui una lista de campos por fuera del
+    contrato. Si no se puede leer o parsear, se dice eso en vez de fingir que se
+    comprobo.
+    """
+    from core import viabilidad_json as vj
+
+    try:
+        datos = json.loads(destino.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 — el estado de V1 es el producto
+        return av1.Pendiente(
+            codigo="viabilidad_existente_ilegible",
+            detalle=f"{destino.name} ya existe, pero esta corrida no pudo leerlo para "
+                    f"saber que falta ({type(exc).__name__}: {exc}). Revisalo a mano.")
+    # `isinstance` en cada paso, no `or {}`: un `_residuo` corrupto (no-dict) no puede
+    # tumbar esta lectura con un AttributeError -- es justo el caso "no se pudo leer"
+    # que la rama de abajo ya sabe decir, y aqui solo hay que no reventar antes.
+    marca = datos.get(vj.MARCA) if isinstance(datos, dict) else None
+    residuo = marca.get("campos") if isinstance(marca, dict) else None
+    if residuo:
+        return av1.Pendiente(
+            codigo="viabilidad_existente_sin_rematar",
+            detalle=f"{destino.name} ya existia y sigue sin rematar: faltan "
+                    + ", ".join(residuo)
+                    + ". Esta corrida no lo toca (nunca sobrescribe); remata los campos "
+                      "a mano y corre render_informe.py de la skill "
+                      "`viabilidad-prerelleno`.")
+    return av1.Pendiente(
+        codigo="viabilidad_existente_sin_verificar",
+        detalle=f"{destino.name} ya existia y no declara campos pendientes (aparenta "
+                "rematado), pero esta corrida no lo ha verificado: no toca un fichero "
+                "que ya esta ahi.")
+
+
 def etapa_viabilidad(ident, case_dir: Path, *, hoy=None) -> av1.EtapaResultado:
     """Ultima etapa de trabajo: dejar escrito el JSON de la 1a pasada de viabilidad.
 
@@ -1286,20 +1328,35 @@ def etapa_viabilidad(ident, case_dir: Path, *, hoy=None) -> av1.EtapaResultado:
 
     **Nunca sobrescribe.** Si el fichero existe, lo que contiene es el trabajo de la
     sesion que lo remato, que es lo unico caro de todo esto.
+
+    **Los TRES desenlaces dejan pendiente** (I1 de la revision de conjunto): `hecha` con
+    el residuo recien escrito, `saltada` con lo que se sepa leer del fichero existente, y
+    `fallo` con que no se derivo nada. Un desenlace mudo es indistinguible de uno sin
+    nada por decir.
     """
     from core import viabilidad_json as vj
 
     hoy = hoy or datetime.date.today().isoformat()
-    if vj.ruta(case_dir).exists():
+    destino_existente = vj.ruta(case_dir)
+    if destino_existente.exists():
         return av1.EtapaResultado(
             nombre="viabilidad", estado="saltada",
-            detalle=f"{vj.NOMBRE_FICHERO} ya existe; no se pisa")
+            detalle=f"{vj.NOMBRE_FICHERO} ya existe; no se pisa",
+            pendientes=(_pendiente_de_viabilidad_existente(destino_existente),))
     try:
         datos = vj.preparar(ident, hoy=hoy)
         destino = vj.escribir(case_dir, datos)
     except Exception as exc:  # noqa: BLE001 — el estado de V1 es el producto
-        return av1.EtapaResultado(nombre="viabilidad", estado="fallo",
-                                  detalle=f"{type(exc).__name__}: {exc}")
+        return av1.EtapaResultado(
+            nombre="viabilidad", estado="fallo",
+            detalle=f"{type(exc).__name__}: {exc}",
+            pendientes=(av1.Pendiente(
+                codigo="viabilidad_no_escrita",
+                detalle=f"{vj.NOMBRE_FICHERO} no se pudo escribir "
+                        f"({type(exc).__name__}: {exc}); ningun campo quedo derivado. "
+                        "Reintenta la apertura o prepara el fichero a mano antes de "
+                        "correr render_informe.py de la skill "
+                        "`viabilidad-prerelleno`."),))
     residuo = datos[vj.MARCA]["campos"]
     return av1.EtapaResultado(
         nombre="viabilidad", estado="hecha",
