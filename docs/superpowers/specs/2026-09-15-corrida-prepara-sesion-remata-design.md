@@ -259,7 +259,7 @@ esta etapa.
 
 ### 5.5. La ficha `MEJORAS #262`, corregida
 
-Se reescribe el bloque del contrato con los cinco campos correctos y se añade **por qué su ejecución
+Se reescribe el bloque del contrato con los cuatro campos corregidos y se añade **por qué su ejecución
 no pudo verlos** (§2, H1). Lo segundo importa más que lo primero: la ficha se publicó como «derivado
 por ejecución», que es el sello de calidad de la casa, y salió mal. Sin la explicación, el próximo
 que derive un contrato por ejecución con valores vacíos cometerá el mismo error creyendo que lo ha

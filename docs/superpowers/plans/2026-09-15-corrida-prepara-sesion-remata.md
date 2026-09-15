@@ -705,7 +705,7 @@ def test_avisa_de_un_campo_de_primer_nivel_desconocido():
 
 def test_el_validador_puede_dar_los_DOS_valores():
     """Control positivo. Un validador que solo se ha visto decir «bien» no acredita
-    nada: es el defecto que dejo pasar los cinco campos de #262."""
+    nada: es el defecto que dejo pasar los cuatro campos de #262."""
     assert vj.validar(_valido()) == []
     assert vj.validar({**_valido(), "motivos_impago": []}) != []
 ```
@@ -1118,7 +1118,7 @@ existe y trae la infraestructura). Reutiliza `_generar`, que importa el módulo 
 # --- El contrato del JSON contra su productor (`core/viabilidad_json.py`) -------------
 #
 # Es el control que `MEJORAS #262` no tuvo: su contrato se publico como «derivado por
-# ejecucion» y salio mal en cinco campos porque la corrida paso valores VACIOS, que el
+# ejecucion» y salio mal en cuatro campos porque la corrida paso valores VACIOS, que el
 # consumidor sustituye sin avisar. Aqui se cruzan los dos lados y se leen las CELDAS, no
 # el codigo de salida: el defecto salia con `OK` en pantalla.
 
