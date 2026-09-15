@@ -18,7 +18,7 @@
 - **Nunca se borra ni se debilita un test para poner verde.** Ni `skip` nuevo, ni aserto relajado, ni `xfail` ampliado.
 - **`main` está protegida:** rama + PR. Nunca commit directo.
 - **Terminología:** propietario / buscador, nunca vendedor / comprador.
-- **Un `--modo v1` inválido debe abortar ANTES de crear el esqueleto del caso.** Es la lección HA-06 de la R-A: la validación vive en `validar_modo`, que es pura y corre antes de la identidad, del mutex y de `ensure_case`. `_validar_flags` corre en `scripts/abrir_caso.py:1904`, **después** de `ensure_case`, y por eso no basta.
+- **Un `--modo v1` inválido debe abortar ANTES de pagar la resolución de identidad.** Es la lección HA-06 de la R-A: la validación vive en `validar_modo`, que es pura y corre antes de `resolver_identidad`, del mutex y de `ensure_case` (quien de verdad crea el esqueleto del caso). `_validar_flags` corre en `scripts/abrir_caso.py` después de `resolver_identidad` —aunque todavía antes del mutex y de `ensure_case`—, así que delegar solo en ella pagaría esa resolución (lee disco y, con `--fuente drive_ev`, consulta Drive) en una corrida que de todos modos iba a abortar.
 - **Verificar por resultado, nunca por status.** Un `OK` en pantalla no acredita que el dato llegara: el defecto H1 del spec salía con `OK`.
 
 ---
@@ -343,10 +343,12 @@ def test_v1_sigue_rechazando_las_fuentes_que_no_entraron():
 def test_email_sin_cuenta_o_sin_label_se_rechaza_EN_validar_modo():
     """HA-06 de la R-A, aplicada a la fuente nueva.
 
-    `_validar_flags` ya los exige, pero corre en la linea 1904: DESPUES de resolver
-    identidad y de `ensure_case`. Abortar alli deja el esqueleto del caso ya creado,
-    que es exactamente el defecto que la R-A encontro con `--hasta`. La puerta de v1
-    vive en `validar_modo`, que es pura y corre antes de cualquier efecto.
+    `_validar_flags` ya los exige, pero corre en `scripts/abrir_caso.py` DESPUES de
+    resolver identidad (aunque todavia antes del mutex y de `ensure_case`). Abortar
+    alli paga esa resolucion -lee disco y, con `--fuente drive_ev`, consulta Drive- en
+    una corrida que de todos modos iba a abortar, el mismo defecto que la R-A encontro
+    con `--hasta`. La puerta de v1 vive en `validar_modo`, que es pura y corre antes de
+    cualquier efecto.
     """
     sin_cuenta = cli.validar_modo("v1", crm="skip", fuente="email", folder_id="F",
                                   cuenta=None, label="CASO/X")
@@ -1030,8 +1032,16 @@ def ruta(case_dir) -> Path:
 def preparar(ident, *, hoy: str) -> dict:
     """El JSON con lo que la corrida SI puede derivar, y el residuo marcado.
 
-    Cuatro campos de once. Los 14 hitos y las 88 preguntas siguen siendo trabajo de una
-    sesion, y este modulo no finge lo contrario: por eso existe la marca.
+    El contrato (`CAMPOS`) tiene DOCE campos. Esta funcion deriva CUATRO con dato real
+    (`case_id`, `ref`, `fecha`, `observaciones`: los cuatro vienen de `ident`/`hoy`) y
+    deja SIETE marcados como residuo en `_POR_QUE_FALTA` (`equipo`, `importes`, `hitos`,
+    `preguntas`, `actividades`, `motivos_impago`, `avisos`) -los 14 hitos y las 88
+    preguntas siguen siendo trabajo de una sesion, y este modulo no finge lo contrario,
+    por eso existe la marca-. `bitacora_inicial` queda FUERA de las dos cuentas: se fija
+    a `True` sin leer el expediente (no viene de `ident`/`hoy`, no hay nada que derivar)
+    y tampoco esta en `_POR_QUE_FALTA` (no se declara residuo pendiente de una sesion).
+    4 + 7 + 1 = 12: quien recuente esto, que lo haga contra `CAMPOS` y `_POR_QUE_FALTA`,
+    no de memoria.
 
     `hoy` se RECIBE, no se lee aqui: una fecha que el modulo saca del reloj no se puede
     fijar en un test, y la regla de la casa es que la fecha se toma del sistema en el
@@ -1093,7 +1103,7 @@ Expected: PASS, 17 tests.
 
 ```bash
 git add core/viabilidad_json.py tests/test_viabilidad_json.py
-git commit -m "feat(viabilidad): preparar() deja 4 de 11 campos y marca el residuo"
+git commit -m "feat(viabilidad): preparar() deja 4 de 12 campos y marca el residuo"
 ```
 
 ---
@@ -1411,8 +1421,10 @@ def etapa_viabilidad(ident, case_dir: Path, *, hoy=None) -> av1.EtapaResultado:
     """Etapa final: dejar escrito el JSON de la 1a pasada de viabilidad.
 
     **La corrida prepara y una sesion remata** — la salida 3 de `MEJORAS #264`, elegida
-    por Nikolai el 2026-09-14. Deja CUATRO de los once campos; los 14 hitos y las 88
-    preguntas siguen siendo trabajo de una sesion, y por eso el residuo va marcado.
+    por Nikolai el 2026-09-14. Deja CUATRO de los DOCE campos del contrato (la cuenta
+    completa -derivados, residuo, y el campo que no es ninguna de las dos cosas- vive
+    en el docstring de `viabilidad_json.preparar`); los 14 hitos y las 88 preguntas
+    siguen siendo trabajo de una sesion, y por eso el residuo va marcado.
 
     **Nunca sobrescribe.** Si el fichero existe, lo que contiene es el trabajo de la
     sesion que lo remato, que es lo unico caro de todo esto.
@@ -1627,10 +1639,12 @@ diff sí entra en la ronda. Una exención silenciosa es indistinguible de un olv
 | §5.6 el JSON corre de verdad por el consumidor | Task 6 (sobre el fichero de test ya existente) |
 
 **Añadido que el spec no preveía:** la exigencia de `--cuenta`/`--label` dentro de
-`validar_modo` (Task 3). `_validar_flags` ya los pide, pero corre en la línea 1904,
-**después de `ensure_case`**: abortar allí deja el esqueleto del caso ya creado, que es
-exactamente el defecto HA-06 que la R-A encontró con `--hasta`. Sin esto, levantar la
-puerta habría reintroducido un defecto ya comprado.
+`validar_modo` (Task 3). `_validar_flags` ya los pide, pero corre en
+`scripts/abrir_caso.py` **después de resolver identidad** (antes del mutex y de
+`ensure_case`, que es quien crea el esqueleto del caso): abortar allí paga esa
+resolución —lee disco y, con `--fuente drive_ev`, consulta Drive— en una corrida que de
+todos modos iba a abortar, el mismo defecto HA-06 que la R-A encontró con `--hasta`. Sin
+esto, levantar la puerta habría reintroducido un defecto ya comprado.
 
 **Dos cosas medidas al auto-revisar, que habrían salido como rojos sin explicación:**
 
