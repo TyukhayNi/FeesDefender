@@ -77,9 +77,9 @@ def test_t10_temporales_en_la_raiz_son_protocolo_y_a_profundidad_3_no(nombre):
 
 
 def test_viabilidad_json_y_su_temporal_son_protocolo():
-    """C2 de la revision de conjunto (2026-09-15): `_viabilidad.json` no estaba en
-    `RAIZ`, asi que una relanzada lo hasheaba e inventariaba como documento del cliente
-    (`etapa_viabilidad` corre en 7a posicion, `sala_maquina` en 4a). Cubre el fichero Y
+    """C2 de la revisión de conjunto (2026-09-15): `_viabilidad.json` no estaba en
+    `RAIZ`, así que una relanzada lo hasheaba e inventariaba como documento del cliente
+    (`etapa_viabilidad` corre en 7ª posición, `sala_maquina` en 4ª). Cubre el fichero Y
     el temporal de `viabilidad_json.escribir` (`_viabilidad.json.<random>.tmp`), que es
     el segundo tramo del mismo hallazgo."""
     assert es_fichero_de_protocolo("_viabilidad.json") is True
