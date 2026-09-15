@@ -791,20 +791,52 @@ def etapa_email(ident, case_dir: Path, *, cuenta, label, extraer_adjuntos: bool 
         return av1.EtapaResultado(nombre="email", estado="fallo",
                                   detalle=f"{type(exc).__name__}: {exc}")
 
+    # FUENTE NO RESUELTA (R1/H-06): `export_label` deja `label_id=None` cuando la
+    # etiqueta pedida no existe en la cuenta -distinto de una etiqueta que SI existe y
+    # esta vacia-. Antes cualquier `rep` se traducia a `hecha`, `label_id` incluido: una
+    # corrida con `--label` mal escrito salia "hecha, 0 de 0 mensajes escritos" y seguia
+    # de largo. `getattr(..., False)` en vez de acceso directo: un doble de test mas
+    # viejo que este campo (sin `label_id`) no puede caer en esta rama por ausencia del
+    # atributo -- solo un `None` EXPLICITO cuenta como "no resuelta".
+    if getattr(rep, "label_id", False) is None:
+        detalle_fuente = (rep.errors[0] if getattr(rep, "errors", None)
+                          else f"etiqueta {label!r} no encontrada.")
+        return av1.EtapaResultado(
+            nombre="email", estado="fallo",
+            detalle=f"etiqueta {label!r} no resuelta en la cuenta {cuenta!r}: "
+                    f"{detalle_fuente}",
+            pendientes=(av1.Pendiente(
+                codigo="email_etiqueta_no_encontrada",
+                detalle=f"Revisa que --label={label!r} sea exacto y que --cuenta="
+                        f"{cuenta!r} sea la cuenta correcta (las etiquetas E&V viven "
+                        "en @engelvoelkers)."),))
+
     # Los errores parciales son un HECHO distinto de «el export fallo», y se pierden si
     # solo se mira el estado: `export_label` escribe lo que puede y acumula el resto.
+    # ETIQUETA LEGITIMAMENTE VACIA (`written == 0` con la fuente resuelta y sin errores)
+    # NO es un fallo por si sola: puede ser una repeticion idempotente -ya se exporto
+    # todo en una ronda anterior-, que es el caso normal, no un problema.
     errores = list(getattr(rep, "errors", None) or [])
-    pendientes = ()
+    pendientes = []
     if errores:
-        pendientes = (av1.Pendiente(
+        pendientes.append(av1.Pendiente(
             codigo="email_export_con_errores",
             detalle=f"El export escribio, pero dejo {len(errores)} error(es): "
-                    f"{errores[0]}" + (" (y mas)" if len(errores) > 1 else "")),)
+                    f"{errores[0]}" + (" (y mas)" if len(errores) > 1 else "")))
+    # EXPORTACION PARCIAL, otro hecho distinto: `links_manual` (permiso/expiracion) no
+    # siempre viaja en `errors` -- sin este pendiente, esa corrida decia "hecha" sin
+    # dejar ningun pendiente aunque quedara trabajo manual real en la worklist.
+    enlaces_manuales = getattr(rep, "links_manual", 0) or 0
+    if enlaces_manuales:
+        pendientes.append(av1.Pendiente(
+            codigo="email_enlaces_manuales",
+            detalle=f"{enlaces_manuales} enlace(s) de Drive sin resolver (permiso o "
+                    "expiracion) quedan en la worklist para reintentar."))
     return av1.EtapaResultado(
         nombre="email", estado="hecha",
         detalle=f"etiqueta {label!r}: {rep.written} de {rep.total_in_label} mensajes "
                 f"escritos",
-        pendientes=pendientes)
+        pendientes=tuple(pendientes))
 
 
 def _pendientes_de_custodia(res) -> tuple:

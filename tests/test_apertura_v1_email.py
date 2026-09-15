@@ -15,12 +15,20 @@ class _Ident:
 
 
 class _Report:
-    """Lo mínimo de `ExportReport` que la etapa lee."""
+    """Lo mínimo de `ExportReport` que la etapa lee.
 
-    def __init__(self, written=3, total_in_label=3, errors=None):
+    `label_id` por defecto NO es `None` (una cadena cualquiera basta): la mayoría de
+    los tests de este fichero simulan una etiqueta que SÍ se resolvió, y H-06 solo
+    trata como «fuente no resuelta» un `None` explícito.
+    """
+
+    def __init__(self, written=3, total_in_label=3, errors=None,
+                label_id="Label_1", links_manual=0):
         self.written = written
         self.total_in_label = total_in_label
         self.errors = errors or []
+        self.label_id = label_id
+        self.links_manual = links_manual
 
 
 def test_sin_cuenta_ni_label_sale_saltada_con_su_pendiente(tmp_path):
@@ -68,6 +76,60 @@ def test_los_errores_parciales_del_export_se_dicen_sin_ser_un_fallo(tmp_path):
     assert r.estado == "hecha"
     assert r.pendientes, "un export con errores que no deja pendiente los pierde"
     assert r.pendientes[0].codigo == "email_export_con_errores"
+
+
+# --- H-06 de la revisión adversarial (2026-09-15): FUENTE NO RESUELTA, etiqueta
+# LEGÍTIMAMENTE VACÍA y EXPORTACIÓN PARCIAL son tres hechos distintos que antes se
+# traducían todos a `hecha` sin más, o se perdían sin dejar pendiente. ------------------
+
+
+def test_etiqueta_inexistente_sale_fallo_no_hecha(tmp_path):
+    """El defecto medido: `label_id=None` (la etiqueta no existe en la cuenta) salía
+    `hecha`, «0 de 0 mensajes escritos», y la corrida seguía de largo como si no
+    hubiera nada raro. Una fuente que no se pudo resolver es un fallo real: no se pudo
+    ni intentar."""
+    r = cli.etapa_email(
+        _Ident(), tmp_path, cuenta="a@b.c", label="Caso/Que/No/Existe",
+        exportar=lambda: _Report(
+            written=0, total_in_label=0, label_id=None,
+            errors=["Etiqueta no encontrada en la cuenta 'a@b.c': 'Caso/Que/No/Existe'."]))
+
+    assert r.estado == "fallo"
+    assert r.pendientes
+    assert r.pendientes[0].codigo == "email_etiqueta_no_encontrada"
+    assert "Caso/Que/No/Existe" in r.detalle
+
+
+@pytest.mark.parametrize("written, total_in_label", [(0, 0), (0, 5)],
+                         ids=["etiqueta_vacia", "todo_ya_exportado_antes"])
+def test_escrito_cero_con_etiqueta_resuelta_NO_es_fallo(tmp_path, written, total_in_label):
+    """`written == 0` no es fallo por sí solo (R1/H-06): puede ser una etiqueta
+    legítimamente vacía, o una repetición idempotente que ya exportó todo en una ronda
+    anterior. Con la etiqueta resuelta (`label_id` no es `None`) y sin errores, las dos
+    son el caso normal."""
+    r = cli.etapa_email(
+        _Ident(), tmp_path, cuenta="a@b.c", label="CASO/X",
+        exportar=lambda: _Report(written=written, total_in_label=total_in_label,
+                                 label_id="Label_9"))
+
+    assert r.estado == "hecha"
+    assert r.pendientes == ()
+
+
+def test_enlaces_manuales_sin_errores_deja_pendiente_propio(tmp_path):
+    """`links_manual` puede señalar trabajo pendiente con `errors` vacío (R1/H-06):
+    antes esa corrida salía `hecha` sin dejar NINGÚN pendiente, y el enlace sin
+    resolver se perdía. No es un fallo -el export sí escribió lo que pudo-, pero
+    tampoco puede callar."""
+    r = cli.etapa_email(
+        _Ident(), tmp_path, cuenta="a@b.c", label="CASO/X",
+        exportar=lambda: _Report(written=2, total_in_label=2, errors=[],
+                                 links_manual=3))
+
+    assert r.estado == "hecha"
+    assert r.pendientes
+    assert r.pendientes[-1].codigo == "email_enlaces_manuales"
+    assert "3" in r.pendientes[-1].detalle
 
 
 def test_la_etapa_nunca_llama_a_gmail_por_su_cuenta(tmp_path, monkeypatch):
