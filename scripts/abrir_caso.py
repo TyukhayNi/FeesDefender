@@ -752,7 +752,11 @@ _PENDIENTE_EMAIL_NO_PEDIDO = av1.Pendiente(
 
 def etapa_email(ident, case_dir: Path, *, cuenta, label, extraer_adjuntos: bool = True,
                 exportar=None) -> av1.EtapaResultado:
-    """Etapa 2: exportar la etiqueta Gmail del caso a un lote nuevo de `00_Input`.
+    """Exportar la etiqueta Gmail del caso a un lote nuevo de `00_Input`; corre justo
+    despues de `drive` y antes de `crm` (el orden completo vive en `ETAPAS_V1`/
+    `ETAPAS_V2`; un ordinal aqui caduca solo cuando se inserta otra etapa por delante,
+    que es justo lo que paso con este docstring -- I5 de la revision de conjunto,
+    2026-09-15).
 
     **Va antes de `sala_maquina` y eso no es estetico.** La sala de maquina hace el OCR
     y la atomizacion leyendo `00_Input`; un adjunto que llegue solo por correo y se
@@ -860,7 +864,8 @@ def traducir_pull_crm(res) -> tuple[str, str, tuple]:
 
 
 def etapa_crm(ident, case_dir: Path, *, leer_meta=None, pull=None):
-    """Etapa 2 de V1: pull del expediente CRM ya registrado.
+    """Pull del expediente CRM ya registrado; corre justo despues de `email` y antes
+    de `sala_maquina`.
 
     **El `element` sale del `ExpedienteLink`, pertenece al vocabulario cerrado, y la rama
     judicial aborta.** El criterio 38 pide los dos cruces: el obvio —que un caso judicial
@@ -933,7 +938,9 @@ def etapa_crm(ident, case_dir: Path, *, leer_meta=None, pull=None):
 
 
 def etapa_sala_maquina(ident, *, correr=None):
-    """Etapa 3 de V1: atomizacion del correo depositado + OCR y espejos MD.
+    """Cierra V1 propiamente dicha (`ETAPAS_V1`): atomizacion del correo depositado +
+    OCR y espejos MD. Corre justo despues de `crm` y antes de `crm_alta`, la primera
+    etapa de V2.
 
     La maquina de estados es la del §24 D4: el motor NO cambia —el OCR sigue aunque la
     atomizacion falle, y eso no se regresa— y lo que cambia es el RESULTADO de V1, que si
@@ -1048,7 +1055,8 @@ _PENDIENTE_NO_AUTORIZADO = av1.Pendiente(
 
 
 def etapa_crm_alta(ident, case_dir: Path, *, crm: str, alta=None) -> av1.EtapaResultado:
-    """Etapa 4 (V2): alta del expediente en el CRM, si se autorizo y no la hay ya.
+    """Alta del expediente en el CRM, si se autorizo y no la hay ya; corre justo
+    despues de `sala_maquina` (cierra V1) y antes de `actuacion`.
 
     **No reimplementa el alta**: invoca `_alta_crm`, que ya resuelve duplicados con
     `core.alta_crm_politica`, tags, telefono y evento. Lo que esta etapa aporta es
@@ -1172,7 +1180,8 @@ def _firmante_de(case_dir: Path) -> str:
 
 def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
                     firmante=None) -> av1.EtapaResultado:
-    """Etapa 5 (V2): la actuacion de apertura, con recibo reanudable y DURABLE.
+    """La actuacion de apertura, con recibo reanudable y DURABLE; corre justo despues
+    de `crm_alta` y antes de `viabilidad`.
 
     **El `firmante` no se infiere nunca.** El prefijo del asunto ES la tarifa —`SENIOR`
     factura 103,00 €/h y `ABOGADO` 77,00— y quien firma no es quien opera: Ana puede
@@ -1395,7 +1404,8 @@ def etapa_viabilidad(ident, case_dir: Path, *, hoy=None) -> av1.EtapaResultado:
 
 def etapa_verificar(ident, case_dir: Path, *, crm: str = "api",
                     verificar=None) -> av1.EtapaResultado:
-    """Etapa 6 (V2): el «OK» del EXPEDIENTE, no el del paso.
+    """Cierra la secuencia entera (corre justo despues de `viabilidad`): el «OK» del
+    EXPEDIENTE, no el del paso.
 
     Reutiliza `core.verificar_apertura.verificar`, que **ya existe**: la rev. 1 del plan
     proponia crear un agregador que llevaba ahi desde antes (R1/H-06).
