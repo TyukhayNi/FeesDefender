@@ -17,7 +17,8 @@ el defecto medido ocurre en el consumidor.
 from __future__ import annotations
 
 #: Campo de primer nivel -> tipo que el consumidor espera. Derivado LEYENDO el consumidor
-#: y comprobado CORRIENDOLO (`tests/test_viabilidad_render_informe.py`).
+#: y comprobado CORRIENDOLO: `tests/test_render_informe_viabilidad.py`, que arranca
+#: `render_informe.py` de verdad contra la plantilla real.
 CAMPOS: dict[str, type | tuple[type, ...]] = {
     "case_id": str,
     "ref": str,

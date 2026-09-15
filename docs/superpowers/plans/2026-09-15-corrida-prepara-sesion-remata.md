@@ -37,7 +37,16 @@
 | `.claude/skills/viabilidad-prerelleno/scripts/render_informe.py` | avisar de claves desconocidas | 2 |
 | `docs/MEJORAS_FUTURAS.md` | ficha `#262` con el contrato corregido | 2 |
 | `tests/test_viabilidad_json.py` | **nuevo** — contrato, productor, validador | 2 |
-| `tests/test_viabilidad_render_informe.py` | **nuevo** — el consumidor, corriendo de verdad | 2 |
+| `tests/test_render_informe_viabilidad.py` | **existente** — se le AÑADEN los tests del aviso | 2 |
+
+> **Corrección del 2026-09-15, tras la Task 4.** El plan preveía crear
+> `tests/test_viabilidad_render_informe.py`. **Ya existe `tests/test_render_informe_viabilidad.py`**
+> —nombre casi idéntico, orden de palabras invertido— creado el 2026-09-11 en el PR #342, con 24
+> tests que ya arrancan `render_informe.py` de verdad contra la plantilla real, y que ya cubre
+> «las 88 filas salen marcadas». Crear el fichero nuevo habría duplicado la infraestructura y
+> dejado dos ficheros indistinguibles por el nombre. Los tests nuevos se añaden **al existente**,
+> reutilizando su `_generar(tmp_path, datos)` —que importa el módulo en vez de lanzar un
+> `subprocess`— y el test de las 88 se retira de esta tanda por estar ya escrito.
 
 ---
 
@@ -733,7 +742,8 @@ el defecto medido ocurre en el consumidor.
 from __future__ import annotations
 
 #: Campo de primer nivel -> tipo que el consumidor espera. Derivado LEYENDO el consumidor
-#: y comprobado CORRIENDOLO (`tests/test_viabilidad_render_informe.py`).
+#: y comprobado CORRIENDOLO: `tests/test_render_informe_viabilidad.py`, que arranca
+#: `render_informe.py` de verdad contra la plantilla real.
 CAMPOS: dict[str, type | tuple[type, ...]] = {
     "case_id": str,
     "ref": str,
@@ -1092,156 +1102,128 @@ git commit -m "feat(viabilidad): preparar() deja 4 de 11 campos y marca el resid
 
 **Files:**
 - Modify: `.claude/skills/viabilidad-prerelleno/scripts/render_informe.py`
-- Test: `tests/test_viabilidad_render_informe.py` (nuevo)
+- Test: `tests/test_render_informe_viabilidad.py` — **existente, se le AÑADEN los tests**
 
 **Interfaces:**
-- Consumes: `core.viabilidad_json` **solo en el test**, para cruzar los dos contratos. El script **no** importa del core: corre en el servidor.
+- Consumes: `core.viabilidad_json` **solo en el test**, para cruzar los dos contratos. El script **no** importa del core: corre en el servidor. Del fichero de test existente se reutilizan `SCRIPTS`, `PLANTILLA`, el módulo ya importado `render_informe` y el helper `_generar(tmp_path, datos) -> Path`.
 - Produces: nada que otra tarea consuma.
 
 - [ ] **Step 1: Escribir los tests que fallan**
 
-Crear `tests/test_viabilidad_render_informe.py`:
+**Añadir al final de `tests/test_render_informe_viabilidad.py`** (no crear fichero nuevo: ya
+existe y trae la infraestructura). Reutiliza `_generar`, que importa el módulo en vez de lanzar un
+`subprocess`, y `capsys`, que el fichero ya usa para capturar los avisos:
 
 ```python
-"""El consumidor del JSON de viabilidad, CORRIENDO de verdad.
-
-Es el control que `MEJORAS #262` no tuvo: su contrato se publico como «derivado por
-ejecucion» y salio mal en cinco campos porque la corrida paso valores vacios, que el
-consumidor sustituye sin avisar. Aqui se cruzan los dos lados y se leen las CELDAS, no
-el codigo de salida: el defecto salia con `OK` en pantalla.
-"""
-import json
-import subprocess
-import sys
-from pathlib import Path
-
-import pytest
+# --- El contrato del JSON contra su productor (`core/viabilidad_json.py`) -------------
+#
+# Es el control que `MEJORAS #262` no tuvo: su contrato se publico como «derivado por
+# ejecucion» y salio mal en cinco campos porque la corrida paso valores VACIOS, que el
+# consumidor sustituye sin avisar. Aqui se cruzan los dos lados y se leen las CELDAS, no
+# el codigo de salida: el defecto salia con `OK` en pantalla.
 
 from core import viabilidad_json as vj
 
-openpyxl = pytest.importorskip("openpyxl")
 
-_SCRIPT = (Path(__file__).resolve().parents[1] / ".claude" / "skills"
-           / "viabilidad-prerelleno" / "scripts" / "render_informe.py")
-
-
-class _Ident:
+class _IdentFalsa:
     case_id = "BaRS9 - Calle de Prueba 1 (W-TEST01) - Vuelta"
     w_code = "W-TEST01"
     tipo_caso = "Vuelta"
 
 
-def _correr(datos, tmp_path):
-    entrada = tmp_path / "datos.json"
-    entrada.write_text(json.dumps(datos, ensure_ascii=False), encoding="utf-8")
-    salida = tmp_path / "informe.xlsx"
-    p = subprocess.run([sys.executable, str(_SCRIPT), str(entrada), "--salida",
-                        str(salida)], capture_output=True, encoding="utf-8",
-                       errors="replace")
-    return p, salida
+def _preparado():
+    return vj.preparar(_IdentFalsa(), hoy="2026-09-15")
 
 
 def test_el_json_que_produce_preparar_corre_de_verdad(tmp_path):
-    """Lo que la corrida escribe tiene que atravesar el consumidor. Si esto se rompe,
-    la etapa estara dejando un fichero que no sirve para lo unico que existe."""
-    p, salida = _correr(vj.preparar(_Ident(), hoy="2026-09-15"), tmp_path)
+    """Lo que la corrida escribe tiene que atravesar el consumidor. Si esto se rompe, la
+    etapa estara dejando un fichero que no sirve para lo unico para lo que existe."""
+    salida = _generar(tmp_path, _preparado())
 
-    assert p.returncode == 0, p.stderr
     assert salida.exists()
 
 
-def test_las_88_preguntas_salen_marcadas_aunque_el_JSON_no_traiga_ninguna(tmp_path):
-    """Lo que cerro `MEJORAS #228`. Se comprueba aqui porque es la propiedad que hace
-    util un JSON casi vacio: el informe sale con su guion de entrevista completo.
-
-    **Se cuentan las filas cuyo valor es la marca (`sí`/`no`), no las filas con algo en
-    la columna M.** Medido el 2026-09-15: con el segundo criterio salen 90, porque la
-    cabecera y su subtitulo tambien escriben ahi. Un test que contara 90 estaria fijando
-    la cabecera como si fuera una pregunta.
-    """
-    _, salida = _correr(vj.preparar(_Ident(), hoy="2026-09-15"), tmp_path)
-
-    preg = openpyxl.load_workbook(salida)["PREGUNTAS"]
-    marcadas = sum(1 for r in range(1, preg.max_row + 1)
-                   if preg.cell(r, 13).value in ("sí", "no"))
-    assert marcadas == 88, f"se esperaban 88 filas marcadas y hay {marcadas}"
-
-
 def test_el_precio_LLEGA_a_su_celda(tmp_path):
-    """Control positivo del defecto H1: el instrumento tiene que poder dar los dos
-    valores. Con la clave BUENA el importe llega."""
-    d = vj.preparar(_Ident(), hoy="2026-09-15")
-    d["importes"] = {"precio": 12000}
+    """Control positivo del defecto medido: el instrumento tiene que poder dar los dos
+    valores. Con la clave BUENA el importe llega a H13."""
+    datos = _preparado()
+    datos["importes"] = {"precio": 12000}
 
-    _, salida = _correr(d, tmp_path)
+    salida = _generar(tmp_path, datos)
 
     assert openpyxl.load_workbook(salida)["INFORMACION"]["H13"].value == 12000
 
 
-def test_avisa_de_una_clave_de_importes_que_no_lee(tmp_path):
-    """El defecto medido: `principal: 12000` no llegaba a ninguna celda y el script
-    imprimia OK. Ahora lo dice."""
-    d = vj.preparar(_Ident(), hoy="2026-09-15")
-    d["importes"] = {"principal": 12000}
+def test_avisa_de_una_clave_de_importes_que_no_lee(tmp_path, capsys):
+    """El defecto de `MEJORAS #262`: `principal: 12000` no llegaba a ninguna celda y el
+    script imprimia OK. Ahora lo dice, y la celda sigue vacia."""
+    datos = _preparado()
+    datos["importes"] = {"principal": 12000}
 
-    p, salida = _correr(d, tmp_path)
+    salida = _generar(tmp_path, datos)
 
-    assert "principal" in p.stderr
+    assert "principal" in capsys.readouterr().err
     assert openpyxl.load_workbook(salida)["INFORMACION"]["H13"].value is None
 
 
-def test_avisa_de_un_campo_de_primer_nivel_desconocido(tmp_path):
-    d = vj.preparar(_Ident(), hoy="2026-09-15")
-    d["importe_total"] = 1
+def test_avisa_de_un_campo_de_primer_nivel_desconocido(tmp_path, capsys):
+    datos = _preparado()
+    datos["importe_total"] = 1
 
-    p, _ = _correr(d, tmp_path)
+    _generar(tmp_path, datos)
 
-    assert "importe_total" in p.stderr
-
-
-def test_avisa_de_una_clave_de_actividades_que_no_lee(tmp_path):
-    d = vj.preparar(_Ident(), hoy="2026-09-15")
-    d["actividades"] = {"visitas_totales": 4}
-
-    p, _ = _correr(d, tmp_path)
-
-    assert "visitas_totales" in p.stderr
+    assert "importe_total" in capsys.readouterr().err
 
 
-def test_NO_avisa_del_campo_de_marca_del_productor(tmp_path):
+def test_avisa_de_una_clave_de_actividades_que_no_lee(tmp_path, capsys):
+    datos = _preparado()
+    datos["actividades"] = {"visitas_totales": 4}
+
+    _generar(tmp_path, datos)
+
+    assert "visitas_totales" in capsys.readouterr().err
+
+
+def test_NO_avisa_del_campo_de_marca_del_productor(tmp_path, capsys):
     """Es del contrato aunque el consumidor no lo use. Un aviso que sale en TODAS las
     corridas deja de leerse, y entonces el que importa se pierde en el ruido."""
-    p, _ = _correr(vj.preparar(_Ident(), hoy="2026-09-15"), tmp_path)
+    _generar(tmp_path, _preparado())
 
-    assert vj.MARCA not in p.stderr
+    assert vj.MARCA not in capsys.readouterr().err
 
 
-def test_NO_avisa_de_las_claves_conocidas(tmp_path):
+def test_NO_avisa_de_las_claves_conocidas(tmp_path, capsys):
     """La otra mitad del control positivo: un avisador que avisa de todo no informa."""
-    d = vj.preparar(_Ident(), hoy="2026-09-15")
-    d["importes"] = {"precio": 1, "pct_honorarios": 5}
-    d["actividades"] = {"visitas_propiedad": 2}
+    datos = _preparado()
+    datos["importes"] = {"precio": 1, "pct_honorarios": 5}
+    datos["actividades"] = {"visitas_propiedad": 2}
 
-    p, _ = _correr(d, tmp_path)
+    _generar(tmp_path, datos)
 
-    for k in ("precio", "pct_honorarios", "visitas_propiedad", "observaciones"):
-        assert f"'{k}'" not in p.stderr, f"aviso de sobra sobre {k}"
+    err = capsys.readouterr().err
+    for clave in ("precio", "pct_honorarios", "visitas_propiedad", "observaciones"):
+        assert f"'{clave}'" not in err, f"aviso de sobra sobre {clave}"
 
 
-def test_los_dos_contratos_no_han_divergido(tmp_path):
-    """El core y la skill viven en dos sitios que no se importan. Este test es lo unico
-    que los ata: si alguien añade un campo en uno y no en el otro, salta aqui."""
-    fuente = _SCRIPT.read_text(encoding="utf-8")
+def test_los_dos_contratos_no_han_divergido():
+    """El core y la skill viven en dos sitios que no se importan —la skill corre en el
+    servidor—. Este test es lo unico que los ata: si alguien añade un campo en uno y no
+    en el otro, salta aqui."""
+    fuente = (SCRIPTS / "render_informe.py").read_text(encoding="utf-8")
     for campo in vj.CAMPOS:
         assert f'"{campo}"' in fuente, (
             f"`{campo}` esta en el contrato del core y no aparece en render_informe.py")
 ```
 
+**El test de «las 88 filas salen marcadas» NO se escribe**: ya existe en este mismo fichero
+(`test_las_88_filas_salen_marcadas`, más `test_la_plantilla_declara_88_preguntas`). Escribirlo otra
+vez sería duplicar una propiedad ya protegida.
+
 - [ ] **Step 2: Correr los tests y verlos fallar**
 
 Run:
 ```bash
-C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe -m pytest -q --tb=short tests/test_viabilidad_render_informe.py
+C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe -m pytest -q --tb=short tests/test_render_informe_viabilidad.py
 ```
 Expected: FAIL en los cuatro tests de aviso — el `stderr` no contiene `principal` ni `importe_total` ni `visitas_totales`.
 
@@ -1298,7 +1280,7 @@ Y en `main()`, justo después de `d = json.load(f)`:
 
 Run:
 ```bash
-C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe -m pytest -q --tb=short tests/test_viabilidad_render_informe.py
+C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe -m pytest -q --tb=short tests/test_render_informe_viabilidad.py
 ```
 Expected: PASS, 9 tests.
 
@@ -1324,7 +1306,7 @@ principio de `CHANGELOG.md`:
 - [ ] **Step 6: Commit**
 
 ```bash
-git add .claude/skills/viabilidad-prerelleno/ tests/test_viabilidad_render_informe.py
+git add .claude/skills/viabilidad-prerelleno/ tests/test_render_informe_viabilidad.py
 git commit -m "fix(viabilidad): el consumidor avisa de TODA clave que no lee"
 ```
 
@@ -1585,7 +1567,7 @@ cubre de aquí en adelante.
 
 Run:
 ```bash
-C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe -m pytest -q --tb=short tests/test_viabilidad_render_informe.py::test_los_dos_contratos_no_han_divergido
+C:/Users/tnm33/Dev/FeesDefender/.venv/Scripts/python.exe -m pytest -q --tb=short tests/test_render_informe_viabilidad.py::test_los_dos_contratos_no_han_divergido
 ```
 Expected: PASS.
 
@@ -1642,7 +1624,7 @@ diff sí entra en la ronda. Una exención silenciosa es indistinguible de un olv
 | §5.3 `00_Input/`, nunca sobrescribe | Task 5 |
 | §5.4 etapa `viabilidad` antes de `verificar` | Task 7 |
 | §5.5 ficha `#262` corregida | Task 8 |
-| §5.6 el JSON corre de verdad por el consumidor | Task 6 |
+| §5.6 el JSON corre de verdad por el consumidor | Task 6 (sobre el fichero de test ya existente) |
 
 **Añadido que el spec no preveía:** la exigencia de `--cuenta`/`--label` dentro de
 `validar_modo` (Task 3). `_validar_flags` ya los pide, pero corre en la línea 1904,
