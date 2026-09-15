@@ -6,6 +6,8 @@ contrato «derivado por ejecucion» y que resultaron INCORRECTOS, medidos el
 
 Spec: docs/superpowers/specs/2026-09-15-corrida-prepara-sesion-remata-design.md §2.
 """
+import json
+
 import pytest
 
 from core import viabilidad_json as vj
@@ -107,3 +109,132 @@ def test_el_validador_puede_dar_los_DOS_valores():
     nada: es el defecto que dejo pasar los cinco campos de #262."""
     assert vj.validar(_valido()) == []
     assert vj.validar({**_valido(), "motivos_impago": []}) != []
+
+
+class _Ident:
+    case_id = "BaRS9 - Calle de Prueba 1 (W-TEST01) - Vuelta"
+    w_code = "W-TEST01"
+    tipo_caso = "Vuelta"
+
+
+def test_preparar_rellena_los_cuatro_derivables():
+    d = vj.preparar(_Ident(), hoy="2026-09-15")
+
+    assert d["case_id"] == "BaRS9 - Calle de Prueba 1 (W-TEST01) - Vuelta"
+    assert d["ref"] == "W-TEST01"
+    assert d["fecha"] == "2026-09-15"
+    assert d["observaciones"] == "Vuelta"
+
+
+def test_preparar_deja_el_equipo_VACIO_y_nunca_inventado():
+    """H2: el rol no existe como dato en la apertura. Medido sobre 10 fichas reales y
+    25 colaboradores: cero claves de rol, cargo o lado. Rellenarlo seria inventar."""
+    d = vj.preparar(_Ident(), hoy="2026-09-15")
+
+    assert set(d["equipo"]) == set(vj.CLAVES_EQUIPO)
+    assert all(v == "" for v in d["equipo"].values())
+
+
+def test_lo_que_preparar_produce_es_valido():
+    """El productor y el validador tienen que estar de acuerdo, o uno de los dos miente."""
+    assert vj.validar(vj.preparar(_Ident(), hoy="2026-09-15")) == []
+
+
+def test_la_marca_nombra_lo_que_falta_y_por_que():
+    """Un esqueleto vacio sin marca es indistinguible de un JSON que alguien creyo
+    completo. Y un valor vacio es ambiguo: no distingue «nadie lo puso» de «se miro y
+    no habia»."""
+    d = vj.preparar(_Ident(), hoy="2026-09-15")
+    marca = d[vj.MARCA]
+
+    assert "equipo" in marca["campos"]
+    assert "hitos" in marca["campos"] and "preguntas" in marca["campos"]
+    assert "case_id" not in marca["campos"], "lo derivado no es residuo"
+    assert "_ficha_crm.yaml" in marca["por_que"]["equipo"], (
+        "la razon de `equipo` es distinta de las demas: el dato NO EXISTE en la "
+        "apertura, no es que haya que leer el expediente")
+
+
+def test_escribir_deja_el_fichero_donde_vive_el_protocolo(tmp_path):
+    (tmp_path / "00_Input").mkdir()
+
+    p = vj.escribir(tmp_path, vj.preparar(_Ident(), hoy="2026-09-15"))
+
+    assert p == tmp_path / "00_Input" / "_viabilidad.json"
+    assert json.loads(p.read_text(encoding="utf-8"))["ref"] == "W-TEST01"
+
+
+def test_escribir_NUNCA_sobrescribe(tmp_path):
+    """Lo unico caro de este fichero es lo que puso la sesion que lo remato. Un
+    reintento que lo pisa destruye justo eso."""
+    (tmp_path / "00_Input").mkdir()
+    p = vj.ruta(tmp_path)
+    p.write_text('{"ref": "LO QUE PUSO LA SESION"}', encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        vj.escribir(tmp_path, vj.preparar(_Ident(), hoy="2026-09-15"))
+
+    assert "LO QUE PUSO LA SESION" in p.read_text(encoding="utf-8")
+
+
+def test_escribir_no_valida_a_medias_deja_el_fichero(tmp_path):
+    """Si el JSON no cumple el contrato no se escribe NADA: un fichero a medias es
+    peor que ninguno, porque bloquea el reintento sin contener el trabajo."""
+    (tmp_path / "00_Input").mkdir()
+
+    with pytest.raises(ValueError):
+        vj.escribir(tmp_path, {"motivos_impago": []})
+
+    assert not vj.ruta(tmp_path).exists()
+
+
+# ---------------------------------------------------------------------------
+# Mas alla del pliego (Task 5, comprobacion 1 del encargo): el caso intermedio
+# que el pliego no cubre — JSON VALIDO pero la escritura a disco falla A MITAD.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.xfail(strict=True, raises=AssertionError,
+                   reason="escribir() valida ANTES de abrir nada, pero no protege el "
+                          "propio write_text: no hay try/except ni fichero temporal + "
+                          "rename. Si el disco falla A MITAD de la escritura (disco "
+                          "lleno, IO), el `open(mode='w')` ya creo/trunco el fichero y "
+                          "lo que alcanzo a salir se queda ahi — o queda en 0 bytes si "
+                          "el fallo llega antes de escribir nada. Un reintento choca "
+                          "entonces con el FileExistsError ('no se pisa') como si el "
+                          "fichero contuviera trabajo real de una sesion, cuando es un "
+                          "resto de una escritura que nunca termino. Medido el "
+                          "2026-09-15 parcheando Path.write_text para fallar tras volcar "
+                          "20 bytes.")
+def test_defecto_escribir_deja_fichero_a_medias_si_falla_la_escritura(tmp_path, monkeypatch):
+    """La garantia del docstring de `escribir` ('nunca deja un fichero a medias') cubre
+    el rechazo por contrato (ver el test anterior) pero NO un fallo de IO real a mitad
+    de `destino.write_text(...)`: ese tramo no tiene proteccion alguna.
+    """
+    (tmp_path / "00_Input").mkdir()
+    datos = vj.preparar(_Ident(), hoy="2026-09-15")
+    if vj.validar(datos) != []:
+        raise RuntimeError(
+            "precondicion: datos debe pasar validar(); si no, este test probaria el "
+            "rechazo por contrato (ya cubierto arriba), no el fallo de IO")
+
+    def _falla_a_medias(self, data, encoding=None, errors=None, newline=None):
+        """Simula lo que deja un ENOSPC/IOError real: algunos bytes SI llegan a disco
+        antes de que el fallo interrumpa la escritura."""
+        self.write_bytes(data[:20].encode(encoding or "utf-8"))
+        raise OSError(28, "No space left on device (simulado)")
+
+    monkeypatch.setattr(vj.Path, "write_text", _falla_a_medias)
+
+    try:
+        vj.escribir(tmp_path, datos)
+    except OSError:
+        pass
+    else:
+        raise RuntimeError(
+            "precondicion: la escritura simulada no fallo; este test no esta "
+            "probando un fallo de IO a mitad")
+
+    # --- el aserto normativo, el unico `assert` del test.
+    assert not vj.ruta(tmp_path).exists(), (
+        f"escribir() dejo {vj.ruta(tmp_path)} a medias tras un fallo de IO simulado: "
+        f"{vj.ruta(tmp_path).read_bytes()!r}")

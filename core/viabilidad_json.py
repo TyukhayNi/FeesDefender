@@ -16,6 +16,9 @@ el defecto medido ocurre en el consumidor.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 #: Campo de primer nivel -> tipo que el consumidor espera. Derivado LEYENDO el consumidor
 #: y comprobado CORRIENDOLO: `tests/test_render_informe_viabilidad.py`, que arranca
 #: `render_informe.py` de verdad contra la plantilla real.
@@ -141,3 +144,84 @@ def _problemas_de_avisos(valor) -> list[str]:
     return [f"avisos[{i}]: se espera un objeto y llego {type(a).__name__} ({a!r}); "
             f"el consumidor hace .get() sobre cada aviso."
             for i, a in enumerate(valor) if not isinstance(a, dict)]
+
+
+#: Vive en `00_Input/` y no junto al informe, aunque `#262` sugiriera lo segundo: hay
+#: precedente exacto (`_recibo_actuacion.json`), `core/intake_control.py` ya mantiene ahi
+#: la lista de ficheros de protocolo que no se inventarian como documento del cliente, y
+#: este JSON es la ENTRADA del informe, no una version suya.
+NOMBRE_FICHERO = "_viabilidad.json"
+
+#: Lo que la corrida NO puede derivar, con la razon. `equipo` lleva una distinta de las
+#: demas a proposito: las otras se resuelven leyendo el expediente y esa no se resuelve
+#: leyendo nada, porque el dato no existe en la apertura.
+_POR_QUE_FALTA = {
+    "equipo": ("El rol (director/asesor x captador/buscador) NO EXISTE como dato en la "
+               "apertura: `_ficha_crm.yaml` trae nombre, email, movil, telefono y nif, y "
+               "ninguna clave de rol o lado (medido el 2026-09-15 sobre 10 fichas y 25 "
+               "colaboradores). No se resuelve leyendo el expediente: hay que saberlo."),
+    "importes": "Salen de la escritura, las arras o la hoja de encargo: hay que leerlas.",
+    "hitos": "Los 14 hitos exigen leer la documental del expediente.",
+    "preguntas": "Las 88 preguntas del cuestionario exigen leer la documental.",
+    "avisos": "Salen de lo que se encuentre al leer.",
+    "actividades": "Exposes y visitas salen del CRM de E&V o de la documental.",
+    "motivos_impago": "Solo si consta la postura del deudor en la documental.",
+}
+
+
+def ruta(case_dir) -> Path:
+    return Path(case_dir) / "00_Input" / NOMBRE_FICHERO
+
+
+def preparar(ident, *, hoy: str) -> dict:
+    """El JSON con lo que la corrida SI puede derivar, y el residuo marcado.
+
+    Cuatro campos de once. Los 14 hitos y las 88 preguntas siguen siendo trabajo de una
+    sesion, y este modulo no finge lo contrario: por eso existe la marca.
+
+    `hoy` se RECIBE, no se lee aqui: una fecha que el modulo saca del reloj no se puede
+    fijar en un test, y la regla de la casa es que la fecha se toma del sistema en el
+    punto que la escribe, nunca del contexto.
+    """
+    return {
+        "case_id": ident.case_id,
+        "ref": ident.w_code,
+        "fecha": hoy,
+        "observaciones": ident.tipo_caso,
+        "equipo": {k: "" for k in CLAVES_EQUIPO},
+        "importes": {},
+        "hitos": {},
+        "preguntas": {},
+        "actividades": {},
+        "motivos_impago": "",
+        "avisos": [],
+        "bitacora_inicial": True,
+        MARCA: {
+            "campos": sorted(_POR_QUE_FALTA),
+            "por_que": dict(_POR_QUE_FALTA),
+            "lo_remata": ("Una sesion que lea el expediente. Rellena estos campos y corre "
+                          "render_informe.py de la skill `viabilidad-prerelleno`."),
+        },
+    }
+
+
+def escribir(case_dir, datos: dict) -> Path:
+    """Escribe el JSON. **Nunca sobrescribe** y **nunca deja un fichero a medias.**
+
+    Valida ANTES de abrir nada: un fichero incompleto bloquea el reintento sin contener
+    el trabajo, que es lo peor de los dos mundos.
+    """
+    problemas = validar(datos)
+    if problemas:
+        raise ValueError(
+            "el JSON de viabilidad no cumple el contrato, no se escribe nada:\n  - "
+            + "\n  - ".join(problemas))
+    destino = ruta(case_dir)
+    if destino.exists():
+        raise FileExistsError(
+            f"{destino} ya existe. Lo unico caro de este fichero es lo que puso la "
+            f"sesion que lo remato: no se pisa.")
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text(json.dumps(datos, ensure_ascii=False, indent=2) + "\n",
+                       encoding="utf-8")
+    return destino
