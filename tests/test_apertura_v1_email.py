@@ -81,3 +81,38 @@ def test_la_etapa_nunca_llama_a_gmail_por_su_cuenta(tmp_path, monkeypatch):
                     exportar=lambda: _Report())
 
     assert llamadas == [], "con `exportar` inyectado no se toca `export_label`"
+
+
+def test_exportar_none_construye_bien_la_llamada_a_email_export(tmp_path, monkeypatch):
+    """Los cinco tests de arriba inyectan `exportar`: la rama real (`exportar=None`,
+    la que corre en producción) no la ejercita ninguno. Si esa rama invirtiera el
+    orden de los argumentos, olvidara el `case_id=` o pusiera `extract_attachments`
+    a `False`, esta suite seguiría en verde. Aquí se sustituyen `email_dest_dir` y
+    `export_label` por dobles que graban los argumentos con los que se las llama,
+    sin tocar red ni disco: no basta con que la etapa no reviente, hay que
+    comprobar que la llamada se arma bien.
+    """
+    llamadas_dest = []
+    llamadas_export = []
+    destino = tmp_path / "00_Input" / "2026-09-15_email_01"
+
+    def _fake_dest_dir(case_id):
+        llamadas_dest.append(case_id)
+        return destino
+
+    def _fake_export_label(*args, **kwargs):
+        llamadas_export.append((args, kwargs))
+        return _Report(written=1, total_in_label=1)
+
+    monkeypatch.setattr(cli.email_export, "email_dest_dir", _fake_dest_dir)
+    monkeypatch.setattr(cli.email_export, "export_label", _fake_export_label)
+
+    ident = _Ident()
+    r = cli.etapa_email(ident, tmp_path, cuenta="a@b.c", label="CASO/X")
+
+    assert llamadas_dest == [ident.case_id]
+    assert len(llamadas_export) == 1
+    args, kwargs = llamadas_export[0]
+    assert args == ("a@b.c", "CASO/X", destino)
+    assert kwargs == {"case_id": ident.case_id, "extract_attachments": True}
+    assert r.estado == "hecha"
