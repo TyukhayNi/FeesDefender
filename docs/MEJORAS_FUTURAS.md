@@ -8510,6 +8510,26 @@ documentación del inmueble; aquí es **la identidad de quien firmó el encargo*
 reclamación de honorarios es el documento con el que se identifica al deudor en la demanda y en la
 ficha del CRM.
 
+**Tercera medición — 2026-09-15, `W-02JSVZ`: el fichero que se cae es EL CONTRATO DE ENCARGO, y
+entra por la otra puerta.** Las dos mediciones anteriores eran ficheros **sin extensión**. Esta es
+la cara gemela: ficheros **con** extensión, pero con una que `_RELEVANT_EXTS` no lista. Los cinco
+`.HEIC` de `00_Input/01_Drive EV/DOCS ACTIVACION/CONTRATO NO EXCLUSIVA INVESTMENT/` son las
+fotografías del **contrato de encargo de venta de 02/12/2017**, el título en el que se funda toda
+la reclamación. La sala de máquina los leyó sin incidencia —los cinco en `estado: ok`, de 1.361 a
+3.233 caracteres— y el catálogo tiene **167 entradas, ninguna suya**.
+
+Así que la frontera no es «sin extensión no hay fila»: es que **los dos componentes usan criterios
+distintos y el de la sala de lectura es una lista blanca cerrada**. Mientras lo sea, cada formato
+que E&V empiece a subir (hoy `.heic` desde iPhone, mañana otro) se cae en silencio. La línea 1778
+de este mismo fichero ya anotaba que las de iPhone «se caen ya en el inventario», pero encuadrado
+como imágenes; con el contrato dentro, el encuadre estaba mal calibrado.
+
+**Lo que esto cambia en la prioridad:** en `W-04A6LI` se perdió documentación del inmueble; en
+`W-02O7E2`, la identidad de los firmantes; aquí, **el contrato que se reclama**. Un letrado que
+trabaje desde la sala de lectura —que es para lo que existe— no encuentra el encargo. No hay
+pérdida de datos (el crudo y los espejos MD están), pero sí una sala que miente por omisión sobre
+lo que contiene el expediente.
+
 **Remedio aplicado a mano en ese caso, por si sirve de patrón:** alta manual en el catálogo con el
 `sha256` de `_cobertura.json` como `id_doc`, y la extensión declarada en el `nombre_original` de la
 entrada — no basta renombrar el fichero copiado, porque `_nombre_canonico` deriva la extensión de
@@ -12227,7 +12247,227 @@ modelo, y `scripts/medir_clasificador_llm.py` se queda quieto—.
 lector, y montarla hoy produciría una etapa que siempre sale `saltada`.
 Diseño: [`2026-09-15-corrida-prepara-sesion-remata-design.md`](superpowers/specs/2026-09-15-corrida-prepara-sesion-remata-design.md).
 
-## 265. Cuatro mutantes del arnés no pueden morir — y nadie los vigila
+## 265. El autofiltro de `AVISOS LLM` llega a la fila 10, y los avisos que importan están debajo
+
+> Medido el 2026-09-15 en `W-02JSVZ`: **18 avisos** en la hoja, filas 4 a 22. El `autoFilter` es
+> `B3:J10`. Filtrar oculta del 8 al 18 — los **cuatro de severidad alta** que deciden la estrategia
+> del caso entre ellos.
+
+En `assets/plantilla_informe_viabilidad.xlsx` (skill `viabilidad-prerelleno`) la hoja `AVISOS LLM`
+trae el `autoFilter` fijado a `B3:J10`. Es **el mismo defecto que `MEJORAS #243`** corrigió en la
+hoja `PREGUNTAS` —era `B3:M88`, dejaba 12 preguntas fuera, y se amplió a `B3:M103`—, solo que aquí
+no se corrigió porque las 88 preguntas son un número fijo y los avisos no.
+
+**Y esa es justamente la razón por la que aquí es peor.** `PREGUNTAS` tiene un tope conocido;
+`AVISOS LLM` es una capa de trabajo que **crece con el caso**: la Skill A vuelca los suyos, el
+abogado añade los que salen de la entrevista, y cada revisión documental posterior suma más. No hay
+número al que fijar el rango, así que un rango fijo siempre acabará corto.
+
+**El gotcha que hace que no sea un cambio de una línea** —documentado en `references/modelo_xlsx.md`
+a raíz del `#243`— es que el rango vive en **dos** sitios: el `autoFilter` de la hoja y el nombre
+definido oculto `_xlnm._FilterDatabase` del libro. Cambiar uno y no el otro deja el filtro a
+medias. Por eso en la sesión del 2026-09-15 se dejó como está y se fichó.
+
+**Remedio a considerar:** que el render **recalcule** el `ref` del autofiltro al escribir (última
+fila con contenido en la columna `D`), en los dos sitios, en vez de heredarlo de la plantilla. Es
+el mismo sitio donde haría falta el `append` de la `#267`.
+
+## 266. El `INDICE.md` del motor sigue agrupando por FUENTE, con el disco ya plano
+
+> Medido el 2026-09-15 en `W-02JSVZ` tras aplanar: **147 documentos en un único directorio** en
+> disco, y el `INDICE.md` regenerado los reparte en `## Drive E&V` (112) y `## Email` (35).
+
+El PR #328 aplanó `core.sala_lectura.poblar_sala_lectura`: `_directorio_destino` devuelve el
+directorio plano y la categoría deja de vivir en carpetas. Pero **`render_indices` no se tocó**, y
+su `INDICE.md` mantiene un primer nivel de encabezados por fuente con las categorías anidadas
+dentro.
+
+**Por qué no es cosmético.** El canon de la skill `organizar-sala-lectura` dice que *«la categoría
+vive en `INDICE.md`, no en carpetas»*: el índice es el sitio donde la categoría es el eje. Con el
+agrupado por fuente, un documento de activación que llegó por correo y otro que llegó por el Drive
+aparecen en secciones distintas, y el letrado que busca «toda la activación» tiene que mirar en
+dos. Es el mismo problema que el layout por fuente causaba en disco, movido al índice.
+
+**Es el resto del `#67.c`** que quedó sin barrer: aquella entrada se cerró midiendo el disco, y el
+índice se quedó fuera de la medición. Ver también la `#221` (la ubicación canónica del
+`indice_documental.yaml` sigue sin decidirse), que toca el mismo módulo.
+
+**Disparador:** que se vuelva a montar o repoblar una sala con el motor. Mientras tanto el dato
+está —fuente, categoría y fecha— y no se pierde nada.
+
+## 267. No hay forma soportada de AÑADIR un aviso a un informe de viabilidad ya generado
+
+> Medido el 2026-09-15 en `W-02JSVZ`: dos tandas de avisos añadidas con **dos scripts `openpyxl`
+> ad-hoc**, porque regenerar habría borrado **13 celdas de `NOTAS LETRADO`** escritas a mano durante
+> la entrevista del 14/09.
+
+`scripts/render_informe.py` **se niega a sobrescribir** un `.xlsx` existente, y eso está bien: es lo
+que protege el trabajo del abogado. Pero la hoja `AVISOS LLM` es **append-only por diseño** —
+`references/modelo_xlsx.md` lo dice con todas las letras: *«No borra observaciones: el abogado
+decide en `I` qué sube al recuadro»*— y **no existe ninguna herramienta para añadir una fila** a un
+informe vivo.
+
+El resultado práctico es que cada vez que una revisión documental posterior produce un aviso nuevo
+—que es el caso normal, porque el expediente sigue creciendo— hay que escribir un script suelto que
+abre el libro, busca la primera fila libre de la columna `D`, numera la columna `Nº`, escribe las
+diez columnas y guarda. **Eso es reimplementar el contrato de la hoja fuera del sitio donde vive el
+contrato, y sin test que lo cubra.**
+
+**La buena noticia, comprobada en esa sesión:** `openpyxl` **no** rompe nada al reescribir. Tras dos
+pasadas siguen intactos el formato condicional del semáforo (`E21:H21` y `E22:H22`, 3 reglas cada
+uno), las 6 validaciones de datos, la protección de `PREGUNTAS` y los tres autofiltros. El fichero
+baja de tamaño (57 KB → 49 KB) por compresión y metadatos de Excel, no por pérdida funcional. Así
+que **falta el envoltorio, no la capacidad**.
+
+**Remedio:** un `--anadir-avisos <json>` en `render_informe.py`, o un `append_avisos(path, avisos)`
+en la skill, que respete numeración, formato y protección — y que de paso recalcule el `ref` del
+autofiltro (`#265`), que es el otro extremo del mismo problema. Con un test que escriba dos tandas
+seguidas y compruebe que la primera sobrevive.
+
+## 268. `verificar_apertura` C2 confirma el relleno de ceros y no lo dice: el fallo sale pelado
+
+**Medido el 2026-09-15 en la apertura de W-02SRFU.**
+
+C2 (`core/verificar_apertura.py::c2_hash_contra_drive`) **sí** rehashea sin la cola de ceros
+—`_es_el_relleno_de_225`— y deja el resultado en `evidencia["relleno_225_confirmado"]`. Pero el
+`detalle`, que es la única línea que lee el operador en la salida humana, dice solo «49
+fichero(s) cuyo sha256 NO es el que Drive declara: …». La confirmación que la función acaba de
+calcular no aparece por ninguna parte.
+
+Y por `--json` tampoco sirve: la evidencia se **trunca a 8**
+(`"relleno_225_confirmado": relleno_225[:8]`, `core/verificar_apertura.py:847`), igual que
+`discrepan`. Con 49 discrepancias y 8 confirmaciones listadas es **imposible desde la salida**
+saber si están explicadas las 49 o solo ocho — que es exactamente la pregunta que separa
+«expediente íntegro» de «expediente corrupto».
+
+Lo medido en W-02SRFU: C2 → `fallo`, 49 de 49 contrastados discrepan; **51 de los 52 ficheros**
+de `00_Input/01_Drive EV/` llevan la firma estructural del relleno (múltiplo de 512 con cola de
+ceros de menos de 512 bytes); y sobre `2022-IBI-RECIBO TEULADÍ 8.pdf` —136.704 bytes locales
+contra los 136.290 que declara Drive— los 414 bytes de cola son **todos cero** y el `sha256` del
+prefijo es exactamente el que Drive declara. Contenido intacto, y un `1 fallo(s)` rojo al cerrar.
+
+Es el patrón de `feedback-el-guard-que-mide-y-solo-susurra`: el dato existe, se calcula, y no
+llega a quien decide.
+
+**Remedio:** que el `detalle` distinga los tres casos —**todas** las discrepancias explicadas
+por `MEJORAS #225`, **algunas**, **ninguna**— y que los **conteos** (`len(relleno_225)` contra
+`len(discrepan)`) vayan en la evidencia **sin truncar**, aunque las listas sí se trunquen. Con
+un test por cada uno de los tres casos.
+
+## 269. `verificar_apertura` C3 busca el catálogo solo donde lo deja el motor, y C4 ya acepta los dos sitios
+
+**Medido el 2026-09-15 en W-02SRFU**, con la sala de lectura montada por la **skill**: en la
+misma corrida, C4 (`artefactos_sala`) da `ok` —«los 4 presentes y con contenido»,
+`catalogo_en: "sala"`— y C3 (`cobertura_vs_catalogo`) da `pendiente` con **«no hay catálogo: la
+sala de lectura no se ha montado»**. Dos comprobaciones del mismo verificador se contradicen
+sobre el mismo hecho.
+
+La causa está en `core/verificar_apertura.py:180`: C3 resuelve
+`cat_path = case_dir / _PROCESADO / _CATALOGO`, es decir **solo**
+`01_Procesado/indice_documental.yaml` —la ubicación del motor local—, mientras la skill lo
+escribe en `01_Procesado/Sala lectura/indice_documental.yaml`.
+
+Es el desacuerdo de layout que `RUNBOOK_APERTURA_EXPEDIENTE.md` `[APER-70]` declara abierto (la
+mitad viva de `MEJORAS #221`), y cuyo remedio —«acepta las dos ubicaciones y la evidencia dice
+en cuál apareció»— **se aplicó a C4 y no a C3**.
+
+**Consecuencia, y por qué no puede esperar a que se decida la ubicación canónica:** mientras C3
+no tolere las dos, **toda** sala montada por la skill se declara inexistente y el contraste de
+`[APER-60]` —cobertura contra catálogo, el que caza los documentos que nadie catalogó— queda
+**sin ejecutar, en silencio y con apariencia de estado normal**.
+
+**Remedio:** que C3 use el mismo resolvedor de dos ubicaciones que C4 y reporte en cuál apareció.
+
+## 270. El lote de correo trae basenames repetidos y `layout_bundle_hilo` no puede montar el bundle por hilo
+
+Tercera medición de `[APER-62]` (`MEJORAS #189`), esta vez en **W-02SRFU, 2026-09-15**, y se
+anota porque el remedio sigue sin construirse y el rodeo se repite igual.
+
+El lote `2026-09-15_email_01` trae el mismo basename en la raíz y dentro de las subcarpetas de
+los mensajes con adjuntos: `2026-05-18_arras_urgentes_…_teuladi_8.eml` con **3** `sha256`
+distintos y `2026-05-25_new_proposal.eml` con **4**. `layout_bundle_hilo` aborta con `ValueError`
+—correctamente: son mensajes distintos y no puede darles nombre canónico distinto—.
+
+**Y `plano_existente=True` tampoco es la salida**, que es el matiz nuevo de esta medición: su
+discriminante es `_hash_origen(nombre)`, un hash **del nombre**, y los nombres son justamente lo
+que colisiona. Los tres mensajes recibirían el mismo discriminante y se pisarían igual.
+
+Se aplicó la salida practicada del runbook: `.eml` **planos** con `sha256[:6]`, declarado en el
+`_plan/` de la sala. **Remedio de raíz:** que el discriminante de `layout_bundle_hilo` derive del
+**contenido** (`sha256`) y no del nombre, o que `email_export` desambigüe el nombre del `.eml` y
+no solo la carpeta.
+
+## 271. El nombre de la subcarpeta se repite dentro de cada fichero, y el 19 % del expediente pasa del límite de 260 de Windows
+
+**Medido el 2026-09-15 sobre `BaRS10 … (W-02X1WJ)`: 175 de 927 ficheros superan los 260
+caracteres de ruta.** La peor llega a **363**. Nikolai no podía abrir los `.eml` de
+`01_Procesado/Sala lectura/2025-12-09_bellamar_16_mortgage_denial_certificates_and_alter`:
+14 de sus 16 ficheros pasan del límite, los correos por 289.
+
+**La causa no es la profundidad del árbol: es que el generador repite el nombre de la
+subcarpeta dentro del nombre de cada fichero que mete en ella.**
+
+```
+…/02_Documentos/2026_07_28_emplazamiento_demanda_verbal_942_2026_parte2__d2a1fe0c/
+                2026_07_28_emplazamiento_demanda_verbal_942_2026_parte2__d2a1fe0c__d09_DOC_16_EMAIL_CERTIFICADO_2025_12_05.pdf
+```
+
+Esos 65 caracteres viajan **dos veces**. Igual en la sala de lectura, donde el `.eml` repite
+el asunto truncado que ya nombra a su carpeta. Reparto por carpeta: `raw_text` 38, `03_MD`
+35, `02_Documentos` 39 entre las dos partes de la demanda, `Sala lectura` 31.
+
+**Por qué muerde, y por qué no se ve venir:** el prefijo hasta la carpeta del caso ya son
+**127 caracteres** (la raíz de la unidad compartida, `CASOS/Barcelona/`, más el nombre del
+caso, que son 59). Con una subcarpeta de 61 quedan **42** para el fichero. Los generadores no
+lo comprueban, así que el fichero se escribe —Python y Git for Windows llegan con rutas
+extendidas— y **el que no puede abrirlo es el usuario**, con Outlook o el Explorador, que se
+quedan en el límite clásico. El fallo no aparece al generar: aparece meses después, al leer.
+
+**Remedio propuesto:** al componer el nombre de un fichero dentro de una subcarpeta ya
+nombrada, **no repetir el nombre de la carpeta** (basta el sufijo discriminante:
+`d09_DOC_16…`, `_0e9fdd`). Y un guard que avise cuando una ruta generada pase de unos 240
+caracteres contando el prefijo real del caso.
+
+**Paliativo inmediato, sin tocar nada:** `subst X:` sobre la carpeta del caso deja el prefijo
+en 3 y baja las 175 rutas de golpe (la peor queda en 239); se deshace con `subst X: /D`. El
+2026-09-15 se resolvió copiando el caso al Escritorio, que también vale.
+
+**No promovido a `PLAN.md`:** falta disparador propio. Se promoverá cuando vuelva a bloquear
+a alguien o cuando se toque el generador de nombres por otra causa.
+
+## 272. El aviso «PLAN.md ↔ git» toma los ficheros de `docs/` por ramas fantasma: 32 de 32 en falso
+
+**Medido el 2026-09-15 sobre `PLAN.md` en `4843353`: el aviso marca 32 «ramas que git ya no
+conoce» y ninguna es una rama.** 31 terminan en `.md` (`docs/MEJORAS_FUTURAS.md`,
+`docs/superpowers/plans/…`) y la 32ª es una ruta partida por un salto de línea
+(`docs/superpowers/specs/2026-09-06-arnes-de-tests-r`).
+
+**La causa cabe en una línea** — `scripts/session_close.py`, `_RE_RAMA`:
+
+```python
+_RE_RAMA = re.compile(
+    r"\b(?:feat|fix|docs|chore|refactor|test|hotfix|release)/[A-Za-z0-9._\-/]+"
+)
+```
+
+`docs/` es **a la vez** un prefijo de rama legítimo de este repo (`docs/cierre-117`,
+`docs/mejoras-262-json-viabilidad`) y el directorio de la documentación. El regex no puede
+separarlos por el prefijo, y el `rstrip("./")` de `_plan_items_desfasados` no quita la extensión.
+
+**Por qué importa más de lo que parece: el aviso existe para detectar el defecto de la fila #29**
+—trabajo afirmado como pendiente en una rama que ya no existe—, y en su forma actual **grita en
+cada cierre sin poder acertar nunca**. Un aviso que suena siempre se ignora siempre, que es
+exactamente como se pierde la señal que sí importa ([[el guard que mide y solo susurra]], en la
+dirección contraria).
+
+**Remedio barato, si se toca:** descartar los tokens con extensión de fichero conocida (`.md`,
+`.py`, `.yaml`, `.json`, `.txt`) antes de compararlos contra `_ramas_conocidas()`, y **agrupar el
+aviso por fila del PLAN** en vez de bajo el encabezado de la cola entera — hoy las 32 salen bajo un
+solo título, así que tampoco dice **qué** fila hay que revisar.
+
+**No promovido a `PLAN.md`:** falta disparador propio. Se promoverá cuando el aviso llegue a
+ocultar un desfase real o cuando se toque `session_close` por otra causa.
+## 273. Cuatro mutantes del arnés no pueden morir — y nadie los vigila
 
 **Lo medido** (2026-09-15, durante la tanda de `MEJORAS #264`): cuatro mutantes de
 `tests/_mutantes_plan5.py` —`F23`, `F25`, `F32-costura-hasta` y `F34-control-registro`— **no
@@ -12249,7 +12489,7 @@ arnés debía cubrir.
 **Disparador.** Que haya que apoyarse en el arnés para acreditar una propiedad, o la próxima
 tanda que toque `core/apertura_v1.py` o el secuenciador.
 
-## 266. Los rótulos de los fixtures de apertura pueden llevar datos de un caso real
+## 274. Los rótulos de los fixtures de apertura pueden llevar datos de un caso real
 
 **Lo medido** (2026-09-15): una revisión adversarial externa levantó la sospecha de que los
 literales descriptivos que usan los fixtures de `tests/test_abrir_caso_cli.py` —un rótulo de
