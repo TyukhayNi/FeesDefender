@@ -133,12 +133,13 @@ def test_v1_sigue_rechazando_las_fuentes_que_no_entraron():
 
 
 def test_email_sin_cuenta_o_sin_label_se_rechaza_EN_validar_modo():
-    """HA-06 de la R-A, aplicada a la fuente nueva.
+    """La puerta de v1 vive en `validar_modo`, no solo en `_validar_flags`.
 
-    `_validar_flags` ya los exige, pero corre en la linea 1904: DESPUES de resolver
-    identidad y de `ensure_case`. Abortar alli deja el esqueleto del caso ya creado,
-    que es exactamente el defecto que la R-A encontro con `--hasta`. La puerta de v1
-    vive en `validar_modo`, que es pura y corre antes de cualquier efecto.
+    `_validar_flags` ya exige `--cuenta`/`--label` para la fuente `email`, pero corre
+    DESPUÉS de resolver identidad —que lee disco y, con `--fuente drive_ev`, también
+    consulta Drive— y solo antes del mutex. `validar_modo` es pura y aborta ANTES de
+    todo eso: relegar el chequeo a `_validar_flags` pagaría esa resolución de
+    identidad en una corrida que de todos modos iba a abortar.
     """
     sin_cuenta = cli.validar_modo("v1", crm="skip", fuente="email", folder_id="F",
                                   cuenta=None, label="CASO/X")

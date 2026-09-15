@@ -53,11 +53,14 @@ app = typer.Typer(add_completion=False, help="Abrir un expediente E&V en una pas
 
 _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
 
-#: Nombres de las etapas de V1, en orden. Es tambien el vocabulario de `--hasta`.
+#: Nombres de las etapas de V1, en orden. El vocabulario de `--hasta` es ETAPAS_V2
+#: (mas abajo), no esta tupla: admite tambien las tres etapas nuevas de V2.
 ETAPAS_V1 = ("drive", "email", "crm", "sala_maquina")
-#: V2 AMPLIA V1 por la derecha: las tres primeras conservan nombre y orden, asi que un
-#: `--hasta sala_maquina` de antes sigue parando donde paraba. `crm_ficha` NO esta:
-#: llevar el YAML al CRM ejecuta los efectos materiales de la §8.1, que el spec situa
+#: V2 AMPLIA V1 por la derecha: V1 ENTERA conserva nombre y orden dentro de V2, asi
+#: que un `--hasta sala_maquina` de antes sigue parando donde paraba (lo prueba
+#: `test_las_etapas_de_v2_amplian_v1_por_la_derecha` por `len(ETAPAS_V1)`, no por un
+#: indice fijo, para no caducar cuando entre otra etapa). `crm_ficha` NO esta: llevar
+#: el YAML al CRM ejecuta los efectos materiales de la §8.1, que el spec situa
 #: DESPUES de la sala de lectura y la viabilidad (R1/H-05).
 ETAPAS_V2 = ETAPAS_V1 + ("crm_alta", "actuacion", "verificar")
 
@@ -1734,9 +1737,14 @@ def validar_modo(
             "digan caso por caso."
         )
     # Los flags del correo se exigen AQUI, ademas de en `_validar_flags`, y no es
-    # duplicacion: `_validar_flags` corre despues de resolver identidad y de
-    # `ensure_case`, asi que abortar alli deja el esqueleto del caso ya creado. Es la
-    # leccion HA-06 de la R-A, que se compro con `--hasta`.
+    # duplicacion: `validar_modo` es pura y aborta ANTES de resolver identidad -que
+    # lee disco en `case_locator.list_cases` y, con `--fuente drive_ev`, tambien
+    # consulta Drive- y ANTES de tomar el mutex. `_validar_flags` ya corre DESPUES de
+    # resolver identidad (aunque todavia antes del mutex): delegar solo en ella
+    # pagaria esa resolucion en una corrida que de todos modos iba a abortar. Orden
+    # medido con `grep -n` sobre este fichero: validar_modo (linea 1832) ->
+    # resolver_identidad (1884/1914) -> _validar_flags (1982) -> mutex (1990) ->
+    # ensure_case (1994).
     if fuente == "email":
         if not cuenta:
             errores.append(
@@ -1802,7 +1810,7 @@ def main(
              "valida antes de cualquier efecto."),
     hasta: str | None = typer.Option(
         None, "--hasta",
-        help="v1: para DESPUES de esta etapa (drive|email|crm|sala_maquina). Para reanudar, "
+        help=f"v1: para DESPUES de esta etapa ({'|'.join(ETAPAS_V2)}). Para reanudar, "
              "relanza con --case-id (los 6 flags de identidad darian ColisionCaso): las "
              "etapas ya hechas se REPITEN, y son idempotentes (Drive vuelve a consultar y "
              "rclone transfiere solo lo que difiere; el pull del CRM se repite; la sala de "
