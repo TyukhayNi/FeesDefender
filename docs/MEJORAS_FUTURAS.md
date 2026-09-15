@@ -12016,8 +12016,10 @@ y dos más). O sea: el flujo se usa y su entrada se pierde.
    alguien tiene que producir ese JSON y **dejarlo escrito**. Hoy ni siquiera hay un ejemplo del
    que partir para conocer su forma.
 
-**El contrato del JSON, derivado POR EJECUCIÓN el 2026-09-14** — no leyéndolo, porque leerlo no
-bastó: tres intentos hasta que corrió. Se deja aquí porque **no está escrito en ningún sitio**:
+**El contrato del JSON — corregido el 2026-09-15, y la corrección enseña más que el
+contrato.** Lo que esta ficha publicó el 2026-09-14 como «derivado POR EJECUCIÓN» tenía
+**cinco campos mal**. La forma canónica vive ahora en `core/viabilidad_json.py`, que es
+código y tiene tests contra el consumidor real; esto es su reflejo:
 
 ```json
 {
@@ -12025,18 +12027,43 @@ bastó: tres intentos hasta que corrió. Se deja aquí porque **no está escrito
   "equipo": {"director_captador": "APELLIDO, Nombre", "asesor_captador": "...",
              "director_buscador": "...", "asesor_buscador": "..."},
   "observaciones": "...",
-  "importes": {"principal": 0, "costas": 0, "intereses": 0},
+  "importes": {"precio": 0, "pct_honorarios": 5, "pagos_parciales": 0,
+               "propuesta_pago": 0},
   "hitos": {"<id de la plantilla>": {"score": 0, "fecha": "AAAA-MM-DD"}},
   "preguntas": {"<id de la plantilla>": {"respuesta": "...", "cita": "...", "confianza": "..."}},
-  "actividades": [], "motivos_impago": [],
+  "actividades": {"exposes_propiedad": 0, "visitas_propiedad": 0,
+                  "exposes_buscador": 0, "visitas_buscador": 0},
+  "motivos_impago": "cadena, NO lista",
   "avisos": [{"n": 1, "tipo": "...", "aviso": "...", "impacto": "...", "fuente": "...",
               "severidad": "alta|media|baja", "accion": "...", "sube": "no", "estado": "abierto"}],
-  "bitacora_inicial": "..."
+  "bitacora_inicial": true,
+  "_residuo": {"campos": ["..."], "por_que": {"...": "..."}}
 }
 ```
 
-**Los dos errores que cuesta descubrir:** `equipo` es un **objeto** de cuatro claves (un texto
-revienta con `AttributeError`), y `avisos` es una lista de **objetos**, no de cadenas.
+**Los cinco que estaban mal, medidos corriendo el consumidor el 2026-09-15:**
+
+| Campo | Decía | Es | Qué pasaba |
+|---|---|---|---|
+| `importes` | `{principal, costas, intereses}` | `{precio, pct_honorarios, pagos_parciales, propuesta_pago}` | los tres se ignoran: con `principal: 12000` la celda `H13` queda vacía y el script imprime `OK` |
+| `motivos_impago` | lista | **cadena** | `AttributeError: 'list' object has no attribute 'strip'` |
+| `actividades` | lista | **objeto** de 4 claves | `AttributeError: 'list' object has no attribute 'get'` |
+| `bitacora_inicial` | texto | **booleano**; su texto se descarta | se escribe un texto fijo |
+| `avisos` | lista de objetos ✅ | — | único que acertó, junto con `equipo` |
+
+**Por qué su ejecución no pudo verlo, que es lo que hay que no repetir.** Aquella corrida
+pasó `[]` en los dos campos de lista y claves desconocidas en `importes`. Una lista vacía
+es *falsy*, así que `d.get(...) or ""` y `or {}` la sustituyen y **nunca revientan**; y
+`.get()` sobre una clave inexistente devuelve el default **sin avisar**. **El instrumento
+no podía dar el otro valor**: esa corrida era incapaz de distinguir «campo correcto» de
+«campo ignorado», y salió `OK` en los dos casos. Correr algo no acredita nada si la
+corrida no puede fallar por lo que se quiere medir.
+
+**Remediado en la frontera, no en el ejemplo** (PR de `MEJORAS #264`): `render_informe.py`
+ya avisaba de los hitos y las preguntas que no reconocía y **callaba** en los campos de
+primer nivel y dentro de `importes`/`actividades`. Esa asimetría era el defecto. Ahora
+avisa de toda clave que no lee, y `core/viabilidad_json.validar` lo comprueba del lado
+del productor.
 
 **Tres cosas más que la corrida enseñó y conviene no volver a descubrir:**
 
@@ -12051,6 +12078,12 @@ revienta con `AttributeError`), y `avisos` es una lista de **objetos**, no de ca
 o que se decida cablear la viabilidad dentro de la corrida de apertura. **Depende de la misma
 decisión que la sala de lectura**: qué hace la corrida cuando necesita que alguien *lea* el
 expediente.
+
+**Parcialmente atendida el 2026-09-15** (`MEJORAS #264`, salida 3): el JSON deja de ser
+efímero para las corridas de apertura —`core/viabilidad_json.py` lo escribe en
+`00_Input/_viabilidad.json` con lo derivable y el residuo marcado—. **Lo que sigue
+abierto:** los informes ya entregados no tienen JSON y no se pueden reproducir; esto solo
+cubre de aquí en adelante.
 
 **Dónde debería vivir, para cuando se decida:** junto al informe, dentro del expediente, y
 declarado como protocolo si no debe inventariarse como documento del cliente — la misma frontera
