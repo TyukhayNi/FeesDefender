@@ -33,11 +33,13 @@ class Pendiente:
     detalle: str
 
 
-#: Permanente en toda ejecucion V1: Gmail y LeadHub son fuentes de V3 (spec §21.3).
+#: Permanente en toda ejecucion V1: el DESCUBRIMIENTO de fuentes es de V3 (spec §21.3).
 PENDIENTE_FUENTES_V3 = Pendiente(
     codigo="fuentes_v3_sin_consultar",
-    detalle="V1 no descubre correo en Gmail ni consulta LeadHub: ambas son de V3. "
-            "Si el material de este caso sigue sin depositar, no esta aqui.",
+    detalle="V1 no descubre fuentes: no busca que etiquetas de Gmail tiene este caso ni "
+            "consulta LeadHub. Desde el 2026-09-15 si exporta la etiqueta que se le "
+            "diga (--cuenta/--label), que es cosa distinta. Si el material de este caso "
+            "sigue sin depositar, no esta aqui.",
 )
 
 

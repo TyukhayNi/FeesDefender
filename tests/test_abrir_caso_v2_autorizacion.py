@@ -14,14 +14,31 @@ class _Ident:
 
 
 def test_las_etapas_de_v2_amplian_v1_por_la_derecha():
-    # Un `--hasta sala_maquina` de antes tiene que seguir parando donde paraba.
-    assert ac.ETAPAS_V2[:3] == ac.ETAPAS_V1
+    # Un `--hasta sala_maquina` de antes tiene que seguir parando donde paraba. Por
+    # `len(...)` y no por un `4` literal: un indice fijo vuelve a romperse en cuanto
+    # entre otra etapa —como entrara `viabilidad`—, y lo que el aserto quiere decir es
+    # «V2 empieza por V1 entera», no «V2 empieza por N».
+    #
+    # **El relacional NO basta solo** (M7 de la revision de conjunto, 2026-09-15):
+    # `ETAPAS_V2 = ETAPAS_V1 + (...)` hace que `ETAPAS_V2[:len(ETAPAS_V1)] ==
+    # ETAPAS_V1` sea CIERTO SIEMPRE, sea lo que sea `ETAPAS_V1` -- no puede fallar, asi
+    # que no protege nada. El literal `[:3]` que tenia esta prueba antes de que V1
+    # sumara `email` SI fijaba la longitud (y, de rebote, la composicion); al pasar al
+    # relacional para no caducar con la proxima etapa, se perdio el unico aserto que
+    # ataba la composicion de `ETAPAS_V1` a un valor conocido. El literal de abajo lo
+    # repone; el relacional se conserva porque sigue siendo la propiedad que importa
+    # para `--hasta`.
+    assert ac.ETAPAS_V1 == ("drive", "email", "crm", "sala_maquina")
+    assert ac.ETAPAS_V2[:len(ac.ETAPAS_V1)] == ac.ETAPAS_V1
 
 
-def test_las_tres_etapas_nuevas_estan_y_en_orden():
+def test_las_cuatro_etapas_nuevas_estan_y_en_orden():
     # `crm_ficha` NO esta: ejecuta los efectos materiales de la §8.1, que el spec
-    # situa despues de sala de lectura y viabilidad (R1/H-05).
-    assert ac.ETAPAS_V2[3:] == ("crm_alta", "actuacion", "verificar")
+    # situa despues de sala de lectura y viabilidad (R1/H-05). `viabilidad` YA está
+    # desde esta tarea (Task 7): deja escrito el JSON de la 1a pasada; `verificar`
+    # sigue cerrando la secuencia.
+    assert ac.ETAPAS_V2[len(ac.ETAPAS_V1):] == ("crm_alta", "actuacion", "viabilidad",
+                                                "verificar")
 
 
 def test_omitir_crm_en_modo_secuenciado_es_ERROR():

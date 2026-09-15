@@ -62,12 +62,15 @@ def test_una_corrida_completa_toca_TODAS_las_fases_de_v1():
 
 def test_f24_una_parada_pedida_enumera_las_etapas_que_no_corrieron():
     """F24. Un evento que dice «terminada» sobre una corrida parada a mitad, sin decir que
-    faltan dos fases, es un registro falso."""
+    faltan las fases restantes, es un registro falso."""
     visto = []
     r = cli.secuencia_v1(None, None, folder_id="F", team_id="T", hasta="drive",
                          etapas=[_fake(n, visto) for n in cli.ETAPAS_V1])
     assert visto == ["drive"]
-    assert r.no_ejecutadas == ("crm", "sala_maquina")
+    # Por `cli.ETAPAS_V1[1:]` y no por una tupla literal: lo que importa es "todo lo
+    # que va detras de drive", una propiedad que sobrevive a que entre otra etapa (como
+    # entro `email`), no el conteo exacto de un momento dado.
+    assert r.no_ejecutadas == cli.ETAPAS_V1[1:]
     assert "crm" in " ".join(p.codigo for p in r.pendientes)
 
 

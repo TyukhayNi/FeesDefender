@@ -692,3 +692,275 @@ def test_quitar_el_relleno_de_E21_no_se_llevo_NADA_MAS_de_su_estilo():
     finally:
         wb.close()
     assert medido == _ESTILO_E21, medido
+
+
+# --- El contrato del JSON contra su productor (`core/viabilidad_json.py`) -------------
+#
+# Es el control que `MEJORAS #262` no tuvo: su contrato se publicó como «derivado por
+# ejecución» y salió mal en cuatro campos porque la corrida pasó valores VACÍOS, que el
+# consumidor sustituye sin avisar. Aquí se cruzan los dos lados y se leen las CELDAS, no
+# el código de salida: el defecto salía con `OK` en pantalla.
+
+from core import viabilidad_json as vj
+
+
+class _IdentFalsa:
+    case_id = "BaRS9 - Calle de Prueba 1 (W-TEST01) - Vuelta"
+    w_code = "W-TEST01"
+    tipo_caso = "Vuelta"
+
+
+def _preparado():
+    return vj.preparar(_IdentFalsa(), hoy="2026-09-15")
+
+
+def test_el_json_que_produce_preparar_corre_de_verdad(tmp_path):
+    """Lo que la corrida escribe tiene que atravesar el consumidor. Si esto se rompe, la
+    etapa estará dejando un fichero que no sirve para lo único para lo que existe.
+
+    H-05 de la revisión adversarial (2026-09-15): exigir sólo `salida.exists()` pasa
+    aunque el escritor de celdas pierda TODO lo derivado. Medido: mutando el escritor
+    para que omita exclusivamente `INFORMACION!E4/E5/E11` -fecha, referencia y
+    observaciones, los tres datos que esta corrida deriva de verdad-, **58 tests
+    seguían en verde**. El spec exige lectura de celdas justo para no confundir «creó
+    el archivo» con «trasladó el dato»; ahora se leen esas tres celdas y se afirman
+    valores canario, no sólo su existencia.
+    """
+    datos = _preparado()
+
+    salida = _generar(tmp_path, datos)
+
+    assert salida.exists()
+    wb = openpyxl.load_workbook(salida)
+    try:
+        inf = wb["INFORMACION"]
+        assert inf["E4"].value == datos["fecha"] == "2026-09-15"
+        assert inf["E5"].value == datos["ref"] == "W-TEST01"
+        assert inf["E11"].value == datos["observaciones"] == "Vuelta"
+    finally:
+        wb.close()
+
+
+def test_el_precio_LLEGA_a_su_celda(tmp_path):
+    """Control positivo del defecto medido: el instrumento tiene que poder dar los dos
+    valores. Con la clave BUENA el importe llega a H13."""
+    datos = _preparado()
+    datos["importes"] = {"precio": 12000}
+
+    salida = _generar(tmp_path, datos)
+
+    assert openpyxl.load_workbook(salida)["INFORMACION"]["H13"].value == 12000
+
+
+def test_avisa_de_una_clave_de_importes_que_no_lee(tmp_path, capsys):
+    """El defecto de `MEJORAS #262`: `principal: 12000` no llegaba a ninguna celda y el
+    script imprimía OK. Ahora lo dice, y la celda sigue vacía."""
+    datos = _preparado()
+    datos["importes"] = {"principal": 12000}
+
+    salida = _generar(tmp_path, datos)
+
+    assert "principal" in capsys.readouterr().err
+    assert openpyxl.load_workbook(salida)["INFORMACION"]["H13"].value is None
+
+
+def test_avisa_de_un_campo_de_primer_nivel_desconocido(tmp_path, capsys):
+    datos = _preparado()
+    datos["importe_total"] = 1
+
+    _generar(tmp_path, datos)
+
+    assert "importe_total" in capsys.readouterr().err
+
+
+def test_avisa_de_una_clave_de_actividades_que_no_lee(tmp_path, capsys):
+    datos = _preparado()
+    datos["actividades"] = {"visitas_totales": 4}
+
+    _generar(tmp_path, datos)
+
+    assert "visitas_totales" in capsys.readouterr().err
+
+
+def test_avisa_de_una_clave_de_equipo_que_no_lee(tmp_path, capsys):
+    """El hueco medido en revisión: un typo en `equipo` no avisaba, y es el campo de
+    mayor riesgo de los cuatro. `core/viabilidad_json.py::preparar` lo deja con sus
+    cuatro claves vacías A PROPÓSITO para que una sesión lo rellene a mano —el rol no
+    existe como dato en la apertura—, así que es el que más probablemente escriba un
+    humano: justo el escenario para el que existe este aviso."""
+    datos = _preparado()
+    datos["equipo"] = {"asesor_captadorr": "Apellido, Nombre"}
+
+    _generar(tmp_path, datos)
+
+    assert "asesor_captadorr" in capsys.readouterr().err
+
+
+# --- H-02 de la revisión adversarial (2026-09-15): la propiedad GENERAL, no un test por
+# sitio. Los tres de arriba (equipo/importes/actividades) ya probaban esto uno a uno desde
+# antes del hallazgo; lo que faltaba es una comprobación que se extienda sola el día que
+# `ESQUEMA_ANIDADO` gane una entrada, en vez de necesitar un cuarto test calcado. -------
+
+
+@pytest.mark.parametrize("nombre", sorted(render_informe.ESQUEMA_ANIDADO))
+def test_toda_clave_ajena_anidada_avisa_por_construccion(tmp_path, capsys, nombre):
+    """CONTROL de la propiedad general: el aviso de clave ajena cubre CUALQUIER nivel
+    anidado que el script declare en `ESQUEMA_ANIDADO`, no una lista de sitios escrita
+    a mano. Antes del arreglo, `hitos`/`preguntas`/`avisos` no tenían su bucle propio y
+    esto habría fallado en esos tres casos concretos (medido: `hitos.ID.scrore`,
+    `preguntas.ID.respueta` y `avisos[0].avios` pasaban mudos). Recorre el propio
+    esquema —no una tupla de nombres a mano— para que declarar un nivel nuevo ahí baste
+    para que este test también lo cubra, sin tocarlo."""
+    forma, _ = render_informe.ESQUEMA_ANIDADO[nombre]
+    clave_ajena = "clave_que_no_existe"
+    if forma == render_informe._OBJETO:
+        valor = {clave_ajena: "x"}
+    elif forma == render_informe._POR_ID:
+        valor = {"ID_1": {clave_ajena: "x"}}
+    else:
+        assert forma == render_informe._LISTA, f"forma desconocida: {forma!r}"
+        valor = [{clave_ajena: "x"}]
+
+    _generar(tmp_path, {"case_id": "W-TEST00", nombre: valor})
+
+    err = capsys.readouterr().err
+    assert clave_ajena in err, (
+        f"'{nombre}' (forma {forma!r}) se quedó mudo ante una clave ajena anidada: {err!r}")
+
+
+def test_un_hito_escalar_no_dispara_el_aviso_de_claves(tmp_path, capsys):
+    """Formato admitido a propósito (ver `main`): un hito puede llegar como escalar en
+    vez de como objeto `{"score":…, "fecha":…}`. El recorrido nuevo de H-02 no puede
+    tratar «no es un dict» como «clave ajena» — no hay claves que mirar."""
+    salida = _generar(tmp_path, {"case_id": "W-TEST00", "hitos": {"CUANTIA": 2}})
+
+    assert "CUANTIA" not in capsys.readouterr().err
+    assert openpyxl.load_workbook(salida)["INFORMACION"]["F25"].value == 2
+
+
+def test_NO_avisa_del_campo_de_marca_del_productor(tmp_path, capsys):
+    """Es del contrato aunque el consumidor no lo use. Un aviso que sale en TODAS las
+    corridas deja de leerse, y entonces el que importa se pierde en el ruido."""
+    _generar(tmp_path, _preparado())
+
+    assert vj.MARCA not in capsys.readouterr().err
+
+
+def test_NO_avisa_de_las_claves_conocidas(tmp_path, capsys):
+    """La otra mitad del control positivo: un avisador que avisa de todo no informa."""
+    datos = _preparado()
+    datos["importes"] = {"precio": 1, "pct_honorarios": 5}
+    datos["actividades"] = {"visitas_propiedad": 2}
+
+    _generar(tmp_path, datos)
+
+    err = capsys.readouterr().err
+    for clave in ("precio", "pct_honorarios", "visitas_propiedad", "observaciones"):
+        assert f"'{clave}'" not in err, f"aviso de sobra sobre {clave}"
+
+
+def test_NO_avisa_de_las_claves_de_equipo(tmp_path, capsys):
+    """La otra mitad del control positivo, igual que en `importes`/`actividades`: las
+    cuatro claves que sí lee `EQUIPO_CELLS` no pueden generar aviso."""
+    datos = _preparado()
+    datos["equipo"] = {
+        "director_captador": "Apellido, Nombre", "asesor_captador": "Apellido, Nombre",
+        "director_buscador": "Apellido, Nombre", "asesor_buscador": "Apellido, Nombre",
+    }
+
+    _generar(tmp_path, datos)
+
+    err = capsys.readouterr().err
+    for clave in ("director_captador", "asesor_captador",
+                  "director_buscador", "asesor_buscador"):
+        assert f"'{clave}'" not in err, f"aviso de sobra sobre equipo.{clave}"
+
+
+def _contrato_cumplido():
+    """El criterio de `test_los_dos_contratos_no_han_divergido`, factorizado para que
+    el control positivo de abajo (`test_el_guard_de_campos_conocidos_muerde_de_verdad`
+    y `test_el_guard_muerde_si_el_consumidor_tiene_una_clave_DE_MAS`) lo ejecute contra
+    un `render_informe` mutado sin duplicar -y poder desviar- el criterio real.
+
+    IGUALDAD de conjuntos, no pertenencia (R1/H-04): la versión anterior sólo
+    comprobaba que cada clave del core estuviera en el script, así que una clave DE MÁS
+    en el script -que el core no tiene- sobrevivía sin que nada lo dijera; el docstring
+    de `test_los_dos_contratos_no_han_divergido` prometía cazar un campo añadido «en
+    uno y no en el otro» y sólo mordía en una de las dos direcciones. `MARCA` entra
+    ahora en la comparación de primer nivel: `render_informe.CAMPOS_CONOCIDOS` la
+    reconoce a propósito (el productor la escribe, aunque el consumidor no la use) y
+    `vj.CAMPOS` no la lleva -no es un "campo" del contrato, es la marca-, así que hay
+    que sumarla a mano o la asimetría de siempre colaría una clave de más justo ahí.
+    """
+    esperado_primer_nivel = set(vj.CAMPOS) | {vj.MARCA}
+    real_primer_nivel = render_informe.CAMPOS_CONOCIDOS
+    assert esperado_primer_nivel == real_primer_nivel, (
+        f"asimetría en los campos de primer nivel — sólo en el core: "
+        f"{sorted(esperado_primer_nivel - real_primer_nivel)}; sólo en el script: "
+        f"{sorted(real_primer_nivel - esperado_primer_nivel)}")
+
+    for nombre, claves_core, atributo in (
+            ("equipo", vj.CLAVES_EQUIPO, "CLAVES_EQUIPO"),
+            ("importes", vj.CLAVES_IMPORTES, "CLAVES_IMPORTES"),
+            ("actividades", vj.CLAVES_ACTIVIDADES, "CLAVES_ACTIVIDADES")):
+        esperado = set(claves_core)
+        real = set(getattr(render_informe, atributo, set()))
+        assert esperado == real, (
+            f"`{nombre}`: asimetría — sólo en el core: {sorted(esperado - real)}; "
+            f"sólo en el script: {sorted(real - esperado)}")
+
+
+def test_los_dos_contratos_no_han_divergido():
+    """El core y la skill viven en dos sitios que no se importan —la skill corre en el
+    servidor—. Este test es lo único que los ata: si alguien añade un campo en uno y no
+    en el otro, salta aquí.
+
+    Los 12 campos de primer nivel y las tres tuplas de subclaves se comprueban contra el
+    registro PROPIO del script (`CAMPOS_CONOCIDOS`/`CLAVES_EQUIPO`/`CLAVES_IMPORTES`/
+    `CLAVES_ACTIVIDADES`), NUNCA contra el texto entero del fichero.
+
+    La versión de texto entero —`f'"{campo}"' in fuente`— la tuvieron las subclaves
+    primero y falló: una subclave de `equipo` ya aparecía citada en `EQUIPO_CELLS` (la
+    celda que la escribe) aunque `avisa_de_claves_ajenas` no la reconociera (hueco 1).
+    I4 de la revisión de conjunto (2026-09-15) midió que los 12 campos de primer nivel
+    tenían el MISMO hueco, sin haberlo migrado cuando se corrigió para las subclaves:
+    los doce nombres aparecen en `render_informe.py` fuera de `CAMPOS_CONOCIDOS` —en
+    comentarios, en otras estructuras—, así que borrar cualquiera de ese conjunto dejaba
+    este guard en verde. Control positivo que lo confirmó:
+    `test_el_guard_de_campos_conocidos_muerde_de_verdad`, más abajo."""
+    _contrato_cumplido()
+
+
+def test_el_guard_de_campos_conocidos_muerde_de_verdad(monkeypatch):
+    """Control positivo obligatorio de I4: con la versión de texto entero, borrar un
+    campo de `CAMPOS_CONOCIDOS` en el script dejaba `test_los_dos_contratos_no_han_
+    divergido` en VERDE -el nombre seguía apareciendo en otro sitio del fichero-. Se
+    quita un campo de verdad del registro que lee el guard (no del texto) y se exige
+    que MUERDA; sin este test, el hallazgo de I4 no queda demostrado, solo descrito."""
+    campo = sorted(vj.CAMPOS)[0]
+    monkeypatch.setattr(render_informe, "CAMPOS_CONOCIDOS",
+                        render_informe.CAMPOS_CONOCIDOS - {campo})
+
+    with pytest.raises(AssertionError, match=re.escape(campo)):
+        _contrato_cumplido()
+
+
+@pytest.mark.parametrize("atributo", [
+    "CAMPOS_CONOCIDOS", "CLAVES_EQUIPO", "CLAVES_IMPORTES", "CLAVES_ACTIVIDADES"])
+def test_el_guard_muerde_si_el_consumidor_tiene_una_clave_DE_MAS(monkeypatch, atributo):
+    """CONTROL POSITIVO obligatorio de H-04: con la versión de PERTENENCIA, añadir una
+    clave SÓLO al script -que el core no tiene- sobrevivía en los CUATRO registros,
+    porque la comprobación nunca miraba esa dirección (sólo mordía si faltaba algo en
+    el script, nunca si sobraba). Ahora tiene que morder en los cuatro.
+
+    Verificado a mano (R1/H-04, «confirma el rojo, deshaz»): con `_contrato_cumplido`
+    vuelto a la versión de pertenencia, este test fallaba -no saltaba ningún
+    `AssertionError`- en los cuatro casos; con la versión de igualdad de conjuntos,
+    los cuatro mueren.
+    """
+    original = getattr(render_informe, atributo)
+    monkeypatch.setattr(render_informe, atributo,
+                        original | {"clave_de_mas_del_consumidor"})
+
+    with pytest.raises(AssertionError, match="clave_de_mas_del_consumidor"):
+        _contrato_cumplido()

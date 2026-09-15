@@ -119,11 +119,13 @@ def test_costura_main_PASA_el_hasta_a_la_secuencia(caso_v1, monkeypatch):
     informe diria «corrida completa» donde el operador pidio parar."""
     visto = {}
 
-    # `crm` entra en la firma con V2 (el lazo del CRM). El doble lo declara EXPLICITO a
-    # proposito: uno con `**kw` habria tragado el parametro nuevo sin decir nada, y esa
-    # es la clase de doble que oculta un cambio de contrato.
+    # `crm` entra en la firma con V2 (el lazo del CRM); `extraer_adjuntos`, con I2 de la
+    # revision de conjunto (2026-09-15). El doble lo declara EXPLICITO a proposito: uno
+    # con `**kw` habria tragado el parametro nuevo sin decir nada, y esa es la clase de
+    # doble que oculta un cambio de contrato -- la que de hecho hizo saltar ESTE test en
+    # rojo cuando `main()` empezo a pasar `extraer_adjuntos` y este doble no lo sabia.
     def _falsa(ident, case_dir, *, folder_id, team_id, crm="skip", hasta=None,
-               etapas=None):
+               etapas=None, cuenta=None, label=None, extraer_adjuntos=True):
         visto["hasta"] = hasta
         return av1.ResultadoV1(
             estado=av1.EstadoV1.PREPARADO_CON_PENDIENTES,
