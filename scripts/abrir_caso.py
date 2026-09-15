@@ -1261,7 +1261,10 @@ def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
 
 
 def etapa_viabilidad(ident, case_dir: Path, *, hoy=None) -> av1.EtapaResultado:
-    """Etapa final: dejar escrito el JSON de la 1a pasada de viabilidad.
+    """Ultima etapa de trabajo: dejar escrito el JSON de la 1a pasada de viabilidad.
+
+    **No es la etapa final de la secuencia**: quien la cierra es `verificar`, y eso es a
+    proposito —la verificacion tiene que ver tambien lo que esta etapa deposita—.
 
     **La corrida prepara y una sesion remata** — la salida 3 de `MEJORAS #264`, elegida
     por Nikolai el 2026-09-14. Deja CUATRO de los once campos; los 14 hitos y las 88
