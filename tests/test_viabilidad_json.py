@@ -234,3 +234,94 @@ def test_escribir_no_deja_fichero_a_medias_si_la_escritura_falla(tmp_path, monke
     restos = list(destino.parent.iterdir())
     assert restos == [], (
         f"escribir() dejó temporales huérfanos tras el fallo: {restos!r}")
+
+
+# ---------------------------------------------------------------------------
+# La carrera del destino: un revisor reprodujo que `escribir()` SÍ sobrescribía si
+# el destino aparecía entre la comprobación inicial y el `os.replace` final -la
+# ventana se ensanchó justo al pasar a temporal+rename (caben `mkstemp`, `close` y la
+# escritura del temporal). Informe: .superpowers/sdd/task-5-report.md, sección
+# "Fix: la carrera del destino".
+# ---------------------------------------------------------------------------
+
+def test_escribir_no_deja_huerfanos_si_falla_el_commit_final(tmp_path, monkeypatch):
+    """Hueco de cobertura que señaló el revisor: el fallo de IO ya estaba cubierto en
+    la escritura del temporal (test anterior), pero no en el OTRO tramo -el propio
+    acto de publicar, antes `os.replace`, ahora `os.link`-, que es justo donde vivía
+    la carrera que arregla este fix. Un fallo ahí tampoco debe dejar el destino a
+    medias ni un temporal huérfano."""
+    (tmp_path / "00_Input").mkdir()
+    datos = vj.preparar(_Ident(), hoy="2026-09-15")
+    if vj.validar(datos) != []:
+        raise RuntimeError(
+            "precondición: datos debe pasar validar(); si no, este test probaría el "
+            "rechazo por contrato, no un fallo en el commit final")
+
+    def _falla_el_commit(src, dst):
+        raise OSError(5, "fallo de E/S simulado en el commit final (no es la carrera)")
+
+    monkeypatch.setattr(vj.os, "link", _falla_el_commit)
+
+    try:
+        vj.escribir(tmp_path, datos)
+    except FileExistsError:
+        raise RuntimeError(
+            "precondición: el fallo simulado no debe ser FileExistsError -eso "
+            "prueba la carrera (otro test), no un fallo de commit genérico")
+    except OSError:
+        pass
+    else:
+        raise RuntimeError(
+            "precondición: el commit simulado no falló; este test no está probando "
+            "un fallo en el renombrado/commit final")
+
+    destino = vj.ruta(tmp_path)
+    assert not destino.exists(), (
+        f"escribir() publicó {destino} pese a que el commit falló.")
+    restos = list(destino.parent.iterdir())
+    assert restos == [], (
+        f"escribir() dejó temporales huérfanos tras el fallo de commit: {restos!r}")
+
+
+def test_escribir_no_sobrescribe_si_el_destino_aparece_durante_la_escritura(
+        tmp_path, monkeypatch):
+    """El defecto que reprodujo el revisor: si el destino aparece DESPUÉS de la
+    comprobación inicial de `destino.exists()` y ANTES del commit final, `escribir()`
+    no debe pisarlo. Se abre esa ventana de forma determinista parcheando el
+    `write_text` del temporal -el único paso que hoy ocurre en ese hueco-: nada más
+    escribirse el temporal, una "sesión concurrente" crea el destino por su cuenta,
+    exactamente como hizo el revisor para reproducirlo."""
+    (tmp_path / "00_Input").mkdir()
+    destino = vj.ruta(tmp_path)
+    contenido_ajeno = '{"ref": "SESION CONCURRENTE"}'
+    escritura_real = vj.Path.write_text
+    colado = False
+
+    def _cuela_una_escritura_concurrente(self, *args, **kwargs):
+        nonlocal colado
+        resultado = escritura_real(self, *args, **kwargs)
+        if not colado:
+            colado = True
+            escritura_real(destino, contenido_ajeno, encoding="utf-8")
+        return resultado
+
+    monkeypatch.setattr(vj.Path, "write_text", _cuela_una_escritura_concurrente)
+
+    if destino.exists():
+        raise RuntimeError(
+            "precondición: el destino no debía existir antes de llamar a escribir()")
+
+    with pytest.raises(FileExistsError):
+        vj.escribir(tmp_path, vj.preparar(_Ident(), hoy="2026-09-15"))
+
+    if not colado:
+        raise RuntimeError(
+            "precondición: la escritura concurrente simulada no se coló; este test "
+            "no está probando la carrera")
+
+    assert destino.read_text(encoding="utf-8") == contenido_ajeno, (
+        "escribir() pisó el contenido de la sesión concurrente: exactamente el "
+        "defecto que reprodujo el revisor")
+    restos = [p.name for p in destino.parent.iterdir()]
+    assert restos == [destino.name], (
+        f"escribir() dejó temporales huérfanos tras perder la carrera: {restos!r}")

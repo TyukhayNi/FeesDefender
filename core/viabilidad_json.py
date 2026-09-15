@@ -207,16 +207,43 @@ def preparar(ident, *, hoy: str) -> dict:
     }
 
 
+def _mensaje_ya_existe(destino: Path) -> str:
+    return (f"{destino} ya existe. Lo unico caro de este fichero es lo que puso la "
+            f"sesion que lo remato: no se pisa.")
+
+
 def escribir(case_dir, datos: dict) -> Path:
-    """Escribe el JSON. **Nunca sobrescribe** y **nunca deja un fichero a medias.**
+    """Escribe el JSON. **Nunca sobrescribe** y, si el destino llega a existir,
+    **nunca esta a medias** -ni siquiera si el proceso muere de golpe en mitad de la
+    operacion.
 
     Valida ANTES de abrir nada: un fichero incompleto bloquea el reintento sin contener
-    el trabajo, que es lo peor de los dos mundos. La escritura del contenido es
-    ATOMICA: se vuelca primero a un fichero temporal en el mismo directorio del
-    destino, y se renombra encima de golpe al terminar. Si algo falla entre crear el
-    temporal y el rename final -disco lleno, error de IO a mitad-, el temporal se
-    borra en el `finally` y el destino nunca llega a existir a medias: no queda un
-    estado intermedio que un reintento pueda confundir con trabajo real de una sesion.
+    el trabajo, que es lo peor de los dos mundos.
+
+    Publicacion en dos pasos: el contenido completo se vuelca primero a un temporal en
+    el MISMO directorio que el destino (el paso siguiente exige el mismo sistema de
+    ficheros), y ese temporal se publica con `os.link` -no `os.rename`/`os.replace`; el
+    porque, en el comentario junto a esa linea, mas abajo-. La exclusividad vive en el
+    PROPIO acto de publicar: `os.link` falla si el destino ya existe, en el mismo paso
+    que lo crea, sin hueco entre comprobar y escribir. La `destino.exists()` de aqui
+    abajo es solo un atajo para el caso comun -falla rapido, sin tocar disco ni crear
+    el temporal-; quien de verdad cierra la carrera es el `os.link` final, y por eso el
+    test de la carrera abre la ventana parcheando la escritura del temporal, no esa
+    comprobacion.
+
+    Dos promesas, y hasta donde llega cada una:
+      - GARANTIZADA siempre, incluso si el proceso muere sin avisar (`kill -9`, corte
+        de luz) en cualquier instante: el destino nunca se pisa -si otra sesion ya lo
+        remato, esta funcion falla con `FileExistsError` en vez de tocarlo- y, si esta
+        funcion SI llega a crearlo, nunca queda con contenido parcial -nace de un
+        `os.link` a un temporal que ya estaba completo, no de escribirse in situ, asi
+        que no hay ningun instante en que el destino exista a medio llenar-.
+      - NO GARANTIZADA: que no quede un `.tmp` huerfano en `00_Input/`. El `finally` de
+        aqui abajo lo borra ante cualquier fallo que Python pueda interceptar -incluida
+        una excepcion del propio `os.link`-, pero un `kill -9` justo entre el `os.link`
+        de exito y ese `unlink` deja el temporal en disco. No es el destino -no lleva
+        su nombre, nada lo confunde con el protocolo del caso- pero es litter que un
+        reintento no limpia solo.
     """
     problemas = validar(datos)
     if problemas:
@@ -225,30 +252,47 @@ def escribir(case_dir, datos: dict) -> Path:
             + "\n  - ".join(problemas))
     destino = ruta(case_dir)
     if destino.exists():
-        raise FileExistsError(
-            f"{destino} ya existe. Lo unico caro de este fichero es lo que puso la "
-            f"sesion que lo remato: no se pisa.")
+        raise FileExistsError(_mensaje_ya_existe(destino))
     destino.parent.mkdir(parents=True, exist_ok=True)
     contenido = json.dumps(datos, ensure_ascii=False, indent=2) + "\n"
     # Escritura atomica: se vuelca a un temporal en el MISMO directorio que destino (el
-    # rename atomico exige el mismo sistema de ficheros; el temp global del SO puede
-    # vivir en otro volumen) y se renombra encima al terminar con `os.replace` -no
-    # `os.rename`, que en Windows falla si el destino ya existe, y este codigo corre en
-    # Windows-. `mkstemp` reserva el nombre de forma unica y sin carrera; se cierra ese
-    # descriptor de inmediato porque el contenido se escribe con `Path.write_text`, no
-    # con el fd crudo. El `try/finally` cubre TODO el hueco entre crear el temporal y el
-    # rename: si algo falla ahi (el propio `close`, disco lleno a mitad de
-    # `write_text`, el `replace`), el temporal se borra y no queda huerfano. Tras un
-    # `replace` de exito el temporal ya no existe con ese nombre -paso a ser destino-,
-    # por eso el `unlink` final lleva `missing_ok=True`: no detecta un fallo, es que el
-    # camino feliz tambien pasa por ahi.
+    # `os.link` de mas abajo exige el mismo sistema de ficheros; el temp global del SO
+    # puede vivir en otro volumen). `mkstemp` reserva el nombre de forma unica y sin
+    # carrera; se cierra ese descriptor de inmediato porque el contenido se escribe con
+    # `Path.write_text`, no con el fd crudo.
     fd, tmp_nombre = tempfile.mkstemp(dir=destino.parent, prefix=f"{destino.name}.",
                                        suffix=".tmp")
     tmp = Path(tmp_nombre)
     try:
         os.close(fd)
         tmp.write_text(contenido, encoding="utf-8")
-        os.replace(tmp, destino)
+        # PORTABLE a proposito, no "funciona en Windows y ya": en POSIX `os.rename` y
+        # `os.replace` SOBRESCRIBEN en silencio si el destino existe -no hay flag
+        # portable para evitarlo desde el modulo `os`; el `RENAME_NOREPLACE` de Linux
+        # no esta expuesto ahi-. En Windows si fallan -medido: `os.rename` contra un
+        # destino existente lanza `FileExistsError`-, pero el desarrollo es Windows y
+        # la CI (`.github/workflows/leak-scan.yml`) corre en `ubuntu-latest`: hoy esa
+        # CI no ejecuta pytest sobre este fichero -solo gitleaks y leak-guard-, y
+        # apostar la exclusividad a que eso siga asi es justo la suposicion que este
+        # bug ya penalizo una vez. `os.link` en cambio falla con `FileExistsError` si
+        # el destino existe TANTO en POSIX -`link(2)`: si el nuevo nombre ya existe,
+        # falla; es parte del estandar, no un detalle de implementacion- COMO en
+        # Windows -medido aqui: `CreateHardLink` devuelve WinError 183 y Python lo
+        # traduce al mismo `FileExistsError`, errno 17-: mismo comportamiento, misma
+        # excepcion, en los dos mundos. Efecto lateral que interesa: como el temporal
+        # ya esta COMPLETO antes de este paso, un `os.link` de exito nunca publica un
+        # destino a medias.
+        try:
+            os.link(tmp, destino)
+        except FileExistsError:
+            raise FileExistsError(_mensaje_ya_existe(destino)) from None
     finally:
+        # A diferencia de `os.replace` (que renombra: el nombre `tmp` deja de existir
+        # tras el exito), `os.link` AÑADE un nombre nuevo sin tocar el viejo: tras un
+        # `link` de exito, `tmp` sigue existiendo como entrada separada que apunta al
+        # mismo contenido. Este `unlink` la retira en TODOS los casos -exito, fallo de
+        # `os.link`, o fallo de la escritura de mas arriba-; `missing_ok=True` es
+        # defensivo (nada en este camino deja a `tmp` ausente por si mismo), no una
+        # segunda comprobacion de fallo.
         tmp.unlink(missing_ok=True)
     return destino
