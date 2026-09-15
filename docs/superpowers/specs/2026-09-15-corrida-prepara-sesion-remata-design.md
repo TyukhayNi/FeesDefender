@@ -1,6 +1,7 @@
 # La corrida prepara y una sesión remata: el correo entra y el JSON de viabilidad deja de ser efímero
 
-> **Estado:** rev. 1 (2026-09-15). Diseño aprobado en conversación, sin construir todavía.
+> **Estado:** rev. 2 (2026-09-15). **CONSTRUIDO**, con la ronda R1 adjudicada en el §7.
+> Suite: 5.844 tests, 0 fallos, con las dos semillas.
 > **Origen:** las tres decisiones de Nikolai del 2026-09-14, que son el disparador declarado de
 > `MEJORAS #264` («que Nikolai elija cuál de las tres salidas quiere»):
 > **(1)** la salida elegida es la **3** —la corrida prepara, una sesión remata en un paso—;
@@ -297,7 +298,66 @@ medido.
   preguntas siguen siendo trabajo de una sesión, y este diseño no finge lo contrario.
 - **No se toca el clasificador por LLM.** Cerrado por decisión.
 
-## 7. Deuda que este diseño declara viva
+## 7. Revisión adversarial R1 — adjudicación
+
+> **Ronda:** R1 (única). **Revisor:** Codex CLI, 2026-09-15. **Veredicto del revisor:** `NO-SHIP`
+> — 0 críticos, 2 importantes, 6 menores.
+> **Informe literal, con su digest:** [`…-r1-adversarial-review.md`](2026-09-15-corrida-prepara-sesion-remata-r1-adversarial-review.md).
+> **Adjudicado por Claude contra la fuente. 8 de 8 CONFIRMADOS, 0 refutados, 8 remediados.**
+
+**Antes de la ronda, una revisión de conjunto propia había encontrado dos defectos críticos** que
+ninguna revisión por tarea podía ver, porque cada pieza funcionaba sola y la suite estaba verde:
+
+- **La etapa `email` era inalcanzable.** Ninguna invocación llegaba a ella con datos:
+  `validar_modo` exige `--folder-id` en V1 y `_validar_flags` lo rechazaba como «flag ajeno a la
+  fuente email». La etapa **sólo podía salir `saltada`** — el defecto exacto que el §3 de este
+  spec usa para dejar `sala_lectura` fuera, cometido sobre `email` sin verlo. La causa: la matriz
+  de flags asume «una fuente por invocación», y V1 encadena Drive **y** correo en una pasada. De
+  ahí que `--fuente` pase a significar, en V1, «qué traigo **además** del Drive».
+- **`_viabilidad.json` no estaba declarado como fichero de protocolo**, así que en una relanzada
+  se habría inventariado como documento probatorio del cliente y bajado a la sala de máquina. El
+  §5.3 justificaba su ubicación diciendo que ese mecanismo ya lo cubría: **la premisa era falsa**.
+
+### Los ocho hallazgos de Codex
+
+| # | Hallazgo | Sev. / coste | Adjudicación |
+|---|---|---|---|
+| H-01 | Un `_residuo.campos` mal formado lanza `TypeError` **fuera** del `try`: la etapa no devuelve ninguno de sus tres estados y `verificar` no llega a correr | importante / acotado | **CONFIRMADO.** Reproducido por el revisor con tres formas distintas. Rompe el contrato de que una etapa siempre termina en `hecha`/`saltada`/`fallo`. Remediado en el lector, con test de los tres casos |
+| H-02 | La regla «toda clave desconocida se avisa» deja mudos `hitos[*]`, `preguntas[qid]` y `avisos[i]` | importante / acotado | **CONFIRMADO, y es la sexta vez en este trabajo que se remedia el caso y no la frontera.** Remediado con un **registro declarativo** (`ESQUEMA_ANIDADO`) que cubre los sitios futuros por construcción, y un test parametrizado **sobre el propio registro** |
+| H-03 | `validar` acepta valores anidados que el consumidor no puede escribir (`{"precio": {"cantidad": 12000}}` pasa y luego revienta) | menor / acotado | **CONFIRMADO.** `escribir` usa `validar` como permiso para persistir. Remediado validando el tipo de los valores que acaban en celda, sin convertirlo en validación de negocio |
+| H-04 | El candado entre los dos contratos comprueba **pertenencia**, no igualdad: una clave añadida sólo al consumidor sobrevive | menor / trivial | **CONFIRMADO** con cuatro mutantes que sobrevivieron. Remediado con igualdad de conjuntos y control positivo |
+| H-05 | El test de integración sólo exige que el fichero exista: mutando el escritor para omitir las tres celdas derivadas, **58 tests pasan** | menor / acotado | **CONFIRMADO.** El §5.6 exige leer celdas justamente para no confundir «creó el archivo» con «trasladó el dato». Remediado leyendo E4/E5/E11 con canarios |
+| H-06 | Una etiqueta de Gmail **inexistente** se traduce como `hecha`, «0 de 0 mensajes escritos» | menor / acotado | **CONFIRMADO** con un servicio Gmail sintético. Remediado distinguiendo fuente no resuelta de etiqueta vacía legítima y de exportación parcial — sin usar `written == 0` como fallo, que puede ser idempotencia |
+| H-07 | El runbook promete `saltada` donde el CLI aborta | menor / trivial | **CONFIRMADO.** Texto añadido por este mismo trabajo. Precisado |
+| H-08 | El plan conserva «4 de 11 campos», «cinco defectos» y el orden de validación falso en sus bloques de código | menor / acotado | **CONFIRMADO.** Son copias del código dentro de bloques ejecutables que el arreglo anterior no alcanzó. Corregidos |
+
+### Las cuatro reservas del revisor, adjudicadas
+
+1. **`os.link` sobre Drive for Desktop y durabilidad ante corte eléctrico.** No verificado, y el
+   revisor no lo presenta como defecto. **Deuda declarada**: la garantía está probada sobre disco
+   local, que es donde la corrida trabaja; no hay `fsync`.
+2. **Despliegue del consumidor en Cowork.** Ya fichado: el `.skill` hay que re-empaquetarlo e
+   importarlo a mano. La versión se subió a **1.1** porque `plugin update` compara por versión y
+   sin bump no copia nada.
+3. **Posible PII en fixtures heredados.** **Comprobado por mí y NO imputable a este diff:** el
+   W-code y los rótulos que el revisor señala existen en `origin/main` —el mismo fichero de test
+   entre ellos— desde antes. El diff los **reutiliza**, no los introduce. Se ficha aparte.
+4. **Arnés histórico de mutaciones.** No ejecutado por el revisor. Coincide con un hallazgo previo
+   de esta misma tanda: cuatro mutantes de `tests/_mutantes_plan5.py` están rotos **desde antes**
+   de esta rama, porque su texto ancla ya no existe y ningún test vigila sus anclas. Fichado aparte.
+
+### Por qué no hay R2
+
+El presupuesto de esta pieza es **una ronda** (§ cabecera): no decide quién escribe sobre qué copia
+ni puede destruir datos de cliente. Los ocho hallazgos se remediaron **atacando la frontera y no el
+ejemplo** —H-02 es el caso claro: registro declarativo en vez de un tercer bucle copiado—, que es
+justo lo que la regla de la casa dice que ahorra rondas. Relanzar aquí sería encadenar por el
+argumento de que «la anterior encontró algo», que nunca se agota.
+
+**Estado de la suite tras remediar: 5.844 tests, 0 fallos, 0 errores, con las dos semillas (777 y
+31337).**
+
+## 8. Deuda que este diseño declara viva
 
 - La etapa `sala_lectura` sigue sin cablear (`MEJORAS #264`, la otra mitad).
 - El rol del equipo comercial no existe como dato en ninguna parte de la apertura (H2). Mientras no

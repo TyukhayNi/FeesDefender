@@ -1,6 +1,6 @@
 """El contrato del JSON de viabilidad, y su validador.
 
-Los cinco defectos que se prueban aqui son los que `MEJORAS #262` publico como
+Los cuatro defectos que se prueban aqui son los que `MEJORAS #262` publico como
 contrato «derivado por ejecucion» y que resultaron INCORRECTOS, medidos el
 2026-09-15 corriendo el consumidor real. Cada `test_rechaza_*` es uno de ellos.
 
