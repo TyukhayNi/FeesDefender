@@ -58,6 +58,7 @@ def test_t8_entrega_en_su_directorio_es_protocolo(rel):
     f"{LOTE}/x/_manifiesto.yaml",        # T2: el manifiesto ANIDADO es documento
     f"{LOTE}/adjuntos/_ficha_crm.yaml",  # T1: el adjunto homónimo
     "01_Drive EV/_inventory.json",       # fichero de E&V homónimo: entra en el ledger
+    "01_Drive EV/_viabilidad.json",      # ídem, C2: el JSON de viabilidad solo protege la raíz
     "sub/_caso.md", "a/b/_caso.md",
 ])
 def test_t9_homonimo_fuera_de_su_sitio_es_documento(rel):
@@ -75,6 +76,19 @@ def test_t10_temporales_en_la_raiz_son_protocolo_y_a_profundidad_3_no(nombre):
     assert es_fichero_de_protocolo(f"a/b/{nombre}") is False
 
 
+def test_viabilidad_json_y_su_temporal_son_protocolo():
+    """C2 de la revision de conjunto (2026-09-15): `_viabilidad.json` no estaba en
+    `RAIZ`, asi que una relanzada lo hasheaba e inventariaba como documento del cliente
+    (`etapa_viabilidad` corre en 7a posicion, `sala_maquina` en 4a). Cubre el fichero Y
+    el temporal de `viabilidad_json.escribir` (`_viabilidad.json.<random>.tmp`), que es
+    el segundo tramo del mismo hallazgo."""
+    assert es_fichero_de_protocolo("_viabilidad.json") is True
+    assert es_fichero_de_protocolo("_viabilidad.json.ab12cd34.tmp") is True
+    # A cualquier otra profundidad es documento, mismo criterio que el resto de RAIZ.
+    assert es_fichero_de_protocolo("a/b/_viabilidad.json") is False
+    assert es_fichero_de_protocolo("a/b/_viabilidad.json.ab12cd34.tmp") is False
+
+
 def test_t10_los_prefijos_son_los_que_los_escritores_usan_de_verdad():
     """Los prefijos del registro se contrastan con el CÓDIGO de cada escritor, no con
     su docstring (R1/H-05 del diseño)."""
@@ -83,11 +97,19 @@ def test_t10_los_prefijos_son_los_que_los_escritores_usan_de_verdad():
         "._caso.": REPO / "core" / "case_manager.py",
         "._intake_hashes.": REPO / "core" / "intake_manifest.py",
         "._ocurrencias_crm.json.": REPO / "core" / "ocurrencias_crm.py",
+        "_viabilidad.json.": REPO / "core" / "viabilidad_json.py",
     }
     assert set(fuentes) == set(RAIZ_PREFIJOS)
+    # Los dos que no llevan el prefijo LITERAL en el código: se arman con un f-string
+    # sobre un nombre que vive en otra constante, así que se contrasta el patrón fuente
+    # (lo que de verdad hay entre comillas) y no el valor ya interpolado.
+    literales_dinamicos = {
+        "._ocurrencias_crm.json.": '._{_FILENAME}.',
+        "_viabilidad.json.": '{destino.name}.',
+    }
     for pre, fichero in fuentes.items():
         txt = fichero.read_text(encoding="utf-8")
-        literal = pre if pre != "._ocurrencias_crm.json." else '._{_FILENAME}.'
+        literal = literales_dinamicos.get(pre, pre)
         assert literal in txt, f"{fichero.name} ya no escribe temporales con prefijo {pre!r}"
 
 
