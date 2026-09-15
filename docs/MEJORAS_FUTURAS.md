@@ -12226,3 +12226,52 @@ modelo, y `scripts/medir_clasificador_llm.py` se queda quieto—.
 **Se cabla solo la mitad de viabilidad.** La etapa `sala_lectura` sigue esperando: depende del mismo
 lector, y montarla hoy produciría una etapa que siempre sale `saltada`.
 Diseño: [`2026-09-15-corrida-prepara-sesion-remata-design.md`](superpowers/specs/2026-09-15-corrida-prepara-sesion-remata-design.md).
+
+## 265. Cuatro mutantes del arnés no pueden morir — y nadie los vigila
+
+**Lo medido** (2026-09-15, durante la tanda de `MEJORAS #264`): cuatro mutantes de
+`tests/_mutantes_plan5.py` —`F23`, `F25`, `F32-costura-hasta` y `F34-control-registro`— **no
+pueden morir**, porque el texto que usan como ancla ya no existe en el código que mutan. Se
+verificó que los cuatro ya estaban rotos **antes** de esa tanda, comparando contra el commit
+`f9c11d8`: ninguno lo causó ese trabajo.
+
+**La causa raíz, que es lo que hay que fichar y no el síntoma.** `tests/_mutantes_plan5.py` es
+un **script suelto** —guion bajo inicial, `main()` propio, **cero importadores**—, así que
+ningún test de la suite vigila sus anclas. Cuando el código que mutan cambia de redacción, el
+mutante deja de aplicarse **en silencio** y el arnés sigue reportando verde. Un arnés de
+mutación que no puede distinguir «el mutante murió por la propiedad» de «el mutante no llegó a
+aplicarse» no acredita lo que dice acreditar.
+
+**Cómo se detectó.** Un revisor adversarial lo señaló además como límite de su propia
+cobertura: no ejecutó el arnés completo, así que su ronda **no da por cubierto** lo que el
+arnés debía cubrir.
+
+**Disparador.** Que haya que apoyarse en el arnés para acreditar una propiedad, o la próxima
+tanda que toque `core/apertura_v1.py` o el secuenciador.
+
+## 266. Los rótulos de los fixtures de apertura pueden llevar datos de un caso real
+
+**Lo medido** (2026-09-15): una revisión adversarial externa levantó la sospecha de que los
+literales descriptivos que usan los fixtures de `tests/test_abrir_caso_cli.py` —un rótulo de
+carpeta de Drive y una dirección— parecen proceder de un expediente real y no de datos
+sintéticos. El revisor **no pudo certificar su origen**: la blocklist privada no está
+disponible en su entorno y su test se salta.
+
+**Comprobado al adjudicar.** Esos literales **existen en `origin/main` desde antes**, en
+varios ficheros —`core/intake_drive.py`, `tests/test_intake_drive.py`, la bitácora y varios
+planes, además del propio fichero de test—. El trabajo de `MEJORAS #264` los **reutiliza**, no
+los introduce. Por eso es deuda preexistente y no un defecto de aquella rama.
+
+**Por qué importa igual.** La regla de la casa es que el dato real vive fuera del repo y que
+en código y docs se referencia por `W-XXXXX`, no por nombre de tercero. Si esos literales son
+reales, llevan tiempo versionados y el saneado los pasó por alto; si son sintéticos, **nadie
+puede saberlo mirándolos**, que es casi tan malo, porque obliga a repetir esta misma duda cada
+vez que alguien los lea.
+
+**Qué no lleva esta ficha, a propósito.** No se reproducen los literales sospechosos —ni el
+rótulo, ni la dirección, ni ningún nombre—: fichar una posible fuga copiándola la empeora.
+Quien la atienda los localiza en los ficheros ya señalados: `tests/test_abrir_caso_cli.py`
+(los fixtures), `core/intake_drive.py`, `tests/test_intake_drive.py`, y la bitácora y los
+planes que los mencionan.
+
+**Disparador.** El próximo saneado de PII, o que alguien tenga que tocar esos fixtures.
