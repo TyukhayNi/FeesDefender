@@ -23,6 +23,7 @@ Intake incremental (identidad desde _caso.md, sin repetir los 6 flags):
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import hashlib
 import json
 import os
@@ -54,7 +55,7 @@ app = typer.Typer(add_completion=False, help="Abrir un expediente E&V en una pas
 _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
 
 #: Nombres de las etapas de V1, en orden. El vocabulario de `--hasta` es ETAPAS_V2
-#: (mas abajo), no esta tupla: admite tambien las tres etapas nuevas de V2.
+#: (mas abajo), no esta tupla: admite tambien las cuatro etapas nuevas de V2.
 ETAPAS_V1 = ("drive", "email", "crm", "sala_maquina")
 #: V2 AMPLIA V1 por la derecha: V1 ENTERA conserva nombre y orden dentro de V2, asi
 #: que un `--hasta sala_maquina` de antes sigue parando donde paraba (lo prueba
@@ -62,7 +63,7 @@ ETAPAS_V1 = ("drive", "email", "crm", "sala_maquina")
 #: indice fijo, para no caducar cuando entre otra etapa). `crm_ficha` NO esta: llevar
 #: el YAML al CRM ejecuta los efectos materiales de la §8.1, que el spec situa
 #: DESPUES de la sala de lectura y la viabilidad (R1/H-05).
-ETAPAS_V2 = ETAPAS_V1 + ("crm_alta", "actuacion", "verificar")
+ETAPAS_V2 = ETAPAS_V1 + ("crm_alta", "actuacion", "viabilidad", "verificar")
 
 #: Lo que `_alta_crm` hizo de verdad. Devolvia `None` en SEIS situaciones distintas, y
 #: quien lo consumiera no podia distinguir «ya estaba vinculado» de «el POST dio timeout»
@@ -1259,6 +1260,42 @@ def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
             detalle="Relanza la etapa: el recibo guardado la reanuda sin crear otra."),))
 
 
+def etapa_viabilidad(ident, case_dir: Path, *, hoy=None) -> av1.EtapaResultado:
+    """Etapa final: dejar escrito el JSON de la 1a pasada de viabilidad.
+
+    **La corrida prepara y una sesion remata** — la salida 3 de `MEJORAS #264`, elegida
+    por Nikolai el 2026-09-14. Deja CUATRO de los once campos; los 14 hitos y las 88
+    preguntas siguen siendo trabajo de una sesion, y por eso el residuo va marcado.
+
+    **Nunca sobrescribe.** Si el fichero existe, lo que contiene es el trabajo de la
+    sesion que lo remato, que es lo unico caro de todo esto.
+    """
+    from core import viabilidad_json as vj
+
+    hoy = hoy or datetime.date.today().isoformat()
+    if vj.ruta(case_dir).exists():
+        return av1.EtapaResultado(
+            nombre="viabilidad", estado="saltada",
+            detalle=f"{vj.NOMBRE_FICHERO} ya existe; no se pisa")
+    try:
+        datos = vj.preparar(ident, hoy=hoy)
+        destino = vj.escribir(case_dir, datos)
+    except Exception as exc:  # noqa: BLE001 — el estado de V1 es el producto
+        return av1.EtapaResultado(nombre="viabilidad", estado="fallo",
+                                  detalle=f"{type(exc).__name__}: {exc}")
+    residuo = datos[vj.MARCA]["campos"]
+    return av1.EtapaResultado(
+        nombre="viabilidad", estado="hecha",
+        detalle=f"{destino.name} escrito con lo derivable ({len(residuo)} campos "
+                f"pendientes de una sesion)",
+        pendientes=(av1.Pendiente(
+            codigo="viabilidad_sin_rematar",
+            detalle="El JSON de viabilidad esta preparado, no completo: faltan "
+                    + ", ".join(residuo)
+                    + ". Los rellena una sesion que lea el expediente, y despues corre "
+                      "render_informe.py de la skill `viabilidad-prerelleno`."),))
+
+
 def etapa_verificar(ident, case_dir: Path, *, crm: str = "api",
                     verificar=None) -> av1.EtapaResultado:
     """Etapa 6 (V2): el «OK» del EXPEDIENTE, no el del paso.
@@ -1324,6 +1361,7 @@ def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm, cuenta=None, label=N
         av1.Etapa("sala_maquina", lambda: etapa_sala_maquina(ident)),
         av1.Etapa("crm_alta", lambda: etapa_crm_alta(ident, case_dir, crm=crm)),
         av1.Etapa("actuacion", lambda: etapa_actuacion(ident, case_dir, crm=crm)),
+        av1.Etapa("viabilidad", lambda: etapa_viabilidad(ident, case_dir)),
         av1.Etapa("verificar", lambda: etapa_verificar(ident, case_dir, crm=crm)),
     ]
 

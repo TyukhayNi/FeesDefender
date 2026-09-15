@@ -53,6 +53,11 @@ def test_la_fixture_es_legible_por_el_lector_real(caso):
 class _Ident:
     case_id = CASE_ID
     w_code = "W-000000"
+    # `viabilidad` (Task 7) corre DE VERDAD aqui -el docstring del modulo ya decia
+    # que solo se doblan los limites, no las etapas- y `vj.preparar` necesita este
+    # atributo; sin el, la etapa fallaba de verdad y bloqueaba la secuencia entera.
+    # Mismo valor que `tipo_caso` en el `_caso.md` de la fixture `caso`, de abajo.
+    tipo_caso = "NEGATIVA_OFERTA"
 
 
 class _ResCRM:
@@ -186,7 +191,10 @@ def test_e2e_un_fallo_del_crm_bloquea_y_la_sala_no_corre(caso, dobles, monkeypat
     r = cli.secuencia_v1(_Ident(), caso, folder_id="F", team_id="T")
     assert r.estado == av1.EstadoV1.BLOQUEADO
     assert dobles["ocr"] == 0, "la sala de maquina corrio sobre un CRM incompleto"
-    assert r.no_ejecutadas == ("sala_maquina", "crm_alta", "actuacion", "verificar")
+    # Todo lo que va detras de `crm` en ETAPAS_V2, dinamico y no una tupla literal:
+    # `viabilidad` entro justo ahi (Task 7) y una tupla fija ya se habia roto antes
+    # con `email` (ver el mismo patron en el test de abajo).
+    assert r.no_ejecutadas == cli.ETAPAS_V2[cli.ETAPAS_V2.index("crm") + 1:]
 
 
 def test_e2e_hasta_drive_no_consulta_el_crm_ni_el_ocr(caso, dobles):

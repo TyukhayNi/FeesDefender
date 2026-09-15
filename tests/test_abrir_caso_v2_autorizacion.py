@@ -21,11 +21,13 @@ def test_las_etapas_de_v2_amplian_v1_por_la_derecha():
     assert ac.ETAPAS_V2[:len(ac.ETAPAS_V1)] == ac.ETAPAS_V1
 
 
-def test_las_tres_etapas_nuevas_estan_y_en_orden():
+def test_las_cuatro_etapas_nuevas_estan_y_en_orden():
     # `crm_ficha` NO esta: ejecuta los efectos materiales de la §8.1, que el spec
-    # situa despues de sala de lectura y viabilidad (R1/H-05). `viabilidad` TAMPOCO
-    # esta todavia en este PR: entra en una tarea posterior.
-    assert ac.ETAPAS_V2[len(ac.ETAPAS_V1):] == ("crm_alta", "actuacion", "verificar")
+    # situa despues de sala de lectura y viabilidad (R1/H-05). `viabilidad` YA está
+    # desde esta tarea (Task 7): deja escrito el JSON de la 1a pasada; `verificar`
+    # sigue cerrando la secuencia.
+    assert ac.ETAPAS_V2[len(ac.ETAPAS_V1):] == ("crm_alta", "actuacion", "viabilidad",
+                                                "verificar")
 
 
 def test_omitir_crm_en_modo_secuenciado_es_ERROR():
