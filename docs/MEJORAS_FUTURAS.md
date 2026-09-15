@@ -11887,3 +11887,40 @@ momento del envío.
 leído (documento, correo entrante, ficha), y el envío va detrás de una confirmación explícita,
 no de un valor por defecto.
 
+## 258. El nombre de la subcarpeta se repite dentro de cada fichero, y el 19 % del expediente pasa del límite de 260 de Windows
+
+**Medido el 2026-09-15 sobre `BaRS10 … (W-02X1WJ)`: 175 de 927 ficheros superan los 260
+caracteres de ruta.** La peor llega a **363**. Nikolai no podía abrir los `.eml` de
+`01_Procesado/Sala lectura/2025-12-09_bellamar_16_mortgage_denial_certificates_and_alter`:
+14 de sus 16 ficheros pasan del límite, los correos por 289.
+
+**La causa no es la profundidad del árbol: es que el generador repite el nombre de la
+subcarpeta dentro del nombre de cada fichero que mete en ella.**
+
+```
+…/02_Documentos/2026_07_28_emplazamiento_demanda_verbal_942_2026_parte2__d2a1fe0c/
+                2026_07_28_emplazamiento_demanda_verbal_942_2026_parte2__d2a1fe0c__d09_DOC_16_EMAIL_CERTIFICADO_2025_12_05.pdf
+```
+
+Esos 65 caracteres viajan **dos veces**. Igual en la sala de lectura, donde el `.eml` repite
+el asunto truncado que ya nombra a su carpeta. Reparto por carpeta: `raw_text` 38, `03_MD`
+35, `02_Documentos` 39 entre las dos partes de la demanda, `Sala lectura` 31.
+
+**Por qué muerde, y por qué no se ve venir:** el prefijo hasta la carpeta del caso ya son
+**127 caracteres** (la raíz de la unidad compartida, `CASOS/Barcelona/`, más el nombre del
+caso, que son 59). Con una subcarpeta de 61 quedan **42** para el fichero. Los generadores no
+lo comprueban, así que el fichero se escribe —Python y Git for Windows llegan con rutas
+extendidas— y **el que no puede abrirlo es el usuario**, con Outlook o el Explorador, que se
+quedan en el límite clásico. El fallo no aparece al generar: aparece meses después, al leer.
+
+**Remedio propuesto:** al componer el nombre de un fichero dentro de una subcarpeta ya
+nombrada, **no repetir el nombre de la carpeta** (basta el sufijo discriminante:
+`d09_DOC_16…`, `_0e9fdd`). Y un guard que avise cuando una ruta generada pase de unos 240
+caracteres contando el prefijo real del caso.
+
+**Paliativo inmediato, sin tocar nada:** `subst X:` sobre la carpeta del caso deja el prefijo
+en 3 y baja las 175 rutas de golpe (la peor queda en 239); se deshace con `subst X: /D`. El
+2026-09-15 se resolvió copiando el caso al Escritorio, que también vale.
+
+**No promovido a `PLAN.md`:** falta disparador propio. Se promoverá cuando vuelva a bloquear
+a alguien o cuando se toque el generador de nombres por otra causa.
