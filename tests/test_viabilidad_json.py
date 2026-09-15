@@ -189,26 +189,17 @@ def test_escribir_no_valida_a_medias_deja_el_fichero(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Mas alla del pliego (Task 5, comprobacion 1 del encargo): el caso intermedio
-# que el pliego no cubre — JSON VALIDO pero la escritura a disco falla A MITAD.
+# Escritura atómica: el caso intermedio que el pliego original de Task 5 no cubría
+# -JSON VÁLIDO pero la escritura a disco falla A MITAD- está protegido por el
+# temporal+rename de `escribir()` (informe: .superpowers/sdd/task-5-report.md,
+# sección "Fix: la escritura se vuelve atomica").
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="escribir() valida ANTES de abrir nada, pero no protege el "
-                          "propio write_text: no hay try/except ni fichero temporal + "
-                          "rename. Si el disco falla A MITAD de la escritura (disco "
-                          "lleno, IO), el `open(mode='w')` ya creo/trunco el fichero y "
-                          "lo que alcanzo a salir se queda ahi — o queda en 0 bytes si "
-                          "el fallo llega antes de escribir nada. Un reintento choca "
-                          "entonces con el FileExistsError ('no se pisa') como si el "
-                          "fichero contuviera trabajo real de una sesion, cuando es un "
-                          "resto de una escritura que nunca termino. Medido el "
-                          "2026-09-15 parcheando Path.write_text para fallar tras volcar "
-                          "20 bytes.")
-def test_defecto_escribir_deja_fichero_a_medias_si_falla_la_escritura(tmp_path, monkeypatch):
-    """La garantia del docstring de `escribir` ('nunca deja un fichero a medias') cubre
-    el rechazo por contrato (ver el test anterior) pero NO un fallo de IO real a mitad
-    de `destino.write_text(...)`: ese tramo no tiene proteccion alguna.
+def test_escribir_no_deja_fichero_a_medias_si_la_escritura_falla(tmp_path, monkeypatch):
+    """La garantía del docstring de `escribir` ('nunca deja un fichero a medias') cubre
+    también un fallo de IO real a mitad de la escritura, no solo el rechazo por
+    contrato (ver el test anterior): el temporal+rename hace que un fallo aquí no deje
+    ni el destino ni un temporal huérfano.
     """
     (tmp_path / "00_Input").mkdir()
     datos = vj.preparar(_Ident(), hoy="2026-09-15")
@@ -219,7 +210,9 @@ def test_defecto_escribir_deja_fichero_a_medias_si_falla_la_escritura(tmp_path, 
 
     def _falla_a_medias(self, data, encoding=None, errors=None, newline=None):
         """Simula lo que deja un ENOSPC/IOError real: algunos bytes SI llegan a disco
-        antes de que el fallo interrumpa la escritura."""
+        antes de que el fallo interrumpa la escritura. Intercepta el write_text de
+        CUALQUIER Path: hoy le toca al temporal, no al destino, porque escribir() ya
+        no escribe el destino directamente."""
         self.write_bytes(data[:20].encode(encoding or "utf-8"))
         raise OSError(28, "No space left on device (simulado)")
 
@@ -234,7 +227,10 @@ def test_defecto_escribir_deja_fichero_a_medias_si_falla_la_escritura(tmp_path, 
             "precondicion: la escritura simulada no fallo; este test no esta "
             "probando un fallo de IO a mitad")
 
-    # --- el aserto normativo, el unico `assert` del test.
-    assert not vj.ruta(tmp_path).exists(), (
-        f"escribir() dejo {vj.ruta(tmp_path)} a medias tras un fallo de IO simulado: "
-        f"{vj.ruta(tmp_path).read_bytes()!r}")
+    # --- los dos asertos normativos: ni el destino ni un temporal sobreviven al fallo.
+    destino = vj.ruta(tmp_path)
+    assert not destino.exists(), (
+        f"escribir() dejó {destino} a medias tras un fallo de IO simulado.")
+    restos = list(destino.parent.iterdir())
+    assert restos == [], (
+        f"escribir() dejó temporales huérfanos tras el fallo: {restos!r}")

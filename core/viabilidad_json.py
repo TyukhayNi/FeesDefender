@@ -17,6 +17,8 @@ el defecto medido ocurre en el consumidor.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 #: Campo de primer nivel -> tipo que el consumidor espera. Derivado LEYENDO el consumidor
@@ -209,7 +211,12 @@ def escribir(case_dir, datos: dict) -> Path:
     """Escribe el JSON. **Nunca sobrescribe** y **nunca deja un fichero a medias.**
 
     Valida ANTES de abrir nada: un fichero incompleto bloquea el reintento sin contener
-    el trabajo, que es lo peor de los dos mundos.
+    el trabajo, que es lo peor de los dos mundos. La escritura del contenido es
+    ATOMICA: se vuelca primero a un fichero temporal en el mismo directorio del
+    destino, y se renombra encima de golpe al terminar. Si algo falla entre crear el
+    temporal y el rename final -disco lleno, error de IO a mitad-, el temporal se
+    borra en el `finally` y el destino nunca llega a existir a medias: no queda un
+    estado intermedio que un reintento pueda confundir con trabajo real de una sesion.
     """
     problemas = validar(datos)
     if problemas:
@@ -222,6 +229,26 @@ def escribir(case_dir, datos: dict) -> Path:
             f"{destino} ya existe. Lo unico caro de este fichero es lo que puso la "
             f"sesion que lo remato: no se pisa.")
     destino.parent.mkdir(parents=True, exist_ok=True)
-    destino.write_text(json.dumps(datos, ensure_ascii=False, indent=2) + "\n",
-                       encoding="utf-8")
+    contenido = json.dumps(datos, ensure_ascii=False, indent=2) + "\n"
+    # Escritura atomica: se vuelca a un temporal en el MISMO directorio que destino (el
+    # rename atomico exige el mismo sistema de ficheros; el temp global del SO puede
+    # vivir en otro volumen) y se renombra encima al terminar con `os.replace` -no
+    # `os.rename`, que en Windows falla si el destino ya existe, y este codigo corre en
+    # Windows-. `mkstemp` reserva el nombre de forma unica y sin carrera; se cierra ese
+    # descriptor de inmediato porque el contenido se escribe con `Path.write_text`, no
+    # con el fd crudo. El `try/finally` cubre TODO el hueco entre crear el temporal y el
+    # rename: si algo falla ahi (el propio `close`, disco lleno a mitad de
+    # `write_text`, el `replace`), el temporal se borra y no queda huerfano. Tras un
+    # `replace` de exito el temporal ya no existe con ese nombre -paso a ser destino-,
+    # por eso el `unlink` final lleva `missing_ok=True`: no detecta un fallo, es que el
+    # camino feliz tambien pasa por ahi.
+    fd, tmp_nombre = tempfile.mkstemp(dir=destino.parent, prefix=f"{destino.name}.",
+                                       suffix=".tmp")
+    tmp = Path(tmp_nombre)
+    try:
+        os.close(fd)
+        tmp.write_text(contenido, encoding="utf-8")
+        os.replace(tmp, destino)
+    finally:
+        tmp.unlink(missing_ok=True)
     return destino
