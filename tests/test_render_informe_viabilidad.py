@@ -716,10 +716,29 @@ def _preparado():
 
 def test_el_json_que_produce_preparar_corre_de_verdad(tmp_path):
     """Lo que la corrida escribe tiene que atravesar el consumidor. Si esto se rompe, la
-    etapa estará dejando un fichero que no sirve para lo único para lo que existe."""
-    salida = _generar(tmp_path, _preparado())
+    etapa estará dejando un fichero que no sirve para lo único para lo que existe.
+
+    H-05 de la revisión adversarial (2026-09-15): exigir sólo `salida.exists()` pasa
+    aunque el escritor de celdas pierda TODO lo derivado. Medido: mutando el escritor
+    para que omita exclusivamente `INFORMACION!E4/E5/E11` -fecha, referencia y
+    observaciones, los tres datos que esta corrida deriva de verdad-, **58 tests
+    seguían en verde**. El spec exige lectura de celdas justo para no confundir «creó
+    el archivo» con «trasladó el dato»; ahora se leen esas tres celdas y se afirman
+    valores canario, no sólo su existencia.
+    """
+    datos = _preparado()
+
+    salida = _generar(tmp_path, datos)
 
     assert salida.exists()
+    wb = openpyxl.load_workbook(salida)
+    try:
+        inf = wb["INFORMACION"]
+        assert inf["E4"].value == datos["fecha"] == "2026-09-15"
+        assert inf["E5"].value == datos["ref"] == "W-TEST01"
+        assert inf["E11"].value == datos["observaciones"] == "Vuelta"
+    finally:
+        wb.close()
 
 
 def test_el_precio_LLEGA_a_su_celda(tmp_path):
