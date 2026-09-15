@@ -69,11 +69,15 @@ Y aunque lo tuviera no bastaría: el informe pide cuatro roles **con lado** —d
 captador y buscador— y el cargo de una firma (`core/email_firmas.py` sí lo extrae) dice la función,
 no el lado. Un «Asesor inmobiliario» puede ser captador o buscador según la operación.
 
-**Consecuencia, que es lo que hay que decir sin adornos:** de los once campos del JSON, la corrida
-puede rellenar **cuatro** sin leer el expediente. Los 14 hitos, las 88 preguntas y los avisos siguen
-necesitando la sesión.
+**Consecuencia, que es lo que hay que decir sin adornos:** el contrato tiene **doce** campos
+(`CAMPOS` en `core/viabilidad_json.py`). La corrida deriva **cuatro** sin leer el expediente
+(`case_id`, `ref`, `fecha`, `observaciones`) y deja **siete** marcados como residuo en
+`_POR_QUE_FALTA` (`equipo`, `importes`, `hitos`, `preguntas`, `actividades`, `motivos_impago`,
+`avisos`). `bitacora_inicial` queda fuera de las dos cuentas: se fija a `True` sin leer el
+expediente —no hay nada que derivar— y tampoco está en `_POR_QUE_FALTA` —no se declara residuo—.
+4 + 7 + 1 = 12. Los 14 hitos, las 88 preguntas y los avisos siguen necesitando la sesión.
 
-### 2.1. Por qué la etapa vale la pena aun rellenando 4 de 11
+### 2.1. Por qué la etapa vale la pena aun rellenando 4 de 12
 
 El valor no son los cuatro campos. Es que **el JSON exista como fichero, en su sitio, con la forma
 correcta y validada**. Hoy no existe ninguno: `#262` midió cero JSON en cuatro expedientes y tres
@@ -112,7 +116,7 @@ un contrato con cuatro campos mal, publicado como medido.
 `--fuente email` **ya existe**: `_validar_flags` exige sus dos flags (`--cuenta`, `--label`) y el
 intake llama a `email_export.export_label`, que reserva un lote y deposita en
 `00_Input/<AAAA-MM-DD>_email_<NN>/`. Lo único que lo frena en la corrida es una puerta declarada:
-`_FUENTES_V1 = ("drive_ev",)` (`scripts/abrir_caso.py:285`).
+`_FUENTES_V1 = ("drive_ev",)` en `scripts/abrir_caso.py`.
 
 **Dato medido, contra el dimensionado errado que la propia `#264` corrige:** `core/email_export.py`
 **solo lee** de Gmail. Toda su superficie de API son `users().messages().get`,
@@ -288,8 +292,9 @@ medido.
   dependiendo del mismo lector.
 - **La corrida no genera el informe.** Deja el JSON preparado. El `.xlsx` lo produce
   `render_informe.py` cuando la sesión ha rellenado los hitos y las preguntas.
-- **La corrida no lee el expediente.** Cuatro campos de once. Los 14 hitos y las 88 preguntas siguen
-  siendo trabajo de una sesión, y este diseño no finge lo contrario.
+- **La corrida no lee el expediente.** Cuatro campos de doce (el resto queda como residuo
+  declarado; la cuenta completa vive en `core/viabilidad_json.preparar`). Los 14 hitos y las 88
+  preguntas siguen siendo trabajo de una sesión, y este diseño no finge lo contrario.
 - **No se toca el clasificador por LLM.** Cerrado por decisión.
 
 ## 7. Deuda que este diseño declara viva
