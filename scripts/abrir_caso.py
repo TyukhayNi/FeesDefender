@@ -1737,14 +1737,13 @@ def validar_modo(
             "digan caso por caso."
         )
     # Los flags del correo se exigen AQUI, ademas de en `_validar_flags`, y no es
-    # duplicacion: `validar_modo` es pura y aborta ANTES de resolver identidad -que
+    # duplicacion: `validar_modo` es pura y aborta ANTES de resolver identidad (que
     # lee disco en `case_locator.list_cases` y, con `--fuente drive_ev`, tambien
-    # consulta Drive- y ANTES de tomar el mutex. `_validar_flags` ya corre DESPUES de
+    # consulta Drive) y ANTES de tomar el mutex. `_validar_flags` ya corre DESPUES de
     # resolver identidad (aunque todavia antes del mutex): delegar solo en ella
-    # pagaria esa resolucion en una corrida que de todos modos iba a abortar. Orden
-    # medido con `grep -n` sobre este fichero: validar_modo (linea 1832) ->
-    # resolver_identidad (1884/1914) -> _validar_flags (1982) -> mutex (1990) ->
-    # ensure_case (1994).
+    # pagaria esa resolucion en una corrida que de todos modos iba a abortar. El orden
+    # real es: validar_modo -> resolver_identidad -> _validar_flags -> mutex ->
+    # ensure_case.
     if fuente == "email":
         if not cuenta:
             errores.append(
