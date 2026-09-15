@@ -106,7 +106,7 @@ def test_avisa_de_un_campo_de_primer_nivel_desconocido():
 
 def test_el_validador_puede_dar_los_DOS_valores():
     """Control positivo. Un validador que solo se ha visto decir «bien» no acredita
-    nada: es el defecto que dejo pasar los cinco campos de #262."""
+    nada: es el defecto que dejo pasar los cuatro campos de #262."""
     assert vj.validar(_valido()) == []
     assert vj.validar({**_valido(), "motivos_impago": []}) != []
 

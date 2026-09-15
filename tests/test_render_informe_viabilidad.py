@@ -697,7 +697,7 @@ def test_quitar_el_relleno_de_E21_no_se_llevo_NADA_MAS_de_su_estilo():
 # --- El contrato del JSON contra su productor (`core/viabilidad_json.py`) -------------
 #
 # Es el control que `MEJORAS #262` no tuvo: su contrato se publicó como «derivado por
-# ejecución» y salió mal en cinco campos porque la corrida pasó valores VACÍOS, que el
+# ejecución» y salió mal en cuatro campos porque la corrida pasó valores VACÍOS, que el
 # consumidor sustituye sin avisar. Aquí se cruzan los dos lados y se leen las CELDAS, no
 # el código de salida: el defecto salía con `OK` en pantalla.
 
