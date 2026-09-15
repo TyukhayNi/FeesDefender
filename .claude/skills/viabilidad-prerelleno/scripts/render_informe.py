@@ -60,6 +60,42 @@ EQUIPO_CELLS = {
     "director_buscador": "E8", "asesor_buscador": "E9",
 }
 
+# --- Claves que este script LEE. Todo lo que no está aquí se ignora, y por eso se avisa.
+#
+# La regla, una y la misma para todo el fichero: TODA clave que no reconozco se dice en
+# voz alta. Ya se hacía con los hitos y las preguntas —que se recorren por clave— y NO se
+# hacía en los campos de primer nivel ni dentro de `importes`/`actividades`, que se leen
+# con `.get()`. Esa asimetría costó un defecto medido el 2026-09-15: `importes.principal`
+# —la clave que publicó `MEJORAS #262` como contrato— no llega a ninguna celda, y el
+# script imprimía `OK`. Doce mil euros en silencio.
+CAMPOS_CONOCIDOS = {
+    "case_id", "ref", "fecha", "equipo", "observaciones", "importes", "hitos",
+    "preguntas", "actividades", "motivos_impago", "avisos", "bitacora_inicial",
+    # Del productor (`core/viabilidad_json.py`): este script no lo usa, pero es del
+    # contrato. Avisar de él en CADA corrida sería ruido, y un aviso que sale siempre
+    # deja de leerse.
+    "_residuo",
+}
+CLAVES_IMPORTES = {"precio", "pct_honorarios", "pagos_parciales", "propuesta_pago"}
+CLAVES_ACTIVIDADES = {"exposes_propiedad", "visitas_propiedad",
+                      "exposes_buscador", "visitas_buscador"}
+
+
+def avisa_de_claves_ajenas(d):
+    """Dice en voz alta lo que este script no va a leer."""
+    for k in d:
+        if k not in CAMPOS_CONOCIDOS:
+            warn(f"campo '{k}' desconocido — se ignora.")
+    for nombre, conocidas in (("importes", CLAVES_IMPORTES),
+                              ("actividades", CLAVES_ACTIVIDADES)):
+        valor = d.get(nombre)
+        if not isinstance(valor, dict):
+            continue
+        for k in valor:
+            if k not in conocidas:
+                warn(f"{nombre}.'{k}' no se lee — su valor se descarta. "
+                     f"Válidas: {', '.join(sorted(conocidas))}.")
+
 
 def warn(msg):
     print(f"  [aviso] {msg}", file=sys.stderr)
@@ -136,6 +172,7 @@ def main():
 
     with open(args.datos_json, encoding="utf-8") as f:
         d = json.load(f)
+    avisa_de_claves_ajenas(d)
 
     salida = args.salida
     if not salida:

@@ -692,3 +692,103 @@ def test_quitar_el_relleno_de_E21_no_se_llevo_NADA_MAS_de_su_estilo():
     finally:
         wb.close()
     assert medido == _ESTILO_E21, medido
+
+
+# --- El contrato del JSON contra su productor (`core/viabilidad_json.py`) -------------
+#
+# Es el control que `MEJORAS #262` no tuvo: su contrato se publicó como «derivado por
+# ejecución» y salió mal en cinco campos porque la corrida pasó valores VACÍOS, que el
+# consumidor sustituye sin avisar. Aquí se cruzan los dos lados y se leen las CELDAS, no
+# el código de salida: el defecto salía con `OK` en pantalla.
+
+from core import viabilidad_json as vj
+
+
+class _IdentFalsa:
+    case_id = "BaRS9 - Calle de Prueba 1 (W-TEST01) - Vuelta"
+    w_code = "W-TEST01"
+    tipo_caso = "Vuelta"
+
+
+def _preparado():
+    return vj.preparar(_IdentFalsa(), hoy="2026-09-15")
+
+
+def test_el_json_que_produce_preparar_corre_de_verdad(tmp_path):
+    """Lo que la corrida escribe tiene que atravesar el consumidor. Si esto se rompe, la
+    etapa estará dejando un fichero que no sirve para lo único para lo que existe."""
+    salida = _generar(tmp_path, _preparado())
+
+    assert salida.exists()
+
+
+def test_el_precio_LLEGA_a_su_celda(tmp_path):
+    """Control positivo del defecto medido: el instrumento tiene que poder dar los dos
+    valores. Con la clave BUENA el importe llega a H13."""
+    datos = _preparado()
+    datos["importes"] = {"precio": 12000}
+
+    salida = _generar(tmp_path, datos)
+
+    assert openpyxl.load_workbook(salida)["INFORMACION"]["H13"].value == 12000
+
+
+def test_avisa_de_una_clave_de_importes_que_no_lee(tmp_path, capsys):
+    """El defecto de `MEJORAS #262`: `principal: 12000` no llegaba a ninguna celda y el
+    script imprimía OK. Ahora lo dice, y la celda sigue vacía."""
+    datos = _preparado()
+    datos["importes"] = {"principal": 12000}
+
+    salida = _generar(tmp_path, datos)
+
+    assert "principal" in capsys.readouterr().err
+    assert openpyxl.load_workbook(salida)["INFORMACION"]["H13"].value is None
+
+
+def test_avisa_de_un_campo_de_primer_nivel_desconocido(tmp_path, capsys):
+    datos = _preparado()
+    datos["importe_total"] = 1
+
+    _generar(tmp_path, datos)
+
+    assert "importe_total" in capsys.readouterr().err
+
+
+def test_avisa_de_una_clave_de_actividades_que_no_lee(tmp_path, capsys):
+    datos = _preparado()
+    datos["actividades"] = {"visitas_totales": 4}
+
+    _generar(tmp_path, datos)
+
+    assert "visitas_totales" in capsys.readouterr().err
+
+
+def test_NO_avisa_del_campo_de_marca_del_productor(tmp_path, capsys):
+    """Es del contrato aunque el consumidor no lo use. Un aviso que sale en TODAS las
+    corridas deja de leerse, y entonces el que importa se pierde en el ruido."""
+    _generar(tmp_path, _preparado())
+
+    assert vj.MARCA not in capsys.readouterr().err
+
+
+def test_NO_avisa_de_las_claves_conocidas(tmp_path, capsys):
+    """La otra mitad del control positivo: un avisador que avisa de todo no informa."""
+    datos = _preparado()
+    datos["importes"] = {"precio": 1, "pct_honorarios": 5}
+    datos["actividades"] = {"visitas_propiedad": 2}
+
+    _generar(tmp_path, datos)
+
+    err = capsys.readouterr().err
+    for clave in ("precio", "pct_honorarios", "visitas_propiedad", "observaciones"):
+        assert f"'{clave}'" not in err, f"aviso de sobra sobre {clave}"
+
+
+def test_los_dos_contratos_no_han_divergido():
+    """El core y la skill viven en dos sitios que no se importan —la skill corre en el
+    servidor—. Este test es lo único que los ata: si alguien añade un campo en uno y no
+    en el otro, salta aquí."""
+    fuente = (SCRIPTS / "render_informe.py").read_text(encoding="utf-8")
+    for campo in vj.CAMPOS:
+        assert f'"{campo}"' in fuente, (
+            f"`{campo}` está en el contrato del core y no aparece en render_informe.py")

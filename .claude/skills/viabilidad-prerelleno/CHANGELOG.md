@@ -3,6 +3,19 @@
 > Registro de cambios de la skill, en orden cronológico inverso (lo más reciente arriba).
 > Formato ligero: fecha (AAAA-MM-DD) + qué cambió, una línea por cambio.
 
+## 2026-09-15 — El consumidor avisa de toda clave que no lee (`MEJORAS #262`)
+
+- `render_informe.py` **avisa de toda clave que no lee**: campos de primer nivel, y las
+  de `importes` y `actividades`. Antes solo avisaba de hitos y preguntas desconocidos, y
+  esa asimetría dejaba pasar en silencio la clave `importes.principal` que publicó
+  `MEJORAS #262` como contrato: 12.000 € que no llegaban a ninguna celda con un `OK` en
+  pantalla. Medido el 2026-09-15.
+- Reconoce `_residuo`, el campo con el que `core/viabilidad_json.py` declara lo que la
+  corrida de apertura no pudo derivar. No lo usa y no avisa de él.
+- `SKILL.md` estrena campo `version` en el frontmatter (`"1.0"`): la skill no lo tenía
+  —a diferencia de otras del despacho, que sí versionan así— y este cambio es el primero
+  que se deja registrado con un número.
+
 ## 2026-09-11 — `modelo_xlsx.md` manda sobre la estructura de la plantilla (`MEJORAS #244`)
 
 - `references/modelo_xlsx.md` se declara **fuente única de la estructura** de la plantilla en su
