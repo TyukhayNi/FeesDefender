@@ -709,6 +709,59 @@ def etapa_drive(ident, case_dir: Path, *, folder_id, team_id, intake=None):
         pendientes=pendientes)
 
 
+_PENDIENTE_EMAIL_NO_PEDIDO = av1.Pendiente(
+    codigo="email_no_pedido",
+    detalle="No se trajo correo: la corrida no dijo cual (--cuenta y --label). Si el "
+            "caso tiene una etiqueta de Gmail, su material NO esta aqui.")
+
+
+def etapa_email(ident, case_dir: Path, *, cuenta, label, exportar=None
+                ) -> av1.EtapaResultado:
+    """Etapa 2: exportar la etiqueta Gmail del caso a un lote nuevo de `00_Input`.
+
+    **Va antes de `sala_maquina` y eso no es estetico.** La sala de maquina hace el OCR
+    y la atomizacion leyendo `00_Input`; un adjunto que llegue solo por correo y se
+    deposite despues no se OCR-ea ni aparece en la sala de lectura (`MEJORAS #68.a`).
+    Poniendola antes, el gotcha del runbook se cumple por construccion y no por memoria
+    del operador.
+
+    **`export_label` solo LEE de Gmail** —`messages().get`, `messages().list`,
+    `labels().list`— y escribe en el caso. Se midio el 2026-09-15 porque el dimensionado
+    anterior afirmo lo contrario y costo una ronda mal presupuestada.
+    """
+    if not cuenta or not label:
+        return av1.EtapaResultado(
+            nombre="email", estado="saltada",
+            detalle="no se pidio correo (sin --cuenta/--label)",
+            pendientes=(_PENDIENTE_EMAIL_NO_PEDIDO,))
+
+    def _exportar():
+        dest = email_export.email_dest_dir(ident.case_id)   # reserva el lote (T8)
+        return email_export.export_label(cuenta, label, dest, case_id=ident.case_id,
+                                         extract_attachments=True)
+
+    try:
+        rep = (exportar or _exportar)()
+    except Exception as exc:  # noqa: BLE001 — el estado de V1 es el producto, no la traza
+        return av1.EtapaResultado(nombre="email", estado="fallo",
+                                  detalle=f"{type(exc).__name__}: {exc}")
+
+    # Los errores parciales son un HECHO distinto de «el export fallo», y se pierden si
+    # solo se mira el estado: `export_label` escribe lo que puede y acumula el resto.
+    errores = list(getattr(rep, "errors", None) or [])
+    pendientes = ()
+    if errores:
+        pendientes = (av1.Pendiente(
+            codigo="email_export_con_errores",
+            detalle=f"El export escribio, pero dejo {len(errores)} error(es): "
+                    f"{errores[0]}" + (" (y mas)" if len(errores) > 1 else "")),)
+    return av1.EtapaResultado(
+        nombre="email", estado="hecha",
+        detalle=f"etiqueta {label!r}: {rep.written} de {rep.total_in_label} mensajes "
+                f"escritos",
+        pendientes=pendientes)
+
+
 def _pendientes_de_custodia(res) -> tuple:
     """Lo que la custodia no pudo leer, como `Pendiente` de V1. Vacío si no hay nada.
 
