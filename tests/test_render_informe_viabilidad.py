@@ -777,6 +777,48 @@ def test_avisa_de_una_clave_de_equipo_que_no_lee(tmp_path, capsys):
     assert "asesor_captadorr" in capsys.readouterr().err
 
 
+# --- H-02 de la revisión adversarial (2026-09-15): la propiedad GENERAL, no un test por
+# sitio. Los tres de arriba (equipo/importes/actividades) ya probaban esto uno a uno desde
+# antes del hallazgo; lo que faltaba es una comprobación que se extienda sola el día que
+# `ESQUEMA_ANIDADO` gane una entrada, en vez de necesitar un cuarto test calcado. -------
+
+
+@pytest.mark.parametrize("nombre", sorted(render_informe.ESQUEMA_ANIDADO))
+def test_toda_clave_ajena_anidada_avisa_por_construccion(tmp_path, capsys, nombre):
+    """CONTROL de la propiedad general: el aviso de clave ajena cubre CUALQUIER nivel
+    anidado que el script declare en `ESQUEMA_ANIDADO`, no una lista de sitios escrita
+    a mano. Antes del arreglo, `hitos`/`preguntas`/`avisos` no tenían su bucle propio y
+    esto habría fallado en esos tres casos concretos (medido: `hitos.ID.scrore`,
+    `preguntas.ID.respueta` y `avisos[0].avios` pasaban mudos). Recorre el propio
+    esquema —no una tupla de nombres a mano— para que declarar un nivel nuevo ahí baste
+    para que este test también lo cubra, sin tocarlo."""
+    forma, _ = render_informe.ESQUEMA_ANIDADO[nombre]
+    clave_ajena = "clave_que_no_existe"
+    if forma == render_informe._OBJETO:
+        valor = {clave_ajena: "x"}
+    elif forma == render_informe._POR_ID:
+        valor = {"ID_1": {clave_ajena: "x"}}
+    else:
+        assert forma == render_informe._LISTA, f"forma desconocida: {forma!r}"
+        valor = [{clave_ajena: "x"}]
+
+    _generar(tmp_path, {"case_id": "W-TEST00", nombre: valor})
+
+    err = capsys.readouterr().err
+    assert clave_ajena in err, (
+        f"'{nombre}' (forma {forma!r}) se quedó mudo ante una clave ajena anidada: {err!r}")
+
+
+def test_un_hito_escalar_no_dispara_el_aviso_de_claves(tmp_path, capsys):
+    """Formato admitido a propósito (ver `main`): un hito puede llegar como escalar en
+    vez de como objeto `{"score":…, "fecha":…}`. El recorrido nuevo de H-02 no puede
+    tratar «no es un dict» como «clave ajena» — no hay claves que mirar."""
+    salida = _generar(tmp_path, {"case_id": "W-TEST00", "hitos": {"CUANTIA": 2}})
+
+    assert "CUANTIA" not in capsys.readouterr().err
+    assert openpyxl.load_workbook(salida)["INFORMACION"]["F25"].value == 2
+
+
 def test_NO_avisa_del_campo_de_marca_del_productor(tmp_path, capsys):
     """Es del contrato aunque el consumidor no lo use. Un aviso que sale en TODAS las
     corridas deja de leerse, y entonces el que importa se pierde en el ruido."""

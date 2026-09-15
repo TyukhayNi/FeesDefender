@@ -26,6 +26,18 @@
 - `SKILL.md` estrena campo `version` en el frontmatter (`"1.0"`): la skill no lo tenía
   —a diferencia de otras del despacho, que sí versionan así— y este cambio es el primero
   que se deja registrado con un número.
+- **Segunda corrección el mismo día (revisión adversarial R1, H-02):** la regla de arriba
+  cubría el campo entero de `equipo`/`importes`/`actividades`, pero no las claves DENTRO
+  de cada valor de `hitos`, cada respuesta de `preguntas` ni cada objeto de `avisos` —
+  reconocer el identificador de un hito no decía nada de las claves de su contenido
+  (`hitos.ENCARGO.scrore`, con una errata, pasaba mudo; igual `preguntas.*.respueta` y
+  `avisos[*].avios`). En vez de sumar tres bucles más a mano, `avisa_de_claves_ajenas`
+  pasa a recorrer `ESQUEMA_ANIDADO`, que nombra cada nivel anidado y su forma (objeto
+  fijo, dict indexado por un id libre, o lista de objetos): un sitio nuevo queda
+  cubierto declarándolo ahí, no escribiendo el bucle que lo recorre. Test de la
+  propiedad general, no uno por sitio:
+  `test_toda_clave_ajena_anidada_avisa_por_construccion`, parametrizado sobre el
+  propio esquema.
 
 ## 2026-09-11 — `modelo_xlsx.md` manda sobre la estructura de la plantilla (`MEJORAS #244`)
 

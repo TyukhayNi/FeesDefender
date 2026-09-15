@@ -63,11 +63,23 @@ EQUIPO_CELLS = {
 # --- Claves que este script LEE. Todo lo que no está aquí se ignora, y por eso se avisa.
 #
 # La regla, una y la misma para todo el fichero: TODA clave que no reconozco se dice en
-# voz alta. Ya se hacía con los hitos y las preguntas —que se recorren por clave— y NO se
-# hacía en los campos de primer nivel ni dentro de `importes`/`actividades`, que se leen
-# con `.get()`. Esa asimetría costó un defecto medido el 2026-09-15: `importes.principal`
-# —la clave que publicó `MEJORAS #262` como contrato— no llega a ninguna celda, y el
-# script imprimía `OK`. Doce mil euros en silencio.
+# voz alta. Ya se hacía con los hitos y las preguntas —que se recorren por clave, con
+# aviso de IDENTIFICADOR desconocido— y NO se hacía en los campos de primer nivel ni
+# dentro de `importes`/`actividades`, que se leían con `.get()`. Esa asimetría costó un
+# defecto medido el 2026-09-15: `importes.principal` —la clave que publicó `MEJORAS #262`
+# como contrato— no llega a ninguna celda, y el script imprimía `OK`. Doce mil euros en
+# silencio.
+#
+# **Esta es la sexta vez que se remedia el caso y no la frontera (R1/H-02, mismo día).**
+# El arreglo de arriba cubrió el campo entero de `equipo`/`importes`/`actividades`, pero
+# se quedó ciego a lo que hay DENTRO de cada valor de `hitos`, de cada respuesta de
+# `preguntas` y de cada objeto de `avisos`: reconocer el identificador de un hito no dice
+# nada de las claves de SU contenido (`hitos.ENCARGO.scrore` con una errata pasaba mudo).
+# Añadir ahí tres bucles más —uno por sitio, calcado del de arriba— habría dejado la
+# MISMA asimetría un nivel más abajo, a la espera del próximo campo anidado. Por eso
+# `avisa_de_claves_ajenas` ya no lleva un bucle por sitio: recorre `ESQUEMA_ANIDADO`, que
+# nombra CADA nivel anidado que el script lee y la FORMA en que lo lee. Un sitio nuevo se
+# cubre declarándolo ahí, no escribiendo el bucle que lo recorre — por construcción.
 CAMPOS_CONOCIDOS = {
     "case_id", "ref", "fecha", "equipo", "observaciones", "importes", "hitos",
     "preguntas", "actividades", "motivos_impago", "avisos", "bitacora_inicial",
@@ -89,23 +101,69 @@ CLAVES_ACTIVIDADES = {"exposes_propiedad", "visitas_propiedad",
 # para `actividades`.
 CLAVES_EQUIPO = {"director_captador", "asesor_captador",
                  "director_buscador", "asesor_buscador"}
+#: Las claves que `main()` lee de CADA valor de `hitos` (`val.get("score")`/`.get("fecha")`).
+#: Sin registro paralelo en el core: qué columnas tiene la hoja INFORMACION es
+#: conocimiento propio de este script, no del contrato de `viabilidad_json.py`.
+CLAVES_HITO = {"score", "fecha"}
+#: Las que `main()` lee de CADA respuesta de `preguntas` (columnas I/J/K/M de PREGUNTAS).
+CLAVES_PREGUNTA = {"respuesta", "cita", "confianza", "pendiente"}
+#: Las que `main()` lee de CADA objeto de `avisos` (columnas B-J de AVISOS LLM).
+CLAVES_AVISO = {"n", "tipo", "aviso", "impacto", "fuente", "severidad", "accion",
+                "sube", "estado"}
+
+#: Forma de cada nivel anidado que este script lee: `_OBJETO` es un único dict fijo
+#: (`equipo`/`importes`/`actividades`); `_POR_ID` es un dict indexado por un
+#: identificador LIBRE —el propio id del hito o de la pregunta, no una clave del
+#: contrato— (`hitos`/`preguntas`); `_LISTA` es una lista de objetos (`avisos`).
+_OBJETO, _POR_ID, _LISTA = "objeto", "por_id", "lista"
+ESQUEMA_ANIDADO = {
+    "equipo": (_OBJETO, CLAVES_EQUIPO),
+    "importes": (_OBJETO, CLAVES_IMPORTES),
+    "actividades": (_OBJETO, CLAVES_ACTIVIDADES),
+    "hitos": (_POR_ID, CLAVES_HITO),
+    "preguntas": (_POR_ID, CLAVES_PREGUNTA),
+    "avisos": (_LISTA, CLAVES_AVISO),
+}
 
 
 def avisa_de_claves_ajenas(d):
-    """Dice en voz alta lo que este script no va a leer."""
+    """Dice en voz alta lo que este script no va a leer: los campos de primer nivel y,
+    en TODOS los niveles anidados que declara `ESQUEMA_ANIDADO` —no solo los tres de
+    antes—, las claves de cada objeto que cuelga de ellos (H-02, 2026-09-15)."""
     for k in d:
         if k not in CAMPOS_CONOCIDOS:
             warn(f"campo '{k}' desconocido — se ignora.")
-    for nombre, conocidas in (("equipo", CLAVES_EQUIPO),
-                              ("importes", CLAVES_IMPORTES),
-                              ("actividades", CLAVES_ACTIVIDADES)):
+    for nombre, (forma, conocidas) in ESQUEMA_ANIDADO.items():
         valor = d.get(nombre)
-        if not isinstance(valor, dict):
-            continue
-        for k in valor:
-            if k not in conocidas:
-                warn(f"{nombre}.'{k}' no se lee — su valor se descarta. "
-                     f"Válidas: {', '.join(sorted(conocidas))}.")
+        if forma == _OBJETO:
+            _avisa_objeto(nombre, valor, conocidas)
+        elif forma == _POR_ID:
+            if not isinstance(valor, dict):
+                continue
+            for idk, obj in valor.items():
+                _avisa_objeto(f"{nombre}.{idk}", obj, conocidas)
+        elif forma == _LISTA:
+            if not isinstance(valor, list):
+                continue
+            for i, obj in enumerate(valor):
+                _avisa_objeto(f"{nombre}[{i}]", obj, conocidas)
+
+
+def _avisa_objeto(nombre, valor, conocidas):
+    """Avisa de las claves de `valor` que no están en `conocidas`.
+
+    Un `valor` que no es un objeto se deja pasar AQUÍ en silencio: no es un error de
+    forma que le toque decir a este aviso de claves —un hito puede venir como escalar
+    a propósito (ver `main`), y una respuesta o un aviso que no son objetos ya avisan
+    por su cuenta en `main()`—, así que doblar el aviso aquí sería ruido repetido, no
+    información nueva.
+    """
+    if not isinstance(valor, dict):
+        return
+    for k in valor:
+        if k not in conocidas:
+            warn(f"{nombre}.'{k}' no se lee — su valor se descarta. "
+                 f"Válidas: {', '.join(sorted(conocidas))}.")
 
 
 def warn(msg):
