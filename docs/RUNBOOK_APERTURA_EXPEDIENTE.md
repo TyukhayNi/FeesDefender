@@ -242,7 +242,10 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 >
 > **Comando que además trae correo** (`--fuente email` en vez de `drive_ev` — recuerda: en V1,
 > `--fuente` dice qué se trae ADEMÁS de Drive E&V, que la etapa `drive` materializa siempre —, más
-> `--cuenta` y `--label`; sin los tres la etapa `email` sale `saltada`, no falla):
+> `--cuenta` y `--label`, que con `--fuente email` son obligatorios los dos: pedirlo sin uno de
+> ellos **aborta la validación antes de llegar a la etapa** — no la deja `saltada` (detalle más
+> abajo, «la puerta sigue igual»). `saltada` es lo que sale al no pedir correo en absoluto, con
+> `--fuente drive_ev` como en el comando de arriba):
 >
 > ```powershell
 > python -m scripts.abrir_caso --modo v1 --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VUELTA `
