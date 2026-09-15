@@ -104,7 +104,7 @@ de resumen, la etiqueta `MEJORAS #NN`, el estado). Texto:
   2026-09-14. Dos hallazgos medidos el 2026-09-15 mueven el alcance: el contrato del JSON que
   publica `MEJORAS #262` tiene **cuatro campos mal** (12.000 € se tiran en silencio y sale `OK`), y
   el **equipo comercial no es derivable** de `_ficha_crm.yaml` (10 fichas reales, 25 colaboradores,
-  cero claves de rol). La corrida rellena **4 de los 11 campos**; el resto queda como residuo
+  cero claves de rol). La corrida rellena **4 de los 12 campos**; el resto queda como residuo
   marcado. **No cierra `#264`:** la etapa `sala_lectura` sigue abierta.
   Spec: `docs/superpowers/specs/2026-09-15-corrida-prepara-sesion-remata-design.md` ·
   Plan: `docs/superpowers/plans/2026-09-15-corrida-prepara-sesion-remata.md`
@@ -418,9 +418,11 @@ Y el bloque de `validar_modo` que la comprueba (hoy en `:1664`) pasa a:
             "digan caso por caso."
         )
     # Los flags del correo se exigen AQUI, ademas de en `_validar_flags`, y no es
-    # duplicacion: `_validar_flags` corre despues de resolver identidad y de
-    # `ensure_case`, asi que abortar alli deja el esqueleto del caso ya creado. Es la
-    # leccion HA-06 de la R-A, que se compro con `--hasta`.
+    # duplicacion: `_validar_flags` corre despues de resolver identidad, aunque
+    # TODAVIA antes del mutex y de `ensure_case` -asi que abortar en `_validar_flags`
+    # no deja nada creado, pero SI deja pagada la resolucion de identidad (lee disco
+    # y, con `--fuente drive_ev`, consulta Drive) en una corrida que de todos modos
+    # iba a abortar. Es la leccion HA-06 de la R-A, que se compro con `--hasta`.
     if fuente == "email":
         if not cuenta:
             errores.append(
@@ -603,7 +605,7 @@ Crear `tests/test_viabilidad_json.py`:
 ```python
 """El contrato del JSON de viabilidad, y su validador.
 
-Los cinco defectos que se prueban aqui son los que `MEJORAS #262` publico como
+Los cuatro defectos que se prueban aqui son los que `MEJORAS #262` publico como
 contrato «derivado por ejecucion» y que resultaron INCORRECTOS, medidos el
 2026-09-15 corriendo el consumidor real. Cada `test_rechaza_*` es uno de ellos.
 
