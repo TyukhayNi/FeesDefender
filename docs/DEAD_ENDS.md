@@ -6,6 +6,41 @@
 
 ---
 
+## Leer un rojo (o un verde) de `session_close` sin comprobar que el árbol no se movió
+
+- **Intentado:** dar por buena la salida de `python -m scripts.session_close` en la raíz
+  compartida, con otras sesiones de Claude Code trabajando a la vez sobre el mismo repositorio.
+- **Resultado:** **rojo con 4 fallos que no existían.** `test_apertura_v1_cableado::test_f25…`
+  y `test_apertura_v1_costuras::test_hc02…` con «el cuerpo de main ya no tiene el bloque de
+  mutex», y `test_escritura_censo::test_el_techo_no_esta_holgado` / `::test_el_censo_solo_baja`
+  con «el censo real es 94 y el techo dice 92». La corrida **empezó con el árbol en `aba9656` y
+  terminó con el árbol en `f9c5f80`**: otra sesión hizo `git pull` en la raíz compartida a
+  mitad. Los cuatro guards leen ficheros del árbol (`core/`, `scripts/`), y los cuatro están
+  **entre los que esos commits modifican** — `test_escritura_censo.py` y
+  `test_apertura_v1_costuras.py` vienen en el propio diff `aba9656..f9c5f80`.
+- **Confirmado:** 2026-09-14. Repetida la corrida sobre árbol estable (`f9c5f808…` sellado antes
+  y después, working tree limpio): **verde con las dos semillas**, 0 fallos, 0 errores.
+- **Lo que NO sirve:** el código de salida, la lista de `FAILED`, ni reproducir el fallo suelto —
+  reproduce igual mientras el árbol siga mezclado, así que parece determinista y real. Tampoco
+  sirve la corazonada de «será cosa del entorno»: eso es lo que hay que **medir**, no suponer
+  (ver `feedback-test-roto-culpar-al-entorno` en la memoria: el error simétrico es culpar al
+  entorno de un rojo propio).
+- **La trampa de fondo:** un guard que lee el árbol mientras el árbol cambia **no mide el
+  código, mide la carrera** — y puede salir verde igual de fácil que rojo. Es la misma clase de
+  defecto que el aislamiento en paralelo de `tests/test_guard_aislamiento_paralelo.py`, pero un
+  piso más arriba: allí el escritor es otro worker, aquí es otra sesión.
+- **Solución:** **sellar el HEAD antes y después, y declararlo.** Una línea a cada lado:
+
+  ```powershell
+  git rev-parse HEAD; git status --porcelain   # antes
+  python -m scripts.session_close
+  git rev-parse HEAD                            # después: si difiere, la medición NO vale
+  ```
+
+  Si difiere, la corrida se descarta entera (no se «rescatan» los tests que pasaron) y se repite.
+  Y vale la pena mirar si el proceso sigue **vivo** además de si ha escrito: un fichero de
+  salida vacío no distingue «pensando» de «muerto», y el buffer no se vuelca hasta el final.
+
 ## Actualizar `_caso.md` LOCALIZANDO el fragmento dentro del cuerpo Markdown
 
 - **Intentado:** dar a `_caso.md` un actualizador (`update_meta`) que **encuentre** la línea a

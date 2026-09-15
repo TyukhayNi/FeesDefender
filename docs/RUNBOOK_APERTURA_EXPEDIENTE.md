@@ -93,6 +93,40 @@ fecha: 2026-07-22
     `sync.pull` como *fuente* de pull, así que apuntarlo al hogar canónico hace que un pull futuro
     se traiga el caso sobre sí mismo. Automatizarlo en `repository_cli checkin`: `MEJORAS #139`.
 
+- **`[APER-73]` Esta sesión NO toca el repo. Anota los defectos; los fichas al cerrar.**
+  Una sesión de apertura ejecuta el runbook y, si encuentra un defecto de *nuestro* código, **no
+  lo arregla aquí**: lo anota y sigue. Está medido — las **838 líneas** huérfanas que hubo que
+  rescatar el 2026-09-13 (fila #29) fueron una sesión de apertura que se puso a reparar y dejó
+  código sin commitear sobre una base **21 commits atrás**, duplicando algo que otra vía ya había
+  construido. Repara **una sola** sesión, que es la dueña del código.
+  - **Dónde se anota:** `%LOCALAPPDATA%\FeesDefender\aperturas\<AAAA-MM-DD>_<W-code>.md`. Fuera
+    del repo a propósito: el fichero lo escribe esta sesión y lo lee el **cierre**, que puede
+    correr días después, en otra rama y en otro worktree — la ruta tiene que ser computable por
+    las dos sin coordinarse.
+  - **Formato** (lo lee `scripts/session_close.py`; el guard
+    `tests/test_guard_formato_apertura.py` comprueba que este bloque y el código no divergen):
+
+    <!-- formato-fichero-apertura -->
+
+    ```markdown
+    ---
+    caso: W-02UDC1
+    fecha: 2026-09-14
+    estado: pendiente
+    fichas: []
+    ---
+
+    ## Título corto del defecto
+
+    Lo observado, con su medición y la ruta del fichero.
+    ```
+
+  - **`estado`**: `pendiente` · `fichado` · `descartado`. Al fichar, pon `fichado` y lista los
+    `MEJORAS #NN` en `fichas:`; si decides que no merece ficha, `descartado` y di por qué en el
+    cuerpo. Mientras siga `pendiente`, **`session_close` te lo recordará en cada cierre**.
+  - **Los pendientes del CASO no van aquí** — esos son `Pendiente` / `estado.json` / la ficha de
+    cierre del expediente. Este fichero es solo para defectos de nuestro código y del proceso.
+
 ---
 
 ## 1. Recon en paralelo (antes de preguntar) `[APER-02]`
@@ -346,8 +380,14 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   - **No hay `--fuente` que signifique «ninguna»** (`_FUENTES_CLI = drive_ev|manual|whatsapp|email`),
     así que el paso 2 arrastra un re-pase de intake. Medido: **24,1 s en total**, alta CRM incluida,
     con `0 depositables, 125 duplicados omitidos`. Es peaje, no un problema.
-  - **La `cuantia` del alta no baja a `_caso.md`**: tras el paso 2, `meta.cuantia` sigue a `null`
-    aunque el CRM la tenga. Si luego se lee de ahí, no está.
+  - **La `cuantia` del alta SÍ baja a `_caso.md`** (corregido el 2026-09-15). Esta línea dijo
+    durante semanas lo contrario —«tras el paso 2, `meta.cuantia` sigue a `null` aunque el CRM la
+    tenga; si luego se lee de ahí, no está»— y es falso contra el código: tras
+    `abrir_caso --case-id W-02SRFU --crm api --cuantia 33759`, el `_caso.md` trae
+    `meta.cuantia: 33759.0`. Y no es un detalle ocioso: la comprobación **C9** de
+    `verificar_apertura` («Cuantía de `_caso.md` igual a la del CRM») **existe porque el dato está
+    ahí**, y sale `ok` precisamente leyéndolo. La línea vieja mandaba al CRM a buscar algo que ya
+    estaba en local.
 
 - **`[APER-67]` / W-030TZY — Reparto real del tiempo de una apertura, para fijar expectativa.**
   Medido de punta a punta el 2026-09-10 (120 ficheros del Drive E&V + 36 correos; 173 documentos
@@ -1176,6 +1216,11 @@ Todo REST `x-api-key`. No se borra nada.
 - **`[APER-30]` Numeración del "cierre" en `STATUS.md`:** `grep` del último `(Nº cierre` en
   **`origin/main`** ANTES de numerar (colisionó dos veces con la sesión paralela). No fiarse
   del `STATUS.md` local.
+  - **Una apertura NO abre un cierre numerado propio** (P8 (d), 2026-09-13). El ordinal es del
+    **cierre de sesión**, no del expediente: un día con tres aperturas tiene **un** cierre, y
+    dentro un bloque «aperturas del día» que narra las tres con sus W-codes. Numerar uno por
+    expediente multiplica los ordinales sin añadir información. La regla vive en `CLAUDE.md`
+    §«Cierre de sesión»; este paso se lee con ella delante.
 - **`[APER-31]` Rama de cierre SIEMPRE por W-code** (`docs/cierre-sesion-w0XXXXX`), nunca
   alias de proyecto/dirección — aunque ese alias sea normal *dentro* del caso.
 - **`[APER-32]` `git push --force-with-lease`, `git reset --hard`, `git branch -D` están
@@ -1186,6 +1231,11 @@ Todo REST `x-api-key`. No se borra nada.
   3. `git push origin tmp-merge:<rama-remota-del-PR>` (fast-forward)
   4. `git checkout -B <rama-local> origin/<rama-remota>`; borrar `tmp-merge`.
 - Cierre estándar: `python -m scripts.session_close` (slash `/cierre`).
+- **`[APER-73]` Antes de cerrar: ficha lo que anotaste.** Lee
+  `%LOCALAPPDATA%\FeesDefender\aperturas\<fecha>_<W-code>.md`, abre los `MEJORAS #NN` que
+  procedan **leyendo `origin/main`** (no la rama en que estés), y deja el fichero en
+  `estado: fichado` con sus `fichas:`, o en `estado: descartado`. `session_close` avisa si queda
+  alguno en `pendiente` — es aviso, no verja: no te bloquea el cierre.
 
 ---
 

@@ -2855,3 +2855,42 @@ el `id_gcalendar` vacío—. No son calendarios de Google, como escribí primero
 del método del §14.6: descubrir una escritura sin HAR funciona cuando va por el API de
 elementos, y esta no va por ahí.
 
+
+## 18. Escritura y lectura van a fachadas DISTINTAS (medido el 2026-09-14)
+
+Dato que no estaba escrito en ningún sitio y que explica una medición entera que salió torcida:
+
+| Camino | Host | Auth |
+|---|---|---|
+| **Escritura** (`create_expediente` → `_rest_post`) | `https://api-crm-commons-pro.sudespacho.biz` (`core/sudespacho_create.py:90`) | `x-api-key` |
+| **Lectura** (`SudespachoClient`) y la **UI** | `tnm.sudespacho.net` | `x-api-key` / sesión |
+| **Fallback legacy** del alta | `tnm.sudespacho.net` | cookie `PHPSESSID` + CSRF |
+
+**La consecuencia práctica: se puede crear por una fachada y borrar por la otra sin notarlo.**
+Pasó el 2026-09-14 — dos `POST` devolvieron `201` con ids 648 y 649 contra la fachada de
+escritura, y el `DELETE` fue contra la de lectura, que respondió `200 "Deleted!"` a las dos.
+Ni las creaciones ni los borrados aparecieron en el **log de auditoría** de `tnm`.
+
+### 18.1. El `500` de `properties` era la FORMA del parámetro (resuelto el 2026-09-14)
+
+Durante unas horas se creyó que no había lectura verificable: `GET /api/element_register/<elem>/<id>`
+devolvía `500 Warning: Array to string conversion` **también para ids que existen**. La causa no era
+la API:
+
+| Forma del parámetro | Resultado |
+|---|---|
+| `?properties=Referencia_Cliente` (**cadena, comas si son varias**) | **200** — devuelve el registro |
+| `?properties[0]=Referencia_Cliente` (indexado) | `500 Array to string conversion` |
+| sin `properties` | `500 Undefined array key` |
+
+**Los corchetes indexados son la convención del endpoint PLURAL** (`/api/element_registries/<elem>`,
+el de listados, como en `core/procurador_intake.py:362`). El **singular** quiere la cadena. Mezclarlas
+es el error, y el mensaje `Array to string conversion` lo dice literalmente.
+
+**Con la forma correcta, el instrumento distingue** (medido con control positivo y negativo):
+un id que existe → `200`; uno que no → `500`. Eso basta para acreditar por lectura.
+
+**Regla operativa, que no cambia:** no se acredita una escritura al CRM por su `status`. Se relee
+con `?properties=…` y se comprueba el `200`. Medido así el 2026-09-14: dos altas con la **misma**
+`Referencia_Cliente` produjeron dos expedientes que **coexisten** —verificado por lectura, no por el
+`201`—, y su borrado también se verificó por lectura.

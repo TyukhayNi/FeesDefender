@@ -431,6 +431,156 @@ def _avisar_specs_sin_traza() -> None:
     print("(Un handoff que lo mencione NO cuenta: no es fuente de verdad.)")
 
 
+# --- Aperturas con defectos anotados y sin fichar (P8 (a)) --------------------
+#: Estados que un fichero de apertura puede declarar. Cualquier otro es ILEGIBLE,
+#: nunca "fichado por defecto": la direccion del fallo importa, y ante la duda el
+#: aviso habla.
+_ESTADOS_APERTURA = {"pendiente", "fichado", "descartado"}
+
+
+def raiz_aperturas_por_defecto() -> Path:
+    """El hogar de produccion de los ficheros de apertura. Para los LLAMADORES.
+
+    `_leer_aperturas` no se cae aqui sola, y eso es deliberado: la barrera de test
+    cubre rclone y `subprocess`, no las escrituras al perfil del usuario, asi que
+    un test que se olvidara de redirigir la raiz escribiria en el `%LOCALAPPDATA%`
+    real. Misma doctrina que `core/casos/workspace_registry.raiz_por_defecto()`.
+    """
+    override = os.getenv("FEESDEFENDER_APERTURAS")
+    if override:
+        return Path(override)
+    base = os.getenv("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    return Path(base) / "FeesDefender" / "aperturas"
+
+
+def _frontmatter_apertura(texto: str) -> tuple[dict[str, str] | None, str]:
+    """Parsea el frontmatter plano de un fichero de apertura, con GRAMATICA CERRADA.
+
+    Devuelve `(campos, "")` o `(None, motivo)`. **No usa `yaml`**, y no es pereza:
+    `safe_load` convierte `fecha: 2026-09-14` en `datetime.date` —no en el `str`
+    que el resto compara— y el `import yaml` revienta al invocar este script desde
+    un worktree (ver `tests/test_session_close_no_pude_medir.py`), que convertiria
+    un aviso en una caida del cierre entero.
+
+    **Prescindir de YAML obliga a definir el formato, no a ser tolerante** (R1/H-01).
+    La version anterior aplanaba la sangria, dejaba ganar a la ultima clave repetida
+    e ignoraba las lineas sin `:`; con eso, un `detalle:` que contuviera
+    `estado: fichado` SILENCIABA un pendiente declarado en la raiz. Lo que el parser
+    no entiende ya no se acepta: se declara ilegible.
+    """
+    lineas = texto.splitlines()
+    if not lineas or lineas[0].strip() != "---":
+        return None, "sin frontmatter"
+    campos: dict[str, str] = {}
+    for ln in lineas[1:]:
+        if ln.strip() == "---":
+            return campos, ""
+        if not ln.strip():
+            continue
+        if ln[0] in " \t":
+            return None, f"linea con sangria (el formato es plano): {ln.strip()[:40]!r}"
+        clave, sep, valor = ln.partition(":")
+        if not sep:
+            return None, f"linea sin ':' : {ln.strip()[:40]!r}"
+        nombre = clave.strip().lower()
+        if nombre in campos:
+            return None, f"clave duplicada: {nombre!r}"
+        campos[nombre] = valor.strip()
+    return None, "frontmatter sin cierre"
+
+
+def _leer_aperturas(raiz: Path) -> tuple[list[tuple[str, str, str]], list[tuple[str, str]]]:
+    """Lee los ficheros de apertura de `raiz`. **La raiz se inyecta: sin default.**
+
+    Devuelve `(pendientes, ilegibles)`. Un fichero que no se puede interpretar NO
+    se cuenta como pendiente ni se traga: se declara aparte, que es la leccion de
+    la pieza A de la fila #27. Aqui es exacta — un frontmatter tecleado mal es
+    justo el caso que, tragado, deja el defecto sin fichar creyendo que lo esta.
+    """
+    pendientes: list[tuple[str, str, str]] = []
+    ilegibles: list[tuple[str, str]] = []
+    # AUSENCIA no es lo mismo que NO PUDE COMPROBARLO (R1/H-02). Una maquina que
+    # nunca abrio un expediente no tiene la carpeta, y eso es silencio legitimo;
+    # una raiz que existe pero no es carpeta, o que no se deja enumerar, es una
+    # comprobacion que NO se hizo y hay que decirlo.
+    if not raiz.exists():
+        return pendientes, ilegibles
+    if not raiz.is_dir():
+        return pendientes, [(raiz.name, f"la raiz de aperturas no es una carpeta: {raiz}")]
+    try:
+        # `Path.glob` SUPRIME el error de enumeracion y devuelve cero entradas, que
+        # es indistinguible de una carpeta vacia — el mismo defecto de `rglob` que
+        # midio la pieza A de la fila #27. `os.listdir` lo propaga.
+        nombres = sorted(n for n in os.listdir(raiz) if n.lower().endswith(".md"))
+    except OSError as e:
+        return pendientes, [(raiz.name, f"no se pudo enumerar la raiz de aperturas: {e}")]
+    for nombre in nombres:
+        fichero = raiz / nombre
+        # No se filtra por `is_file()`: un directorio o un enlace roto llamado `x.md`
+        # es una anomalia que hay que DECLARAR, y saltarlo en silencio seria repetir
+        # aqui el mismo defecto que esta ronda vino a cerrar. El intento de lectura
+        # falla y el fallo se declara.
+        try:
+            # Estricto a proposito: `errors="replace"` convertia un byte invalido en
+            # U+FFFD, el campo seguia «no vacio» y la nota corrupta desaparecia de las
+            # dos listas (R1/H-03).
+            texto = fichero.read_text(encoding="utf-8")
+        except UnicodeDecodeError as e:
+            ilegibles.append((nombre, f"no es UTF-8 valido: {e}"))
+            continue
+        except OSError as e:
+            ilegibles.append((nombre, f"no se pudo leer: {e}"))
+            continue
+        campos, motivo = _frontmatter_apertura(texto)
+        if campos is None:
+            ilegibles.append((nombre, motivo))
+            continue
+        estado = campos.get("estado", "").strip().lower()
+        if not estado:
+            ilegibles.append((nombre, "falta estado:"))
+        elif estado not in _ESTADOS_APERTURA:
+            ilegibles.append((nombre, f"estado desconocido: {estado}"))
+        elif not campos.get("caso"):
+            ilegibles.append((nombre, "falta caso:"))
+        elif not campos.get("fecha"):
+            ilegibles.append((nombre, "falta fecha:"))
+        elif estado == "pendiente":
+            pendientes.append((nombre, campos["caso"], campos["fecha"]))
+    return pendientes, ilegibles
+
+
+def _avisar_aperturas_sin_fichar(raiz: Path | None = None) -> None:
+    """AVISO no bloqueante: aperturas que anotaron defectos y no los ficharon.
+
+    (a) de P8 dice que la sesion de apertura los ficha «al final», y nada obligaba
+    a ese «al final»: dependia de que alguien se acordara, que es el defecto mas
+    medido de esta casa. Esto es el disparador.
+
+    **Silencio total cuando no hay nada** (decision de Nikolai, 2026-09-14). Eso
+    hace que un lector roto se parezca a uno que no encuentra nada, asi que la
+    prueba de que el instrumento muerde la da el control positivo de la suite, no
+    la salida diaria: `test_control_positivo_un_pendiente_se_ve`.
+    """
+    try:
+        raiz = raiz if raiz is not None else raiz_aperturas_por_defecto()
+        pendientes, ilegibles = _leer_aperturas(raiz)
+    except Exception as e:  # el aviso nunca debe romper el cierre
+        print(f"[aviso] no se pudieron leer las aperturas: {e}")
+        return
+    if not pendientes and not ilegibles:
+        return
+    print("\n" + "-" * 40)
+    print("Aperturas con defectos sin fichar")
+    if pendientes:
+        print(f"[!] {len(pendientes)} apertura(s) pendiente(s) de fichar:")
+        for nombre, caso, fecha in pendientes:
+            print(f"    {nombre}  ({caso}, {fecha})")
+        print("    Fichalos en docs/MEJORAS_FUTURAS.md y pon `estado: fichado`,")
+        print("    o `estado: descartado` si decides que no merecen ficha.")
+    for nombre, motivo in ilegibles:
+        print(f"[aviso] no interpretable: {nombre} ({motivo})")
+
+
 #: Dependencias de terceros que la suite necesita ya en la fase de COLECCION:
 #: `core.config` importa `dotenv`; `core.utils`, `yaml` y `slugify`. Sin ellas
 #: pytest no "falla": no llega a ejecutar ninguna asercion.
@@ -761,6 +911,12 @@ def main() -> None:
         _avisar_specs_sin_traza()
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar trazabilidad de specs/plans: {e}")
+
+    # Aviso de aperturas con defectos anotados y sin fichar (modo AVISO, no bloquea).
+    try:
+        _avisar_aperturas_sin_fichar()
+    except Exception as e:  # el aviso nunca debe romper el cierre
+        print(f"[aviso] no se pudo comprobar las aperturas sin fichar: {e}")
 
 
 if __name__ == "__main__":

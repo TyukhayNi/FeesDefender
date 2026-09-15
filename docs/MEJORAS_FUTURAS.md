@@ -8510,6 +8510,26 @@ documentación del inmueble; aquí es **la identidad de quien firmó el encargo*
 reclamación de honorarios es el documento con el que se identifica al deudor en la demanda y en la
 ficha del CRM.
 
+**Tercera medición — 2026-09-15, `W-02JSVZ`: el fichero que se cae es EL CONTRATO DE ENCARGO, y
+entra por la otra puerta.** Las dos mediciones anteriores eran ficheros **sin extensión**. Esta es
+la cara gemela: ficheros **con** extensión, pero con una que `_RELEVANT_EXTS` no lista. Los cinco
+`.HEIC` de `00_Input/01_Drive EV/DOCS ACTIVACION/CONTRATO NO EXCLUSIVA INVESTMENT/` son las
+fotografías del **contrato de encargo de venta de 02/12/2017**, el título en el que se funda toda
+la reclamación. La sala de máquina los leyó sin incidencia —los cinco en `estado: ok`, de 1.361 a
+3.233 caracteres— y el catálogo tiene **167 entradas, ninguna suya**.
+
+Así que la frontera no es «sin extensión no hay fila»: es que **los dos componentes usan criterios
+distintos y el de la sala de lectura es una lista blanca cerrada**. Mientras lo sea, cada formato
+que E&V empiece a subir (hoy `.heic` desde iPhone, mañana otro) se cae en silencio. La línea 1778
+de este mismo fichero ya anotaba que las de iPhone «se caen ya en el inventario», pero encuadrado
+como imágenes; con el contrato dentro, el encuadre estaba mal calibrado.
+
+**Lo que esto cambia en la prioridad:** en `W-04A6LI` se perdió documentación del inmueble; en
+`W-02O7E2`, la identidad de los firmantes; aquí, **el contrato que se reclama**. Un letrado que
+trabaje desde la sala de lectura —que es para lo que existe— no encuentra el encargo. No hay
+pérdida de datos (el crudo y los espejos MD están), pero sí una sala que miente por omisión sobre
+lo que contiene el expediente.
+
 **Remedio aplicado a mano en ese caso, por si sirve de patrón:** alta manual en el catálogo con el
 `sha256` de `_cobertura.json` como `id_doc`, y la extensión declarada en el `nombre_original` de la
 entrada — no basta renombrar el fichero copiado, porque `_nombre_canonico` deriva la extensión de
@@ -11887,7 +11907,440 @@ momento del envío.
 leído (documento, correo entrante, ficha), y el envío va detrás de una confirmación explícita,
 no de un valor por defecto.
 
-## 258. El nombre de la subcarpeta se repite dentro de cada fichero, y el 19 % del expediente pasa del límite de 260 de Windows
+
+## 258. No hay lectura verificable del CRM — ✅ RESUELTA el 2026-09-14, era la FORMA del parámetro
+
+> **✅ CERRADA horas después de abrirse.** No era que faltara lectura verificable: era que yo pasaba
+> `properties[0]=…` (la convención del endpoint **plural**) a un endpoint **singular** que quiere
+> `properties=<cadena>`. Con la forma correcta, `GET /api/element_register/<elem>/<id>` devuelve
+> **200** para un id que existe y **500** para uno que no — distingue, que es lo único que se le
+> pedía. Detalle y tabla: `INTEGRACION_SUDESPACHO.md` §18.1. **Desbloquea V2** (`PLAN.md` fila #34).
+>
+> **Lo que deja como lección** no es el parámetro: es que **declaré «no hay» cuando lo cierto era
+> «no sé»** — cuatro instrumentos inertes seguidos y ninguno me hizo sospechar de la forma de mi
+> propia llamada, que es lo primero que había que mirar. El mensaje del servidor lo decía literal:
+> *Array to string conversion*.
+
+
+**Qué pasa.** Contra este CRM solo tenemos **status**, no resultado. Medido el 2026-09-14, con
+control positivo en cada intento:
+
+| Vía | Resultado |
+|---|---|
+| `GET /api/element_register/extrajudiciales/<id>` en `tnm.sudespacho.net` | **500** `Warning: Array to string conversion` — también para un id que SÍ existe |
+| lo mismo en `api-crm-commons-pro.sudespacho.biz` | **500**, y **también para el id de control** que no existe |
+| `GET /api/element_registries/extrajudiciales` (listado) | **500**, 4.199 bytes de página de error |
+| `find` sobre la UI en el navegador | inerte: la navegación redirigió a la raíz, y el **control positivo** (buscar una cabecera que sí estaba) tampoco casó |
+
+**Cuatro instrumentos, cuatro inertes.** Y el dato que lo hace grave: **un cero de esos
+instrumentos es indistinguible de un cero verdadero**. Sin control positivo se habría dado por
+bueno cualquiera de ellos.
+
+**Y hay un split de fachadas que nadie había documentado:** la **escritura** va a
+`https://api-crm-commons-pro.sudespacho.biz` (`_REST_BASE` en `core/sudespacho_create.py:90`) y
+la **lectura** y la UI a `tnm.sudespacho.net`. Se puede crear por una y borrar por la otra sin
+darse cuenta — pasó el 2026-09-14.
+
+**Por qué bloquea.** La regla de la casa es **verificar por resultado, nunca por status**, y P6
+midió lo que cuesta saltársela: 5.612 tests verdes y 39 mutantes muertos no vieron tres defectos
+que una ejecución real encontró. Si V2 cablea `crm_alta` y `actuacion` dentro de la secuencia, su
+prueba de aceptación sería un `201` — exactamente lo que P6 demostró que no basta. **El único
+instrumento que funcionó en toda la medición fue la revisión manual de Nikolai en la UI.**
+
+**Disparador: ya disparado.** V2 (`docs/superpowers/plans/2026-09-14-apertura-v2-lazo-crm.md`)
+queda **PARADO** por decisión de Nikolai del 2026-09-14 hasta que exista esta lectura.
+
+**Qué haría falta.** Una función que, dado un `exp_id`, devuelva sus campos de forma fiable, con
+un **test de control positivo** que falle si el instrumento deja de distinguir. Antes de escribirla:
+leer `INTEGRACION_SUDESPACHO.md` §14.6 y `/api/docs` —la UI dice más que el JSON—, porque el 500
+del `properties[]` huele a forma de parámetro mal construida, no a API rota.
+
+## 259. El fallback legacy del alta no deja rastro — su uso es inmedible
+
+**Qué pasa.** `create_expediente` cae al frontal heredado si el REST falla
+(`core/sudespacho_create.py:1699-1731`), y ese camino **no escribe ningún evento ni log**.
+Medido el 2026-09-14 buscando en el bloque entero: cero registros.
+
+**Por qué importa.** La pregunta «¿podemos quitar el fallback legacy?» la hizo Nikolai el
+2026-09-14 y **no se puede responder con datos**: nadie sabe cuántas altas lo han usado. Un
+camino de escritura que no deja rastro no se puede evaluar ni para retirarlo ni para confiar en
+él. Y está vivo: el frontal responde, y durante una apertura la cookie está fresca porque el
+checklist la renueva.
+
+**Disparador.** La propia decisión sobre legacy. Es barato —un evento en el log forense cuando el
+fallback se dispara— y es lo que permite decidir dentro de unos meses con hechos.
+
+## 260. Un reintento que no comprueba si su primer intento ya funcionó
+
+**Qué pasa.** Entre el POST REST y el POST legacy de `create_expediente` **no hay reconsulta de
+duplicados**. Si REST hace commit y se pierde la respuesta, el fallback crea un segundo
+expediente. La protección que tenemos (`core/alta_crm_politica`) corre **antes** de la llamada,
+así que no cubre ese hueco.
+
+**Y el servidor no lo impide — VERIFICADO POR LECTURA, no por el `201`.** Medido el 2026-09-14:
+dos altas con la misma `Referencia_Cliente` produjeron los ids **650 y 651**, y **ambos se releyeron
+con `?properties=…` devolviendo 200**: coexisten. Después se borraron y el borrado también se
+verificó por lectura. No hay unicidad del lado servidor, coherente con que el atlas declare ese
+campo como `TextCorto` y que la clave real sea `Numero_Expediente`, autoincremental.
+
+*(La primera medición de este hecho se apoyaba solo en dos `201` y quedó en el aire cuando esos ids
+no aparecieron en la auditoría; se rehízo entera con lectura verificable.)*
+
+**La frontera, que es más ancha que este caso.** No es «existe un fallback»: es **un reintento que
+no verifica si su primer intento ya surtió efecto**, y reaparecerá en cualquier otra escritura
+remota que reintentemos. El remedio barato es reconsultar antes del segundo POST; retirar el
+fallback es la única opción irreversible y hoy no se puede justificar con datos (`MEJORAS #259`).
+
+**Disparador.** Se cierra junto con `#259`, o antes si una apertura produce un expediente
+duplicado. **Ya no depende de `#258`**, que se resolvió el mismo día: el remedio se puede acreditar
+releyendo con `?properties=…`.
+
+
+## 261. La vida del recibo de la actuación entre copias del caso
+
+**Qué pasa.** V2 introduce `00_Input/_recibo_actuacion.json`, que es lo que impide crear una
+segunda actuación al relanzar la secuencia. Está declarado como protocolo
+(`core/intake_control.RAIZ`, R2/H-05), así que la sala de máquina ya no lo inventaría como
+documento del cliente — pero **nadie ha decidido qué le pasa cuando el caso cambia de copia**
+(checkout a local, checkin al Drive).
+
+**Por qué no se resolvió copiando lo de al lado.** La tentación era añadirlo a
+`MERGE_EXCLUSIONS` junto a `_apertura_v1.json`. El revisor lo desaconsejó con razón: aquel es
+estado **de la ronda y de la copia**, mientras que **perder este recibo al cambiar de copia puede
+volver a crear la actuación** en el CRM. Y dejarlo viajar sin política tampoco vale: dos copias
+con recibos distintos dan `CONFLICT` en el merge, tratadas como contenido concurrente.
+
+**Disparador.** La primera apertura que haga checkout/checkin con una actuación ya creada. O
+antes, si se construye la intención durable del §5.2 (`MEJORAS #260`), que probablemente cambia
+dónde vive este recibo.
+
+**Lo que hace falta:** decidir quién conserva y transporta el recibo entre copias, registrarlo, y
+probarlo — incluido el caso de dos copias con recibos distintos.
+
+## 262. El JSON de la 1ª pasada de viabilidad es EFÍMERO — y sin él no hay reproducción ni auditoría
+
+**Qué pasa.** `render_informe.py` (skill `viabilidad-prerelleno`) parte de *«un JSON con los datos
+extraídos en la 1ª pasada documental»*. Ese JSON **no se guarda en ninguna parte**: lo produce la
+sesión que lee el expediente y muere con ella.
+
+**Medido el 2026-09-14** sobre los cuatro expedientes más recientes de Barcelona: **cero** tienen
+JSON de viabilidad, y **tres sí tienen el informe generado** (`Informe viabilidad - W-048UOL.xlsx`
+y dos más). O sea: el flujo se usa y su entrada se pierde.
+
+**Por qué importa, y son dos cosas distintas:**
+
+1. **No se puede reproducir ni auditar.** El informe dice qué se respondió a cada una de las 88
+   preguntas, pero **no de dónde salió**. Rehacerlo exige volver a leer el expediente entero con
+   una sesión. Y si mañana se discute una respuesta, no hay nada que enseñar salvo el xlsx.
+2. **Bloquea el cableado de V3.** Para que la corrida genere el informe sin el letrado delante,
+   alguien tiene que producir ese JSON y **dejarlo escrito**. Hoy ni siquiera hay un ejemplo del
+   que partir para conocer su forma.
+
+**El contrato del JSON, derivado POR EJECUCIÓN el 2026-09-14** — no leyéndolo, porque leerlo no
+bastó: tres intentos hasta que corrió. Se deja aquí porque **no está escrito en ningún sitio**:
+
+```json
+{
+  "case_id": "...", "ref": "W-XXXXX", "fecha": "AAAA-MM-DD",
+  "equipo": {"director_captador": "APELLIDO, Nombre", "asesor_captador": "...",
+             "director_buscador": "...", "asesor_buscador": "..."},
+  "observaciones": "...",
+  "importes": {"principal": 0, "costas": 0, "intereses": 0},
+  "hitos": {"<id de la plantilla>": {"score": 0, "fecha": "AAAA-MM-DD"}},
+  "preguntas": {"<id de la plantilla>": {"respuesta": "...", "cita": "...", "confianza": "..."}},
+  "actividades": [], "motivos_impago": [],
+  "avisos": [{"n": 1, "tipo": "...", "aviso": "...", "impacto": "...", "fuente": "...",
+              "severidad": "alta|media|baja", "accion": "...", "sube": "no", "estado": "abierto"}],
+  "bitacora_inicial": "..."
+}
+```
+
+**Los dos errores que cuesta descubrir:** `equipo` es un **objeto** de cuatro claves (un texto
+revienta con `AttributeError`), y `avisos` es una lista de **objetos**, no de cadenas.
+
+**Tres cosas más que la corrida enseñó y conviene no volver a descubrir:**
+
+- El script **valida los identificadores contra la plantilla** y avisa de los que no reconoce
+  (`hito desconocido '1' — se ignora`), en vez de inventarlos. Está bien hecho.
+- **Las 88 filas salen marcadas como pendientes aunque el JSON traiga cero respuestas** —
+  comprobado: plantilla 0 marcadas, generado 88. Es lo que cerró `MEJORAS #228` (P5).
+- **Un fallo a mitad deja un `.xlsx` incompleto** que bloquea el reintento, porque la skill nunca
+  sobrescribe. La protección es correcta; el residuo hay que retirarlo a mano.
+
+**Disparador.** Cualquiera de los dos: que haya que reproducir o discutir un informe ya entregado,
+o que se decida cablear la viabilidad dentro de la corrida de apertura. **Depende de la misma
+decisión que la sala de lectura**: qué hace la corrida cuando necesita que alguien *lea* el
+expediente.
+
+**Dónde debería vivir, para cuando se decida:** junto al informe, dentro del expediente, y
+declarado como protocolo si no debe inventariarse como documento del cliente — la misma frontera
+que `MEJORAS #261` plantea para el recibo de la actuación.
+
+## 263. El clasificador por LLM acierta el 13% — y se equivoca CONVENCIDO
+
+**Qué se midió.** Antes de decidir si la corrida de apertura puede clasificar sola, se pasó el
+clasificador por LLM (`core/sala_lectura.make_llm_cloud_chat_fn`, Mistral Small 3.2 vía Scaleway)
+sobre documentos ya catalogados y se comparó contra el `indice_documental.yaml`, que es **verdad
+conocida**: lo revisó el letrado.
+
+**El resultado, el 2026-09-14, sobre 75 documentos de 6 expedientes distintos:**
+
+| | |
+|---|---|
+| Acierto global | **10 de 75 — 13 %** |
+| Clasificados con confianza ≥ 0,8 | 62 |
+| De ésos, aciertan | 10 |
+| **MAL con confianza alta** | **52** |
+| Tiempo por documento | 0,71 s |
+
+**Lo que hace grave el dato no es el 13 %: es que se equivoca convencido.** De 62 documentos en
+los que el modelo dijo estar seguro, **52 estaban mal**. **Un umbral de confianza no protege de
+esto**, porque el número con el que filtrarías es justo el que miente — y esa era la salvaguarda
+que se iba a usar para decidir qué entra sin revisión humana.
+
+**Y los errores son sistemáticos, no ruido:** manda a `03. OFERTAS` lo que son
+`07. RECLAMACIONES`, y a `04. ARRAS` lo que es `01. ACTIVACIÓN`. Confunde categorías que en el
+trabajo del despacho significan cosas distintas: una reclamación no es una oferta.
+
+**Refuta una hipótesis explícita, y conviene que quede escrito.** Se había razonado —y
+recomendado— que un lector del **contenido** superaría el techo de las reglas, porque `MEJORAS
+#232` (P4) midió que el residuo no lo causa la regla sino que **el nombre no lleva la señal**. La
+inferencia era razonable y **es falsa**: leyendo el texto completo, este modelo acierta menos
+(13 %) que las reglas (~43 %).
+
+**Lo que se descartó antes de dar la cifra por buena:** que el defecto fuera del arnés. El prompt
+de sistema **sí incluye la taxonomía completa** (`TAXONOMIA_EV`) y el modelo responde con
+categorías de esa lista — no está adivinando a ciegas. Y la muestra se repartió **por expediente**
+(15 por caso): los primeros 60 documentos salían todos del mismo, y eso no es una muestra, es un
+expediente. Con el reparto, el acierto bajó del 33 % al 13 %.
+
+**Qué queda abierto, y son dos preguntas distintas:**
+
+1. **¿Es el modelo?** Mistral Small es pequeño. Probar uno mayor cuesta una tarde.
+2. **¿Es el prompt?** No explica qué distingue una reclamación de una oferta **en la taxonomía de
+   E&V**; le da la lista de nombres y poco más. Puede que el fallo sea de instrucción, no de
+   capacidad.
+
+Se prueban **con el mismo arnés, cambiando una cosa cada vez**.
+
+**El arnés queda en el repo:** `scripts/medir_clasificador_llm.py`. No es un test y no corre en la
+suite —sale a la red de pago y lee de `CASOS_ROOT`—; se invoca a mano y **solo lee**. Cualquier
+cambio futuro se compara contra el 13 % en menos de un minuto, en vez de discutirse.
+
+```
+python -m scripts.medir_clasificador_llm --por-caso 15 --limite 75
+```
+
+**Disparador.** Que se quiera volver a plantear la clasificación automática dentro de la corrida.
+**Mientras tanto la decisión es no automatizarla**: la corrida deja el residuo marcado como
+pendiente y la lectura la sigue haciendo una sesión, que es lo que hace hoy y funciona.
+
+## 264. Sala de lectura y viabilidad no son dos cableados: son UNA decisión
+
+**Anotado 2026-09-14**, al cerrar la tanda P1/P8 y preguntarse qué falta para que la corrida de
+apertura llegue hasta el informe. Las tres piezas de este hueco ya estaban fichadas por separado
+—#36, #262, #263— y **ninguna remite a las otras**: el hueco se lee tres veces como tres problemas
+y nunca como el que es.
+
+**La decisión, en una frase:** *qué hace la corrida cuando necesita que alguien **lea** el
+expediente.* Todo lo demás de esta entrada es consecuencia de eso.
+
+**Lo que ya está medido, y dónde vive:**
+
+| Pieza | Ficha | Lo que dice |
+|---|---|---|
+| El motor local | #36, #67 | `core/sala_lectura.py` está `[DEPRECADO 2026-06-18]`; el botón que lo llamaba se retiró el 2026-09-13 porque el clasificador determinista solo resolvía **19 de 61** documentos. Paola y Ana siguen sin poder montar una sala. |
+| El sustituto por LLM | #263 | Acierta el **13 %** (75 docs, 6 expedientes) y **52 de 62** se equivocan con confianza ≥ 0,8. No sirve como lector. |
+| La entrada de viabilidad | #262 | `render_informe.py` **sí** corre sin sesión ni LLM —probado, marca las 88 preguntas—, pero el JSON del que parte lo produce una sesión leyendo el expediente y muere con ella. |
+
+**Por qué es una decisión y no dos.** Las dos etapas que faltan para cerrar la corrida
+—`sala_lectura` y `viabilidad`— **no están bloqueadas por el cableado**: el de la segunda está
+probado (#262) y el de la primera es el mismo patrón que V2. Están bloqueadas por lo mismo, que
+**hoy el único lector fiable del expediente es una sesión de Claude**, y una sesión no se invoca
+desde un `subprocess`. Cablearlas por separado produce dos veces el mismo pendiente declarado.
+
+Las tres salidas, y ninguna es técnica:
+
+1. **La corrida para y pide sesión.** Es lo que hace hoy, funciona, y deja el flujo dependiendo
+   de que Nikolai esté delante (#36).
+2. **La corrida sigue con un lector automático.** Refutado por la medición: 13 % y convencido
+   (#263).
+3. **La corrida deja el trabajo preparado para que una sesión lo remate en un paso** — el JSON
+   escrito, el residuo marcado. No está construido, y es la única de las tres que nadie ha medido.
+
+**Lo que sí es cableable hoy, leído de la fuente el 2026-09-14:**
+
+- **El correo ya está construido como `--fuente email`** (`scripts/abrir_caso.py:283`): llama a
+  `email_export.export_label` y deposita un lote en `00_Input/<AAAA-MM-DD>_email_<NN>/`. Lo que lo
+  frena es una **puerta declarada**, `_FUENTES_V1 = ("drive_ev",)` (`scripts/abrir_caso.py:285`).
+  Levantarla es el mismo movimiento que V2 hizo con la puerta de `--crm skip`, y con la misma
+  forma: pendiente declarado, nunca salto silencioso.
+- **Corrección de lo que yo mismo afirmé en la sesión:** dimensioné esa ronda «en 2, porque
+  escribe en Gmail». **Es falso.** `core/email_export.py` solo hace `messages().get`,
+  `messages().list` y `labels().list`: **lee** de Gmail y escribe en el caso. El presupuesto de
+  rondas se lee del diff cuando exista, no de esta frase.
+
+**Un dato menor que induce a error justo al dimensionar esto:** `core/llm.py` apunta a Ollama en
+`localhost:11434`; lo importa `streamlit_app.py:14` y **no lo usa en ninguna línea** (cero
+referencias `llm.` en todo el fichero). Quien lo vea puede creer que hay un LLM local disponible
+para este cableado. No lo hay, y el Ollama local está descartado desde el motor documental —lo
+dice la entrada #48 de este mismo fichero—.
+
+**Disparador.** Que Nikolai elija cuál de las tres salidas quiere. Mientras no la elija, **no se
+cablea ninguna de las dos etapas**: montar el lazo sin haber decidido el lector produce una etapa
+que siempre sale `saltada`, que es el hueco de hoy con más código encima.
+
+## 265. El autofiltro de `AVISOS LLM` llega a la fila 10, y los avisos que importan están debajo
+
+> Medido el 2026-09-15 en `W-02JSVZ`: **18 avisos** en la hoja, filas 4 a 22. El `autoFilter` es
+> `B3:J10`. Filtrar oculta del 8 al 18 — los **cuatro de severidad alta** que deciden la estrategia
+> del caso entre ellos.
+
+En `assets/plantilla_informe_viabilidad.xlsx` (skill `viabilidad-prerelleno`) la hoja `AVISOS LLM`
+trae el `autoFilter` fijado a `B3:J10`. Es **el mismo defecto que `MEJORAS #243`** corrigió en la
+hoja `PREGUNTAS` —era `B3:M88`, dejaba 12 preguntas fuera, y se amplió a `B3:M103`—, solo que aquí
+no se corrigió porque las 88 preguntas son un número fijo y los avisos no.
+
+**Y esa es justamente la razón por la que aquí es peor.** `PREGUNTAS` tiene un tope conocido;
+`AVISOS LLM` es una capa de trabajo que **crece con el caso**: la Skill A vuelca los suyos, el
+abogado añade los que salen de la entrevista, y cada revisión documental posterior suma más. No hay
+número al que fijar el rango, así que un rango fijo siempre acabará corto.
+
+**El gotcha que hace que no sea un cambio de una línea** —documentado en `references/modelo_xlsx.md`
+a raíz del `#243`— es que el rango vive en **dos** sitios: el `autoFilter` de la hoja y el nombre
+definido oculto `_xlnm._FilterDatabase` del libro. Cambiar uno y no el otro deja el filtro a
+medias. Por eso en la sesión del 2026-09-15 se dejó como está y se fichó.
+
+**Remedio a considerar:** que el render **recalcule** el `ref` del autofiltro al escribir (última
+fila con contenido en la columna `D`), en los dos sitios, en vez de heredarlo de la plantilla. Es
+el mismo sitio donde haría falta el `append` de la `#267`.
+
+## 266. El `INDICE.md` del motor sigue agrupando por FUENTE, con el disco ya plano
+
+> Medido el 2026-09-15 en `W-02JSVZ` tras aplanar: **147 documentos en un único directorio** en
+> disco, y el `INDICE.md` regenerado los reparte en `## Drive E&V` (112) y `## Email` (35).
+
+El PR #328 aplanó `core.sala_lectura.poblar_sala_lectura`: `_directorio_destino` devuelve el
+directorio plano y la categoría deja de vivir en carpetas. Pero **`render_indices` no se tocó**, y
+su `INDICE.md` mantiene un primer nivel de encabezados por fuente con las categorías anidadas
+dentro.
+
+**Por qué no es cosmético.** El canon de la skill `organizar-sala-lectura` dice que *«la categoría
+vive en `INDICE.md`, no en carpetas»*: el índice es el sitio donde la categoría es el eje. Con el
+agrupado por fuente, un documento de activación que llegó por correo y otro que llegó por el Drive
+aparecen en secciones distintas, y el letrado que busca «toda la activación» tiene que mirar en
+dos. Es el mismo problema que el layout por fuente causaba en disco, movido al índice.
+
+**Es el resto del `#67.c`** que quedó sin barrer: aquella entrada se cerró midiendo el disco, y el
+índice se quedó fuera de la medición. Ver también la `#221` (la ubicación canónica del
+`indice_documental.yaml` sigue sin decidirse), que toca el mismo módulo.
+
+**Disparador:** que se vuelva a montar o repoblar una sala con el motor. Mientras tanto el dato
+está —fuente, categoría y fecha— y no se pierde nada.
+
+## 267. No hay forma soportada de AÑADIR un aviso a un informe de viabilidad ya generado
+
+> Medido el 2026-09-15 en `W-02JSVZ`: dos tandas de avisos añadidas con **dos scripts `openpyxl`
+> ad-hoc**, porque regenerar habría borrado **13 celdas de `NOTAS LETRADO`** escritas a mano durante
+> la entrevista del 14/09.
+
+`scripts/render_informe.py` **se niega a sobrescribir** un `.xlsx` existente, y eso está bien: es lo
+que protege el trabajo del abogado. Pero la hoja `AVISOS LLM` es **append-only por diseño** —
+`references/modelo_xlsx.md` lo dice con todas las letras: *«No borra observaciones: el abogado
+decide en `I` qué sube al recuadro»*— y **no existe ninguna herramienta para añadir una fila** a un
+informe vivo.
+
+El resultado práctico es que cada vez que una revisión documental posterior produce un aviso nuevo
+—que es el caso normal, porque el expediente sigue creciendo— hay que escribir un script suelto que
+abre el libro, busca la primera fila libre de la columna `D`, numera la columna `Nº`, escribe las
+diez columnas y guarda. **Eso es reimplementar el contrato de la hoja fuera del sitio donde vive el
+contrato, y sin test que lo cubra.**
+
+**La buena noticia, comprobada en esa sesión:** `openpyxl` **no** rompe nada al reescribir. Tras dos
+pasadas siguen intactos el formato condicional del semáforo (`E21:H21` y `E22:H22`, 3 reglas cada
+uno), las 6 validaciones de datos, la protección de `PREGUNTAS` y los tres autofiltros. El fichero
+baja de tamaño (57 KB → 49 KB) por compresión y metadatos de Excel, no por pérdida funcional. Así
+que **falta el envoltorio, no la capacidad**.
+
+**Remedio:** un `--anadir-avisos <json>` en `render_informe.py`, o un `append_avisos(path, avisos)`
+en la skill, que respete numeración, formato y protección — y que de paso recalcule el `ref` del
+autofiltro (`#265`), que es el otro extremo del mismo problema. Con un test que escriba dos tandas
+seguidas y compruebe que la primera sobrevive.
+
+## 268. `verificar_apertura` C2 confirma el relleno de ceros y no lo dice: el fallo sale pelado
+
+**Medido el 2026-09-15 en la apertura de W-02SRFU.**
+
+C2 (`core/verificar_apertura.py::c2_hash_contra_drive`) **sí** rehashea sin la cola de ceros
+—`_es_el_relleno_de_225`— y deja el resultado en `evidencia["relleno_225_confirmado"]`. Pero el
+`detalle`, que es la única línea que lee el operador en la salida humana, dice solo «49
+fichero(s) cuyo sha256 NO es el que Drive declara: …». La confirmación que la función acaba de
+calcular no aparece por ninguna parte.
+
+Y por `--json` tampoco sirve: la evidencia se **trunca a 8**
+(`"relleno_225_confirmado": relleno_225[:8]`, `core/verificar_apertura.py:847`), igual que
+`discrepan`. Con 49 discrepancias y 8 confirmaciones listadas es **imposible desde la salida**
+saber si están explicadas las 49 o solo ocho — que es exactamente la pregunta que separa
+«expediente íntegro» de «expediente corrupto».
+
+Lo medido en W-02SRFU: C2 → `fallo`, 49 de 49 contrastados discrepan; **51 de los 52 ficheros**
+de `00_Input/01_Drive EV/` llevan la firma estructural del relleno (múltiplo de 512 con cola de
+ceros de menos de 512 bytes); y sobre `2022-IBI-RECIBO TEULADÍ 8.pdf` —136.704 bytes locales
+contra los 136.290 que declara Drive— los 414 bytes de cola son **todos cero** y el `sha256` del
+prefijo es exactamente el que Drive declara. Contenido intacto, y un `1 fallo(s)` rojo al cerrar.
+
+Es el patrón de `feedback-el-guard-que-mide-y-solo-susurra`: el dato existe, se calcula, y no
+llega a quien decide.
+
+**Remedio:** que el `detalle` distinga los tres casos —**todas** las discrepancias explicadas
+por `MEJORAS #225`, **algunas**, **ninguna**— y que los **conteos** (`len(relleno_225)` contra
+`len(discrepan)`) vayan en la evidencia **sin truncar**, aunque las listas sí se trunquen. Con
+un test por cada uno de los tres casos.
+
+## 269. `verificar_apertura` C3 busca el catálogo solo donde lo deja el motor, y C4 ya acepta los dos sitios
+
+**Medido el 2026-09-15 en W-02SRFU**, con la sala de lectura montada por la **skill**: en la
+misma corrida, C4 (`artefactos_sala`) da `ok` —«los 4 presentes y con contenido»,
+`catalogo_en: "sala"`— y C3 (`cobertura_vs_catalogo`) da `pendiente` con **«no hay catálogo: la
+sala de lectura no se ha montado»**. Dos comprobaciones del mismo verificador se contradicen
+sobre el mismo hecho.
+
+La causa está en `core/verificar_apertura.py:180`: C3 resuelve
+`cat_path = case_dir / _PROCESADO / _CATALOGO`, es decir **solo**
+`01_Procesado/indice_documental.yaml` —la ubicación del motor local—, mientras la skill lo
+escribe en `01_Procesado/Sala lectura/indice_documental.yaml`.
+
+Es el desacuerdo de layout que `RUNBOOK_APERTURA_EXPEDIENTE.md` `[APER-70]` declara abierto (la
+mitad viva de `MEJORAS #221`), y cuyo remedio —«acepta las dos ubicaciones y la evidencia dice
+en cuál apareció»— **se aplicó a C4 y no a C3**.
+
+**Consecuencia, y por qué no puede esperar a que se decida la ubicación canónica:** mientras C3
+no tolere las dos, **toda** sala montada por la skill se declara inexistente y el contraste de
+`[APER-60]` —cobertura contra catálogo, el que caza los documentos que nadie catalogó— queda
+**sin ejecutar, en silencio y con apariencia de estado normal**.
+
+**Remedio:** que C3 use el mismo resolvedor de dos ubicaciones que C4 y reporte en cuál apareció.
+
+## 270. El lote de correo trae basenames repetidos y `layout_bundle_hilo` no puede montar el bundle por hilo
+
+Tercera medición de `[APER-62]` (`MEJORAS #189`), esta vez en **W-02SRFU, 2026-09-15**, y se
+anota porque el remedio sigue sin construirse y el rodeo se repite igual.
+
+El lote `2026-09-15_email_01` trae el mismo basename en la raíz y dentro de las subcarpetas de
+los mensajes con adjuntos: `2026-05-18_arras_urgentes_…_teuladi_8.eml` con **3** `sha256`
+distintos y `2026-05-25_new_proposal.eml` con **4**. `layout_bundle_hilo` aborta con `ValueError`
+—correctamente: son mensajes distintos y no puede darles nombre canónico distinto—.
+
+**Y `plano_existente=True` tampoco es la salida**, que es el matiz nuevo de esta medición: su
+discriminante es `_hash_origen(nombre)`, un hash **del nombre**, y los nombres son justamente lo
+que colisiona. Los tres mensajes recibirían el mismo discriminante y se pisarían igual.
+
+Se aplicó la salida practicada del runbook: `.eml` **planos** con `sha256[:6]`, declarado en el
+`_plan/` de la sala. **Remedio de raíz:** que el discriminante de `layout_bundle_hilo` derive del
+**contenido** (`sha256`) y no del nombre, o que `email_export` desambigüe el nombre del `.eml` y
+no solo la carpeta.
+
+## 271. El nombre de la subcarpeta se repite dentro de cada fichero, y el 19 % del expediente pasa del límite de 260 de Windows
 
 **Medido el 2026-09-15 sobre `BaRS10 … (W-02X1WJ)`: 175 de 927 ficheros superan los 260
 caracteres de ruta.** La peor llega a **363**. Nikolai no podía abrir los `.eml` de
@@ -11924,3 +12377,4 @@ en 3 y baja las 175 rutas de golpe (la peor queda en 239); se deshace con `subst
 
 **No promovido a `PLAN.md`:** falta disparador propio. Se promoverá cuando vuelva a bloquear
 a alguien o cuando se toque el generador de nombres por otra causa.
+

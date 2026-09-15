@@ -39,6 +39,11 @@ RAIZ: frozenset[str] = frozenset({
     "_caso.md", "_intake_log.jsonl", "_intake_hashes.json", "_inventory.json",
     "_exported_ids.json", "_resolved_links.json", "_apertura_v1.json",
     "_ficha_crm.yaml", "_ocurrencias_crm.json",
+    # Recibo de la actuación de apertura (V2). Sin declararlo aquí, la sala de máquina
+    # lo inventariaba con hash y extensión JSON **como un documento del expediente del
+    # cliente** (R2/H-05). Es protocolo: lo escribe `scripts/abrir_caso.etapa_actuacion`
+    # y solo lo lee ella para no crear una segunda actuación al relanzar.
+    "_recibo_actuacion.json",
 })
 
 #: Temporales de escritura atómica en la raíz, por su prefijo REAL (R1/H-05): un huérfano
