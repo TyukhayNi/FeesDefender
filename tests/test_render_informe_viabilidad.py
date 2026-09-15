@@ -815,22 +815,15 @@ def test_NO_avisa_de_las_claves_de_equipo(tmp_path, capsys):
         assert f"'{clave}'" not in err, f"aviso de sobra sobre equipo.{clave}"
 
 
-def test_los_dos_contratos_no_han_divergido():
-    """El core y la skill viven en dos sitios que no se importan —la skill corre en el
-    servidor—. Este test es lo único que los ata: si alguien añade un campo en uno y no
-    en el otro, salta aquí.
-
-    Los 12 campos de primer nivel se comprueban por texto —basta con que el script cite
-    la clave en algún sitio—, pero eso NO basta para las tres tuplas de subclaves: una
-    subclave de `equipo` ya aparecía citada en `EQUIPO_CELLS` (la celda que la escribe)
-    aunque `avisa_de_claves_ajenas` no la reconociera, y ese fue el hueco 1 que la
-    versión de texto entero no veía. Por eso las subclaves se comprueban contra el
-    registro PROPIO del script (`CLAVES_EQUIPO`/`CLAVES_IMPORTES`/`CLAVES_ACTIVIDADES`),
-    no contra el texto entero."""
-    fuente = (SCRIPTS / "render_informe.py").read_text(encoding="utf-8")
+def _contrato_cumplido():
+    """El criterio de `test_los_dos_contratos_no_han_divergido`, factorizado para que
+    el control positivo de abajo (`test_el_guard_de_campos_conocidos_muerde_de_verdad`)
+    lo ejecute contra un `render_informe` mutado sin duplicar -y poder desviar- el
+    criterio real."""
     for campo in vj.CAMPOS:
-        assert f'"{campo}"' in fuente, (
-            f"`{campo}` está en el contrato del core y no aparece en render_informe.py")
+        assert campo in render_informe.CAMPOS_CONOCIDOS, (
+            f"`{campo}` está en el contrato del core y "
+            f"render_informe.CAMPOS_CONOCIDOS no lo reconoce")
 
     for nombre, claves_core, atributo in (
             ("equipo", vj.CLAVES_EQUIPO, "CLAVES_EQUIPO"),
@@ -841,3 +834,38 @@ def test_los_dos_contratos_no_han_divergido():
             assert clave in claves_script, (
                 f"`{nombre}.{clave}` está en el contrato del core y "
                 f"render_informe.{atributo} no lo reconoce")
+
+
+def test_los_dos_contratos_no_han_divergido():
+    """El core y la skill viven en dos sitios que no se importan —la skill corre en el
+    servidor—. Este test es lo único que los ata: si alguien añade un campo en uno y no
+    en el otro, salta aquí.
+
+    Los 12 campos de primer nivel y las tres tuplas de subclaves se comprueban contra el
+    registro PROPIO del script (`CAMPOS_CONOCIDOS`/`CLAVES_EQUIPO`/`CLAVES_IMPORTES`/
+    `CLAVES_ACTIVIDADES`), NUNCA contra el texto entero del fichero.
+
+    La versión de texto entero —`f'"{campo}"' in fuente`— la tuvieron las subclaves
+    primero y falló: una subclave de `equipo` ya aparecía citada en `EQUIPO_CELLS` (la
+    celda que la escribe) aunque `avisa_de_claves_ajenas` no la reconociera (hueco 1).
+    I4 de la revisión de conjunto (2026-09-15) midió que los 12 campos de primer nivel
+    tenían el MISMO hueco, sin haberlo migrado cuando se corrigió para las subclaves:
+    los doce nombres aparecen en `render_informe.py` fuera de `CAMPOS_CONOCIDOS` —en
+    comentarios, en otras estructuras—, así que borrar cualquiera de ese conjunto dejaba
+    este guard en verde. Control positivo que lo confirmó:
+    `test_el_guard_de_campos_conocidos_muerde_de_verdad`, más abajo."""
+    _contrato_cumplido()
+
+
+def test_el_guard_de_campos_conocidos_muerde_de_verdad(monkeypatch):
+    """Control positivo obligatorio de I4: con la versión de texto entero, borrar un
+    campo de `CAMPOS_CONOCIDOS` en el script dejaba `test_los_dos_contratos_no_han_
+    divergido` en VERDE -el nombre seguía apareciendo en otro sitio del fichero-. Se
+    quita un campo de verdad del registro que lee el guard (no del texto) y se exige
+    que MUERDA; sin este test, el hallazgo de I4 no queda demostrado, solo descrito."""
+    campo = sorted(vj.CAMPOS)[0]
+    monkeypatch.setattr(render_informe, "CAMPOS_CONOCIDOS",
+                        render_informe.CAMPOS_CONOCIDOS - {campo})
+
+    with pytest.raises(AssertionError, match=re.escape(campo)):
+        _contrato_cumplido()
