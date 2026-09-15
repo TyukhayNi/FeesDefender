@@ -1050,6 +1050,30 @@ def test_cli_v1_fuente_email_sin_team_id_lo_deriva_del_folder_id(drive_temporal,
     assert capturado["team_id"] == "TID-DERIVADO", capturado
 
 
+def test_cli_v1_no_extraer_adjuntos_llega_a_etapa_email(drive_temporal, monkeypatch):
+    """I2 de la revisión de conjunto (2026-09-15): `etapa_email` fijaba
+    `extract_attachments=True` literal, así que `--no-extraer-adjuntos` no llegaba
+    hasta ahí en v1 (sólo viajaba por el camino de `libre`, vía `_intake_email` ->
+    `test_cli_extraer_adjuntos_llega_al_intake_de_email`, que no cubre este camino)."""
+    capturado: dict = {}
+
+    monkeypatch.setattr(
+        cli.email_export, "export_label",
+        lambda *a, **kw: capturado.update(kw) or type(
+            "R", (), {"written": 0, "total_in_label": 0, "errors": []})())
+
+    from scripts import sala_maquina
+    monkeypatch.setattr(sala_maquina, "apply",
+                        lambda **kw: sala_maquina.ResultadoApply(status_atomizacion=None))
+
+    result = CliRunner().invoke(cli.app, _args(
+        fuente="email", cuenta="mails@x.example", label="Caso W", crm="skip", modo="v1",
+    ) + ["--no-extraer-adjuntos"])
+
+    assert result.exit_code == 0, result.output
+    assert capturado["extract_attachments"] is False
+
+
 # ---------------------------------------------------------------------------
 # MEJORAS #148: el `/` en --direccion partia la carpeta y la corrida salia en 0
 # ---------------------------------------------------------------------------

@@ -118,6 +118,42 @@ def test_exportar_none_construye_bien_la_llamada_a_email_export(tmp_path, monkey
     assert r.estado == "hecha"
 
 
+def test_extraer_adjuntos_llega_hasta_export_label(tmp_path, monkeypatch):
+    """I2 de la revisión de conjunto (2026-09-15): la etapa fijaba `extract_attachments`
+    a `True` literal, así que `--no-extraer-adjuntos` no llegaba hasta aquí aunque el
+    flag existiera en el CLI (`--extraer-adjuntos` es negociable desde hace tiempo).
+    Se comprueba el valor False -el que un default siempre-True dejaría pasar en
+    silencio si alguien olvidara el parámetro otra vez."""
+    capturado: dict = {}
+
+    monkeypatch.setattr(cli.email_export, "email_dest_dir", lambda case_id: tmp_path)
+    monkeypatch.setattr(
+        cli.email_export, "export_label",
+        lambda *a, **kw: capturado.update(kw) or _Report(written=1, total_in_label=1))
+
+    r = cli.etapa_email(_Ident(), tmp_path, cuenta="a@b.c", label="CASO/X",
+                        extraer_adjuntos=False)
+
+    assert capturado["extract_attachments"] is False
+    assert r.estado == "hecha"
+
+
+def test_extraer_adjuntos_por_defecto_sigue_siendo_true(tmp_path, monkeypatch):
+    """El default no cambia con la unificación: sigue siendo `True`, misma razón que
+    `_intake_email` -mover el default es decisión de quien abre el caso, no de un
+    refactor de cableado-."""
+    capturado: dict = {}
+
+    monkeypatch.setattr(cli.email_export, "email_dest_dir", lambda case_id: tmp_path)
+    monkeypatch.setattr(
+        cli.email_export, "export_label",
+        lambda *a, **kw: capturado.update(kw) or _Report(written=1, total_in_label=1))
+
+    cli.etapa_email(_Ident(), tmp_path, cuenta="a@b.c", label="CASO/X")
+
+    assert capturado["extract_attachments"] is True
+
+
 def test_v1_ya_admite_la_fuente_email():
     errores = cli.validar_modo("v1", crm="skip", fuente="email", folder_id="F",
                                cuenta="a@b.c", label="CASO/X")

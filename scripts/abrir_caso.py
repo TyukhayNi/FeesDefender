@@ -572,6 +572,24 @@ def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
         typer.echo(f"WhatsApp depositado en {getattr(res, 'chat_dir', '?')}")
 
 
+def _exportar_email_a_lote(case_id: str, cuenta: str, label: str, *,
+                           extraer_adjuntos: bool) -> tuple[Path, object]:
+    """El par `email_dest_dir` + `export_label`: reserva el lote (T8) y exporta la
+    etiqueta. Devuelve `(dest, rep)`.
+
+    Compartido por `_intake_email` (modo `libre`) y `etapa_email` (V1): el mismo
+    protocolo con dos llamadores de necesidades distintas -uno solo informa por
+    pantalla, el otro necesita `rep` para construir `EtapaResultado`-, y antes de esta
+    unificacion las dos copias YA habian divergido en `extract_attachments` (I2 de la
+    revision de conjunto, 2026-09-15: una fijaba `True` literal y la otra recibia el
+    flag del CLI).
+    """
+    dest = email_export.email_dest_dir(case_id)     # reserva el lote (T8)
+    rep = email_export.export_label(cuenta, label, dest, case_id=case_id,
+                                    extract_attachments=extraer_adjuntos)
+    return dest, rep
+
+
 def _intake_email(ident, case_dir: Path, cuenta: str, label: str, *, dry_run: bool,
                   extraer_adjuntos: bool = True) -> None:
     """Exporta la etiqueta Gmail del caso a un lote nuevo de ``00_Input``.
@@ -588,9 +606,8 @@ def _intake_email(ident, case_dir: Path, cuenta: str, label: str, *, dry_run: bo
         typer.echo(f"[dry-run] email: se exportaría la etiqueta {label!r} de {cuenta} "
                    f"a un lote nuevo 00_Input/<fecha>_email_NN{extra} (sin ejecutar)")
         return
-    dest = email_export.email_dest_dir(ident.case_id)     # reserva el lote (T8)
-    email_export.export_label(cuenta, label, dest, case_id=ident.case_id,
-                              extract_attachments=extraer_adjuntos)
+    dest, _rep = _exportar_email_a_lote(ident.case_id, cuenta, label,
+                                        extraer_adjuntos=extraer_adjuntos)
     typer.echo(f"Email: etiqueta {label!r} exportada a {dest}")
 
 
@@ -733,8 +750,8 @@ _PENDIENTE_EMAIL_NO_PEDIDO = av1.Pendiente(
             "caso tiene una etiqueta de Gmail, su material NO esta aqui.")
 
 
-def etapa_email(ident, case_dir: Path, *, cuenta, label, exportar=None
-                ) -> av1.EtapaResultado:
+def etapa_email(ident, case_dir: Path, *, cuenta, label, extraer_adjuntos: bool = True,
+                exportar=None) -> av1.EtapaResultado:
     """Etapa 2: exportar la etiqueta Gmail del caso a un lote nuevo de `00_Input`.
 
     **Va antes de `sala_maquina` y eso no es estetico.** La sala de maquina hace el OCR
@@ -746,6 +763,12 @@ def etapa_email(ident, case_dir: Path, *, cuenta, label, exportar=None
     **`export_label` solo LEE de Gmail** —`messages().get`, `messages().list`,
     `labels().list`— y escribe en el caso. Se midio el 2026-09-15 porque el dimensionado
     anterior afirmo lo contrario y costo una ronda mal presupuestada.
+
+    **`extraer_adjuntos` viaja desde el CLI** (I2 de la revision de conjunto,
+    2026-09-15): antes esta etapa fijaba `True` literal, asi que `--no-extraer-adjuntos`
+    no llegaba hasta aqui aunque el flag existiera. Mismo default que `_intake_email`
+    -True-, por la misma razon: es la decision segura para que la sala de maquina vea
+    los adjuntos que solo llegan por correo.
     """
     if not cuenta or not label:
         return av1.EtapaResultado(
@@ -754,9 +777,9 @@ def etapa_email(ident, case_dir: Path, *, cuenta, label, exportar=None
             pendientes=(_PENDIENTE_EMAIL_NO_PEDIDO,))
 
     def _exportar():
-        dest = email_export.email_dest_dir(ident.case_id)   # reserva el lote (T8)
-        return email_export.export_label(cuenta, label, dest, case_id=ident.case_id,
-                                         extract_attachments=True)
+        _dest, rep = _exportar_email_a_lote(ident.case_id, cuenta, label,
+                                            extraer_adjuntos=extraer_adjuntos)
+        return rep
 
     try:
         rep = (exportar or _exportar)()
@@ -1424,13 +1447,15 @@ def etapa_verificar(ident, case_dir: Path, *, crm: str = "api",
                               pendientes=pendientes)
 
 
-def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm, cuenta=None, label=None):
+def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm, cuenta=None, label=None,
+               extraer_adjuntos: bool = True):
     """Las etapas de V2, en el orden de `ETAPAS_V2`."""
     return [
         av1.Etapa("drive", lambda: etapa_drive(
             ident, case_dir, folder_id=folder_id, team_id=team_id)),
         av1.Etapa("email", lambda: etapa_email(
-            ident, case_dir, cuenta=cuenta, label=label)),
+            ident, case_dir, cuenta=cuenta, label=label,
+            extraer_adjuntos=extraer_adjuntos)),
         av1.Etapa("crm", lambda: etapa_crm(ident, case_dir)),
         av1.Etapa("sala_maquina", lambda: etapa_sala_maquina(ident)),
         av1.Etapa("crm_alta", lambda: etapa_crm_alta(ident, case_dir, crm=crm)),
@@ -1441,7 +1466,7 @@ def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm, cuenta=None, label=N
 
 
 def secuencia_v1(ident, case_dir, *, folder_id, team_id, crm="skip", hasta=None,
-                 etapas=None, cuenta=None, label=None):
+                 etapas=None, cuenta=None, label=None, extraer_adjuntos: bool = True):
     """El orden completo de la secuencia: V1 (Drive -> correo -> CRM -> sala de maquina)
     + V2.
 
@@ -1455,7 +1480,8 @@ def secuencia_v1(ident, case_dir, *, folder_id, team_id, crm="skip", hasta=None,
     """
     if etapas is None:
         etapas = _etapas_v2(ident, case_dir, folder_id=folder_id, team_id=team_id,
-                            crm=crm, cuenta=cuenta, label=label)
+                            crm=crm, cuenta=cuenta, label=label,
+                            extraer_adjuntos=extraer_adjuntos)
     return av1.secuenciar(etapas, hasta=hasta)
 
 
@@ -2143,7 +2169,8 @@ def main(
                 ronda = estado_v1.abrir(case_dir, ronda_id=arranque, ahora=arranque)
                 resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
                                             team_id=team_id, crm=crm, hasta=hasta,
-                                            cuenta=cuenta, label=label)
+                                            cuenta=cuenta, label=label,
+                                            extraer_adjuntos=extraer_adjuntos)
                 # **revalidar -> publicar -> liberar**, en ese orden e indivisible.
                 #
                 # La rev. anterior publicaba FUERA del bloque «para no afirmar un exito
