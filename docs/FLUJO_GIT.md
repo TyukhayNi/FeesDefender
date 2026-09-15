@@ -73,6 +73,16 @@ fecha: 2026-07-20
 > dice `MERGED`, borrar la rama remota aparte (`git push origin --delete <rama>`) y seguir
 > con la poda local.
 
+> **Segundo gotcha del paso 4 (medido el 2026-09-15 en el PR #380): el squash compone el commit
+> con el título que GitHub tiene guardado, no necesariamente con el que acabas de poner.** Si
+> renombras el PR (`gh pr edit --title`) y mergeas a continuación, `gh pr merge --squash` puede
+> usar el **título viejo**: en el #380 el commit que entró a `main` dice «120º cierre — …
+> (`MEJORAS #258`)» y lo que introduce es el **123º** y la **`#271`**. El contenido es correcto;
+> lo que desinforma es el mensaje — y con `main` protegida **ya no se puede corregir** sin
+> reescribir historia, así que quien busque el 123º por `git log` no lo encuentra por su nombre.
+> **Remedio:** pasar el asunto explícito, `gh pr merge <n> --squash --subject "<título bueno>"`,
+> siempre que el título del PR haya cambiado durante la sesión.
+
 ## 5. Poda e higiene (lo que más se olvida)
 
 - **Podar es el paso 4 del cierre, no un fleco para luego.** Rama mergeada = rama podada.

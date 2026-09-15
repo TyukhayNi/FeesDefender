@@ -12378,3 +12378,35 @@ en 3 y baja las 175 rutas de golpe (la peor queda en 239); se deshace con `subst
 **No promovido a `PLAN.md`:** falta disparador propio. Se promoverá cuando vuelva a bloquear
 a alguien o cuando se toque el generador de nombres por otra causa.
 
+## 272. El aviso «PLAN.md ↔ git» toma los ficheros de `docs/` por ramas fantasma: 32 de 32 en falso
+
+**Medido el 2026-09-15 sobre `PLAN.md` en `4843353`: el aviso marca 32 «ramas que git ya no
+conoce» y ninguna es una rama.** 31 terminan en `.md` (`docs/MEJORAS_FUTURAS.md`,
+`docs/superpowers/plans/…`) y la 32ª es una ruta partida por un salto de línea
+(`docs/superpowers/specs/2026-09-06-arnes-de-tests-r`).
+
+**La causa cabe en una línea** — `scripts/session_close.py`, `_RE_RAMA`:
+
+```python
+_RE_RAMA = re.compile(
+    r"\b(?:feat|fix|docs|chore|refactor|test|hotfix|release)/[A-Za-z0-9._\-/]+"
+)
+```
+
+`docs/` es **a la vez** un prefijo de rama legítimo de este repo (`docs/cierre-117`,
+`docs/mejoras-262-json-viabilidad`) y el directorio de la documentación. El regex no puede
+separarlos por el prefijo, y el `rstrip("./")` de `_plan_items_desfasados` no quita la extensión.
+
+**Por qué importa más de lo que parece: el aviso existe para detectar el defecto de la fila #29**
+—trabajo afirmado como pendiente en una rama que ya no existe—, y en su forma actual **grita en
+cada cierre sin poder acertar nunca**. Un aviso que suena siempre se ignora siempre, que es
+exactamente como se pierde la señal que sí importa ([[el guard que mide y solo susurra]], en la
+dirección contraria).
+
+**Remedio barato, si se toca:** descartar los tokens con extensión de fichero conocida (`.md`,
+`.py`, `.yaml`, `.json`, `.txt`) antes de compararlos contra `_ramas_conocidas()`, y **agrupar el
+aviso por fila del PLAN** en vez de bajo el encabezado de la cola entera — hoy las 32 salen bajo un
+solo título, así que tampoco dice **qué** fila hay que revisar.
+
+**No promovido a `PLAN.md`:** falta disparador propio. Se promoverá cuando el aviso llegue a
+ocultar un desfase real o cuando se toque `session_close` por otra causa.
