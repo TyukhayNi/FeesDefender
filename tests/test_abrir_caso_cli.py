@@ -960,6 +960,97 @@ def test_cli_extraer_adjuntos_llega_al_intake_de_email(drive_temporal, monkeypat
 
 
 # ---------------------------------------------------------------------------
+# C1 de la revisión de conjunto (2026-09-15): `--modo v1 --fuente email` no podía
+# alcanzar `etapa_email` con datos. `validar_modo` ya exigía `--folder-id` (V1
+# materializa Drive SIEMPRE), pero `_validar_flags` seguía tratando las fuentes
+# como EXCLUSIVAS -rechazaba `--folder-id`/`--team-id` por "ajenos a email"- y,
+# aparte, `team_id` sólo se autoderivaba con `--fuente drive_ev`. Los dos tests de
+# abajo recorren el camino COMPLETO desde los flags del CLI -no llaman a
+# `etapa_email` ni a `validar_modo` sueltos-, que es justo lo que los tests
+# previos (uno por pieza) no cazaba.
+# ---------------------------------------------------------------------------
+
+
+def test_cli_v1_fuente_email_llega_a_etapa_email_hecha(drive_temporal, monkeypatch):
+    """La invocación completa: identidad + --modo v1 --fuente email --cuenta --label
+    --folder-id --team-id --crm skip. Se inyecta el exportador (no toca Gmail) y el
+    OCR (no toca disco pesado); `drive_temporal` ya inyecta el pull de Drive."""
+    capturado: dict = {}
+
+    def fake_export_label(cuenta, label, dest, **kw):
+        capturado.update(cuenta=cuenta, label=label, dest=str(dest), kwargs=kw)
+        return type("R", (), {"written": 2, "total_in_label": 2, "errors": []})()
+
+    monkeypatch.setattr(cli.email_export, "export_label", fake_export_label)
+
+    from scripts import sala_maquina
+    monkeypatch.setattr(sala_maquina, "apply",
+                        lambda **kw: sala_maquina.ResultadoApply(status_atomizacion=None))
+
+    result = CliRunner().invoke(cli.app, _args(
+        fuente="email", cuenta="mails@x.example", label="Caso W", crm="skip", modo="v1"))
+
+    assert result.exit_code == 0, result.output
+    assert capturado["cuenta"] == "mails@x.example"
+    assert capturado["label"] == "Caso W"
+    assert capturado["kwargs"]["extract_attachments"] is True
+
+    case_id = "BaRS11 - Passeig Marítim 30 (W-02Z2NR) - Vuelta"
+    eventos = intake_log.read_events(case_id)
+    cierres = [e for e in eventos if e["event"] == "apertura_v1_terminada"]
+    assert cierres, "la secuencia V1 no llegó a cerrar"
+    estados = {e["nombre"]: e["estado"] for e in cierres[-1]["details"]["etapas"]}
+    assert estados["drive"] == "hecha"
+    assert estados["email"] == "hecha", estados
+
+
+def test_cli_v1_fuente_email_sin_team_id_lo_deriva_del_folder_id(drive_temporal, monkeypatch):
+    """Segundo cabo de C1: sin --team-id, `--fuente drive_ev` SÍ lo autoderivaba de
+    --folder-id; `--fuente email` en v1 no, y `etapa_drive` (que V1 corre siempre)
+    recibía team_id=None. Aquí se omite --team-id y se mockea la Drive API que lo
+    deriva, para confirmar que el pull YA lo recibe resuelto."""
+    monkeypatch.setattr(
+        "core.intake_drive.get_drive_folder_info",
+        lambda fid: _DriveFolderInfo(name="393. Hacienda Vadillo - W-02Z2NR - Natalia T",
+                                     drive_id="TID-DERIVADO"))
+    monkeypatch.setattr(cli.email_export, "export_label",
+                        lambda *a, **k: type(
+                            "R", (), {"written": 0, "total_in_label": 0, "errors": []})())
+
+    from scripts import sala_maquina
+    monkeypatch.setattr(sala_maquina, "apply",
+                        lambda **kw: sala_maquina.ResultadoApply(status_atomizacion=None))
+
+    capturado: dict = {}
+
+    def fake_pull(case_id, folder_id, team_id, *, force=False):
+        capturado["team_id"] = team_id
+        from core.intake_drive import DriveIntakeResult
+        dest = case_locator.path_for(case_id) / "00_Input" / "01_Drive EV"
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / ".pulled").write_text("{}", encoding="utf-8")
+        return DriveIntakeResult(case_id=case_id, team_id=team_id, folder_id=folder_id,
+                                 target_dir=dest, files_after=0, skipped=False)
+
+    monkeypatch.setattr("core.intake_drive.pull_drive_ev", fake_pull)
+
+    # Construido a mano y NO con `_args`/`_args_min`: los dos meten --team-id (uno lo
+    # exige, el otro lo omite junto a --folder-id), y aquí hace falta la combinación
+    # que ninguno cubre -- --folder-id SÍ, --team-id NO -- para forzar la derivación.
+    args = [
+        "--w-code", "W-02Z2NR", "--ciudad", "Barcelona", "--tipo-caso", "VUELTA",
+        "--codigo-caso", "BaRS11", "--sufijo", "Vuelta",
+        "--direccion", "Passeig Marítim 30", "--yes",
+        "--modo", "v1", "--fuente", "email", "--cuenta", "mails@x.example",
+        "--label", "Caso W", "--crm", "skip", "--folder-id", "FID",
+    ]
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    assert capturado["team_id"] == "TID-DERIVADO", capturado
+
+
+# ---------------------------------------------------------------------------
 # MEJORAS #148: el `/` en --direccion partia la carpeta y la corrida salia en 0
 # ---------------------------------------------------------------------------
 

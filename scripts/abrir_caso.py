@@ -594,8 +594,20 @@ def _intake_email(ident, case_dir: Path, cuenta: str, label: str, *, dry_run: bo
     typer.echo(f"Email: etiqueta {label!r} exportada a {dest}")
 
 
-def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> None:
-    """Exige los flags propios de la fuente y rechaza los ajenos (fail-fast)."""
+def _validar_flags(fuente, *, modo, folder_id, team_id, src, rol, cuenta, label) -> None:
+    """Exige los flags propios de la fuente y rechaza los ajenos (fail-fast).
+
+    **`modo` importa porque cambia lo que "ajeno" significa para `--fuente email`.**
+    En `libre` cada corrida hace UN intake, asi que la exclusividad es correcta tal
+    cual: `--folder-id`/`--team-id` no son de `email`, y se rechazan. Pero `--modo v1`
+    ENCADENA fuentes -- materializa Drive E&V SIEMPRE (`validar_modo` ya exige
+    `--folder-id` sin condicionarlo a la fuente) y, con `--fuente email`, trae ADEMAS
+    el correo --. Ahi `--fuente` ya no responde a "que fuente uso" sino a "que traigo
+    ADEMAS del Drive", asi que `--folder-id`/`--team-id` dejan de ser ajenos a `email`
+    bajo v1: son los flags de la materializacion de Drive que la secuencia hace por
+    debajo, no un intruso de otra fuente. `drive_ev` no necesita esta distincion: su
+    lista de ajenos nunca incluyo folder-id/team-id, en ningun modo.
+    """
     requeridos = {
         "drive_ev": [],
         "manual": [("--src", src)],
@@ -607,14 +619,16 @@ def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> No
         typer.echo(f"[ERROR] Fuente {fuente}: faltan flags {faltan}", err=True)
         raise AbortarApertura(1)
 
+    ajenos_email = [("--src", src), ("--rol", rol)]
+    if modo != "v1":
+        ajenos_email = ajenos_email + [("--folder-id", folder_id), ("--team-id", team_id)]
     ajenos = {
         "drive_ev": [("--src", src), ("--rol", rol), ("--cuenta", cuenta), ("--label", label)],
         "manual": [("--rol", rol), ("--cuenta", cuenta), ("--label", label),
                    ("--folder-id", folder_id), ("--team-id", team_id)],
         "whatsapp": [("--cuenta", cuenta), ("--label", label),
                      ("--folder-id", folder_id), ("--team-id", team_id)],
-        "email": [("--src", src), ("--rol", rol),
-                  ("--folder-id", folder_id), ("--team-id", team_id)],
+        "email": ajenos_email,
     }[fuente]
     presentes = [n for n, v in ajenos if v]
     if presentes:
@@ -1988,14 +2002,21 @@ def main(
     # pasa por _autoderivar_drive_ev. Si aun así no se resuelve, error limpio
     # (evita el TypeError de rclone con team_id=None). En el camino feliz de 6
     # flags, _autoderivar_drive_ev ya lo fijó y este bloque no vuelve a llamar.
-    if fuente == "drive_ev" and team_id is None:
+    # `modo == "v1"` entra aqui ademas de `fuente == "drive_ev"`: V1 materializa Drive
+    # E&V SIEMPRE (etapa_drive es la primera de la secuencia, cualquiera que sea
+    # --fuente), asi que con `--fuente email` tambien hace falta team_id para ese
+    # pull. Sin este segundo cabo, `--modo v1 --fuente email` llegaba a etapa_drive
+    # con team_id=None porque este bloque solo miraba la fuente elegida, no el modo
+    # (C1 de la revision de conjunto, 2026-09-15).
+    if (fuente == "drive_ev" or modo == "v1") and team_id is None:
         team_id = _derivar_team_id(folder_id)
         if team_id is not None:
             typer.echo(f"[auto] --team-id del driveId: {team_id}")
         else:
-            typer.echo("[ERROR] --fuente drive_ev requiere --team-id: no se pudo "
-                       "derivar de --folder-id (sin --folder-id o token/red); "
-                       "pásalo explícito.", err=True)
+            typer.echo("[ERROR] --team-id no se pudo derivar de --folder-id (sin "
+                       "--folder-id o token/red): lo necesita drive_ev, y --modo v1 "
+                       "materializa Drive con cualquier --fuente; pásalo explícito.",
+                       err=True)
             raise typer.Exit(code=1)
 
     # 5.2 — a partir de aquí, TODO va bajo el mutex del caso (Plan 3A, Task 5).
@@ -2027,8 +2048,8 @@ def main(
     # es el problema menos fundamental de los dos. Lo midio la ronda de este diff (HD-04):
     # sacar la validacion del lock no autorizaba a reordenar lo que el operador lee.
     try:
-        _validar_flags(fuente, folder_id=folder_id, team_id=team_id, src=src, rol=rol,
-                       cuenta=cuenta, label=label)
+        _validar_flags(fuente, modo=modo, folder_id=folder_id, team_id=team_id, src=src,
+                       rol=rol, cuenta=cuenta, label=label)
     except AbortarApertura as exc:
         raise typer.Exit(code=exc.codigo) from exc
 
