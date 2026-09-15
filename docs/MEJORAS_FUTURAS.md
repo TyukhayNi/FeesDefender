@@ -8510,6 +8510,26 @@ documentación del inmueble; aquí es **la identidad de quien firmó el encargo*
 reclamación de honorarios es el documento con el que se identifica al deudor en la demanda y en la
 ficha del CRM.
 
+**Tercera medición — 2026-09-15, `W-02JSVZ`: el fichero que se cae es EL CONTRATO DE ENCARGO, y
+entra por la otra puerta.** Las dos mediciones anteriores eran ficheros **sin extensión**. Esta es
+la cara gemela: ficheros **con** extensión, pero con una que `_RELEVANT_EXTS` no lista. Los cinco
+`.HEIC` de `00_Input/01_Drive EV/DOCS ACTIVACION/CONTRATO NO EXCLUSIVA INVESTMENT/` son las
+fotografías del **contrato de encargo de venta de 02/12/2017**, el título en el que se funda toda
+la reclamación. La sala de máquina los leyó sin incidencia —los cinco en `estado: ok`, de 1.361 a
+3.233 caracteres— y el catálogo tiene **167 entradas, ninguna suya**.
+
+Así que la frontera no es «sin extensión no hay fila»: es que **los dos componentes usan criterios
+distintos y el de la sala de lectura es una lista blanca cerrada**. Mientras lo sea, cada formato
+que E&V empiece a subir (hoy `.heic` desde iPhone, mañana otro) se cae en silencio. La línea 1778
+de este mismo fichero ya anotaba que las de iPhone «se caen ya en el inventario», pero encuadrado
+como imágenes; con el contrato dentro, el encuadre estaba mal calibrado.
+
+**Lo que esto cambia en la prioridad:** en `W-04A6LI` se perdió documentación del inmueble; en
+`W-02O7E2`, la identidad de los firmantes; aquí, **el contrato que se reclama**. Un letrado que
+trabaje desde la sala de lectura —que es para lo que existe— no encuentra el encargo. No hay
+pérdida de datos (el crudo y los espejos MD están), pero sí una sala que miente por omisión sobre
+lo que contiene el expediente.
+
 **Remedio aplicado a mano en ese caso, por si sirve de patrón:** alta manual en el catálogo con el
 `sha256` de `_cobertura.json` como `id_doc`, y la extensión declarada en el `nombre_original` de la
 entrada — no basta renombrar el fichero copiado, porque `_nombre_canonico` deriva la extensión de
@@ -12169,3 +12189,80 @@ dice la entrada #48 de este mismo fichero—.
 **Disparador.** Que Nikolai elija cuál de las tres salidas quiere. Mientras no la elija, **no se
 cablea ninguna de las dos etapas**: montar el lazo sin haber decidido el lector produce una etapa
 que siempre sale `saltada`, que es el hueco de hoy con más código encima.
+
+## 265. El autofiltro de `AVISOS LLM` llega a la fila 10, y los avisos que importan están debajo
+
+> Medido el 2026-09-15 en `W-02JSVZ`: **18 avisos** en la hoja, filas 4 a 22. El `autoFilter` es
+> `B3:J10`. Filtrar oculta del 8 al 18 — los **cuatro de severidad alta** que deciden la estrategia
+> del caso entre ellos.
+
+En `assets/plantilla_informe_viabilidad.xlsx` (skill `viabilidad-prerelleno`) la hoja `AVISOS LLM`
+trae el `autoFilter` fijado a `B3:J10`. Es **el mismo defecto que `MEJORAS #243`** corrigió en la
+hoja `PREGUNTAS` —era `B3:M88`, dejaba 12 preguntas fuera, y se amplió a `B3:M103`—, solo que aquí
+no se corrigió porque las 88 preguntas son un número fijo y los avisos no.
+
+**Y esa es justamente la razón por la que aquí es peor.** `PREGUNTAS` tiene un tope conocido;
+`AVISOS LLM` es una capa de trabajo que **crece con el caso**: la Skill A vuelca los suyos, el
+abogado añade los que salen de la entrevista, y cada revisión documental posterior suma más. No hay
+número al que fijar el rango, así que un rango fijo siempre acabará corto.
+
+**El gotcha que hace que no sea un cambio de una línea** —documentado en `references/modelo_xlsx.md`
+a raíz del `#243`— es que el rango vive en **dos** sitios: el `autoFilter` de la hoja y el nombre
+definido oculto `_xlnm._FilterDatabase` del libro. Cambiar uno y no el otro deja el filtro a
+medias. Por eso en la sesión del 2026-09-15 se dejó como está y se fichó.
+
+**Remedio a considerar:** que el render **recalcule** el `ref` del autofiltro al escribir (última
+fila con contenido en la columna `D`), en los dos sitios, en vez de heredarlo de la plantilla. Es
+el mismo sitio donde haría falta el `append` de la `#267`.
+
+## 266. El `INDICE.md` del motor sigue agrupando por FUENTE, con el disco ya plano
+
+> Medido el 2026-09-15 en `W-02JSVZ` tras aplanar: **147 documentos en un único directorio** en
+> disco, y el `INDICE.md` regenerado los reparte en `## Drive E&V` (112) y `## Email` (35).
+
+El PR #328 aplanó `core.sala_lectura.poblar_sala_lectura`: `_directorio_destino` devuelve el
+directorio plano y la categoría deja de vivir en carpetas. Pero **`render_indices` no se tocó**, y
+su `INDICE.md` mantiene un primer nivel de encabezados por fuente con las categorías anidadas
+dentro.
+
+**Por qué no es cosmético.** El canon de la skill `organizar-sala-lectura` dice que *«la categoría
+vive en `INDICE.md`, no en carpetas»*: el índice es el sitio donde la categoría es el eje. Con el
+agrupado por fuente, un documento de activación que llegó por correo y otro que llegó por el Drive
+aparecen en secciones distintas, y el letrado que busca «toda la activación» tiene que mirar en
+dos. Es el mismo problema que el layout por fuente causaba en disco, movido al índice.
+
+**Es el resto del `#67.c`** que quedó sin barrer: aquella entrada se cerró midiendo el disco, y el
+índice se quedó fuera de la medición. Ver también la `#221` (la ubicación canónica del
+`indice_documental.yaml` sigue sin decidirse), que toca el mismo módulo.
+
+**Disparador:** que se vuelva a montar o repoblar una sala con el motor. Mientras tanto el dato
+está —fuente, categoría y fecha— y no se pierde nada.
+
+## 267. No hay forma soportada de AÑADIR un aviso a un informe de viabilidad ya generado
+
+> Medido el 2026-09-15 en `W-02JSVZ`: dos tandas de avisos añadidas con **dos scripts `openpyxl`
+> ad-hoc**, porque regenerar habría borrado **13 celdas de `NOTAS LETRADO`** escritas a mano durante
+> la entrevista del 14/09.
+
+`scripts/render_informe.py` **se niega a sobrescribir** un `.xlsx` existente, y eso está bien: es lo
+que protege el trabajo del abogado. Pero la hoja `AVISOS LLM` es **append-only por diseño** —
+`references/modelo_xlsx.md` lo dice con todas las letras: *«No borra observaciones: el abogado
+decide en `I` qué sube al recuadro»*— y **no existe ninguna herramienta para añadir una fila** a un
+informe vivo.
+
+El resultado práctico es que cada vez que una revisión documental posterior produce un aviso nuevo
+—que es el caso normal, porque el expediente sigue creciendo— hay que escribir un script suelto que
+abre el libro, busca la primera fila libre de la columna `D`, numera la columna `Nº`, escribe las
+diez columnas y guarda. **Eso es reimplementar el contrato de la hoja fuera del sitio donde vive el
+contrato, y sin test que lo cubra.**
+
+**La buena noticia, comprobada en esa sesión:** `openpyxl` **no** rompe nada al reescribir. Tras dos
+pasadas siguen intactos el formato condicional del semáforo (`E21:H21` y `E22:H22`, 3 reglas cada
+uno), las 6 validaciones de datos, la protección de `PREGUNTAS` y los tres autofiltros. El fichero
+baja de tamaño (57 KB → 49 KB) por compresión y metadatos de Excel, no por pérdida funcional. Así
+que **falta el envoltorio, no la capacidad**.
+
+**Remedio:** un `--anadir-avisos <json>` en `render_informe.py`, o un `append_avisos(path, avisos)`
+en la skill, que respete numeración, formato y protección — y que de paso recalcule el `ref` del
+autofiltro (`#265`), que es el otro extremo del mismo problema. Con un test que escriba dos tandas
+seguidas y compruebe que la primera sobrevive.
