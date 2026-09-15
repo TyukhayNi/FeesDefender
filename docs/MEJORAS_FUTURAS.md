@@ -12266,3 +12266,76 @@ que **falta el envoltorio, no la capacidad**.
 en la skill, que respete numeración, formato y protección — y que de paso recalcule el `ref` del
 autofiltro (`#265`), que es el otro extremo del mismo problema. Con un test que escriba dos tandas
 seguidas y compruebe que la primera sobrevive.
+
+## 268. `verificar_apertura` C2 confirma el relleno de ceros y no lo dice: el fallo sale pelado
+
+**Medido el 2026-09-15 en la apertura de W-02SRFU.**
+
+C2 (`core/verificar_apertura.py::c2_hash_contra_drive`) **sí** rehashea sin la cola de ceros
+—`_es_el_relleno_de_225`— y deja el resultado en `evidencia["relleno_225_confirmado"]`. Pero el
+`detalle`, que es la única línea que lee el operador en la salida humana, dice solo «49
+fichero(s) cuyo sha256 NO es el que Drive declara: …». La confirmación que la función acaba de
+calcular no aparece por ninguna parte.
+
+Y por `--json` tampoco sirve: la evidencia se **trunca a 8**
+(`"relleno_225_confirmado": relleno_225[:8]`, `core/verificar_apertura.py:847`), igual que
+`discrepan`. Con 49 discrepancias y 8 confirmaciones listadas es **imposible desde la salida**
+saber si están explicadas las 49 o solo ocho — que es exactamente la pregunta que separa
+«expediente íntegro» de «expediente corrupto».
+
+Lo medido en W-02SRFU: C2 → `fallo`, 49 de 49 contrastados discrepan; **51 de los 52 ficheros**
+de `00_Input/01_Drive EV/` llevan la firma estructural del relleno (múltiplo de 512 con cola de
+ceros de menos de 512 bytes); y sobre `2022-IBI-RECIBO TEULADÍ 8.pdf` —136.704 bytes locales
+contra los 136.290 que declara Drive— los 414 bytes de cola son **todos cero** y el `sha256` del
+prefijo es exactamente el que Drive declara. Contenido intacto, y un `1 fallo(s)` rojo al cerrar.
+
+Es el patrón de `feedback-el-guard-que-mide-y-solo-susurra`: el dato existe, se calcula, y no
+llega a quien decide.
+
+**Remedio:** que el `detalle` distinga los tres casos —**todas** las discrepancias explicadas
+por `MEJORAS #225`, **algunas**, **ninguna**— y que los **conteos** (`len(relleno_225)` contra
+`len(discrepan)`) vayan en la evidencia **sin truncar**, aunque las listas sí se trunquen. Con
+un test por cada uno de los tres casos.
+
+## 269. `verificar_apertura` C3 busca el catálogo solo donde lo deja el motor, y C4 ya acepta los dos sitios
+
+**Medido el 2026-09-15 en W-02SRFU**, con la sala de lectura montada por la **skill**: en la
+misma corrida, C4 (`artefactos_sala`) da `ok` —«los 4 presentes y con contenido»,
+`catalogo_en: "sala"`— y C3 (`cobertura_vs_catalogo`) da `pendiente` con **«no hay catálogo: la
+sala de lectura no se ha montado»**. Dos comprobaciones del mismo verificador se contradicen
+sobre el mismo hecho.
+
+La causa está en `core/verificar_apertura.py:180`: C3 resuelve
+`cat_path = case_dir / _PROCESADO / _CATALOGO`, es decir **solo**
+`01_Procesado/indice_documental.yaml` —la ubicación del motor local—, mientras la skill lo
+escribe en `01_Procesado/Sala lectura/indice_documental.yaml`.
+
+Es el desacuerdo de layout que `RUNBOOK_APERTURA_EXPEDIENTE.md` `[APER-70]` declara abierto (la
+mitad viva de `MEJORAS #221`), y cuyo remedio —«acepta las dos ubicaciones y la evidencia dice
+en cuál apareció»— **se aplicó a C4 y no a C3**.
+
+**Consecuencia, y por qué no puede esperar a que se decida la ubicación canónica:** mientras C3
+no tolere las dos, **toda** sala montada por la skill se declara inexistente y el contraste de
+`[APER-60]` —cobertura contra catálogo, el que caza los documentos que nadie catalogó— queda
+**sin ejecutar, en silencio y con apariencia de estado normal**.
+
+**Remedio:** que C3 use el mismo resolvedor de dos ubicaciones que C4 y reporte en cuál apareció.
+
+## 270. El lote de correo trae basenames repetidos y `layout_bundle_hilo` no puede montar el bundle por hilo
+
+Tercera medición de `[APER-62]` (`MEJORAS #189`), esta vez en **W-02SRFU, 2026-09-15**, y se
+anota porque el remedio sigue sin construirse y el rodeo se repite igual.
+
+El lote `2026-09-15_email_01` trae el mismo basename en la raíz y dentro de las subcarpetas de
+los mensajes con adjuntos: `2026-05-18_arras_urgentes_…_teuladi_8.eml` con **3** `sha256`
+distintos y `2026-05-25_new_proposal.eml` con **4**. `layout_bundle_hilo` aborta con `ValueError`
+—correctamente: son mensajes distintos y no puede darles nombre canónico distinto—.
+
+**Y `plano_existente=True` tampoco es la salida**, que es el matiz nuevo de esta medición: su
+discriminante es `_hash_origen(nombre)`, un hash **del nombre**, y los nombres son justamente lo
+que colisiona. Los tres mensajes recibirían el mismo discriminante y se pisarían igual.
+
+Se aplicó la salida practicada del runbook: `.eml` **planos** con `sha256[:6]`, declarado en el
+`_plan/` de la sala. **Remedio de raíz:** que el discriminante de `layout_bundle_hilo` derive del
+**contenido** (`sha256`) y no del nombre, o que `email_export` desambigüe el nombre del `.eml` y
+no solo la carpeta.

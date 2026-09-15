@@ -380,8 +380,14 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
   - **No hay `--fuente` que signifique «ninguna»** (`_FUENTES_CLI = drive_ev|manual|whatsapp|email`),
     así que el paso 2 arrastra un re-pase de intake. Medido: **24,1 s en total**, alta CRM incluida,
     con `0 depositables, 125 duplicados omitidos`. Es peaje, no un problema.
-  - **La `cuantia` del alta no baja a `_caso.md`**: tras el paso 2, `meta.cuantia` sigue a `null`
-    aunque el CRM la tenga. Si luego se lee de ahí, no está.
+  - **La `cuantia` del alta SÍ baja a `_caso.md`** (corregido el 2026-09-15). Esta línea dijo
+    durante semanas lo contrario —«tras el paso 2, `meta.cuantia` sigue a `null` aunque el CRM la
+    tenga; si luego se lee de ahí, no está»— y es falso contra el código: tras
+    `abrir_caso --case-id W-02SRFU --crm api --cuantia 33759`, el `_caso.md` trae
+    `meta.cuantia: 33759.0`. Y no es un detalle ocioso: la comprobación **C9** de
+    `verificar_apertura` («Cuantía de `_caso.md` igual a la del CRM») **existe porque el dato está
+    ahí**, y sale `ok` precisamente leyéndolo. La línea vieja mandaba al CRM a buscar algo que ya
+    estaba en local.
 
 - **`[APER-67]` / W-030TZY — Reparto real del tiempo de una apertura, para fijar expectativa.**
   Medido de punta a punta el 2026-09-10 (120 ficheros del Drive E&V + 36 correos; 173 documentos
