@@ -12018,7 +12018,7 @@ y dos más). O sea: el flujo se usa y su entrada se pierde.
 
 **El contrato del JSON — corregido el 2026-09-15, y la corrección enseña más que el
 contrato.** Lo que esta ficha publicó el 2026-09-14 como «derivado POR EJECUCIÓN» tenía
-**cinco campos mal**. La forma canónica vive ahora en `core/viabilidad_json.py`, que es
+**cuatro campos mal**. La forma canónica vive ahora en `core/viabilidad_json.py`, que es
 código y tiene tests contra el consumidor real; esto es su reflejo:
 
 ```json
@@ -12041,7 +12041,7 @@ código y tiene tests contra el consumidor real; esto es su reflejo:
 }
 ```
 
-**Los cinco que estaban mal, medidos corriendo el consumidor el 2026-09-15:**
+**Los cuatro que estaban mal, medidos corriendo el consumidor el 2026-09-15:**
 
 | Campo | Decía | Es | Qué pasaba |
 |---|---|---|---|
@@ -12049,7 +12049,7 @@ código y tiene tests contra el consumidor real; esto es su reflejo:
 | `motivos_impago` | lista | **cadena** | `AttributeError: 'list' object has no attribute 'strip'` |
 | `actividades` | lista | **objeto** de 4 claves | `AttributeError: 'list' object has no attribute 'get'` |
 | `bitacora_inicial` | texto | **booleano**; su texto se descarta | se escribe un texto fijo |
-| `avisos` | lista de objetos ✅ | — | único que acertó, junto con `equipo` |
+| `avisos` | lista de objetos ✅ | — | **fila de control**: acertó, junto con `equipo` — acredita que la medición no era ciega |
 
 **Por qué su ejecución no pudo verlo, que es lo que hay que no repetir.** Aquella corrida
 pasó `[]` en los dos campos de lista y claves desconocidas en `importes`. Una lista vacía

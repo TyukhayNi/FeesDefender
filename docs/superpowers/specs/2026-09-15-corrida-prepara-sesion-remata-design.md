@@ -30,10 +30,10 @@ y solo frenada por una puerta: **el correo**.
 Ninguno de los dos estaba en el encargo. Los dos se midieron **corriendo**, no leyendo, y los dos
 mueven lo que este trabajo puede prometer. Van aquí arriba porque el resto del spec depende de ellos.
 
-### H1. El contrato del JSON que publica `MEJORAS #262` tiene cinco campos mal
+### H1. El contrato del JSON que publica `MEJORAS #262` tiene cuatro campos mal
 
 `#262` dejó escrito el contrato del JSON de viabilidad «derivado POR EJECUCIÓN el 2026-09-14 —no
-leyéndolo, porque leerlo no bastó». La ejecución fue real y el contrato salió **incorrecto en cinco
+leyéndolo, porque leerlo no bastó». La ejecución fue real y el contrato salió **incorrecto en cuatro
 campos**. Contrastado contra el consumidor real,
 `.claude/skills/viabilidad-prerelleno/scripts/render_informe.py`:
 
@@ -43,7 +43,7 @@ campos**. Contrastado contra el consumidor real,
 | `motivos_impago` | lista (`[]`) | **cadena** (`.strip()`, `.upper()`) | con una lista no vacía: `AttributeError: 'list' object has no attribute 'strip'` |
 | `actividades` | lista (`[]`) | **objeto** de 4 claves (`.get()`) | con una lista no vacía: `AttributeError: 'list' object has no attribute 'get'` |
 | `bitacora_inicial` | texto (`"..."`) | **booleano**: `if d.get("bitacora_inicial", True)` | el texto enviado se descarta y se escribe uno fijo |
-| `equipo` | objeto de 4 claves | objeto de 4 claves | ✅ único que acertó |
+| `equipo` | objeto de 4 claves | objeto de 4 claves | ✅ **fila de control**: acertó — acredita que la medición no era ciega |
 
 **Por qué su ejecución no pudo verlo, que es la parte que enseña.** `#262` pasó `[]` en los dos
 campos de lista y claves desconocidas en `importes`. Una lista vacía es *falsy*, así que
@@ -79,7 +79,7 @@ El valor no son los cuatro campos. Es que **el JSON exista como fichero, en su s
 correcta y validada**. Hoy no existe ninguno: `#262` midió cero JSON en cuatro expedientes y tres
 informes ya generados, o sea que el flujo se usa y su entrada se pierde. La sesión que remata abre
 un molde correcto en vez de inventarse la forma — y ya sabemos qué produce inventarse la forma:
-un contrato con cinco campos mal, publicado como medido.
+un contrato con cuatro campos mal, publicado como medido.
 
 ## 3. Alcance
 
@@ -224,7 +224,7 @@ funcionaría hasta el primer caso cuyo nombre no siga el patrón.
 de campos que la corrida no pudo derivar y la razón por la que no pudo — para `equipo`, que el dato
 no existe en la apertura (H2); para los demás, que exigen leer el expediente. Va como campo y no
 como «lo vacío significa pendiente» porque un valor vacío es **ambiguo**: no distingue «nadie lo ha
-puesto» de «se miró y no había». Esa ambigüedad es la misma que dejó pasar los cinco campos de H1, y
+puesto» de «se miró y no había». Esa ambigüedad es la misma que dejó pasar los cuatro campos de H1, y
 aquí cerraría el círculo justo donde la sesión que remata necesita saber qué le toca.
 
 **Ese campo entra en la lista de claves conocidas de `render_informe.py`, que lo ignora en silencio.**
@@ -270,7 +270,7 @@ medido.
 - El contrato: cada campo declarado tiene el tipo que el consumidor lee.
 - `preparar` rellena los cuatro derivables y deja marcado el resto.
 - `preparar` compone un JSON que `validar` acepta — y el `equipo` sale vacío, nunca inventado.
-- `validar` **rechaza** los cinco defectos de H1, uno por uno: `importes` con las claves de `#262`,
+- `validar` **rechaza** los cuatro defectos de H1, uno por uno: `importes` con las claves de `#262`,
   `motivos_impago` como lista, `actividades` como lista, `bitacora_inicial` como texto.
 - La etapa sale `saltada` sin sobrescribir cuando el JSON ya existe, y el fichero anterior queda byte
   a byte igual.

@@ -102,7 +102,7 @@ de resumen, la etiqueta `MEJORAS #NN`, el estado). Texto:
 - [ ] **[APERTURA-VIABILIDAD]** La corrida prepara el JSON de viabilidad y una sesión lo remata en
   un paso, y el correo entra en la secuencia — `MEJORAS #264`, salida 3, elegida por Nikolai el
   2026-09-14. Dos hallazgos medidos el 2026-09-15 mueven el alcance: el contrato del JSON que
-  publica `MEJORAS #262` tiene **cinco campos mal** (12.000 € se tiran en silencio y sale `OK`), y
+  publica `MEJORAS #262` tiene **cuatro campos mal** (12.000 € se tiran en silencio y sale `OK`), y
   el **equipo comercial no es derivable** de `_ficha_crm.yaml` (10 fichas reales, 25 colaboradores,
   cero claves de rol). La corrida rellena **4 de los 11 campos**; el resto queda como residuo
   marcado. **No cierra `#264`:** la etapa `sala_lectura` sigue abierta.
@@ -726,7 +726,7 @@ Crear `core/viabilidad_json.py`:
 """El JSON de la 1a pasada de viabilidad: su contrato, su productor y su validador.
 
 **Por que existe este modulo y no una convencion.** `MEJORAS #262` publico el contrato
-de este JSON «derivado POR EJECUCION», y salio mal en CINCO campos: su corrida paso
+de este JSON «derivado POR EJECUCION», y salio mal en CUATRO campos: su corrida paso
 listas VACIAS y claves desconocidas, que el consumidor sustituye o ignora sin avisar, asi
 que el instrumento no podia dar el otro valor. Medido el 2026-09-15: con
 `importes: {principal: 12000}` la celda del precio queda vacia y el script imprime `OK`.
@@ -1503,7 +1503,7 @@ y su `json` pasa a:
 ````markdown
 **El contrato del JSON — corregido el 2026-09-15, y la corrección enseña más que el
 contrato.** Lo que esta ficha publicó el 2026-09-14 como «derivado POR EJECUCIÓN» tenía
-**cinco campos mal**. La forma canónica vive ahora en `core/viabilidad_json.py`, que es
+**cuatro campos mal**. La forma canónica vive ahora en `core/viabilidad_json.py`, que es
 código y tiene tests contra el consumidor real; esto es su reflejo:
 
 ```json
@@ -1526,7 +1526,7 @@ código y tiene tests contra el consumidor real; esto es su reflejo:
 }
 ```
 
-**Los cinco que estaban mal, medidos corriendo el consumidor el 2026-09-15:**
+**Los cuatro que estaban mal, medidos corriendo el consumidor el 2026-09-15:**
 
 | Campo | Decía | Es | Qué pasaba |
 |---|---|---|---|
@@ -1534,7 +1534,7 @@ código y tiene tests contra el consumidor real; esto es su reflejo:
 | `motivos_impago` | lista | **cadena** | `AttributeError: 'list' object has no attribute 'strip'` |
 | `actividades` | lista | **objeto** de 4 claves | `AttributeError: 'list' object has no attribute 'get'` |
 | `bitacora_inicial` | texto | **booleano**; su texto se descarta | se escribe un texto fijo |
-| `avisos` | lista de objetos ✅ | — | único que acertó, junto con `equipo` |
+| `avisos` | lista de objetos ✅ | — | **fila de control**: acertó, junto con `equipo` — acredita que la medición no era ciega |
 
 **Por qué su ejecución no pudo verlo, que es lo que hay que no repetir.** Aquella corrida
 pasó `[]` en los dos campos de lista y claves desconocidas en `importes`. Una lista vacía
@@ -1575,7 +1575,7 @@ Expected: PASS.
 
 ```bash
 git add docs/MEJORAS_FUTURAS.md
-git commit -m "docs: MEJORAS #262 tenia CINCO campos mal — y su ejecucion no podia verlo"
+git commit -m "docs: MEJORAS #262 tenia CUATRO campos mal — y su ejecucion no podia verlo"
 ```
 
 ---

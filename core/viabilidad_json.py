@@ -1,7 +1,7 @@
 """El JSON de la 1a pasada de viabilidad: su contrato, su productor y su validador.
 
 **Por que existe este modulo y no una convencion.** `MEJORAS #262` publico el contrato
-de este JSON «derivado POR EJECUCION», y salio mal en CINCO campos: su corrida paso
+de este JSON «derivado POR EJECUCION», y salio mal en CUATRO campos: su corrida paso
 listas VACIAS y claves desconocidas, que el consumidor sustituye o ignora sin avisar, asi
 que el instrumento no podia dar el otro valor. Medido el 2026-09-15: con
 `importes: {principal: 12000}` la celda del precio queda vacia y el script imprime `OK`.
