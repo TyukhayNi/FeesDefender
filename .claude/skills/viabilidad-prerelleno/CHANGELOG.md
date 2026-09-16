@@ -3,6 +3,42 @@
 > Registro de cambios de la skill, en orden cronológico inverso (lo más reciente arriba).
 > Formato ligero: fecha (AAAA-MM-DD) + qué cambió, una línea por cambio.
 
+## 2026-09-15 — El consumidor avisa de toda clave que no lee (`MEJORAS #262`)
+
+- `render_informe.py` **avisa de toda clave que no lee**: campos de primer nivel, y las
+  de `importes`, `actividades` y `equipo`. Antes solo avisaba de hitos y preguntas
+  desconocidos, y esa asimetría dejaba pasar en silencio la clave `importes.principal`
+  que publicó `MEJORAS #262` como contrato: 12.000 € que no llegaban a ninguna celda con
+  un `OK` en pantalla. Medido el 2026-09-15.
+- **Corrección el mismo día**: la entrada de arriba decía «avisa de TODA clave» y no era
+  exacto — `equipo` se quedó fuera del recorrido. Es el campo de mayor riesgo de los
+  cuatro (`core/viabilidad_json.py::preparar` lo deja con sus cuatro claves vacías A
+  PROPÓSITO para que una sesión lo rellene a mano), así que es el que más probablemente
+  escriba un humano. Añadida `CLAVES_EQUIPO` (repetida a mano de la del core) y su
+  comprobación, con el mismo patrón que `importes`/`actividades`.
+- `test_los_dos_contratos_no_han_divergido` amplía su alcance a las tres tuplas de
+  subclaves (`CLAVES_EQUIPO`/`CLAVES_IMPORTES`/`CLAVES_ACTIVIDADES`), contra el registro
+  propio del script y no contra el texto entero — el texto entero no habría cazado el
+  hueco de `equipo`: `EQUIPO_CELLS` ya citaba esas cuatro claves para escribir su celda,
+  sin que `avisa_de_claves_ajenas` las reconociera.
+- Reconoce `_residuo`, el campo con el que `core/viabilidad_json.py` declara lo que la
+  corrida de apertura no pudo derivar. No lo usa y no avisa de él.
+- `SKILL.md` estrena campo `version` en el frontmatter (`"1.0"`): la skill no lo tenía
+  —a diferencia de otras del despacho, que sí versionan así— y este cambio es el primero
+  que se deja registrado con un número.
+- **Segunda corrección el mismo día (revisión adversarial R1, H-02):** la regla de arriba
+  cubría el campo entero de `equipo`/`importes`/`actividades`, pero no las claves DENTRO
+  de cada valor de `hitos`, cada respuesta de `preguntas` ni cada objeto de `avisos` —
+  reconocer el identificador de un hito no decía nada de las claves de su contenido
+  (`hitos.ENCARGO.scrore`, con una errata, pasaba mudo; igual `preguntas.*.respueta` y
+  `avisos[*].avios`). En vez de sumar tres bucles más a mano, `avisa_de_claves_ajenas`
+  pasa a recorrer `ESQUEMA_ANIDADO`, que nombra cada nivel anidado y su forma (objeto
+  fijo, dict indexado por un id libre, o lista de objetos): un sitio nuevo queda
+  cubierto declarándolo ahí, no escribiendo el bucle que lo recorre. Test de la
+  propiedad general, no uno por sitio:
+  `test_toda_clave_ajena_anidada_avisa_por_construccion`, parametrizado sobre el
+  propio esquema.
+
 ## 2026-09-11 — `modelo_xlsx.md` manda sobre la estructura de la plantilla (`MEJORAS #244`)
 
 - `references/modelo_xlsx.md` se declara **fuente única de la estructura** de la plantilla en su

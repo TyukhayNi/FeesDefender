@@ -11,6 +11,7 @@ description: >-
   expediente", "preparar la entrevista" de un caso de honorarios, o cuando mencione 00_Input,
   hitos, semáforo de viabilidad o el cuestionario de evidencia de un caso E&V. NO valora la
   viabilidad ni redacta el recuadro ejecutivo (eso es la Skill B `informe-viabilidad-ev`).
+version: "1.2"
 ---
 
 # Pre-relleno documental del Informe de Viabilidad (FeesDefender / E&V)

@@ -12036,8 +12036,10 @@ y dos más). O sea: el flujo se usa y su entrada se pierde.
    alguien tiene que producir ese JSON y **dejarlo escrito**. Hoy ni siquiera hay un ejemplo del
    que partir para conocer su forma.
 
-**El contrato del JSON, derivado POR EJECUCIÓN el 2026-09-14** — no leyéndolo, porque leerlo no
-bastó: tres intentos hasta que corrió. Se deja aquí porque **no está escrito en ningún sitio**:
+**El contrato del JSON — corregido el 2026-09-15, y la corrección enseña más que el
+contrato.** Lo que esta ficha publicó el 2026-09-14 como «derivado POR EJECUCIÓN» tenía
+**cuatro campos mal**. La forma canónica vive ahora en `core/viabilidad_json.py`, que es
+código y tiene tests contra el consumidor real; esto es su reflejo:
 
 ```json
 {
@@ -12045,18 +12047,43 @@ bastó: tres intentos hasta que corrió. Se deja aquí porque **no está escrito
   "equipo": {"director_captador": "APELLIDO, Nombre", "asesor_captador": "...",
              "director_buscador": "...", "asesor_buscador": "..."},
   "observaciones": "...",
-  "importes": {"principal": 0, "costas": 0, "intereses": 0},
+  "importes": {"precio": 0, "pct_honorarios": 5, "pagos_parciales": 0,
+               "propuesta_pago": 0},
   "hitos": {"<id de la plantilla>": {"score": 0, "fecha": "AAAA-MM-DD"}},
   "preguntas": {"<id de la plantilla>": {"respuesta": "...", "cita": "...", "confianza": "..."}},
-  "actividades": [], "motivos_impago": [],
+  "actividades": {"exposes_propiedad": 0, "visitas_propiedad": 0,
+                  "exposes_buscador": 0, "visitas_buscador": 0},
+  "motivos_impago": "cadena, NO lista",
   "avisos": [{"n": 1, "tipo": "...", "aviso": "...", "impacto": "...", "fuente": "...",
               "severidad": "alta|media|baja", "accion": "...", "sube": "no", "estado": "abierto"}],
-  "bitacora_inicial": "..."
+  "bitacora_inicial": true,
+  "_residuo": {"campos": ["..."], "por_que": {"...": "..."}, "lo_remata": "..."}
 }
 ```
 
-**Los dos errores que cuesta descubrir:** `equipo` es un **objeto** de cuatro claves (un texto
-revienta con `AttributeError`), y `avisos` es una lista de **objetos**, no de cadenas.
+**Los cuatro que estaban mal, medidos corriendo el consumidor el 2026-09-15:**
+
+| Campo | Decía | Es | Qué pasaba |
+|---|---|---|---|
+| `importes` | `{principal, costas, intereses}` | `{precio, pct_honorarios, pagos_parciales, propuesta_pago}` | los tres se ignoran: con `principal: 12000` la celda `H13` queda vacía y el script imprime `OK` |
+| `motivos_impago` | lista | **cadena** | `AttributeError: 'list' object has no attribute 'strip'` |
+| `actividades` | lista | **objeto** de 4 claves | `AttributeError: 'list' object has no attribute 'get'` |
+| `bitacora_inicial` | texto | **booleano**; su texto se descarta | se escribe un texto fijo |
+| `avisos` | lista de objetos ✅ | — | **fila de control**: acertó, junto con `equipo` — acredita que la medición no era ciega |
+
+**Por qué su ejecución no pudo verlo, que es lo que hay que no repetir.** Aquella corrida
+pasó `[]` en los dos campos de lista y claves desconocidas en `importes`. Una lista vacía
+es *falsy*, así que `d.get(...) or ""` y `or {}` la sustituyen y **nunca revientan**; y
+`.get()` sobre una clave inexistente devuelve el default **sin avisar**. **El instrumento
+no podía dar el otro valor**: esa corrida era incapaz de distinguir «campo correcto» de
+«campo ignorado», y salió `OK` en los dos casos. Correr algo no acredita nada si la
+corrida no puede fallar por lo que se quiere medir.
+
+**Remediado en la frontera, no en el ejemplo** (PR de `MEJORAS #264`): `render_informe.py`
+ya avisaba de los hitos y las preguntas que no reconocía y **callaba** en los campos de
+primer nivel y dentro de `importes`/`actividades`. Esa asimetría era el defecto. Ahora
+avisa de toda clave que no lee, y `core/viabilidad_json.validar` lo comprueba del lado
+del productor.
 
 **Tres cosas más que la corrida enseñó y conviene no volver a descubrir:**
 
@@ -12072,9 +12099,30 @@ o que se decida cablear la viabilidad dentro de la corrida de apertura. **Depend
 decisión que la sala de lectura**: qué hace la corrida cuando necesita que alguien *lea* el
 expediente.
 
-**Dónde debería vivir, para cuando se decida:** junto al informe, dentro del expediente, y
-declarado como protocolo si no debe inventariarse como documento del cliente — la misma frontera
-que `MEJORAS #261` plantea para el recibo de la actuación.
+**Parcialmente atendida el 2026-09-15** (`MEJORAS #264`, salida 3): el JSON deja de ser
+efímero para las corridas de apertura —`core/viabilidad_json.py` lo escribe en
+`00_Input/_viabilidad.json` con lo derivable y el residuo marcado—. **Lo que sigue
+abierto:** los informes ya entregados no tienen JSON y no se pueden reproducir; esto solo
+cubre de aquí en adelante.
+
+**Dónde debería vivir, para cuando se decida** —lo que planteaba esta ficha antes de la salida 3,
+y que se conserva porque el razonamiento sigue siendo válido como alternativa que se descartó, no
+como error—: junto al informe, dentro del expediente, y declarado como protocolo si no debe
+inventariarse como documento del cliente — la misma frontera que `MEJORAS #261` plantea para el
+recibo de la actuación.
+
+**Lo que de verdad se decidió, y por qué se apartó de esa sugerencia** (comentario junto a
+`NOMBRE_FICHERO` en `core/viabilidad_json.py`): vive en `00_Input/`, no junto al informe. Tres
+razones: hay precedente exacto (`_recibo_actuacion.json` de `MEJORAS #261`, en el mismo sitio);
+`core/intake_control.py` ya mantiene ahí la lista de ficheros de protocolo que no se inventarían
+como documento del cliente, así que no hacía falta inventar un sitio nuevo; y este JSON es la
+ENTRADA del informe, no una versión suya — vive donde vive la entrada, no donde vive la salida.
+
+**Despliegue pendiente, fuera del repo.** El consumidor (`render_informe.py`, skill
+`viabilidad-prerelleno`) corre en el SERVIDOR (Cowork), no en el PC, y `plugin update` compara por
+versión: sin re-empaquetar el `.skill` y re-importarlo a mano en Cowork, el aviso de claves
+desconocidas que trae esta salida 3 no llega a producción aunque el repo ya lo tenga. Detalle del
+paso en el plan, Step 5 de la PR 2 (`docs/superpowers/plans/2026-09-15-corrida-prepara-sesion-remata.md`).
 
 ## 263. El clasificador por LLM acierta el 13% — y se equivoca CONVENCIDO
 
@@ -12135,7 +12183,7 @@ python -m scripts.medir_clasificador_llm --por-caso 15 --limite 75
 **Mientras tanto la decisión es no automatizarla**: la corrida deja el residuo marcado como
 pendiente y la lectura la sigue haciendo una sesión, que es lo que hace hoy y funciona.
 
-## 264. Sala de lectura y viabilidad no son dos cableados: son UNA decisión
+## 264. Sala de lectura y viabilidad no son dos cableados: son UNA decisión  [PROMOVIDO → PLAN.md]
 
 **Anotado 2026-09-14**, al cerrar la tanda P1/P8 y preguntarse qué falta para que la corrida de
 apertura llegue hasta el informe. Las tres piezas de este hueco ya estaban fichadas por separado
@@ -12189,6 +12237,15 @@ dice la entrada #48 de este mismo fichero—.
 **Disparador.** Que Nikolai elija cuál de las tres salidas quiere. Mientras no la elija, **no se
 cablea ninguna de las dos etapas**: montar el lazo sin haber decidido el lector produce una etapa
 que siempre sale `saltada`, que es el hueco de hoy con más código encima.
+
+**Elegida la salida 3 el 2026-09-14** (decisión de Nikolai): *la corrida prepara y una sesión
+remata*. Con ella entran también sus dos decisiones hermanas: el **correo entra** en la corrida, y
+el **clasificador por LLM queda cerrado** —`MEJORAS #263` no se reabre: no se prueba prompt ni
+modelo, y `scripts/medir_clasificador_llm.py` se queda quieto—.
+
+**Se cabla solo la mitad de viabilidad.** La etapa `sala_lectura` sigue esperando: depende del mismo
+lector, y montarla hoy produciría una etapa que siempre sale `saltada`.
+Diseño: [`2026-09-15-corrida-prepara-sesion-remata-design.md`](superpowers/specs/2026-09-15-corrida-prepara-sesion-remata-design.md).
 
 ## 265. El autofiltro de `AVISOS LLM` llega a la fila 10, y los avisos que importan están debajo
 
@@ -12339,3 +12396,122 @@ Se aplicó la salida practicada del runbook: `.eml` **planos** con `sha256[:6]`,
 `_plan/` de la sala. **Remedio de raíz:** que el discriminante de `layout_bundle_hilo` derive del
 **contenido** (`sha256`) y no del nombre, o que `email_export` desambigüe el nombre del `.eml` y
 no solo la carpeta.
+
+## 271. El nombre de la subcarpeta se repite dentro de cada fichero, y el 19 % del expediente pasa del límite de 260 de Windows
+
+**Medido el 2026-09-15 sobre `BaRS10 … (W-02X1WJ)`: 175 de 927 ficheros superan los 260
+caracteres de ruta.** La peor llega a **363**. Nikolai no podía abrir los `.eml` de
+`01_Procesado/Sala lectura/2025-12-09_bellamar_16_mortgage_denial_certificates_and_alter`:
+14 de sus 16 ficheros pasan del límite, los correos por 289.
+
+**La causa no es la profundidad del árbol: es que el generador repite el nombre de la
+subcarpeta dentro del nombre de cada fichero que mete en ella.**
+
+```
+…/02_Documentos/2026_07_28_emplazamiento_demanda_verbal_942_2026_parte2__d2a1fe0c/
+                2026_07_28_emplazamiento_demanda_verbal_942_2026_parte2__d2a1fe0c__d09_DOC_16_EMAIL_CERTIFICADO_2025_12_05.pdf
+```
+
+Esos 65 caracteres viajan **dos veces**. Igual en la sala de lectura, donde el `.eml` repite
+el asunto truncado que ya nombra a su carpeta. Reparto por carpeta: `raw_text` 38, `03_MD`
+35, `02_Documentos` 39 entre las dos partes de la demanda, `Sala lectura` 31.
+
+**Por qué muerde, y por qué no se ve venir:** el prefijo hasta la carpeta del caso ya son
+**127 caracteres** (la raíz de la unidad compartida, `CASOS/Barcelona/`, más el nombre del
+caso, que son 59). Con una subcarpeta de 61 quedan **42** para el fichero. Los generadores no
+lo comprueban, así que el fichero se escribe —Python y Git for Windows llegan con rutas
+extendidas— y **el que no puede abrirlo es el usuario**, con Outlook o el Explorador, que se
+quedan en el límite clásico. El fallo no aparece al generar: aparece meses después, al leer.
+
+**Remedio propuesto:** al componer el nombre de un fichero dentro de una subcarpeta ya
+nombrada, **no repetir el nombre de la carpeta** (basta el sufijo discriminante:
+`d09_DOC_16…`, `_0e9fdd`). Y un guard que avise cuando una ruta generada pase de unos 240
+caracteres contando el prefijo real del caso.
+
+**Paliativo inmediato, sin tocar nada:** `subst X:` sobre la carpeta del caso deja el prefijo
+en 3 y baja las 175 rutas de golpe (la peor queda en 239); se deshace con `subst X: /D`. El
+2026-09-15 se resolvió copiando el caso al Escritorio, que también vale.
+
+**No promovido a `PLAN.md`:** falta disparador propio. Se promoverá cuando vuelva a bloquear
+a alguien o cuando se toque el generador de nombres por otra causa.
+
+## 272. El aviso «PLAN.md ↔ git» toma los ficheros de `docs/` por ramas fantasma: 32 de 32 en falso
+
+**Medido el 2026-09-15 sobre `PLAN.md` en `4843353`: el aviso marca 32 «ramas que git ya no
+conoce» y ninguna es una rama.** 31 terminan en `.md` (`docs/MEJORAS_FUTURAS.md`,
+`docs/superpowers/plans/…`) y la 32ª es una ruta partida por un salto de línea
+(`docs/superpowers/specs/2026-09-06-arnes-de-tests-r`).
+
+**La causa cabe en una línea** — `scripts/session_close.py`, `_RE_RAMA`:
+
+```python
+_RE_RAMA = re.compile(
+    r"\b(?:feat|fix|docs|chore|refactor|test|hotfix|release)/[A-Za-z0-9._\-/]+"
+)
+```
+
+`docs/` es **a la vez** un prefijo de rama legítimo de este repo (`docs/cierre-117`,
+`docs/mejoras-262-json-viabilidad`) y el directorio de la documentación. El regex no puede
+separarlos por el prefijo, y el `rstrip("./")` de `_plan_items_desfasados` no quita la extensión.
+
+**Por qué importa más de lo que parece: el aviso existe para detectar el defecto de la fila #29**
+—trabajo afirmado como pendiente en una rama que ya no existe—, y en su forma actual **grita en
+cada cierre sin poder acertar nunca**. Un aviso que suena siempre se ignora siempre, que es
+exactamente como se pierde la señal que sí importa ([[el guard que mide y solo susurra]], en la
+dirección contraria).
+
+**Remedio barato, si se toca:** descartar los tokens con extensión de fichero conocida (`.md`,
+`.py`, `.yaml`, `.json`, `.txt`) antes de compararlos contra `_ramas_conocidas()`, y **agrupar el
+aviso por fila del PLAN** en vez de bajo el encabezado de la cola entera — hoy las 32 salen bajo un
+solo título, así que tampoco dice **qué** fila hay que revisar.
+
+**No promovido a `PLAN.md`:** falta disparador propio. Se promoverá cuando el aviso llegue a
+ocultar un desfase real o cuando se toque `session_close` por otra causa.
+## 273. Cuatro mutantes del arnés no pueden morir — y nadie los vigila
+
+**Lo medido** (2026-09-15, durante la tanda de `MEJORAS #264`): cuatro mutantes de
+`tests/_mutantes_plan5.py` —`F23`, `F25`, `F32-costura-hasta` y `F34-control-registro`— **no
+pueden morir**, porque el texto que usan como ancla ya no existe en el código que mutan. Se
+verificó que los cuatro ya estaban rotos **antes** de esa tanda, comparando contra el commit
+`f9c11d8`: ninguno lo causó ese trabajo.
+
+**La causa raíz, que es lo que hay que fichar y no el síntoma.** `tests/_mutantes_plan5.py` es
+un **script suelto** —guion bajo inicial, `main()` propio, **cero importadores**—, así que
+ningún test de la suite vigila sus anclas. Cuando el código que mutan cambia de redacción, el
+mutante deja de aplicarse **en silencio** y el arnés sigue reportando verde. Un arnés de
+mutación que no puede distinguir «el mutante murió por la propiedad» de «el mutante no llegó a
+aplicarse» no acredita lo que dice acreditar.
+
+**Cómo se detectó.** Un revisor adversarial lo señaló además como límite de su propia
+cobertura: no ejecutó el arnés completo, así que su ronda **no da por cubierto** lo que el
+arnés debía cubrir.
+
+**Disparador.** Que haya que apoyarse en el arnés para acreditar una propiedad, o la próxima
+tanda que toque `core/apertura_v1.py` o el secuenciador.
+
+## 274. Los rótulos de los fixtures de apertura pueden llevar datos de un caso real
+
+**Lo medido** (2026-09-15): una revisión adversarial externa levantó la sospecha de que los
+literales descriptivos que usan los fixtures de `tests/test_abrir_caso_cli.py` —un rótulo de
+carpeta de Drive y una dirección— parecen proceder de un expediente real y no de datos
+sintéticos. El revisor **no pudo certificar su origen**: la blocklist privada no está
+disponible en su entorno y su test se salta.
+
+**Comprobado al adjudicar.** Esos literales **existen en `origin/main` desde antes**, en
+varios ficheros —`core/intake_drive.py`, `tests/test_intake_drive.py`, la bitácora y varios
+planes, además del propio fichero de test—. El trabajo de `MEJORAS #264` los **reutiliza**, no
+los introduce. Por eso es deuda preexistente y no un defecto de aquella rama.
+
+**Por qué importa igual.** La regla de la casa es que el dato real vive fuera del repo y que
+en código y docs se referencia por `W-XXXXX`, no por nombre de tercero. Si esos literales son
+reales, llevan tiempo versionados y el saneado los pasó por alto; si son sintéticos, **nadie
+puede saberlo mirándolos**, que es casi tan malo, porque obliga a repetir esta misma duda cada
+vez que alguien los lea.
+
+**Qué no lleva esta ficha, a propósito.** No se reproducen los literales sospechosos —ni el
+rótulo, ni la dirección, ni ningún nombre—: fichar una posible fuga copiándola la empeora.
+Quien la atienda los localiza en los ficheros ya señalados: `tests/test_abrir_caso_cli.py`
+(los fixtures), `core/intake_drive.py`, `tests/test_intake_drive.py`, y la bitácora y los
+planes que los mencionan.
+
+**Disparador.** El próximo saneado de PII, o que alguien tenga que tocar esos fixtures.

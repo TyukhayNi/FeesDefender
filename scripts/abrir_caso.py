@@ -23,6 +23,7 @@ Intake incremental (identidad desde _caso.md, sin repetir los 6 flags):
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import hashlib
 import json
 import os
@@ -53,13 +54,16 @@ app = typer.Typer(add_completion=False, help="Abrir un expediente E&V en una pas
 
 _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
 
-#: Nombres de las etapas de V1, en orden. Es tambien el vocabulario de `--hasta`.
-ETAPAS_V1 = ("drive", "crm", "sala_maquina")
-#: V2 AMPLIA V1 por la derecha: las tres primeras conservan nombre y orden, asi que un
-#: `--hasta sala_maquina` de antes sigue parando donde paraba. `crm_ficha` NO esta:
-#: llevar el YAML al CRM ejecuta los efectos materiales de la §8.1, que el spec situa
+#: Nombres de las etapas de V1, en orden. El vocabulario de `--hasta` es ETAPAS_V2
+#: (mas abajo), no esta tupla: admite tambien las cuatro etapas nuevas de V2.
+ETAPAS_V1 = ("drive", "email", "crm", "sala_maquina")
+#: V2 AMPLIA V1 por la derecha: V1 ENTERA conserva nombre y orden dentro de V2, asi
+#: que un `--hasta sala_maquina` de antes sigue parando donde paraba (lo prueba
+#: `test_las_etapas_de_v2_amplian_v1_por_la_derecha` por `len(ETAPAS_V1)`, no por un
+#: indice fijo, para no caducar cuando entre otra etapa). `crm_ficha` NO esta: llevar
+#: el YAML al CRM ejecuta los efectos materiales de la §8.1, que el spec situa
 #: DESPUES de la sala de lectura y la viabilidad (R1/H-05).
-ETAPAS_V2 = ETAPAS_V1 + ("crm_alta", "actuacion", "verificar")
+ETAPAS_V2 = ETAPAS_V1 + ("crm_alta", "actuacion", "viabilidad", "verificar")
 
 #: Lo que `_alta_crm` hizo de verdad. Devolvia `None` en SEIS situaciones distintas, y
 #: quien lo consumiera no podia distinguir «ya estaba vinculado» de «el POST dio timeout»
@@ -282,7 +286,7 @@ def _reaparecido(p: Path, listadas: set[str]) -> Path | str | None:
 
 _FUENTES_CLI = ("drive_ev", "manual", "whatsapp", "email")
 _MODOS = ("libre", "v1")
-_FUENTES_V1 = ("drive_ev",)
+_FUENTES_V1 = ("drive_ev", "email")
 
 
 def _inventario_desde_hashes(
@@ -568,6 +572,24 @@ def _intake_whatsapp(ident, src_str: str, rol: str, *, dry_run: bool) -> None:
         typer.echo(f"WhatsApp depositado en {getattr(res, 'chat_dir', '?')}")
 
 
+def _exportar_email_a_lote(case_id: str, cuenta: str, label: str, *,
+                           extraer_adjuntos: bool) -> tuple[Path, object]:
+    """El par `email_dest_dir` + `export_label`: reserva el lote (T8) y exporta la
+    etiqueta. Devuelve `(dest, rep)`.
+
+    Compartido por `_intake_email` (modo `libre`) y `etapa_email` (V1): el mismo
+    protocolo con dos llamadores de necesidades distintas -uno solo informa por
+    pantalla, el otro necesita `rep` para construir `EtapaResultado`-, y antes de esta
+    unificacion las dos copias YA habian divergido en `extract_attachments` (I2 de la
+    revision de conjunto, 2026-09-15: una fijaba `True` literal y la otra recibia el
+    flag del CLI).
+    """
+    dest = email_export.email_dest_dir(case_id)     # reserva el lote (T8)
+    rep = email_export.export_label(cuenta, label, dest, case_id=case_id,
+                                    extract_attachments=extraer_adjuntos)
+    return dest, rep
+
+
 def _intake_email(ident, case_dir: Path, cuenta: str, label: str, *, dry_run: bool,
                   extraer_adjuntos: bool = True) -> None:
     """Exporta la etiqueta Gmail del caso a un lote nuevo de ``00_Input``.
@@ -584,14 +606,25 @@ def _intake_email(ident, case_dir: Path, cuenta: str, label: str, *, dry_run: bo
         typer.echo(f"[dry-run] email: se exportaría la etiqueta {label!r} de {cuenta} "
                    f"a un lote nuevo 00_Input/<fecha>_email_NN{extra} (sin ejecutar)")
         return
-    dest = email_export.email_dest_dir(ident.case_id)     # reserva el lote (T8)
-    email_export.export_label(cuenta, label, dest, case_id=ident.case_id,
-                              extract_attachments=extraer_adjuntos)
+    dest, _rep = _exportar_email_a_lote(ident.case_id, cuenta, label,
+                                        extraer_adjuntos=extraer_adjuntos)
     typer.echo(f"Email: etiqueta {label!r} exportada a {dest}")
 
 
-def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> None:
-    """Exige los flags propios de la fuente y rechaza los ajenos (fail-fast)."""
+def _validar_flags(fuente, *, modo, folder_id, team_id, src, rol, cuenta, label) -> None:
+    """Exige los flags propios de la fuente y rechaza los ajenos (fail-fast).
+
+    **`modo` importa porque cambia lo que "ajeno" significa para `--fuente email`.**
+    En `libre` cada corrida hace UN intake, asi que la exclusividad es correcta tal
+    cual: `--folder-id`/`--team-id` no son de `email`, y se rechazan. Pero `--modo v1`
+    ENCADENA fuentes -- materializa Drive E&V SIEMPRE (`validar_modo` ya exige
+    `--folder-id` sin condicionarlo a la fuente) y, con `--fuente email`, trae ADEMAS
+    el correo --. Ahi `--fuente` ya no responde a "que fuente uso" sino a "que traigo
+    ADEMAS del Drive", asi que `--folder-id`/`--team-id` dejan de ser ajenos a `email`
+    bajo v1: son los flags de la materializacion de Drive que la secuencia hace por
+    debajo, no un intruso de otra fuente. `drive_ev` no necesita esta distincion: su
+    lista de ajenos nunca incluyo folder-id/team-id, en ningun modo.
+    """
     requeridos = {
         "drive_ev": [],
         "manual": [("--src", src)],
@@ -603,14 +636,16 @@ def _validar_flags(fuente, *, folder_id, team_id, src, rol, cuenta, label) -> No
         typer.echo(f"[ERROR] Fuente {fuente}: faltan flags {faltan}", err=True)
         raise AbortarApertura(1)
 
+    ajenos_email = [("--src", src), ("--rol", rol)]
+    if modo != "v1":
+        ajenos_email = ajenos_email + [("--folder-id", folder_id), ("--team-id", team_id)]
     ajenos = {
         "drive_ev": [("--src", src), ("--rol", rol), ("--cuenta", cuenta), ("--label", label)],
         "manual": [("--rol", rol), ("--cuenta", cuenta), ("--label", label),
                    ("--folder-id", folder_id), ("--team-id", team_id)],
         "whatsapp": [("--cuenta", cuenta), ("--label", label),
                      ("--folder-id", folder_id), ("--team-id", team_id)],
-        "email": [("--src", src), ("--rol", rol),
-                  ("--folder-id", folder_id), ("--team-id", team_id)],
+        "email": ajenos_email,
     }[fuente]
     presentes = [n for n, v in ajenos if v]
     if presentes:
@@ -709,6 +744,101 @@ def etapa_drive(ident, case_dir: Path, *, folder_id, team_id, intake=None):
         pendientes=pendientes)
 
 
+_PENDIENTE_EMAIL_NO_PEDIDO = av1.Pendiente(
+    codigo="email_no_pedido",
+    detalle="No se trajo correo: la corrida no dijo cual (--cuenta y --label). Si el "
+            "caso tiene una etiqueta de Gmail, su material NO esta aqui.")
+
+
+def etapa_email(ident, case_dir: Path, *, cuenta, label, extraer_adjuntos: bool = True,
+                exportar=None) -> av1.EtapaResultado:
+    """Exportar la etiqueta Gmail del caso a un lote nuevo de `00_Input`; corre justo
+    despues de `drive` y antes de `crm` (el orden completo vive en `ETAPAS_V1`/
+    `ETAPAS_V2`; un ordinal aqui caduca solo cuando se inserta otra etapa por delante,
+    que es justo lo que paso con este docstring -- I5 de la revision de conjunto,
+    2026-09-15).
+
+    **Va antes de `sala_maquina` y eso no es estetico.** La sala de maquina hace el OCR
+    y la atomizacion leyendo `00_Input`; un adjunto que llegue solo por correo y se
+    deposite despues no se OCR-ea ni aparece en la sala de lectura (`MEJORAS #68.a`).
+    Poniendola antes, el gotcha del runbook se cumple por construccion y no por memoria
+    del operador.
+
+    **`export_label` solo LEE de Gmail** —`messages().get`, `messages().list`,
+    `labels().list`— y escribe en el caso. Se midio el 2026-09-15 porque el dimensionado
+    anterior afirmo lo contrario y costo una ronda mal presupuestada.
+
+    **`extraer_adjuntos` viaja desde el CLI** (I2 de la revision de conjunto,
+    2026-09-15): antes esta etapa fijaba `True` literal, asi que `--no-extraer-adjuntos`
+    no llegaba hasta aqui aunque el flag existiera. Mismo default que `_intake_email`
+    -True-, por la misma razon: es la decision segura para que la sala de maquina vea
+    los adjuntos que solo llegan por correo.
+    """
+    if not cuenta or not label:
+        return av1.EtapaResultado(
+            nombre="email", estado="saltada",
+            detalle="no se pidio correo (sin --cuenta/--label)",
+            pendientes=(_PENDIENTE_EMAIL_NO_PEDIDO,))
+
+    def _exportar():
+        _dest, rep = _exportar_email_a_lote(ident.case_id, cuenta, label,
+                                            extraer_adjuntos=extraer_adjuntos)
+        return rep
+
+    try:
+        rep = (exportar or _exportar)()
+    except Exception as exc:  # noqa: BLE001 — el estado de V1 es el producto, no la traza
+        return av1.EtapaResultado(nombre="email", estado="fallo",
+                                  detalle=f"{type(exc).__name__}: {exc}")
+
+    # FUENTE NO RESUELTA (R1/H-06): `export_label` deja `label_id=None` cuando la
+    # etiqueta pedida no existe en la cuenta -distinto de una etiqueta que SI existe y
+    # esta vacia-. Antes cualquier `rep` se traducia a `hecha`, `label_id` incluido: una
+    # corrida con `--label` mal escrito salia "hecha, 0 de 0 mensajes escritos" y seguia
+    # de largo. `getattr(..., False)` en vez de acceso directo: un doble de test mas
+    # viejo que este campo (sin `label_id`) no puede caer en esta rama por ausencia del
+    # atributo -- solo un `None` EXPLICITO cuenta como "no resuelta".
+    if getattr(rep, "label_id", False) is None:
+        detalle_fuente = (rep.errors[0] if getattr(rep, "errors", None)
+                          else f"etiqueta {label!r} no encontrada.")
+        return av1.EtapaResultado(
+            nombre="email", estado="fallo",
+            detalle=f"etiqueta {label!r} no resuelta en la cuenta {cuenta!r}: "
+                    f"{detalle_fuente}",
+            pendientes=(av1.Pendiente(
+                codigo="email_etiqueta_no_encontrada",
+                detalle=f"Revisa que --label={label!r} sea exacto y que --cuenta="
+                        f"{cuenta!r} sea la cuenta correcta (las etiquetas E&V viven "
+                        "en @engelvoelkers)."),))
+
+    # Los errores parciales son un HECHO distinto de «el export fallo», y se pierden si
+    # solo se mira el estado: `export_label` escribe lo que puede y acumula el resto.
+    # ETIQUETA LEGITIMAMENTE VACIA (`written == 0` con la fuente resuelta y sin errores)
+    # NO es un fallo por si sola: puede ser una repeticion idempotente -ya se exporto
+    # todo en una ronda anterior-, que es el caso normal, no un problema.
+    errores = list(getattr(rep, "errors", None) or [])
+    pendientes = []
+    if errores:
+        pendientes.append(av1.Pendiente(
+            codigo="email_export_con_errores",
+            detalle=f"El export escribio, pero dejo {len(errores)} error(es): "
+                    f"{errores[0]}" + (" (y mas)" if len(errores) > 1 else "")))
+    # EXPORTACION PARCIAL, otro hecho distinto: `links_manual` (permiso/expiracion) no
+    # siempre viaja en `errors` -- sin este pendiente, esa corrida decia "hecha" sin
+    # dejar ningun pendiente aunque quedara trabajo manual real en la worklist.
+    enlaces_manuales = getattr(rep, "links_manual", 0) or 0
+    if enlaces_manuales:
+        pendientes.append(av1.Pendiente(
+            codigo="email_enlaces_manuales",
+            detalle=f"{enlaces_manuales} enlace(s) de Drive sin resolver (permiso o "
+                    "expiracion) quedan en la worklist para reintentar."))
+    return av1.EtapaResultado(
+        nombre="email", estado="hecha",
+        detalle=f"etiqueta {label!r}: {rep.written} de {rep.total_in_label} mensajes "
+                f"escritos",
+        pendientes=tuple(pendientes))
+
+
 def _pendientes_de_custodia(res) -> tuple:
     """Lo que la custodia no pudo leer, como `Pendiente` de V1. Vacío si no hay nada.
 
@@ -766,7 +896,8 @@ def traducir_pull_crm(res) -> tuple[str, str, tuple]:
 
 
 def etapa_crm(ident, case_dir: Path, *, leer_meta=None, pull=None):
-    """Etapa 2 de V1: pull del expediente CRM ya registrado.
+    """Pull del expediente CRM ya registrado; corre justo despues de `email` y antes
+    de `sala_maquina`.
 
     **El `element` sale del `ExpedienteLink`, pertenece al vocabulario cerrado, y la rama
     judicial aborta.** El criterio 38 pide los dos cruces: el obvio —que un caso judicial
@@ -839,7 +970,9 @@ def etapa_crm(ident, case_dir: Path, *, leer_meta=None, pull=None):
 
 
 def etapa_sala_maquina(ident, *, correr=None):
-    """Etapa 3 de V1: atomizacion del correo depositado + OCR y espejos MD.
+    """Cierra V1 propiamente dicha (`ETAPAS_V1`): atomizacion del correo depositado +
+    OCR y espejos MD. Corre justo despues de `crm` y antes de `crm_alta`, la primera
+    etapa de V2.
 
     La maquina de estados es la del §24 D4: el motor NO cambia —el OCR sigue aunque la
     atomizacion falle, y eso no se regresa— y lo que cambia es el RESULTADO de V1, que si
@@ -954,7 +1087,8 @@ _PENDIENTE_NO_AUTORIZADO = av1.Pendiente(
 
 
 def etapa_crm_alta(ident, case_dir: Path, *, crm: str, alta=None) -> av1.EtapaResultado:
-    """Etapa 4 (V2): alta del expediente en el CRM, si se autorizo y no la hay ya.
+    """Alta del expediente en el CRM, si se autorizo y no la hay ya; corre justo
+    despues de `sala_maquina` (cierra V1) y antes de `actuacion`.
 
     **No reimplementa el alta**: invoca `_alta_crm`, que ya resuelve duplicados con
     `core.alta_crm_politica`, tags, telefono y evento. Lo que esta etapa aporta es
@@ -1078,7 +1212,8 @@ def _firmante_de(case_dir: Path) -> str:
 
 def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
                     firmante=None) -> av1.EtapaResultado:
-    """Etapa 5 (V2): la actuacion de apertura, con recibo reanudable y DURABLE.
+    """La actuacion de apertura, con recibo reanudable y DURABLE; corre justo despues
+    de `crm_alta` y antes de `viabilidad`.
 
     **El `firmante` no se infiere nunca.** El prefijo del asunto ES la tarifa —`SENIOR`
     factura 103,00 €/h y `ABOGADO` 77,00— y quien firma no es quien opera: Ana puede
@@ -1203,9 +1338,122 @@ def etapa_actuacion(ident, case_dir: Path, *, crm: str, alta=None,
             detalle="Relanza la etapa: el recibo guardado la reanuda sin crear otra."),))
 
 
+def _pendiente_de_viabilidad_existente(destino: Path) -> av1.Pendiente:
+    """El pendiente de la rama `saltada` de `etapa_viabilidad`: el fichero YA existe y
+    esta funcion no lo toca (`vj.escribir` nunca sobrescribe), pero `saltada` no puede
+    callar si lo que hay esta a medio rematar -- si no, una relanzada que encuentra el
+    JSON de una sesion anterior sin terminar no dice que falte nada (I1 de la revision
+    de conjunto, 2026-09-15).
+
+    Se lee el propio residuo del fichero (`vj.MARCA`): lo escribe `vj.preparar` y la
+    sesion que remata lo borra al terminar, asi que su presencia ES la senal de "sigue
+    sin rematar" -- mas fiel que repetir aqui una lista de campos por fuera del
+    contrato. Si no se puede leer o parsear, se dice eso en vez de fingir que se
+    comprobo.
+    """
+    from core import viabilidad_json as vj
+
+    try:
+        datos = json.loads(destino.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 — el estado de V1 es el producto
+        return av1.Pendiente(
+            codigo="viabilidad_existente_ilegible",
+            detalle=f"{destino.name} ya existe, pero esta corrida no pudo leerlo para "
+                    f"saber que falta ({type(exc).__name__}: {exc}). Revisalo a mano.")
+    # `isinstance` en cada paso, no `or {}`: un `_residuo` corrupto (no-dict) no puede
+    # tumbar esta lectura con un AttributeError -- es justo el caso "no se pudo leer"
+    # que la rama de abajo ya sabe decir, y aqui solo hay que no reventar antes.
+    marca = datos.get(vj.MARCA) if isinstance(datos, dict) else None
+    residuo = marca.get("campos") if isinstance(marca, dict) else None
+    # `residuo` tiene que ser una lista de cadenas para poder pasar por `join` (R1/H-01):
+    # un fichero editado a mano puede traer un entero o una lista de numeros -que
+    # revientan `join` con TypeError, y esta lectura corre FUERA del `try` que traduce
+    # excepciones, asi que tumbarian la corrida entera- o una cadena suelta -que NO
+    # revienta porque una cadena es iterable, pero `join` la trocea letra a letra y
+    # inventa un pendiente por cada una ("hitos" -> "h, i, t, o, s")-. `isinstance(...,
+    # list)` descarta los tres de una vez: ni un entero ni una cadena son una lista.
+    if residuo and not (isinstance(residuo, list)
+                        and all(isinstance(c, str) for c in residuo)):
+        return av1.Pendiente(
+            codigo="viabilidad_existente_marca_corrupta",
+            detalle=f"{destino.name} ya existe, pero su marca de residuo "
+                    f"(`{vj.MARCA}.campos`) no es una lista de nombres de campo "
+                    f"(llego {type(residuo).__name__}: {residuo!r}). Revisalo a mano.")
+    if residuo:
+        return av1.Pendiente(
+            codigo="viabilidad_existente_sin_rematar",
+            detalle=f"{destino.name} ya existia y sigue sin rematar: faltan "
+                    + ", ".join(residuo)
+                    + ". Esta corrida no lo toca (nunca sobrescribe); remata los campos "
+                      "a mano y corre render_informe.py de la skill "
+                      "`viabilidad-prerelleno`.")
+    return av1.Pendiente(
+        codigo="viabilidad_existente_sin_verificar",
+        detalle=f"{destino.name} ya existia y no declara campos pendientes (aparenta "
+                "rematado), pero esta corrida no lo ha verificado: no toca un fichero "
+                "que ya esta ahi.")
+
+
+def etapa_viabilidad(ident, case_dir: Path, *, hoy=None) -> av1.EtapaResultado:
+    """Ultima etapa de trabajo: dejar escrito el JSON de la 1a pasada de viabilidad.
+
+    **No es la etapa final de la secuencia**: quien la cierra es `verificar`, y eso es a
+    proposito —la verificacion tiene que ver tambien lo que esta etapa deposita—.
+
+    **La corrida prepara y una sesion remata** — la salida 3 de `MEJORAS #264`, elegida
+    por Nikolai el 2026-09-14. Deja CUATRO de los DOCE campos del contrato (la cuenta
+    completa -derivados, residuo, y el campo que no es ninguna de las dos cosas- vive
+    en el docstring de `viabilidad_json.preparar`); los 14 hitos y las 88 preguntas
+    siguen siendo trabajo de una sesion, y por eso el residuo va marcado.
+
+    **Nunca sobrescribe.** Si el fichero existe, lo que contiene es el trabajo de la
+    sesion que lo remato, que es lo unico caro de todo esto.
+
+    **Los TRES desenlaces dejan pendiente** (I1 de la revision de conjunto): `hecha` con
+    el residuo recien escrito, `saltada` con lo que se sepa leer del fichero existente, y
+    `fallo` con que no se derivo nada. Un desenlace mudo es indistinguible de uno sin
+    nada por decir.
+    """
+    from core import viabilidad_json as vj
+
+    hoy = hoy or datetime.date.today().isoformat()
+    destino_existente = vj.ruta(case_dir)
+    if destino_existente.exists():
+        return av1.EtapaResultado(
+            nombre="viabilidad", estado="saltada",
+            detalle=f"{vj.NOMBRE_FICHERO} ya existe; no se pisa",
+            pendientes=(_pendiente_de_viabilidad_existente(destino_existente),))
+    try:
+        datos = vj.preparar(ident, hoy=hoy)
+        destino = vj.escribir(case_dir, datos)
+    except Exception as exc:  # noqa: BLE001 — el estado de V1 es el producto
+        return av1.EtapaResultado(
+            nombre="viabilidad", estado="fallo",
+            detalle=f"{type(exc).__name__}: {exc}",
+            pendientes=(av1.Pendiente(
+                codigo="viabilidad_no_escrita",
+                detalle=f"{vj.NOMBRE_FICHERO} no se pudo escribir "
+                        f"({type(exc).__name__}: {exc}); ningun campo quedo derivado. "
+                        "Reintenta la apertura o prepara el fichero a mano antes de "
+                        "correr render_informe.py de la skill "
+                        "`viabilidad-prerelleno`."),))
+    residuo = datos[vj.MARCA]["campos"]
+    return av1.EtapaResultado(
+        nombre="viabilidad", estado="hecha",
+        detalle=f"{destino.name} escrito con lo derivable ({len(residuo)} campos "
+                f"pendientes de una sesion)",
+        pendientes=(av1.Pendiente(
+            codigo="viabilidad_sin_rematar",
+            detalle="El JSON de viabilidad esta preparado, no completo: faltan "
+                    + ", ".join(residuo)
+                    + ". Los rellena una sesion que lea el expediente, y despues corre "
+                      "render_informe.py de la skill `viabilidad-prerelleno`."),))
+
+
 def etapa_verificar(ident, case_dir: Path, *, crm: str = "api",
                     verificar=None) -> av1.EtapaResultado:
-    """Etapa 6 (V2): el «OK» del EXPEDIENTE, no el del paso.
+    """Cierra la secuencia entera (corre justo despues de `viabilidad`): el «OK» del
+    EXPEDIENTE, no el del paso.
 
     Reutiliza `core.verificar_apertura.verificar`, que **ya existe**: la rev. 1 del plan
     proponia crear un agregador que llevaba ahi desde antes (R1/H-06).
@@ -1257,32 +1505,41 @@ def etapa_verificar(ident, case_dir: Path, *, crm: str = "api",
                               pendientes=pendientes)
 
 
-def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm):
-    """Las seis etapas de V2, en el orden de `ETAPAS_V2`."""
+def _etapas_v2(ident, case_dir, *, folder_id, team_id, crm, cuenta=None, label=None,
+               extraer_adjuntos: bool = True):
+    """Las etapas de V2, en el orden de `ETAPAS_V2`."""
     return [
         av1.Etapa("drive", lambda: etapa_drive(
             ident, case_dir, folder_id=folder_id, team_id=team_id)),
+        av1.Etapa("email", lambda: etapa_email(
+            ident, case_dir, cuenta=cuenta, label=label,
+            extraer_adjuntos=extraer_adjuntos)),
         av1.Etapa("crm", lambda: etapa_crm(ident, case_dir)),
         av1.Etapa("sala_maquina", lambda: etapa_sala_maquina(ident)),
         av1.Etapa("crm_alta", lambda: etapa_crm_alta(ident, case_dir, crm=crm)),
         av1.Etapa("actuacion", lambda: etapa_actuacion(ident, case_dir, crm=crm)),
+        av1.Etapa("viabilidad", lambda: etapa_viabilidad(ident, case_dir)),
         av1.Etapa("verificar", lambda: etapa_verificar(ident, case_dir, crm=crm)),
     ]
 
 
 def secuencia_v1(ident, case_dir, *, folder_id, team_id, crm="skip", hasta=None,
-                 etapas=None):
-    """El orden completo de la secuencia: V1 (Drive -> CRM -> sala de maquina) + V2.
+                 etapas=None, cuenta=None, label=None, extraer_adjuntos: bool = True):
+    """El orden completo de la secuencia: V1 (Drive -> correo -> CRM -> sala de maquina)
+    + V2.
 
-    La atomizacion del correo depositado va DENTRO de la tercera, que es donde el cableado
+    La atomizacion del correo depositado va DENTRO de la cuarta, que es donde el cableado
     de 2026-07-27 la puso; por eso el gotcha del runbook —atomizar y pull antes del OCR—
-    se cumple por construccion y no por memoria del operador.
+    se cumple por construccion y no por memoria del operador. Y la propia etapa `email`
+    va ANTES de esa cuarta por la misma razon: un adjunto que llegue solo por correo tiene
+    que estar depositado antes de que la sala de maquina lo lea.
 
     `etapas` es el punto de inyeccion de los tests. En produccion se construyen aqui.
     """
     if etapas is None:
         etapas = _etapas_v2(ident, case_dir, folder_id=folder_id, team_id=team_id,
-                            crm=crm)
+                            crm=crm, cuenta=cuenta, label=label,
+                            extraer_adjuntos=extraer_adjuntos)
     return av1.secuenciar(etapas, hasta=hasta)
 
 
@@ -1621,6 +1878,8 @@ def validar_modo(
     folder_id: str | None = None,
     case_id: str | None = None,
     hasta: str | None = None,
+    cuenta: str | None = None,
+    label: str | None = None,
 ) -> list[str]:
     """Errores que impiden ejecutar en `modo`. Lista vacía = admisible.
 
@@ -1631,6 +1890,11 @@ def validar_modo(
     solo mirando `crm` y `fuente` admitía tres invocaciones que V1 prohíbe
     (H6-02, H6-03, H6-04). Llevan default para no regresar a los llamadores del
     modo `libre`, donde la función retorna antes de leerlos.
+
+    `cuenta` y `label` los añadió el levantamiento de la puerta de `--fuente email`
+    (2026-09-15): con `email` dentro de `_FUENTES_V1`, la ausencia de estos dos flags
+    deja de ser un error de "fuente ajena" y pasa a validarse aquí mismo, antes de
+    cualquier efecto (misma razón que los cuatro de arriba).
     """
     if modo not in _MODOS:
         return [f"Modo desconocido: {modo!r}. Válidos: {_MODOS}"]
@@ -1663,11 +1927,27 @@ def validar_modo(
             f"--crm solo admite {'|'.join(sorted(_CRM_MODOS))} (recibido: {crm!r}).")
     if fuente not in _FUENTES_V1:
         errores.append(
-            f"--modo v1 solo admite --fuente {_FUENTES_V1[0]} (recibido: {fuente!r}). "
-            "V1 no descubre ni exporta correo: `email` ejecuta email_export.export_label, "
-            "que llama a Gmail. La atomización local de V1 actúa sobre correo YA depositado "
-            "y la ejecuta la sala de máquina."
+            f"--modo v1 admite --fuente {' o '.join(_FUENTES_V1)} "
+            f"(recibido: {fuente!r}). `manual` y `whatsapp` actuan sobre material que "
+            "alguien deposita a mano, y V1 no tiene de donde sacarlo sin que se lo "
+            "digan caso por caso."
         )
+    # Los flags del correo se exigen AQUI, ademas de en `_validar_flags`, y no es
+    # duplicacion: `validar_modo` es pura y aborta ANTES de resolver identidad (que
+    # lee disco en `case_locator.list_cases` y, con `--fuente drive_ev`, tambien
+    # consulta Drive) y ANTES de tomar el mutex. `_validar_flags` ya corre DESPUES de
+    # resolver identidad (aunque todavia antes del mutex): delegar solo en ella
+    # pagaria esa resolucion en una corrida que de todos modos iba a abortar. El orden
+    # real es: validar_modo -> resolver_identidad -> _validar_flags -> mutex ->
+    # ensure_case.
+    if fuente == "email":
+        if not cuenta:
+            errores.append(
+                "--fuente email exige --cuenta: sin ella no hay buzon del que exportar.")
+        if not label:
+            errores.append(
+                "--fuente email exige --label: sin ella no hay etiqueta que traer, y V1 "
+                "no descubre cual es.")
     # H6-02 (CRÍTICO). Criterio 33 del §14, que el §21.4 mete en los 24 de V1:
     # «--force nunca crea una carpeta sombra». La política de colisión de la spec
     # admite --force SOLO para reutilizar el caso canónico ya resuelto por
@@ -1721,10 +2001,11 @@ def main(
     modo: str = typer.Option(
         "libre", "--modo",
         help="libre|v1. `v1` es el discriminante de la primera vertical (spec §24 D3): "
-             "exige --crm skip y --fuente drive_ev, y valida antes de cualquier efecto."),
+             "exige declarar --crm (api|skip), admite --fuente drive_ev|email, y "
+             "valida antes de cualquier efecto."),
     hasta: str | None = typer.Option(
         None, "--hasta",
-        help="v1: para DESPUES de esta etapa (drive|crm|sala_maquina). Para reanudar, "
+        help=f"v1: para DESPUES de esta etapa ({'|'.join(ETAPAS_V2)}). Para reanudar, "
              "relanza con --case-id (los 6 flags de identidad darian ColisionCaso): las "
              "etapas ya hechas se REPITEN, y son idempotentes (Drive vuelve a consultar y "
              "rclone transfiere solo lo que difiere; el pull del CRM se repite; la sala de "
@@ -1754,7 +2035,7 @@ def main(
     errores_modo = validar_modo(
         modo, crm=crm, fuente=fuente,
         force=force, dry_run=dry_run, folder_id=folder_id, case_id=case_id,
-        hasta=hasta,
+        hasta=hasta, cuenta=cuenta, label=label,
     )
 
     if errores_modo:
@@ -1862,14 +2143,21 @@ def main(
     # pasa por _autoderivar_drive_ev. Si aun así no se resuelve, error limpio
     # (evita el TypeError de rclone con team_id=None). En el camino feliz de 6
     # flags, _autoderivar_drive_ev ya lo fijó y este bloque no vuelve a llamar.
-    if fuente == "drive_ev" and team_id is None:
+    # `modo == "v1"` entra aqui ademas de `fuente == "drive_ev"`: V1 materializa Drive
+    # E&V SIEMPRE (etapa_drive es la primera de la secuencia, cualquiera que sea
+    # --fuente), asi que con `--fuente email` tambien hace falta team_id para ese
+    # pull. Sin este segundo cabo, `--modo v1 --fuente email` llegaba a etapa_drive
+    # con team_id=None porque este bloque solo miraba la fuente elegida, no el modo
+    # (C1 de la revision de conjunto, 2026-09-15).
+    if (fuente == "drive_ev" or modo == "v1") and team_id is None:
         team_id = _derivar_team_id(folder_id)
         if team_id is not None:
             typer.echo(f"[auto] --team-id del driveId: {team_id}")
         else:
-            typer.echo("[ERROR] --fuente drive_ev requiere --team-id: no se pudo "
-                       "derivar de --folder-id (sin --folder-id o token/red); "
-                       "pásalo explícito.", err=True)
+            typer.echo("[ERROR] --team-id no se pudo derivar de --folder-id (sin "
+                       "--folder-id o token/red): lo necesita drive_ev, y --modo v1 "
+                       "materializa Drive con cualquier --fuente; pásalo explícito.",
+                       err=True)
             raise typer.Exit(code=1)
 
     # 5.2 — a partir de aquí, TODO va bajo el mutex del caso (Plan 3A, Task 5).
@@ -1901,8 +2189,8 @@ def main(
     # es el problema menos fundamental de los dos. Lo midio la ronda de este diff (HD-04):
     # sacar la validacion del lock no autorizaba a reordenar lo que el operador lee.
     try:
-        _validar_flags(fuente, folder_id=folder_id, team_id=team_id, src=src, rol=rol,
-                       cuenta=cuenta, label=label)
+        _validar_flags(fuente, modo=modo, folder_id=folder_id, team_id=team_id, src=src,
+                       rol=rol, cuenta=cuenta, label=label)
     except AbortarApertura as exc:
         raise typer.Exit(code=exc.codigo) from exc
 
@@ -1938,7 +2226,9 @@ def main(
                 arranque = now_iso_utc()
                 ronda = estado_v1.abrir(case_dir, ronda_id=arranque, ahora=arranque)
                 resultado_v1 = secuencia_v1(ident, case_dir, folder_id=folder_id,
-                                            team_id=team_id, crm=crm, hasta=hasta)
+                                            team_id=team_id, crm=crm, hasta=hasta,
+                                            cuenta=cuenta, label=label,
+                                            extraer_adjuntos=extraer_adjuntos)
                 # **revalidar -> publicar -> liberar**, en ese orden e indivisible.
                 #
                 # La rev. anterior publicaba FUERA del bloque «para no afirmar un exito

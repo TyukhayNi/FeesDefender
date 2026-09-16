@@ -62,8 +62,12 @@ def test_v1_rechaza_el_default_de_crm():
                             folder_id="FID") != []
 
 
-@pytest.mark.parametrize("fuente", ["email", "manual", "whatsapp"])
+@pytest.mark.parametrize("fuente", ["manual", "whatsapp"])
 def test_v1_rechaza_fuentes_ajenas(fuente):
+    """`email` salio de aqui el 2026-09-15: dejo de ser ajena (ver
+    `tests/test_apertura_v1_email.py::test_v1_ya_admite_la_fuente_email` y
+    `test_v1_sigue_rechazando_las_fuentes_que_no_entraron`, que cubren su admision y la
+    rechaza que SI siguen fuera, manual y whatsapp, sin duplicar este test)."""
     errores = cli.validar_modo("v1", crm="skip", fuente=fuente, folder_id="FID")
     assert len(errores) == 1
     assert fuente in errores[0]
@@ -76,7 +80,11 @@ def test_v1_admite_drive_ev():
 
 def test_v1_acumula_los_errores():
     # En V2 el error de CRM es OMITIRLO (`None`); `api` declarado es valido.
-    errores = cli.validar_modo("v1", crm=None, fuente="email", folder_id="FID")
+    # `manual` y no `email`: desde el 2026-09-15 `email` ya no es una fuente ajena, asi
+    # que dejaria de aportar el segundo error que este test quiere demostrar que se
+    # acumula (ver `test_v1_acumula_todos_los_errores` para el caso `email`, que ahora
+    # acumula DOS reglas propias -- --cuenta y --label -- en vez de una).
+    errores = cli.validar_modo("v1", crm=None, fuente="manual", folder_id="FID")
     assert len(errores) == 2
 
 
@@ -236,10 +244,16 @@ def test_v1_exige_folder_id():
 
 
 def test_v1_acumula_todos_los_errores():
-    """Las cinco reglas se acumulan; la puerta no para en la primera."""
+    """Las reglas se acumulan; la puerta no para en la primera.
+
+    Desde el 2026-09-15 son SEIS, no cinco: `--fuente email` sin `--cuenta` ni
+    `--label` (ninguno de los dos se pasa aqui) reparte en DOS reglas independientes
+    -- una por flag -- en vez de la unica "fuente ajena" que devolvia antes de que V1
+    admitiera `email`. Las otras cuatro (crm, force, dry_run, folder_id) no cambian.
+    """
     errores = cli.validar_modo("v1", crm=None, fuente="email",
                                force=True, dry_run=True)
-    assert len(errores) == 5, errores
+    assert len(errores) == 6, errores
 
 
 def test_v1_aborta_antes_de_la_autoderivacion_y_de_la_identidad(casos_root, monkeypatch):
