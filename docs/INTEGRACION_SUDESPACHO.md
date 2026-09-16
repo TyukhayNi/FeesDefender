@@ -873,7 +873,7 @@ endpoint de borrado documentado.
 | Historial de mail del expediente | `GET nest-mail…/api/mail/element_registries?properties[…]&filter left.extrajudiciales.id={exp}` |
 | Detalle / tracking de un mail | `GET api-crm-commons…/api/mail/{mailId}/tracking/{element}/{exp}` |
 | Cuentas remitentes (De) | `GET nest-mail…/api/accounts/accounts_links` · detalle `…/api/accounts/{accountId}` |
-| Lista de plantillas | `GET api-crm-commons…/api/templates/html/templates?…is_html=1` (props: id, nombre, asunto, datos, is_html, is_rtf, is_notification, right.gdocu.id) |
+| Lista de plantillas | `GET api-crm-commons…/api/templates/html/templates?…is_html=1` (props: id, nombre, asunto, datos, is_html, is_rtf, is_notification, right.gdocu.id) — ⚠️ el `is_html=1` **no filtra**: devuelve el catálogo entero de 393, hay que filtrar en casa (**§10.14**) |
 | Detalle de plantilla | `GET api-crm-commons…/api/templates/html/detail/{tplId}` |
 | **Plantilla RENDERIZADA para el expediente** | `GET api-crm-commons…/api/templates/html/{tplId}/{element}/{exp}` — autogenera asunto + cabecera con los datos del expediente (Su ref, Mi ref `{num}/{serie}`, Cliente, Contrario, Cuantía) |
 | Adjuntos de una plantilla | `GET api-crm-commons…/api/element_registries/gdocu?filter associated left.templates.id={tplId}` |
@@ -1152,10 +1152,23 @@ duplicadas; el catálogo quedó en **393** con una sola plantilla nueva y ningun
 ```
 GET  /api/documents/presigned_urls/s3/upload/1              -> [{fileIdentifier, url}]
 PUT  <url de S3>    bytes, Content-Type: application/rtf     -> 200
-POST /api/templates/rtf/{element}?properties[]=nombre&properties[]=id_carpeta
+POST /api/templates/rtf/{element}
      {"nombre": "...", "id_carpeta": "375", "idFile": "<fileIdentifier>"}
-                                                             -> 201 {"id": N}
+                                                             -> 201 "Created!"   (SIN id)
 ```
+
+⚠️ **El `201` NO trae el id, y esta línea decía lo contrario hasta el 2026-09-16.** Devuelve la
+cadena `"Created!"` y nada más — medido cuatro veces el mismo día, con `properties[]` y sin él, por
+las rutas `extrajudiciales` y `facturas`: las cuatro iguales. El `{"id": N}` que figuraba aquí era
+el id que yo había averiguado **buscando por nombre en el catálogo**, escrito luego como si lo
+hubiera devuelto el servidor. **Para saber qué acabas de crear hay que releer el catálogo y buscar
+por `nombre`** — de ahí que convenga un nombre único. `properties[]` no cambia nada en el `POST`
+(sí en el `GET`, donde es obligatorio). La familia `html` **sí** devuelve el id: `{"id": N,
+"message": "Created!"}` (§10.14).
+
+**El `{element}` de la ruta escribe el campo `elemento` del registro** (verificado: una plantilla
+creada por `…/rtf/facturas` queda con `elemento='facturas'`). No filtra la lectura, pero sí sella
+la escritura, así que se elige a conciencia.
 
 **Sustituir el CONTENIDO de una plantilla existente.** Idéntico, con `PUT` y el `id`, y **los
 tres campos juntos**:
@@ -1204,11 +1217,28 @@ Con **solo** `idFile` responde `500 Undefined array key "id_carpeta"`.
 | Listar hijas | `GET /api/folders/templates/{parent}` | `[{id, parent, label, color}]` |
 | Crear | `POST /api/folders/templates/{parent}` con `{"label": "...", "color": ""}` | `201` con el objeto |
 | Renombrar | `PUT /api/folders/{id}` con `{"label": "...", "color": ""}` | `200` con el objeto |
+| **Mover** | `PUT /api/folders/{id}` con `{"label": "...", "color": "", "parentId": N}` | `200` con el objeto, ya con `parent` nuevo |
 | Borrar | `DELETE /api/folders/{id}` | `200 "Deleted!"` |
 
 **`label` y `color` son obligatorios los dos**: con solo `label` responde
 `500 Undefined array key "color"`, y con `nombre` en vez de `label`,
 `500 Undefined array key "label"`. `color` admite cadena vacía.
+
+**Mover una carpeta (añadido el 2026-09-16).** El OAS declara `parentId` en el `PUT`, pero
+mandarlo **solo** responde `500 Undefined array key "label"`: el handler reescribe el registro
+entero, así que hay que reenviar `label` y `color` junto al `parentId` nuevo. Con los tres, `200` y
+la respuesta ya trae `"parent"` cambiado. Verificado por lectura de los **dos** lados —la carpeta
+aparece bajo el padre nuevo y desaparece del viejo—, que es lo que distingue «se ha movido» de «se
+ha copiado». Es el mismo patrón del `idFile`: **el `500` nombra lo que falta, así que no se declara
+cerrada una vía mientras el error siga diciendo qué le falta.**
+
+⚠️ **No hay lectura de una carpeta suelta.** `GET /api/folders/{id}` → **405** (la ruta existe,
+pero solo acepta `PUT` y `DELETE`); `GET /api/folder/{id}` y `…/folders/templates/detail/{id}`,
+`404`. **El nombre de una carpeta solo aparece en el listado de su padre**, y de ahí sale el hueco
+de las cinco raíces de más abajo.
+
+**No confundir con `GET /api/all_folders/{userId}`**, que devuelve **otro árbol**: el de
+**expedientes** (CIVIL → 1ª INSTANCIA → DECLARATIVO → DEMANDA…), no el de plantillas.
 
 **Mover una plantilla de carpeta** es un `PUT` de metadatos, no una operación aparte:
 
@@ -1242,24 +1272,29 @@ devuelve `[]`. La rama navegable arranca en **`1` → 8 «Plantillas»**, y de a
      12  Facturas              ← 23 plantillas
 ```
 
-🕳️ **Hueco declarado, y no es pequeño.** Cinco carpetas **en uso** no son alcanzables por ese
-recorrido y **no hay endpoint que devuelva su nombre**: son raíces sin padre y sin hijas.
+**El árbol está completo, y la raíz es la carpeta `1`** (barrido de `0..500` el 2026-09-16: los
+únicos padres con hijas son 1, 8, 10, 11, 346, 375, 386 y 403; 35 carpetas nombradas). `GET
+/api/folders/templates/0` devuelve `[]`: el árbol **no cuelga de cero**, cuelga de `1 → 8
+Plantillas`.
 
-| Carpeta | Plantillas |
-|---|---|
-| **16** | 32 |
-| **9** | 19 |
-| **1** | 18 |
-| **14** | 6 |
-| **15** | 3 |
+🕳️ **El hueco, ya acotado: cinco carpetas sin nombre legible — y ninguna es suya.** Como el nombre
+de una carpeta solo sale en el listado de **su padre** (no hay `GET` de una carpeta suelta, ver
+arriba), las raíces se quedan anónimas. Son `1`, `9`, `14`, `15` y `16`, con 78 plantillas. **Lo
+que no se podía leer era el nombre; el contenido sí**, y eso las identifica mejor que su etiqueta:
 
-Son **78 plantillas en carpetas cuyo nombre no se puede leer por API**. `GET
-/api/all_folders/{userId}` **no sirve**: devuelve otro árbol, el de expedientes (CIVIL, PENAL,
-DOCUMENTOS, IBERLEY, RGPD), no el de plantillas. Y `GET /api/folders/all/{element}/{userId}`,
-que el OAS declara como «Get all folders collection», responde `404 «Sorry, this action is not
-configured»`. Para esas cinco, hoy, hay que mirar la UI.
+| Carpeta | Plantillas | Qué hay dentro, leído |
+|---|---|---|
+| **16** | 32 | facturas de demostración del producto: `Factura Londres`, `Factura Lille`, `Factura Tokio`, `Factura Oslo`, `Justificante de recibo` |
+| **9** | 19 | avisos automáticos: `Próxima Obligación Clientes/Profesionales`, `Pendiente Presentación`, `Documentación Pendiente` |
+| **1** | 18 (17 `html` + 1 `rtf`) | plantillas de **eventos del sistema**: `NuevaActuacion`, `OnCalendarEventChange`, `OnReceivingChatMessageAboutQuestion`, `WhenADocumentIsAccepted` |
+| **14** | 6 | ejemplos que trae el producto: `Ejemplo Escrito de Recurso`, `Ejemplo Poder General para Pleitos`, `Carátula General` |
+| **15** | 3 | `Plantilla Email`, `Notificacion_Subida_Fichero_Departamento` |
 
- `GET /api/folders/templates/0` devuelve `[]`.
+**Conclusión operativa: son carpetas de fábrica, no del despacho.** El árbol del despacho es el que
+cuelga de `8 Plantillas`, y está entero y nombrado. No hay nada que recuperar de la UI.
+
+`GET /api/folders/all/{element}/{userId}`, que el OAS declara como «Get all folders collection»,
+sigue respondiendo `404 «Sorry, this action is not configured»`.
 
 #### 10.13.1 La generación en lote: medida, y no da ningún ZIP (2026-09-16)
 
@@ -1304,6 +1339,96 @@ se puede modificar por API» tras ver el `200` mudo de `right.gdocu.id` y compro
 tiene `updateRtfTemplate` —las dos observaciones eran ciertas—. Faltaba **derivar del error una
 iteración más**: el `500` decía `Undefined array key "idFile"` y ahí estaba el contrato. **Una vía
 no se declara cerrada mientras el error siga diciendo qué falta.**
+
+---
+
+### 10.14 Plantillas de EMAIL (familia `html`) y de FACTURA — contrato completo (2026-09-16)
+
+> Cierra el aprendizaje de plantillas. Todo medido en vivo con la `x-api-key` de `core/`, sobre
+> plantillas propias creadas y borradas en el mismo sondeo; **ninguna plantilla real del despacho
+> se tocó**. Cada paso, verificado por lectura: el `sha256` del cuerpo ida y vuelta, y la carpeta
+> releída del catálogo. Nunca por el status.
+
+#### Lo primero, porque reordena todo lo anterior: **hay UNA sola tabla de plantillas**
+
+`GET /api/templates/rtf/{element}` y `GET /api/templates/html/{element}` devuelven **el mismo
+catálogo de 393**. No son dos familias con dos tablas: son **tres banderas sobre la misma tabla** —
+`is_rtf` (159), `is_html` (91) y `is_notification`; 143 no llevan ninguna. Y el `{element}` de la
+ruta **no filtra nada** en lectura (ya estaba dicho para `rtf`; vale igual para `html`). Lo que sí
+hace es **sellar el campo `elemento` al crear**.
+
+| Reparto real del catálogo | |
+|---|---|
+| por bandera | `rtf` 159 · `html` 91 · sin bandera 143 |
+| por `elemento` | vacío 270 · `expedientes_judiciales` 57 · `extrajudiciales` 18 · `notifications` 17 · **`facturas` 13** · `gdocu` 12 · `mail` 5 · `actuaciones` 1 |
+
+#### Las de EMAIL: dos ficheros, no uno
+
+Donde la `rtf` lleva un `idFile`, la `html` lleva **dos**: el **config** (el documento del editor
+visual, JSON de esquema *Unlayer*: `{counters, body:{rows→columns→contents}, schemaVersion}`) y el
+**HTML** ya compuesto, que es lo que se envía. Los dos se suben por la **misma** vía de S3 que la
+`rtf`, uno por llamada.
+
+```
+GET  /api/documents/presigned_urls/s3/upload/1          -> [{fileIdentifier, url}]   (x2)
+PUT  <url de S3>   bytes                                 -> 200
+POST /api/templates/html/{element}
+     {"nombre":…, "asunto":…, "idFileConfig":…, "idFileHTML":…, "id_carpeta":…}
+                                                         -> 201 {"id": N, "message":"Created!"}
+PUT  /api/templates/html/{element}/{id}    mismo cuerpo  -> 200 con el registro entero
+DELETE /api/templates/html/{id}                          -> 200 "Deleted!"
+GET  /api/templates/html/detail/{id}
+     -> {name, subject, downloadUrlConfigFile, downloadUrlHtmlFile, downloadUrlHtmlLegacy,
+         usersAccessRegister, groupsAccessRegister}
+GET  /api/templates/html/{id}/{element}/{idElement}      -> 200 {html, json, subject} RENDERIZADO
+```
+
+- **El `asunto` vive en el registro, no en los ficheros**, y admite marcadores: el sondeo creó
+  `ZZZ [extrajudiciales->Numero_Expediente] prueba` y el render lo devolvió como `ZZZ 86 prueba`.
+- **Dentro de los ficheros los marcadores van HTML-escapados**: `[extrajudiciales-&gt;campo]`, no
+  `->`. Están en los **dos** (config y HTML) porque el HTML es la composición del config. Escribir
+  `->` literal dentro del HTML es el error fácil de este formato.
+- **El render sustituye de verdad**: 0 marcadores sin resolver en la salida del sondeo.
+- `downloadUrlHtmlLegacy` viene vacío en las plantillas vivas.
+
+#### Lo que se verificó, operación por operación
+
+| Operación | Cómo se acreditó | |
+|---|---|---|
+| Crear | `sha256` del HTML subido == el bajado por `downloadUrlHtmlFile`; el config vuelve como JSON válido | ✅ |
+| Renderizar | asunto `ZZZ 86 prueba` sobre el expediente 652; sin marcadores residuales | ✅ |
+| Modificar contenido | `PUT` con `idFileHTML` nuevo: el `sha256` **cambia** y coincide con lo subido | ✅ |
+| Mover de carpeta | `PUT` con `id_carpeta` destino; carpeta releída del catálogo **y** el cuerpo intacto | ✅ |
+| Duplicar | `POST /api/templates/duplicate/{id}` `{"nombre":…}` → `201 {id}`; copia con **el mismo cuerpo, el mismo asunto y la misma carpeta** | ✅ |
+| Borrar | `200 "Deleted!"`, y `detail/{id}` pasa a `500` | ✅ |
+
+#### Mover NO vacía la plantilla (la comprobación que importaba)
+
+`PUT /api/templates/rtf/{element}/{id}` con **solo** `{nombre, id_carpeta}` —sin `idFile`—
+responde `200 "Updated!"`, cambia la carpeta y **conserva el contenido**: `sha256` idéntico antes y
+después, comprobado bajando el RTF por `downloadUrlRtfFile`. Se midió expresamente porque la
+alternativa —que el `PUT` sin `idFile` desatara el fichero— habría roto en silencio cualquier
+plantilla real al moverla de carpeta.
+
+#### Las de FACTURA no son una familia aparte
+
+Son plantillas **`rtf`** con `elemento='facturas'`, las 13 en la carpeta **12 «Facturas»**: las de
+**Verifactu** (`VerifactuFactura1…6`, `VerifactuRectificativa`, `VerifactuAnulativa`,
+`Verifactu…SinDcto/ConDcto`) y las `Proforma1…3`. Se manejan con el contrato `rtf` del §10.13, sin
+nada nuevo — verificado creando una propia por `POST /api/templates/rtf/facturas`, moviéndola de
+carpeta y borrándola.
+
+🛑 **Las `Verifactu*` (ids 442-453) son las que emiten sus facturas de verdad. No se tocan por
+API.** Si hay que cambiar una, se duplica y se trabaja sobre la copia.
+
+#### La asimetría que explica la basura de esta mañana
+
+**Subir el fichero de una plantilla `rtf` crea un documento en el gestor documental** (`origen =
+fuploaders3`); **subir los de una `html`, no.** Por eso los sondeos de plantillas de documento
+dejaron cinco documentos huérfanos y los de email ninguno. Al borrar una plantilla `rtf` creada por
+API **hay que borrar también su documento** (`DELETE /api/documents/{id}`), o el catálogo queda
+limpio y el gestor sucio — que es justo lo que pasó el 2026-09-16 y no detectó una verificación
+que solo miraba el catálogo.
 
 
 ## 12. Expediente judicial — Crear y vincular (confirmado 2026-04-30)
