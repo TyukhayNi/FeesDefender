@@ -1078,7 +1078,7 @@ Confirmado por HAR el 2026-07-19. Se conserva por si la vía REST endureciera la
 | Catálogo de plantillas de documento | `GET /api/templates/rtf/{element}?properties[]=id&properties[]=nombre&properties[]=id_carpeta&properties[]=is_rtf&page=N` |
 | Detalle de una plantilla | `GET /api/templates/rtf/detail/{idTemplate}` |
 | **Documento RENDERIZADO para el expediente** | `GET /api/templates/rtf/{idTemplate}/{element}/{idElement}` → `200 {content, name}` |
-| Lote a PDF (ZIP) | `POST /api/templates/rtf/{idTemplate}/{element}` |
+| ~~Lote a PDF (ZIP)~~ | `POST /api/templates/rtf/{idTemplate}/{element}` → **no devuelve el ZIP**, solo `{"events":[uuid]}`, y el resultado **no es recogible por REST** (§10.13.1) |
 
 `content` es el **RTF completo**, con el membrete de E&V y el pie de costas incrustados (~1,6 MB
 para una carta de dos páginas). El render **no guarda nada**: para dejar el documento en el gestor
@@ -1259,9 +1259,45 @@ DOCUMENTOS, IBERLEY, RGPD), no el de plantillas. Y `GET /api/folders/all/{elemen
 que el OAS declara como «Get all folders collection», responde `404 «Sorry, this action is not
 configured»`. Para esas cinco, hoy, hay que mirar la UI.
 
- `GET /api/folders/templates/0` devuelve `[]`. **Lo que queda SIN verificar** de esta familia: `POST /api/templates/rtf/{idTemplate}/{element}`
-con `{"ids": [...]}`, que el OAS describe como «genera PDFs de los elementos indicados y devuelve
-un ZIP». Es la generación en lote —un burofax por expediente de una tacada— y merece medirse.
+ `GET /api/folders/templates/0` devuelve `[]`.
+
+#### 10.13.1 La generación en lote: medida, y no da ningún ZIP (2026-09-16)
+
+`POST /api/templates/rtf/{idTemplate}/{element}` con `{"ids": [...]}` —que el OAS describe como
+«genera PDFs de los elementos indicados y devuelve un ZIP»— **no devuelve un ZIP**: responde
+**51 bytes**, `{"events": ["<uuid>"]}`. Es el acuse de un trabajo asíncrono, no el resultado.
+
+**Y el resultado no se puede recoger por REST.** Cuatro líneas independientes lo cierran:
+
+1. El `uuid` **no es un identificador de fichero**: las tres rutas de descarga lo rechazan —
+   `/api/files/presigned_download_url/{uuid}` («Not found or unauthorized»),
+   `/api/documents/presigned_urls/s3/download/{uuid}` («Could not resolve argument») y
+   `/api/documents/{uuid}/downloadUri` (error del servicio gdocu). Las tres, `500`.
+2. **No nace ningún documento** en el gestor: el censo de `gdocu` antes y 20 s después del lote
+   es el mismo.
+3. **La superficie declarada no tiene lectura.** En el OAS, la familia entera es
+   `POST /api/notifications/events/read` («Mark Event As Read») y `GET,PUT /api/notifications/{id}`,
+   cuyo `id` **tiene que ser `"me"`** y devuelve **preferencias**, no bandeja. No existe ningún
+   `GET` que liste eventos.
+4. **El front tampoco lo lee: lo recibe.** Su único método sobre esta familia es
+   `markEventAsRead → POST notifications/events/read`; el bundle trae socket.io y el cliente
+   *realtime* de AppSync. El ZIP llega **empujado al navegador**, no consultado.
+
+⚠️ **Cuidado con `/api/events`:** responde `404` en este host y eso **no prueba nada** sobre el
+lote. En el front, `events` pertenece al cliente de **calendario** (`VITE_API_CALENDAR`): son citas
+de agenda, no trabajos asíncronos. Se estuvo sondeando el servicio equivocado.
+
+**El sustituto, que además es el que nos conviene** (verificado el 2026-09-16 sobre los
+expedientes 653, 652 y 645 con la plantilla 464): recorrer los expedientes y renderizar uno a uno
+con `GET /api/templates/rtf/{idTemplate}/{element}/{idElement}`, y empaquetar en local. Devolvió
+tres documentos **distintos** (127.515 / 126.874 / 126.895 b, `sha256` distintos: personaliza de
+verdad) y un ZIP íntegro. Dos detalles que no son adorno:
+
+- El `content` es **ASCII**: el RTF lleva los acentos como escapes `\'xx`, y no hay ni un byte
+  > 127. Se escribe en **binario**; abrirlo en modo texto en Windows mete `\r\n` y el fichero
+  engorda ~900 b sobre el render. En binario sale **byte a byte idéntico** al del CRM.
+- No hace falta su lote para nada: el bucle es nuestro, el nombre de cada fichero también, y el
+  resultado no depende de una notificación que solo existe dentro de su navegador.
 
 **Y la lección de método, que costó una conclusión falsa:** se llegó a escribir «el contenido no
 se puede modificar por API» tras ver el `200` mudo de `right.gdocu.id` y comprobar que el front no
@@ -2710,9 +2746,17 @@ nunca relanzar el lote entero.
 > copia sincronizada. Para un evento creado por API da igual —no llegan a sincronizarse
 > (§15.12)—, pero para uno de la UI es una pregunta abierta.
 
-- **`DELETE /api/documents/{id}`** → 200. El documento desaparece del listado filtrado, pero
-  **`related_register` sigue devolviéndolo**: queda una **relación huérfana** apuntando a un
-  documento que ya no existe. Es inocua, pero ensucia el censo de cualquiera que use esa vía.
+- **`DELETE /api/documents/{id}`** → 200 `{"message":"Resource has been deleted","id":"…"}`. El
+  documento desaparece del listado filtrado, pero **`related_register` sigue devolviéndolo**: queda
+  una **relación huérfana** apuntando a un documento que ya no existe. Es inocua, pero ensucia el
+  censo de cualquiera que use esa vía. Si el documento **no tiene relaciones**
+  (`GET /api/related_register/gdocu/{id}` → `[]`), este `DELETE` basta y no deja huérfano: es el
+  caso de un fichero subido por API que nunca se ató a un expediente.
+  ▸ **La baja se acredita por `GET /api/documents/{id}/downloadUri`**, no por el listado: un
+  documento vivo responde `200` con su `customFilename` y uno borrado, `500 "ElementRegistryItem
+  not found"`. El listado **no** sirve de control aquí — cambia de clave de sobre (§10.13) y un
+  lector que entienda solo una devuelve «ha desaparecido» sobre un documento que sigue ahí. Pasó
+  el 2026-09-16 con el `43110`: dado por muerto por el listado, vivo por `downloadUri`.
 - **`DELETE /api/relation_element/{element}/{id}`** con cuerpo `["right.gdocu.42922"]` → 200
   `"Deleted!"`. **Queda validado** (el §16.3 lo daba por declarado y sin probar): quita **solo** la
   relación del cuerpo y deja intactas las demás — verificado con el poderdante y el otro documento
