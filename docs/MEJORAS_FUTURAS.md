@@ -12515,3 +12515,173 @@ Quien la atienda los localiza en los ficheros ya señalados: `tests/test_abrir_c
 planes que los mencionan.
 
 **Disparador.** El próximo saneado de PII, o que alguien tenga que tocar esos fixtures.
+
+---
+
+## 275. La etapa `viabilidad` de V1 publica con `os.link`, y el montaje de Drive no lo soporta: toda apertura contra `G:` termina en `bloqueado`
+
+**Lo medido** (2026-09-16, apertura de W-030A13 con `CASOS_ROOT` en el montaje de Drive for
+Desktop, que es el destino por defecto). Las siete etapas anteriores salieron bien —`drive`
+hecha con 24 documentos, `sala_maquina` hecha con 38 y 698,6 s de OCR— y la corrida terminó en
+**`bloqueado`, código 1**, por esto:
+
+```
+[  fallo] viabilidad: OSError: [WinError 1] Función incorrecta:
+  '…\00_Input\_viabilidad.json.9yfmjx_z.tmp' -> '…\00_Input\_viabilidad.json'
+```
+
+**La causa exacta, leída en `core/viabilidad_json.py::escribir`: no es un rename, es un
+`os.link`.** La función publica el temporal con un **hard link**, elegido a propósito sobre
+`os.rename`/`os.replace` porque `os.link` falla si el destino ya existe y así la exclusividad
+vive en el propio acto de publicar, sin hueco entre comprobar y escribir. El montaje de Google
+Drive for Desktop **no implementa hard links**: devuelve `WinError 1`. El `.tmp` se escribe
+bien; lo que no existe en ese filesystem es la operación de publicación.
+
+**Por qué importa más de lo que parece.** El fallo **corta la secuencia**: `verificar` ya no
+corre dentro de la ronda (queda `etapa_no_ejecutada:verificar`) y el estado final es
+`bloqueado` aunque el expediente esté bien. La etapa es reciente (`MEJORAS #264`, salida 3,
+commit `e6aacba`), así que **cualquier apertura contra `G:` va a terminar en `bloqueado`** por
+esta causa mientras no se arregle, y el estado deja de distinguir un caso roto de uno sano.
+
+**Dato que acota el remedio, medido en la misma sesión:** `open(destino, "x")` —`O_EXCL`— da la
+misma exclusividad sin-carrera **y sí funciona sobre el montaje**. Se usó para desbloquear la
+apertura, con el contenido validado antes por `viabilidad_json.validar`. La alternativa es
+detectar el filesystem y degradar la promesa **declarándolo**, nunca en silencio.
+
+**De qué frontera es esto un ejemplo.** De elegir una primitiva por la garantía que da en el
+filesystem del desarrollador, sin comprobar que existe en el filesystem de producción — que
+aquí no es un caso raro, es el de todos los expedientes.
+
+**Disparador.** La próxima apertura, porque las bloquea todas.
+
+---
+
+## 276. C2 de `verificar_apertura` confirma que la discrepancia es el relleno de `#225` y no lo dice en el mensaje
+
+**Lo medido** (2026-09-16, W-030A13). C2 devuelve **FALLO** con «10 fichero(s) cuyo sha256 NO es
+el que Drive declara». Comprobado a mano sobre tres de los diez: el descuadre es **exactamente**
+el relleno con ceros de `MEJORAS #225`. Recortando la cola de ceros, el `sha256` coincide al
+dígito con el que declara Drive (203.797 → 204.288 bytes = 399 × 512; 377.135 → 377.344;
+377.481 → 377.856). El contenido está íntegro y los PDF se leen sin problema.
+
+**Y el código ya lo sabe.** `core/verificar_apertura.py:842` llama a `_es_el_relleno_de_225` por
+cada discrepancia y acumula la lista en `relleno_225`, que viaja en la evidencia
+(`relleno_225_confirmado`). Pero el `Resultado(... FALLO ...)` de la línea siguiente compone el
+mensaje **solo** con `discrepan`: la confirmación se calcula, se guarda y **no llega a la línea
+que el operador lee**.
+
+**Consecuencia.** Un rojo benigno y conocido queda indistinguible de una corrupción real, y hay
+que abrir el fichero a mano para saber cuál de las dos cosas es. Como `#225` sigue viva por
+decisión expresa (reposición por disparador, 2026-09-13), este rojo sale en **todas** las
+aperturas hasta entonces — que es la vía rápida para que deje de leerse.
+
+**Remedio barato.** Que el mensaje diga cuántos de los N están confirmados como relleno de
+`#225` y cuántos no, y que el veredicto sea `FALLO` solo por los no confirmados.
+
+**Disparador.** La próxima vez que alguien tenga que decidir si un rojo de C2 es grave.
+
+---
+
+## 277. C3 de `verificar_apertura` no puede pasar en NINGÚN caso con bundles partidos: falla en los nueve del repo
+
+**Lo medido** (2026-09-16) sobre **los nueve** expedientes de `CASOS/Barcelona` que tienen a la
+vez `_cobertura.json` e `indice_documental.yaml`: **C3 sale `fallo` en los nueve**, y en
+**siete** con el mismo mensaje — `N fila(s) con 'parent_slug' que no apunta a un bundle real`.
+En W-030A13 son 21 filas y 7 padres; en W-02JSVZ, 43.
+
+**Por qué es estructural.** C3 descuenta los hijos de bundle para hacer comparables los dos
+lados, y la corrección R1/H-02 añadió que *«un hijo solo cuenta como hijo si su padre existe»*
+en la cobertura. Pero el split de la sala de máquina **sustituye el padre por sus piezas**: en
+`_cobertura.json` están `…__d01_DOC_EMAIL`, `…__d02_DOC_PBC`, y el slug padre **no está**. La
+guarda pide una condición que el productor del fichero nunca cumple, así que el descuento no se
+aplica nunca y la comprobación no puede salir verde en un caso con un solo PDF compuesto.
+
+**La intención de R1/H-02 era buena** —evitar que un documento desaparezca del catálogo amparado
+en un `parent_slug` inventado—, pero la señal elegida para «el padre existe» es la presencia en
+la cobertura, y ahí no está por diseño. Habría que acreditarlo contra lo que sí lo sabe: el
+propio sufijo `__dNN_` del slug del hijo, o el inventario previo al split.
+
+**El contraste que sí funciona, y conviene conservar** (`[APER-60]`): cuadrar las **rutas de
+origen** (`rel_path`) de la cobertura contra las `ruta_relativa` del catálogo. En W-030A13 dio 36
+contra 34, y las 2 de diferencia son los duplicados por `sha256` del propio Drive —el mismo PDF
+subido a dos carpetas—, cuyos sha **sí** están en el catálogo. Cero documentos perdidos, en una
+comprobación de un segundo.
+
+**De qué frontera es esto un ejemplo.** De validar una invariante contra el fichero equivocado:
+el padre existe —es el PDF de `00_Input`—; lo que no existe es su fila en la cobertura.
+
+**Disparador.** La próxima apertura que quiera leer C3 como señal y no como ruido.
+
+---
+
+## 278. C9 compara una cuantía con céntimos contra un campo que el CRM guarda ENTERO
+
+**Lo medido** (2026-09-16). `abrir_caso --cuantia 48702.50` deja en el CRM **`48702.00`**, y C9
+declara que «la cuantía local y la del CRM no coinciden». No es un fallo del alta:
+`core/sudespacho_create.py:1139` serializa el campo con `_fmt_importe_entero`, y la cabecera del
+módulo lo documenta — `campo_1730 → cuantia (entero sin separadores, ej: "12500")`.
+
+**Contrastado contra cuatro expedientes reales:** el 645 tenía cuantía real 25.402,74 € y el CRM
+devuelve `25403.00`; el 652, el 644 y el 643 terminan también en `.00`.
+
+**Consecuencia.** Cualquier cuantía con céntimos hace fallar C9 **para siempre**, y las de
+honorarios con IVA casi siempre los llevan. O C9 redondea el local antes de comparar —que es lo
+que hace el alta—, o el aviso es ruido permanente en todas las aperturas.
+
+**Y su evidencia no trae los dos números** que forman el descuadre (`{"local": 48702.5, "653":
+{"crm_declarada": true, "legible": true}}`): hubo que ir a leer el CRM a mano para saber cuánto
+decía. Mismo patrón que `#276`, en otra comprobación.
+
+**Cómo se resolvió en W-030A13**, por si sirve de apaño mientras tanto: alineando `meta.cuantia`
+al entero que devuelve el CRM. El importe exacto vive en `notas_html` del expediente y en el
+`_ficha_crm.yaml`, que es donde se consulta. C9 pasó a `ok`.
+
+**Disparador.** La próxima apertura con céntimos en la cuantía, es decir, casi cualquiera.
+
+---
+
+## 279. La verificación de `crm_ficha` comprueba INCLUSIÓN, no igualdad: dos colaboradores ajenos pasaron por delante de un «VERIFICADA por lectura»
+
+**Lo medido** (2026-09-16, expediente extrajudicial 653 de W-030A13). `scripts/crm_ficha.py`
+vinculó los cuatro colaboradores del `_ficha_crm.yaml` y cerró con:
+
+```
+Verificación: expediente 653 Numero_Expediente=87
+  [ok] colaboradores id=256
+  [ok] colaboradores id=805
+  [ok] colaboradores id=102
+  [ok] colaboradores id=552
+OK ficha CRM completada y VERIFICADA por lectura
+```
+
+El expediente tenía **seis**. Los dos de más —`624` y `677`, dos *team leaders* de otro Market
+Center— **no aparecen en ninguna línea**, porque la verificación recorre lo que pidió escribir y
+comprueba que está: es una comprobación de **inclusión**, y lo que hacía falta era de
+**igualdad**. Lo descubrió el letrado mirando la pantalla del CRM, no el verificador.
+
+**Por qué importa más que este caso.** Un colaborador de más en un expediente es un problema de
+confidencialidad, no de estética: da acceso y aparece en la ficha del cliente. Y el mensaje
+«VERIFICADA por lectura» es justamente el que hace que nadie vuelva a mirar — el mismo patrón que
+`#276` y `#278`, pero aquí el ciego no es el mensaje sino la **forma de la comprobación**.
+
+**Remedio.** Releer el bloque `colaboradores` (y `clientes_contrarios`, que tiene el mismo
+problema) y contrastar el conjunto **completo** contra el esperado, diciendo tanto los que faltan
+como los **sobrantes**. Si sobra alguno, no es «ok»: es un hallazgo. El dato ya está a mano —
+`get_relaciones("extrajudiciales", exp_id)` devuelve la lista acumulada, y es lo que se usó para
+detectarlo a mano.
+
+**Lo que NO se pudo determinar, y se dice en vez de rellenarlo.** Qué vinculó a esos dos al
+expediente. Se descartó midiendo: el alta no toca colaboradores (no aparecen en
+`core/sudespacho_create.py`); sus permisos por defecto son del despacho (grupo `2` OFICINA_1,
+usuario `2` Nikolai_Tyukhay); las cuatro llamadas de `crm_ficha` devolvieron cuatro ids y son los
+correctos; de ocho expedientes muestreados **solo el 653** los tenía, así que tampoco es un preset
+general; y no es el dedup por buzón compartido de `[APER-71]`, porque los seis colaboradores
+tienen email y móvil propios y distintos. Las dos fichas son legítimas y activas en otros casos
+(624 en 5 extrajudiciales y 8 judiciales; 677 en 2 y 9). Sin log de auditoría no se puede
+distinguir un automatismo del CRM de una acción desde la UI.
+
+**Resuelto en el expediente**: `DELETE /api/relation_element/extrajudiciales/653` con
+`["right.colaboradores.624"]` y `…677` → `200 "Deleted!"` los dos, y la re-lectura devuelve
+exactamente los cuatro esperados y nadie más. Las fichas no se tocaron.
+
+**Disparador.** La próxima ficha CRM, porque hasta entonces ninguna acredita lo que dice acreditar.
