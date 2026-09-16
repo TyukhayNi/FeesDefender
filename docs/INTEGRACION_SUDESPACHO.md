@@ -1140,6 +1140,69 @@ Num_Colegiado, poblacion, provincia, telefono1, telefono2, telefono3, web`.
 
 ---
 
+### 10.13 CREAR y MODIFICAR una plantilla `rtf` — contrato completo, verificado 2026-09-16
+
+El §10.11 cubre **generar** un documento desde plantilla. Esto es lo otro: **escribir la
+plantilla misma**. Sondeado con el protocolo del §14.6/§9.3 —sujeto sacrificable, una forma
+candidata por intento derivada del error anterior, verificación por `GET`— sobre copias
+duplicadas; el catálogo quedó en **393** con una sola plantilla nueva y ninguna viva tocada.
+
+**Crear una plantilla nueva. Tres pasos, y el fichero va primero:**
+
+```
+GET  /api/documents/presigned_urls/s3/upload/1              -> [{fileIdentifier, url}]
+PUT  <url de S3>    bytes, Content-Type: application/rtf     -> 200
+POST /api/templates/rtf/{element}?properties[]=nombre&properties[]=id_carpeta
+     {"nombre": "...", "id_carpeta": "375", "idFile": "<fileIdentifier>"}
+                                                             -> 201 {"id": N}
+```
+
+**Sustituir el CONTENIDO de una plantilla existente.** Idéntico, con `PUT` y el `id`, y **los
+tres campos juntos**:
+
+```
+PUT /api/templates/rtf/{element}/{id}?properties[]=nombre&properties[]=id_carpeta
+    {"idFile": "<fileIdentifier>", "id_carpeta": "375", "nombre": "..."}
+                                                             -> 200 "Updated!"
+```
+
+Con **solo** `idFile` responde `500 Undefined array key "id_carpeta"`.
+
+**Cambiar solo metadatos:** `PUT …?properties[]=nombre` con `{"nombre": "..."}` → `200`, y sella
+`fecha_ultima_modificacion`.
+
+**El resto del juego, todo verificado:**
+
+| Operación | Llamada |
+|---|---|
+| Duplicar | `POST /api/templates/duplicate/{id}` con `{"nombre": "..."}` → `201 {id}` |
+| Borrar | `DELETE /api/templates/rtf/{id}` → `200 "Deleted!"` |
+| Ficha + origen | `GET /api/templates/rtf/detail/{id}` → `downloadUrlRtfFile` |
+| Listado con propiedades | `GET /api/templates/rtf/{element}?properties[]=…` |
+
+**Cinco gotchas, los cinco medidos:**
+
+1. **Sin `properties[]` en la query → `404` «It is necessary to include properties in the
+   request»**, tanto en `POST` como en `PUT`. Es la misma exigencia que en `element_registries`.
+2. **`multipart/form-data` NO funciona.** Enviar el fichero como `files={"file": …}` devuelve
+   siempre ese `404`, con o sin `properties` en la query. El cuerpo va en **JSON** y el fichero
+   por `idFile`, aunque el cliente del front use `FormData` para otras cosas.
+3. **El CRM normaliza los marcadores al ingerir:** `[clientes_contrarios->der->contactos->nombre]`
+   queda guardado como `[clientes_contrarios.right.contactos.nombre]`. Por eso **el `sha256` del
+   fichero subido no coincide** con el de la descarga (2 bytes en 129 KB). **Verificar por
+   contenido —marcadores, bucles, un literal reconocible—, nunca por hash.**
+4. **`downloadUrlRtfFile` es una presigned de 60 s que cambia en cada lectura.** No sirve para
+   detectar si algo se escribió: compararla da siempre «cambió».
+5. **`right.gdocu.id` es una trampa.** La ficha de una plantilla lo trae, y el `PUT` con ese campo
+   responde `200 "Updated!"` **sin escribir nada**. La vía del fichero es `idFile`.
+
+**Y la lección de método, que costó una conclusión falsa:** se llegó a escribir «el contenido no
+se puede modificar por API» tras ver el `200` mudo de `right.gdocu.id` y comprobar que el front no
+tiene `updateRtfTemplate` —las dos observaciones eran ciertas—. Faltaba **derivar del error una
+iteración más**: el `500` decía `Undefined array key "idFile"` y ahí estaba el contrato. **Una vía
+no se declara cerrada mientras el error siga diciendo qué falta.**
+
+
 ## 12. Expediente judicial — Crear y vincular (confirmado 2026-04-30)
 
 ### 12.1 Crear expediente judicial
