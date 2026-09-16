@@ -1196,6 +1196,73 @@ Con **solo** `idFile` responde `500 Undefined array key "id_carpeta"`.
 5. **`right.gdocu.id` es una trampa.** La ficha de una plantilla lo trae, y el `PUT` con ese campo
    responde `200 "Updated!"` **sin escribir nada**. La vía del fichero es `idFile`.
 
+**CARPETAS de plantillas — contrato completo, verificado el mismo día.** El elemento es
+`templates`, y el `{parent}` de la ruta es el id de la carpeta padre:
+
+| Operación | Llamada | Respuesta |
+|---|---|---|
+| Listar hijas | `GET /api/folders/templates/{parent}` | `[{id, parent, label, color}]` |
+| Crear | `POST /api/folders/templates/{parent}` con `{"label": "...", "color": ""}` | `201` con el objeto |
+| Renombrar | `PUT /api/folders/{id}` con `{"label": "...", "color": ""}` | `200` con el objeto |
+| Borrar | `DELETE /api/folders/{id}` | `200 "Deleted!"` |
+
+**`label` y `color` son obligatorios los dos**: con solo `label` responde
+`500 Undefined array key "color"`, y con `nombre` en vez de `label`,
+`500 Undefined array key "label"`. `color` admite cadena vacía.
+
+**Mover una plantilla de carpeta** es un `PUT` de metadatos, no una operación aparte:
+
+```
+PUT /api/templates/rtf/{element}/{id}?properties[]=id_carpeta
+    {"id_carpeta": "<id de la carpeta destino>"}          -> 200 "Updated!"
+```
+
+Verificado leyendo `id_carpeta` después del `PUT`, no por el `200`.
+
+⚠️ **El árbol no cuelga de `0`,** y no es un árbol único. `GET /api/folders/templates/0`
+devuelve `[]`. La rama navegable arranca en **`1` → 8 «Plantillas»**, y de ahí:
+
+```
+  8  Plantillas
+     10  Documentos            ← 36 plantillas
+         375  00. PREJUDICIAL  ← 30, la de reclamaciones E&V
+             430  01. REQUERIMIENTOS
+             431  02. MASC
+         372  01. DILIGENCIAS PRELIMINARES      346  02. DEMANDAS
+             412 GENERICOS · 413 MONITORIOS ENGEL · 414 DECLARATIVOS ENGEL
+         360  03. AUDIENCIA PREVIA              374  04. JUICIO
+         351  05. COSTAS - INTERESES            343  06. RECURSOS
+         362  07. FINALIZACION                  344  08. EJECUCION
+         371  09. ESCRITOS TRAMITE
+         388 CONTRATOS · 381 INFORMES · 366 PODERES · 365 PROPUESTAS
+     11  Emails
+         386 ENGEL → 405 EJ-CONSULTORES · 404 EJ-OPERACIONES ·
+                     406 FACTURACION · 403 JUDICIAL → 421-425 · 427 SINIESTROS
+         387 FG                ← 26 plantillas
+     12  Facturas              ← 23 plantillas
+```
+
+🕳️ **Hueco declarado, y no es pequeño.** Cinco carpetas **en uso** no son alcanzables por ese
+recorrido y **no hay endpoint que devuelva su nombre**: son raíces sin padre y sin hijas.
+
+| Carpeta | Plantillas |
+|---|---|
+| **16** | 32 |
+| **9** | 19 |
+| **1** | 18 |
+| **14** | 6 |
+| **15** | 3 |
+
+Son **78 plantillas en carpetas cuyo nombre no se puede leer por API**. `GET
+/api/all_folders/{userId}` **no sirve**: devuelve otro árbol, el de expedientes (CIVIL, PENAL,
+DOCUMENTOS, IBERLEY, RGPD), no el de plantillas. Y `GET /api/folders/all/{element}/{userId}`,
+que el OAS declara como «Get all folders collection», responde `404 «Sorry, this action is not
+configured»`. Para esas cinco, hoy, hay que mirar la UI.
+
+ `GET /api/folders/templates/0` devuelve `[]`. **Lo que queda SIN verificar** de esta familia: `POST /api/templates/rtf/{idTemplate}/{element}`
+con `{"ids": [...]}`, que el OAS describe como «genera PDFs de los elementos indicados y devuelve
+un ZIP». Es la generación en lote —un burofax por expediente de una tacada— y merece medirse.
+
 **Y la lección de método, que costó una conclusión falsa:** se llegó a escribir «el contenido no
 se puede modificar por API» tras ver el `200` mudo de `right.gdocu.id` y comprobar que el front no
 tiene `updateRtfTemplate` —las dos observaciones eran ciertas—. Faltaba **derivar del error una
