@@ -190,18 +190,31 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 > lo que sigue describe lo que el modo hace **hoy**, leído de `scripts/abrir_caso.py` y
 > `core/apertura_v1.py`.
 >
-> **Lo que encadena, y en qué orden** (`secuencia_v1`, spec §24 D3): **`drive` → `crm` →
-> `sala_maquina`**, las tres bajo **un único mutex del caso** — el mismo que protege el modo
-> `libre`. (1) `drive` materializa la carpeta de Drive E&V con custodia y **siempre con
+> **Lo que encadena, y en qué orden** (`secuencia_v1`, spec §24 D3): la secuencia completa son
+> **ocho** etapas — **`drive` → `email` → `crm` → `sala_maquina` → `crm_alta` → `actuacion` →
+> `viabilidad` → `verificar`** (`ETAPAS_V2`; las cuatro primeras son `ETAPAS_V1`) —, todas bajo
+> **un único mutex del caso**, el mismo que protege el modo `libre`. Detalle de las cuatro
+> primeras: (1) `drive` materializa la carpeta de Drive E&V con custodia y **siempre con
 > `force=True`**: en cada ronda se consulta el remoto y `rclone` transfiere solo lo que difiere; el
-> `.pulled` no ahorra la consulta. (2) `crm` hace el pull del expediente **ya registrado en
-> `_caso.md`** (`sudespacho_expedientes`); si no hay ninguno la etapa sale `saltada` con el
-> pendiente `crm_sin_expediente` (el alta CRM es de V2). La etapa **falla** —y con ella no corre
-> el OCR— si el registrado es **judicial** (V1 no tiene adaptador judicial), si el vínculo no declara
-> `element` o lo declara fuera de `extrajudiciales|expedientes_judiciales`, o si el pull devuelve
-> errores: **un documento del gestor que no baja bloquea la ronda**; re-correr. (3) `sala_maquina` = `scripts.sala_maquina.apply`,
-> que lleva **dentro** la atomización del correo ya depositado y después el OCR + espejos MD; por
-> eso el gotcha «atomizar y pull ANTES del OCR» se cumple por construcción.
+> `.pulled` no ahorra la consulta. (2) `email` (desde el 2026-09-15) exporta a un lote nuevo de
+> `00_Input` la etiqueta Gmail de `--cuenta`/`--label`; sin esos dos flags sale `saltada` con el
+> pendiente `email_no_pedido` — **trae la etiqueta que se le nombra, no descubre cuáles tiene el
+> caso** (mismo matiz que el pendiente permanente `fuentes_v3_sin_consultar`, más abajo). Corre
+> ANTES de `sala_maquina` a propósito: un adjunto que llegue solo por correo y se deposite después
+> no se OCR-ea ni aparece en la sala de lectura. (3) `crm` hace el pull del expediente **ya
+> registrado en `_caso.md`** (`sudespacho_expedientes`); si no hay ninguno la etapa sale `saltada`
+> con el pendiente `crm_sin_expediente`. La etapa **falla** —y con ella no corre el OCR— si el
+> registrado es **judicial** (V1 no tiene adaptador judicial), si el vínculo no declara `element` o
+> lo declara fuera de `extrajudiciales|expedientes_judiciales`, o si el pull devuelve errores: **un
+> documento del gestor que no baja bloquea la ronda**; re-correr. (4) `sala_maquina` =
+> `scripts.sala_maquina.apply`, que lleva **dentro** la atomización del correo ya depositado (el
+> que trajo `email`, y cualquier otro ya presente) y después el OCR + espejos MD; por eso el gotcha
+> «atomizar y pull ANTES del OCR» se cumple por construcción. **Las cuatro siguientes** (`crm_alta`,
+> `actuacion`, `viabilidad`, `verificar`) no se detallan aquí — de un vistazo: dan de alta el
+> expediente en el CRM si `--crm api` lo autoriza, registran la actuación de apertura con recibo
+> reanudable, dejan escrito el JSON de la 1ª pasada de viabilidad (`core/viabilidad_json.py`) y
+> cierran corriendo `verificar_apertura` sobre el EXPEDIENTE; el detalle de cada una vive en su
+> docstring de `scripts/abrir_caso.py`.
 >
 > **Los tres estados finales** (`core/apertura_v1.py`, `EstadoV1`): `completo`,
 > `preparado_con_pendientes` y `bloqueado`. Un `fallo` en cualquier etapa corta la secuencia y da
@@ -227,11 +240,26 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 >   --direccion "..." --folder-id <id> --fuente drive_ev --crm skip --yes
 > ```
 >
+> **Comando que además trae correo** (`--fuente email` en vez de `drive_ev` — recuerda: en V1,
+> `--fuente` dice qué se trae ADEMÁS de Drive E&V, que la etapa `drive` materializa siempre —, más
+> `--cuenta` y `--label`, que con `--fuente email` son obligatorios los dos: pedirlo sin uno de
+> ellos **aborta la validación antes de llegar a la etapa** — no la deja `saltada` (detalle más
+> abajo, «la puerta sigue igual»). `saltada` es lo que sale al no pedir correo en absoluto, con
+> `--fuente drive_ev` como en el comando de arriba):
+>
+> ```powershell
+> python -m scripts.abrir_caso --modo v1 --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VUELTA `
+>   --direccion "..." --folder-id <id> --fuente email --cuenta buzon@dominio --label "Etiqueta/Caso" `
+>   --crm skip --yes
+> ```
+>
 > **Comando de continuación** (reanudar tras un corte, o segunda ronda tras depositar más
 > material): se relanza con **`--case-id`**, que es excluyente con los seis flags de identidad
 > (relanzar con los seis flags **en lugar de** `--case-id` daría `ColisionCaso`, porque en V1
 > `--force` está prohibido); `--folder-id` sigue siendo obligatorio en V1 y de él se deriva
-> `--team-id`. Para **parar** tras una etapa, `--hasta drive|crm|sala_maquina`:
+> `--team-id`. Para **parar** tras una etapa, `--hasta` admite cualquier nombre de `ETAPAS_V2`
+> (`drive|email|crm|sala_maquina|crm_alta|actuacion|viabilidad|verificar`), no solo las cuatro de
+> V1:
 >
 > ```powershell
 > python -m scripts.abrir_caso --modo v1 --case-id W-XXXXXX --folder-id <id> --crm skip
@@ -247,21 +275,28 @@ python -m scripts.abrir_caso --w-code W-XXXXXX --ciudad Barcelona --tipo-caso VU
 > del 2026-09-05; su spec entra con ese PR); hasta entonces, cree a este runbook y no al `--help`. `--hasta` solo existe en `v1`: en `libre` aborta.
 >
 > **La puerta sigue igual.** `--modo v1` rechaza, antes de resolver identidad, de `ensure_case`, de
-> todo intake y de toda lectura remota, las cinco invocaciones que V1 prohíbe (`validar_modo`) —
-> `--crm` distinto de `skip` (el default es `api` y alcanza un POST de alta), `--fuente
-> email|manual|whatsapp` (`email` ejecuta `email_export.export_label`, o sea Gmail), `--force` sin
-> `--case-id` (crearía una carpeta sombra: criterio 33), `--dry-run` (en `drive_ev` el pull es real
-> igual y la corrida saldría sin terminar en ninguno de los tres estados) y la falta de
-> `--folder-id`. También un `--hasta` fuera del vocabulario. Los errores se acumulan: se ven todos
-> en una pasada.
+> todo intake y de toda lectura remota, las invocaciones que `validar_modo` prohíbe — hoy son
+> **siete**, contadas sobre el código (`--hasta` fuera de vocabulario va aparte, como siempre):
+> `--crm` ausente o fuera de `api|skip` (omitirlo no protege: el default es `api` y alcanza un POST
+> de alta), `--fuente` fuera de `drive_ev|email` (`manual`/`whatsapp` actúan sobre material que
+> alguien deposita a mano, y V1 no tiene de dónde sacarlo sin que se lo digan caso por caso),
+> `--fuente email` sin `--cuenta`, `--fuente email` sin `--label` (`email` dejó de estar prohibida
+> el 2026-09-15, pero exige declarar de dónde exporta: sin los dos flags no hay buzón ni etiqueta
+> que traer), `--force` sin `--case-id` (crearía una carpeta sombra: criterio 33), `--dry-run` (en
+> `drive_ev` el pull es real igual y la corrida saldría sin terminar en ninguno de los tres
+> estados) y la falta de `--folder-id`. Los errores se acumulan: se ven todos en una pasada.
 >
 > **Ojo con el comando de arriba (el de `libre`):** lleva `--crm api` y `--force`. Copiarlo y
 > añadirle `--modo v1` aborta, y debe abortar.
 >
-> **Lo que V1 sigue sin cubrir.** No descubre correo en Gmail ni consulta LeadHub (V3: por eso el
-> pendiente permanente); no da de alta en el CRM (V2); no tiene rama **judicial**; y no admite las
-> fuentes `email|manual|whatsapp`. Todo eso sigue por el modo **`libre`** (`--fuente email …`,
-> `--crm api`, etc.), que es el de siempre y el del comando de arriba.
+> **Lo que V1 sigue sin cubrir.** No **descubre** correo en Gmail ni consulta LeadHub (V3: por eso
+> el pendiente permanente) — la etapa `email` de arriba **sí exporta** la etiqueta que se le
+> nombre con `--cuenta`/`--label`; descubrir cuáles tiene el caso es cosa distinta y sigue sin
+> construir. No da de alta en el CRM (V2); no tiene rama **judicial**; y sigue sin admitir las
+> fuentes `manual|whatsapp` (`email` dejó de estar prohibida el 2026-09-15): actúan sobre material
+> que alguien deposita a mano, y V1 no tiene de dónde sacarlo sin que se lo digan caso por caso.
+> Eso sigue por el modo **`libre`** (`--fuente manual …`, `--crm api`, etc.), que es el de siempre
+> y el del comando de arriba.
 >
 > Contrato: spec de apertura integral §24 D3/D4, §13 y §21; plan de cableado
 > `docs/superpowers/plans/2026-09-03-apertura-v1-plan5-cableado.md` (rondas R-A/R-B/R-C
