@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "9"
+rev: "10"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,11 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 10 (2026-09-17).** Se cierra del todo el hueco **1** con el literal del SMS, y un
+> certificado real de OVC confirma dos cosas sobre envíos del despacho: el acta electrónica **lista
+> los ficheros uno a uno con su huella** —partir A y B quedaría reflejado— y el discriminante
+> `CONFIDENCIAL - CONDICIONES` **se ve funcionar** sobre un documento que salió de verdad.
+>
 > **Rev. 9 (2026-09-17).** Primera expedición real en sandbox (1,06 € de los 20 €). Los dos
 > canales **no tratan igual los adjuntos**: el burofax los fusiona, pero **la entrega electrónica
 > los lista uno a uno con su nombre y su `sha256`**, así que el valor probatorio de la división A/B
@@ -583,6 +588,13 @@ En el burofax `006ar9bel3n` se subieron **tres** ficheros y el acta lista **uno 
 `SONDA_PRIMERO.pdf` y `SONDA_SEGUNDO.pdf` **con sus dos huellas**, y coinciden con las calculadas
 en local antes de enviar.
 
+**Y se confirma sobre un envío real del despacho**, no solo sobre la sonda: el certificado de la
+OVC `006catetonk` lista **dos** ficheros con sus dos huellas, y su reproducción respeta ese orden
+—tres páginas del primero, una del segundo—. Que en ese envío el requerimiento, la OVC y las
+condiciones fueran **un solo fichero** es decisión de quien lo compuso, no imposición de la
+plataforma: **partirlo en A y B habría quedado reflejado en el acta**, con una huella por bloque.
+Es exactamente lo que el §7 propone, y este certificado lo acredita.
+
 **Qué significa para la división A/B.** El beneficio probatorio que la rev. 5 le atribuía —que el
 aportable siga acreditando el envío de un segundo documento, con su huella, sin su contenido—
 **existe en los canales electrónicos y se pierde en el postal**. Como el requerimiento sale por los
@@ -688,6 +700,12 @@ consten para que nadie los reinvente:
 exactamente. Para cada página de la reproducción extrae el texto y lo casa, normalizado, contra las
 páginas de B. Es independiente del orden, del número de adjuntos y de que Codicert los fusione.
 
+**Y el literal `CONFIDENCIAL - CONDICIONES` se ha visto funcionar sobre un documento real** (rev.
+10): en la OVC `006catetonk`, enviada por correo a un requerido de verdad, aparece en la página 7
+del certificado —tercera de la reproducción—, exactamente donde el mapa de arriba lo sitúa. El
+discriminante deja de ser una lectura de la plantilla y pasa a estar acreditado sobre un envío que
+salió.
+
 **La parada, y hay que calibrarla bien** (rev. 7). La regla es **una sola** y se enuncia por el
 lado de B, no por el de la página suelta:
 
@@ -764,10 +782,10 @@ del certificado emitido.
 
 ## 10. Huecos declarados
 
-1. ~~**Si el texto de la notificación SMS es configurable.**~~ **CERRADO el 2026-09-17** (§5 regla
-   7): **no lo es**, por tres vías que coinciden. Lo que se controla es el nombre del remitente, y
-   el literal de la casa hay que llevarlo al correo de notificación. Queda por leer el texto exacto
-   que compone la plataforma.
+1. ~~**Si el texto de la notificación SMS es configurable.**~~ **CERRADO del todo el 2026-09-17**
+   (§5 regla 7): **no lo es**. El SMS que llegó al móvil en la expedición de prueba dice
+   *«… le ha enviado una comunicación. Acceda <url>»*, con el nombre del remitente delante y nada
+   más. Es plantilla fija de la plataforma: lo único nuestro es ese nombre.
 2. ~~**La anatomía del certificado de un burofax.**~~ **CERRADO el 2026-09-17** (§7.2) sobre
    `006ar9bel3n`, aportado por Nikolai: 10 páginas, **6 de acta y 4 de reproducción**, y **el
    discriminante del sello temporal funciona igual** que en el electrónico. De paso destapó que
