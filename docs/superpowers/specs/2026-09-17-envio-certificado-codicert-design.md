@@ -445,10 +445,15 @@ Sobre el certificado `006casm113n` (gdocu 42990 del W-04A6LI, 6 páginas):
   326.4 LEC** juega: presunción de que el documento reúne la característica cuestionada y **carga
   de la comprobación a quien impugne**, con sus costas y la multa por temeridad. Romper la firma
   cuesta eso, y hay que decidirlo sabiéndolo.
-- **El burofax postal no está cubierto por ninguno de esos tres servicios.** Los tres son de
-  entrega **electrónica**. La consecuencia es contraintuitiva y conviene tenerla presente: el canal
-  más caro —16,97 €— es el que se queda sin la presunción del art. 326.4 por esta vía. Qué régimen
-  probatorio ampara el certificado postal **no lo he verificado** y sigue como hueco.
+- **El burofax acredita por otra vía, y eso no lo debilita.** Ninguno de los tres servicios
+  cualificados cubre el envío postal —los tres son de entrega **electrónica**—, pero el art. 326.4
+  LEC es una regla sobre **documento electrónico** amparado por un servicio de confianza eIDAS, no
+  la fuente del valor del burofax. **El burofax es medio fehaciente y certifica el contenido y el
+  resultado de la entrega**, que es justamente para lo que se usa. Decir que «se queda sin la
+  presunción» sería confundir un régimen probatorio distinto con una desventaja.
+  Lo que **no he verificado** y sigue como hueco: por qué vía concreta se le reconoce esa
+  fehaciencia cuando el envío lo cursa Codicert —si actúa como operador postal o deposita en un
+  tercero—, dato que solo importa si alguien llega a impugnar el certificado postal.
 - **Acta y reproducción se distinguen por el texto.** Las páginas del acta llevan en cabecera
   *«Este certificado contiene un sello temporal y se encuentra firmado digitalmente con un
   certificado reconocido»*; las de la reproducción no. En ese certificado: 1-4 acta, 5-6
@@ -564,8 +569,9 @@ del certificado emitido.
 5. ~~**Si Codicert figura en la lista de confianza como prestador cualificado.**~~ **CERRADO el
    2026-09-17** (§7.2): sí figura, con tres servicios `EDS/Q` `granted`. El art. 326.4 LEC juega
    para los certificados electrónicos. **Queda un resto abierto**: ninguno de esos tres servicios
-   cubre el **envío postal**, y qué régimen probatorio ampara el certificado del burofax no está
-   verificado.
+   cubre el **envío postal**. El burofax es fehaciente por su propia vía —certifica contenido y
+   entrega—; lo que no está verificado es por qué cauce concreto se le reconoce cuando lo cursa
+   Codicert.
 6. **El volumen de envíos de la cuenta de un Market Center**, del que depende que paginar sea
    barato.
 7. ~~**El mapeo página→bloque del documento refundido vivo.**~~ **CERRADO el 2026-09-17** (§7.3):

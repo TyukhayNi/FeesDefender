@@ -35,9 +35,9 @@ Las tres sesiones confirmaron al terminar que el worktree quedó limpio y `HEAD`
 
 | Lente | Fichero original | Líneas | `sha256` del fichero |
 |---|---|---|---|
-| jurídica y probatoria | `2026-09-17-codicert-r1-juridica.md` | 564 | `3529662fe57a3c04eb8d6cb881cc8bde37bcb6465139fcde8010230a15744ac9` |
-| contrato de la API | `2026-09-17-codicert-r1-api.md` | 402 | `94093e7425b5d446b47e0df239da6654da811530b028c3a9bf1c753caea11942` |
-| arquitectura y modos de fallo | `2026-09-17-codicert-r1-arquitectura.md` | 631 | `9b386b4a0af454135be4c49f8a64a53697a008dfd4dc561b31a1fd3bd8579917` |
+| jurídica y probatoria | `C:\Users\tnm33\Dev\_revisiones\2026-09-17-codicert-r1-juridica.md` | 564 | `3529662fe57a3c04eb8d6cb881cc8bde37bcb6465139fcde8010230a15744ac9` |
+| contrato de la API | `C:\Users\tnm33\Dev\_revisiones\2026-09-17-codicert-r1-api.md` | 402 | `94093e7425b5d446b47e0df239da6654da811530b028c3a9bf1c753caea11942` |
+| arquitectura y modos de fallo | `C:\Users\tnm33\Dev\_revisiones\2026-09-17-codicert-r1-arquitectura.md` | 631 | `9b386b4a0af454135be4c49f8a64a53697a008dfd4dc561b31a1fd3bd8579917` |
 
 | | |
 |---|---|
