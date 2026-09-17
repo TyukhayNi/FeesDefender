@@ -11,16 +11,14 @@ separe una prueba de un gasto irreversible.
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import os
 import sys
-from decimal import Decimal
 from pathlib import Path
-from typing import Any
 
 from core import codicert as _cod
 from core import expedicion_certificada as exp
 from core.ciudades import CIUDADES, ciudad_de_equipo
+from core.sudespacho_relations import SudespachoRelationsError
 
 ENTORNOS: tuple[str, ...] = ("sandbox", "produccion")
 
@@ -79,9 +77,11 @@ def render_plan(plan: exp.Plan, *, usuario: str | None = None) -> str:
     `usuario` es el emisor YA resuelto (el `.bd` del Market Center que reclama,
     spec §2.1). `render_plan` no lo resuelve por sí mismo —eso sería tocar
     `.env`/entorno dentro de una función que los tests ejercitan con datos
-    armados a mano—: `main()` lo resuelve con `codicert.credenciales` y lo pasa
-    aquí. Sin él (los tests de este módulo nunca lo pasan) se declara sin
-    resolver, nunca se inventa un valor.
+    armados a mano—: lo resuelve `exp.entorno_real` al montar el transporte y lo
+    expone en `entorno_exp.usuario` (hallazgo 5); `main()` lo toma de ahí, sin
+    volver a invocar `codicert.credenciales` con los mismos argumentos. Sin él
+    (los tests de este módulo nunca lo pasan) se declara sin resolver, nunca se
+    inventa un valor.
     """
     lineas = [
         f"EXPEDICIÓN {plan.id_personalizado}   [{plan.entorno.upper()}]",
@@ -107,75 +107,6 @@ def render_plan(plan: exp.Plan, *, usuario: str | None = None) -> str:
         lineas += ["", "  AUSENCIAS DECLARADAS:"] + [f"    · {a}" for a in plan.ausencias]
     lineas += ["", f"  para ejecutarlo:  --confirmar {plan.digest}"]
     return "\n".join(lineas)
-
-
-def entorno_real(*, plaza: str, entorno: str) -> exp.EntornoExpedicion:
-    """Montaje de producción del puerto. Los tests de este módulo NUNCA lo usan.
-
-    Resuelve credenciales, pide la `Ficha` UNA sola vez y envuelve el transporte
-    con la superficie reducida que `ejecutar` consume (`credito()`, `listar()`,
-    `enviar_burofax(**kw)`, `enviar_eec(**kw)`), sin exponer la `Ficha` misma.
-    Rellena también `plaza` y `entorno`, que `ejecutar` contrasta contra el plan
-    para no ejecutar en un entorno distinto del que se planificó.
-
-    En sandbox se usa la credencial del sandbox (`plaza=None` en `credenciales`);
-    en producción, la de la plaza.
-    """
-    usuario, clave = _cod.credenciales(None if entorno == "sandbox" else plaza, entorno=entorno)
-    ficha = _cod.acceso(usuario, clave, entorno=entorno)
-
-    class _Transporte:
-        """Superficie mínima que `ejecutar` consume. No expone la `Ficha`."""
-
-        def credito(self) -> Decimal:
-            return _cod.credito(ficha, entorno=entorno)
-
-        def listar(self, **filtros: Any) -> list[dict]:
-            return list(_cod.listar(ficha, entorno=entorno, **filtros))
-
-        def enviar_burofax(self, **kw: Any) -> str:
-            return _cod.enviar_burofax(ficha, entorno=entorno, **kw)
-
-        def enviar_eec(self, **kw: Any) -> str:
-            return _cod.enviar_eec(ficha, entorno=entorno, **kw)
-
-    def partes_de(w_code: str) -> list[dict]:
-        """Las partes contrarias del expediente, leídas del CRM.
-
-        Resuelve el `exp_id` numérico del elemento ``extrajudiciales`` por el
-        índice local/Drive del caso (``_caso.md``) —igual que
-        ``scripts/crm_ficha.py::_exp_id_de``— y lee sus relaciones con
-        `sudespacho_relations.get_relaciones`. `clientes_contrarios` ya trae los
-        campos que `destinatarios_de` necesita (spec §5): nombre, dirección,
-        población, provincia, cp, email, móvil.
-        """
-        from core import case_manager, sudespacho_relations
-
-        exp_id = next(
-            (
-                str(elemento.get("id"))
-                for elemento in case_manager.get_case_status(w_code)["expedientes"]
-                if isinstance(elemento, dict) and elemento.get("element") == "extrajudiciales"
-            ),
-            None,
-        )
-        if exp_id is None:
-            raise exp.ExpedicionError(
-                f"{w_code}: no tiene expediente 'extrajudiciales' registrado en el "
-                "índice local del caso (_caso.md). No se puede resolver a quién "
-                "notificar."
-            )
-        relaciones = sudespacho_relations.get_relaciones("extrajudiciales", exp_id)
-        return relaciones.get("clientes_contrarios", [])
-
-    return exp.EntornoExpedicion(
-        codicert=_Transporte(),
-        partes_de=partes_de,
-        ahora=lambda: _dt.datetime.now(_dt.timezone.utc),
-        raiz=Path.cwd(),
-        plaza=plaza,
-        entorno=entorno,
-    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -206,22 +137,24 @@ def main(argv: list[str] | None = None) -> int:
     plaza = _plaza_de(args.plaza)
 
     try:
-        # Se resuelve aparte de `entorno_real` (que la vuelve a resolver por su
-        # cuenta; sin coste de red: `credenciales` solo lee `.env`/entorno) porque
-        # el plan tiene que enseñar el usuario emisor en su cabecera (spec §8) y
-        # `entorno_real` no lo expone -- solo expone el transporte ya envuelto,
-        # para no filtrar la `Ficha`.
-        usuario, _clave = _cod.credenciales(None if entorno == "sandbox" else plaza,
-                                            entorno=entorno)
-        entorno_exp = entorno_real(plaza=plaza, entorno=entorno)
+        # `entorno_real` resuelve las credenciales UNA sola vez y expone el
+        # usuario emisor ya resuelto en `.usuario` (hallazgo 5): antes se
+        # resolvían aquí Y otra vez dentro de `entorno_real`, con los mismos
+        # argumentos, solo para tener qué enseñar en la cabecera del plan (spec
+        # §8).
+        entorno_exp = exp.entorno_real(plaza=plaza, entorno=entorno)
         plan = exp.planificar(args.w_code, args.tipo, [Path(d) for d in args.docs],
                               entorno_exp=entorno_exp, plaza=plaza, entorno=entorno,
                               ordinal=args.ordinal)
-        print(render_plan(plan, usuario=usuario))
+        print(render_plan(plan, usuario=entorno_exp.usuario))
         if args.orden == "plan":
             return 0
         ids = exp.ejecutar(plan, exp.Confirmacion(digest=args.confirmar), entorno_exp=entorno_exp)
-    except (exp.ExpedicionError, _cod.CodicertError) as err:
+    except (exp.ExpedicionError, _cod.CodicertError, SudespachoRelationsError, ValueError) as err:
+        # `entorno_exp.partes_de` (dentro de `planificar`) resuelve el expediente
+        # del CRM y puede lanzar `SudespachoRelationsError`, o `ValueError` si
+        # falta `SUDESPACHO_API_KEY`. El operador es un abogado: una traza de
+        # Python cruda no es lo que debe leer ante un fallo del CRM (hallazgo 2).
         print(f"\nERROR: {err}", file=sys.stderr)
         return 1
 

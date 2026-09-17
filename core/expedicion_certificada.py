@@ -403,6 +403,13 @@ class EntornoExpedicion:
     resuelta y "sandbox"/"produccion"): `ejecutar` los contrasta contra los mismos
     campos del `Plan` y para si no coinciden, para que un plan leído como sandbox no
     pueda ejecutarse por error contra producción.
+
+    `usuario` es el emisor YA resuelto por `entorno_real` (hallazgo 5 de la
+    revisión adversarial del frontal, 2026-09-17): antes, el llamador (`main()`)
+    volvía a invocar `codicert.credenciales(...)` con los mismos argumentos solo
+    para enseñarlo en la cabecera del plan. Queda `None` por defecto porque los
+    tests de este módulo nunca construyen `entorno_real` y no tienen un emisor
+    real que exponer.
     """
 
     codicert: Any
@@ -411,6 +418,7 @@ class EntornoExpedicion:
     raiz: Path
     plaza: str
     entorno: str
+    usuario: str | None = None
 
 
 @dataclass(frozen=True)
@@ -589,3 +597,116 @@ def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
         registro.cerrar(clave, i)
         ids.append(i)
     return ids
+
+
+_ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
+
+
+def partes_de(w_code: str) -> list[dict]:
+    """Las partes contrarias del expediente, leídas del CRM.
+
+    Resuelve primero el ``case_id`` CANÓNICO del ``w_code`` desnudo con
+    ``case_locator.resolve_ref`` —igual que hace ``scripts/crm_ficha.py::main``
+    antes de tocar el índice—. Sin este paso, TODA invocación con la sintaxis que
+    este módulo documenta (``codicert plan W-04AKM2 ...``) fallaba: las carpetas
+    reales se llaman por su nombre canónico completo (p. ej. "BaRS11 - Falsa 1
+    (W-000AAA) - Vuelta"), nunca por el W-code a secas, y
+    ``case_manager.get_case_status`` busca la carpeta por NOMBRE EXACTO. Un caso
+    perfectamente indexado, con su expediente extrajudicial registrado, se
+    reportaba como "no encontrado" (hallazgo 1 CRÍTICO, revisión adversarial del
+    frontal, 2026-09-17).
+
+    Distingue además dos causas de fallo, cada una con remedio distinto (hallazgo
+    3, misma revisión): que el caso no esté indexado en el catálogo local (falta
+    checkout, o el W-code está mal escrito), o que SÍ lo esté pero no tenga
+    expediente ``extrajudiciales`` registrado en su ``_caso.md`` (falta darlo de
+    alta en el CRM). Confundirlas —el código de antes las lanzaba con el mismo
+    mensaje— deja al operador sin saber qué comando ejecutar.
+
+    Lee el ``exp_id`` numérico del elemento CRM ``extrajudiciales`` por el índice
+    local del caso, y sus relaciones con `sudespacho_relations.get_relaciones`.
+    `clientes_contrarios` ya trae los campos que `destinatarios_de` necesita (spec
+    §5): nombre, dirección, población, provincia, cp, email, móvil.
+    """
+    from core import case_manager
+    from core.casos import case_locator
+
+    resuelto = case_locator.resolve_ref(w_code)
+    estado = case_manager.get_case_status(resuelto)
+    if not estado["local_exists"]:
+        raise ExpedicionError(
+            f"{w_code}: el caso no está indexado en el catálogo local (resuelto a "
+            f"{resuelto!r}, no encontrado en CASOS_ROOT). Puede que el W-code esté "
+            "mal escrito o que falte hacerle un checkout. No se puede resolver a "
+            "quién notificar."
+        )
+
+    exp_id = next(
+        (
+            str(elemento.get("id"))
+            for elemento in estado["expedientes"]
+            if isinstance(elemento, dict) and elemento.get("element") == _ELEMENT_EXTRAJUDICIAL
+        ),
+        None,
+    )
+    if exp_id is None:
+        raise ExpedicionError(
+            f"{resuelto}: el caso está indexado pero no tiene expediente "
+            "'extrajudiciales' registrado en su _caso.md. Date de alta en el CRM "
+            f"primero: python -m scripts.crm_ficha --case-id {w_code}. No se puede "
+            "resolver a quién notificar."
+        )
+
+    from core import sudespacho_relations
+    relaciones = sudespacho_relations.get_relaciones(_ELEMENT_EXTRAJUDICIAL, exp_id)
+    return relaciones.get("clientes_contrarios", [])
+
+
+def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
+    """Montaje de producción del puerto. Los tests de este módulo NUNCA lo usan.
+
+    Resuelve credenciales, pide la `Ficha` UNA sola vez y envuelve el transporte
+    con la superficie reducida que `ejecutar` consume (`credito()`, `listar()`,
+    `enviar_burofax(**kw)`, `enviar_eec(**kw)`), sin exponer la `Ficha` misma.
+    Rellena también `plaza`, `entorno` y `usuario` —el emisor YA resuelto (hallazgo
+    5): antes, `main()` volvía a llamar `codicert.credenciales(...)` con los mismos
+    argumentos solo para tener qué enseñar en la cabecera del plan, cuando esta
+    función ya lo había resuelto para montar el transporte—, que `ejecutar`
+    contrasta `plaza`/`entorno` contra el plan para no ejecutar en un entorno
+    distinto del que se planificó.
+
+    En sandbox se usa la credencial del sandbox (`plaza=None` en `credenciales`);
+    en producción, la de la plaza.
+
+    Vive aquí y no en `scripts/codicert.py` (hallazgo 4): es lógica de dominio
+    —cómo resolver un expediente del CRM desde un W-code y qué hacer si falta, no
+    cómo parsear los argumentos de una orden— y la arquitectura de 3 capas del
+    proyecto dice que la lógica vive en el core; la UI (el CLI) solo orquesta.
+    """
+    usuario, clave = _cod.credenciales(None if entorno == "sandbox" else plaza, entorno=entorno)
+    ficha = _cod.acceso(usuario, clave, entorno=entorno)
+
+    class _Transporte:
+        """Superficie mínima que `ejecutar` consume. No expone la `Ficha`."""
+
+        def credito(self) -> Decimal:
+            return _cod.credito(ficha, entorno=entorno)
+
+        def listar(self, **filtros: Any) -> list[dict]:
+            return list(_cod.listar(ficha, entorno=entorno, **filtros))
+
+        def enviar_burofax(self, **kw: Any) -> str:
+            return _cod.enviar_burofax(ficha, entorno=entorno, **kw)
+
+        def enviar_eec(self, **kw: Any) -> str:
+            return _cod.enviar_eec(ficha, entorno=entorno, **kw)
+
+    return EntornoExpedicion(
+        codicert=_Transporte(),
+        partes_de=partes_de,
+        ahora=lambda: datetime.now(timezone.utc),
+        raiz=Path.cwd(),
+        plaza=plaza,
+        entorno=entorno,
+        usuario=usuario,
+    )
