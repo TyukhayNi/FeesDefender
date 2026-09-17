@@ -41,11 +41,20 @@ def test_la_ficha_postal_lleva_pais_espana_siempre():
 @pytest.mark.parametrize("bruto,esperado", [
     ("665130883", "34665130883"), ("34665130883", "34665130883"),
     ("+34 665 130 883", "34665130883"), ("665 130 883", "34665130883"),
+    ("0034665130883", "34665130883"), ("0034 665 130 883", "34665130883"),
 ])
 def test_el_movil_se_normaliza_con_prefijo(bruto, esperado):
     assert exp.movil_normalizado(bruto) == esperado
 
 
-@pytest.mark.parametrize("bruto", ["933010203", "", None, "600", "no es un movil"])
+@pytest.mark.parametrize("bruto", ["933010203", "", None, "600", "no es un movil", "0034933010203"])
 def test_lo_que_no_es_un_movil_espanol_devuelve_None(bruto):
     assert exp.movil_normalizado(bruto) is None
+
+
+def test_nombre_con_solo_espacios_genera_fallback_correcto():
+    """El fallback '(sin nombre)' debe activarse con cadena de espacios."""
+    with pytest.raises(exp.ExpedicionError) as exc:
+        exp.ficha_postal({"nombre": "   ", "direccion": "C 1", "poblacion": "P",
+                          "provincia": "Barcelona", "cp": "08001"})
+    assert "(sin nombre)" in str(exc.value)

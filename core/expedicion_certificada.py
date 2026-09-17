@@ -48,7 +48,7 @@ PROVINCIA_CODICERT: dict[str, str] = {
     "Baleares (Illes)": "Islas Baleares",
 }
 
-_MOVIL = re.compile(r"^(?:\+?34)?([67]\d{8})$")
+_MOVIL = re.compile(r"^(?:\+?34|0034)?([67]\d{8})$")
 
 
 def provincia_codicert(nombre: str) -> str:
@@ -80,7 +80,7 @@ def ficha_postal(parte: dict) -> dict:
     faltan = [c for c in _OBLIGATORIOS_POSTAL if not str(parte.get(c) or "").strip()]
     if faltan:
         raise ExpedicionError(
-            f"la ficha postal de {parte.get('nombre') or '(sin nombre)'} no tiene: "
+            f"la ficha postal de {(parte.get('nombre') or '').strip() or '(sin nombre)'} no tiene: "
             + ", ".join(faltan))
     return {"nombre": parte["nombre"], "a_atencion": parte.get("a_atencion") or parte["nombre"],
             "pais": "España", "direccion": parte["direccion"], "poblacion": parte["poblacion"],
