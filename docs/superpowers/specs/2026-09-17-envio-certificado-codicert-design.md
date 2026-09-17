@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "7"
+rev: "8"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,13 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 8 (2026-09-17).** Primer contacto real con la API del sandbox, ya con credenciales.
+> **Deshace una alarma falsa mía**: la provincia es obligatoria pero **no se valida contra lista**,
+> así que no hay 422 a mitad de expedición. A cambio destapa que el servidor **exige `asunto`,
+> `cuerpo` y `adjuntos`** en el burofax contra lo que dice el contrato —luego la portada **no es
+> opcional**— y que el `422` viene desglosado campo por campo, que es la herramienta de
+> verificación barata del motor.
+>
 > **Rev. 7 (2026-09-17).** Nikolai pregunta qué pasa cuando el envío lleva además la factura y el
 > documento de la negativa —que es lo normal—, y destapa que **la parada dura de la rev. 6 estaba
 > mal enunciada**: por el lado de la página suelta habría bloqueado el caso normal, porque esos
@@ -64,9 +71,11 @@ Documentación en `https://ws.codicert.tk/` (Redoc sobre `rest.json`, OpenAPI 3.
 | Sandbox | `https://ws.codicert.tk/v2` | `https://usuarios.codicert.tk` |
 | Producción | `https://ws.codicert.io/v2` | `https://usuarios.codicert.io` |
 
-**Autenticación.** `POST /usuarios/acceso` con `{usuario, clave}` —las mismas del portal—
-devuelve una ficha con el token **y su `fecha_vencimiento`**, que el cliente conserva: un token
-caducado a mitad de expedición es un fallo evitable.
+**Autenticación, ejercida contra el sandbox el 2026-09-17.** `POST /usuarios/acceso` con
+`{usuario, clave}` —las mismas del portal— devuelve `{estado:"OK", datos:{ficha, fecha_vencimiento}}`.
+La **ficha tiene 64 caracteres**, no los 32 del ejemplo de la documentación, y **vence a las 24
+horas**. El cliente conserva el vencimiento: un token caducado a mitad de expedición es un fallo
+evitable.
 
 ### 1.1 Los tres canales son DOS endpoints, y esto es lo que más cambia el diseño
 
@@ -107,6 +116,25 @@ y renunciar al acuse de acceso — que es peor negocio.
 Consecuencia operativa que gobierna todo el motor: **el burofax admite un destinatario por
 llamada**. Dos domicilios son dos llamadas, siempre.
 
+**Y el servidor exige más de lo que el contrato declara** (rev. 8, sondeado contra el sandbox sin
+gastar un céntimo: crédito 20 € antes y después). Un `POST /envios/burofax` incompleto devuelve un
+`422` **desglosado campo por campo**, y ese desglose dice que son **obligatorios**:
+
+```
+asunto    : El campo asunto es obligatorio
+cuerpo    : El campo cuerpo es obligatorio
+adjuntos  : El campo adjuntos es obligatorio
+```
+
+El OpenAPI los declara opcionales y a `adjuntos` le pone `minItems: 0`. **No es cierto.**
+Consecuencia directa: **la portada del burofax no es opcional** —asunto y cuerpo la componen— así
+que la salida que el spec daba al hueco 3 («si estorba, se omite») **no existe**.
+
+**El `422` desglosado es además la herramienta de verificación barata del motor**: permite
+comprobar la forma de un payload sin enviar nada ni gastar. Las sondas se diseñan para que no
+puedan salir —`pais` fuera de su enum es el pestillo seguro— y se cierran comprobando el crédito
+antes y después.
+
 **Dónde está de verdad el patrón del móvil** (rev. 2, H-02 de la lente de API). `^[67]\d{8}$`
 aparece en exactamente dos sitios del contrato: `DestinatarioPostal.telefono` —el **teléfono de
 incidencia del burofax**— y `SolicitudSms`, el producto que no usamos. En
@@ -129,8 +157,12 @@ GET  /usuarios/credito                     crédito del usuario
 
 `GET /envios` **no filtra por `id_personalizado`** —probados cinco parámetros de búsqueda, los
 cinco devuelven el total sin filtrar— pero **sí acepta `fecha_inicio`, `fecha_fin`, `tipo` y
-`estado`**, y cada elemento del listado **devuelve su `id_personalizado`**. Esos dos hechos
-juntos son los que hacen viable el §3.5: se acota por fecha y se filtra en casa.
+`estado`**, ejercidos contra el sandbox, y cada elemento **devuelve su `id_personalizado`**. Esos
+dos hechos juntos son los que hacen viable el §4.3: se acota por fecha y se filtra en casa.
+
+Dos correcciones al contrato, medidas: la envoltura real es
+`{estado, datos, pagina, longitud, total, totalPaginas}` —el OpenAPI escribe `total_paginas`— y
+**`longitud` acepta [10..100], no [1..100]**: con 1, 2 o 5 devuelve `400`.
 
 `id_personalizado` **se puede repetir a propósito** entre envíos —lo dice su descripción— y admite
 **20 caracteres en cuatro de los cinco productos**. `SolicitudBurofax` lo redefine inline **sin
@@ -365,10 +397,20 @@ Entrada: el expediente y el **tipo de comunicación**. Del CRM salen las partes 
    `pais` solo admite `"España"`, así que un domicilio extranjero para el burofax se detiene en el
    plan.
 
-   **Y la provincia hay que traducirla** (rev. 4, hueco 8 cerrado el 2026-09-17). Las dos listas
-   tienen 52 valores, **45 coinciden y 7 no**: el CRM escribe en castellano lo que Codicert escribe
-   en la lengua cooficial. Sin esta tabla, un requerido de la Comunidad Valenciana o del País Vasco
-   produce el 422 **a mitad de expedición**, con las electrónicas mandadas y el burofax no.
+   **Y la provincia conviene traducirla, aunque no reviente** (rev. 4, corregido en rev. 8). Las
+   dos listas tienen 52 valores, **45 coinciden y 7 no**: el CRM escribe en castellano lo que
+   Codicert escribe en la lengua cooficial.
+
+   ⚠️ **La rev. 4 dio aquí una alarma falsa y hay que deshacerla.** Escribí que sin la tabla «un
+   requerido de la Comunidad Valenciana produce el 422 a mitad de expedición». **Medido contra el
+   servidor: no.** `provincia` es obligatoria —con el campo vacío sí salta el error, que es el
+   control que acredita que el validador lo mira— pero **no se comprueba contra ninguna lista**:
+   `ZZZZZ_NO_EXISTE` pasa sin queja, y el `cp` tampoco se valida (`XXXXX` pasa). La lista cerrada
+   vive en la **UI**, no en la API.
+
+   Lo que queda, que es real pero menor: **la provincia se imprime en el sobre**. «Valencia» es
+   correcto en castellano y perfectamente repartible, así que el riesgo es de coherencia, no de
+   entrega. Se traduce por higiene —mandar lo que la plataforma usa— y **no es un bloqueante**.
 
    | CRM | Codicert |
    |---|---|
@@ -714,10 +756,12 @@ del certificado emitido.
    `006ar9bel3n`, aportado por Nikolai: 10 páginas, **6 de acta y 4 de reproducción**, y **el
    discriminante del sello temporal funciona igual** que en el electrónico. De paso destapó que
    Codicert **fusiona los adjuntos** y que el orden de la reproducción no es el de envío (§7).
-3. **Si la portada del burofax se imprime como página adicional.** Sigue abierto, pero ya no
-   importa: el método del §7.3 casa por texto y **no depende de la numeración**. En `006ar9bel3n`
-   no se ve portada —las cuatro páginas de reproducción son los adjuntos—, aunque ese envío pudo no
-   llevar asunto ni cuerpo. La portada **es opcional en el contrato**: si estorba, se omite.
+3. **Si la portada del burofax se imprime como página adicional.** Sigue abierto, y en la rev. 8
+   **empeora su premisa**: el servidor exige `asunto` y `cuerpo` (§1.1), luego **la portada no es
+   opcional** y la salida que el spec proponía —omitirla— no existe. Lo que salva la situación es
+   que el método del §7.3 casa por texto y **no depende de la numeración**, así que la portada puede
+   estar donde quiera. En `006ar9bel3n` no se ve portada entre las cuatro páginas de reproducción,
+   lo que sugiere que se imprime aparte y no entra en ella; sin medir.
 4. ~~**El límite de tamaño de los adjuntos.**~~ **CERRADO el 2026-09-17** (§1.4): 6 ficheros, 60 MB
    en total, 1 MB incluido en el precio. **Queda un resto**: la UI dice 6 ficheros y el contrato
    `1..10`, y no se ha medido cuál manda.
