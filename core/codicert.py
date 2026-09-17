@@ -161,12 +161,24 @@ def _json_o_vacio(r: Any) -> Any:
         return {}
 
 
-def acceso(usuario: str, clave: str, *, entorno: str, cliente: Cliente | None = None) -> Ficha:
-    """`POST /usuarios/acceso`. La clave no aparece nunca en el error."""
+def _base_de(entorno: str) -> str:
+    """URL base de Codicert para `entorno`.
+
+    `acceso()` ya comprobaba `entorno not in BASES` en línea; `enviar_burofax` y
+    `enviar_eec` no lo hacían e indexaban `BASES[entorno]` directo, así que un
+    entorno inventado reventaba con `KeyError` crudo antes incluso de tocar la red.
+    Un solo helper para los tres sitios que ya lo necesitan (y los que vengan).
+    """
     if entorno not in BASES:
         raise CodicertError(f"entorno desconocido: {entorno!r}; son {sorted(BASES)}")
+    return BASES[entorno]
+
+
+def acceso(usuario: str, clave: str, *, entorno: str, cliente: Cliente | None = None) -> Ficha:
+    """`POST /usuarios/acceso`. La clave no aparece nunca en el error."""
+    base = _base_de(entorno)
     cliente = cliente or _cliente_real()
-    r = cliente.request("POST", f"{BASES[entorno]}/usuarios/acceso",
+    r = cliente.request("POST", f"{base}/usuarios/acceso",
                         json={"usuario": usuario, "clave": clave})
     cuerpo = _json_o_vacio(r)
     if r.status_code != 200 or (cuerpo or {}).get("estado") != "OK":
@@ -188,25 +200,49 @@ def adjunto(ruta: Path) -> dict[str, str]:
 
 
 def _cabeceras(ficha: Ficha) -> dict[str, str]:
+    """Cabeceras comunes a los dos envíos: portador del token y `x-json-ficheros`,
+    que el contrato exige para que los adjuntos viajen embebidos en el JSON."""
     return {"Authorization": f"Bearer {ficha.token}", "x-json-ficheros": "1"}
 
 
 def _id_de(r: Any, que: str) -> str:
+    """`IdEnvio` de la respuesta de un envío (burofax o entrega electrónica).
+
+    Un 422 desglosa el detalle campo a campo en `CodicertDatosInvalidosError`;
+    cualquier otro estado sin `estado: "OK"` es error de transporte corriente.
+    El caso que corrige este hallazgo de revisión es el peor de los tres: un
+    `200` con `estado: "OK"` pero sin `datos.id` en el cuerpo. Para cuando se
+    llega aquí la llamada HTTP YA SE HIZO —el envío pudo haber salido, y si era
+    el burofax, ya se ha podido pagar—, así que no cabe un `KeyError` crudo que
+    rompa el contrato del módulo (solo falla con `CodicertError`/
+    `CodicertAuthError`): se avisa de que el envío pudo haber salido para que
+    quien llama lo compruebe en el portal antes de reintentar, en vez de
+    reintentar a ciegas y arriesgar un envío duplicado.
+    """
     cuerpo = _json_o_vacio(r)
     if r.status_code == 422:
         raise CodicertDatosInvalidosError(
             cuerpo.get("mensaje") or "datos no válidos", cuerpo.get("datos") or {})
     if r.status_code != 200 or cuerpo.get("estado") != "OK":
         raise CodicertError(f"{que}: HTTP {r.status_code} — {cuerpo.get('mensaje')!r}")
-    return cuerpo["datos"]["id"]
+    datos = cuerpo.get("datos")
+    id_envio = datos.get("id") if isinstance(datos, dict) else None
+    if not id_envio:
+        raise CodicertError(
+            f"{que}: la API respondió con estado OK pero sin datos.id en el cuerpo — "
+            "el envío PUDO HABER SALIDO. Compruébalo en el portal de Codicert antes "
+            "de reintentar: no lo repitas a ciegas."
+        )
+    return id_envio
 
 
 def enviar_burofax(ficha: Ficha, *, destinatario: dict, adjuntos: list[dict], asunto: str,
                    cuerpo: str, id_personalizado: str, entorno: str,
                    cliente: Cliente | None = None) -> str:
     """`POST /envios/burofax`. UN destinatario por llamada: el contrato no admite más."""
+    base = _base_de(entorno)
     cliente = cliente or _cliente_real()
-    r = cliente.request("POST", f"{BASES[entorno]}/envios/burofax", headers=_cabeceras(ficha),
+    r = cliente.request("POST", f"{base}/envios/burofax", headers=_cabeceras(ficha),
                         json={"destinatarios": [destinatario], "adjuntos": adjuntos,
                               "asunto": asunto, "cuerpo": cuerpo,
                               "id_personalizado": id_personalizado})
@@ -219,8 +255,9 @@ def enviar_eec(ficha: Ficha, *, destinatarios: list[dict], adjuntos: list[dict],
     """`POST /envios/entrega-electronica-certificada`, por correo o por SMS."""
     if tipo_entrega not in TIPOS_ENTREGA:
         raise CodicertError(f"tipo_entrega {tipo_entrega!r}; son {TIPOS_ENTREGA}")
+    base = _base_de(entorno)
     cliente = cliente or _cliente_real()
-    r = cliente.request("POST", f"{BASES[entorno]}/envios/entrega-electronica-certificada",
+    r = cliente.request("POST", f"{base}/envios/entrega-electronica-certificada",
                         headers=_cabeceras(ficha),
                         json={"destinatarios": destinatarios, "adjuntos": adjuntos,
                               "asunto": asunto, "cuerpo": cuerpo, "tipo_entrega": tipo_entrega,
