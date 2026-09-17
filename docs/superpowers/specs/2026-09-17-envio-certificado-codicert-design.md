@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "6"
+rev: "7"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,12 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 7 (2026-09-17).** Nikolai pregunta qué pasa cuando el envío lleva además la factura y el
+> documento de la negativa —que es lo normal—, y destapa que **la parada dura de la rev. 6 estaba
+> mal enunciada**: por el lado de la página suelta habría bloqueado el caso normal, porque esos
+> adjuntos son escaneos sin texto. Se reenuncia por el lado de B. El §7 deja de hablar de «dos
+> PDF» y dice lo que de verdad exige: que las condiciones económicas viajen solas en su adjunto.
+>
 > **Rev. 6 (2026-09-17).** Nikolai aporta un certificado de **burofax** real y tumba el fundamento
 > del §7: **Codicert fusiona los adjuntos en un solo PDF**, con nombre UUID y una sola huella, así
 > que el acta no documenta A y B por separado y el nombre neutro no sirve de nada. El orden de la
@@ -484,16 +490,29 @@ la solicitud quedó sin respuesta, desde la terminación sin acuerdo si hubo neg
 puede computarlo sin saber cuál se dio, así que **registra la causa de cierre** y, si no la conoce,
 lo dice en vez de calcular. Con medidas cautelares el plazo son **veinte días**, no el año.
 
-## 7. El documento se parte en DOS PDF
+## 7. Las condiciones económicas van en su propio adjunto
 
 Decisión de Nikolai del 2026-09-17, tomada durante la R1 y mejor que el diseño de la rev. 1.
 
-El envío lleva **dos adjuntos**:
+El envío **no lleva dos adjuntos: lleva los que haga falta**, y lo que el diseño exige es que las
+condiciones económicas viajen **solas en el suyo** (rev. 7, tras la pregunta de Nikolai sobre los
+envíos reales, que adjuntan también la factura y el documento de la negativa):
 
 | | Contenido | Aportable |
 |---|---|---|
 | **A** | Requerimiento + la parte general de la OVC (el motor MASC: la invitación a negociar) | **Sí** |
 | **B** | Condiciones económicas de la oferta — los dos pagos | **No** |
+| **C…** | Factura, oferta aceptada, arras, y cuanta prueba acompañe | **Sí** |
+
+**Los documentos probatorios entran en el aportable.** La factura y el documento que acredita la
+negativa —oferta a precio aceptada, arras— **no son contenido de la oferta vinculante**: son los
+hechos del caso. El art. 17.4 veda mencionar el contenido de la **oferta**, no la documentación de
+la controversia, cuyo objeto el art. 9.1 exceptúa expresamente de la confidencialidad. Solo sale B.
+
+**Caben.** El burofax admite **10 ficheros PDF y 200 páginas en total**; la entrega electrónica
+certificada, 6 ficheros y 60 MB. El cuello es el burofax por número de ficheros y el electrónico
+por tamaño, que con escaneos de factura y oferta es el que hay que vigilar: en producción van 6 MB
+incluidos y el resto se cobra a 0,0288 €/MB.
 
 **Por qué esta línea y no otra.** Satisface los dos preceptos a la vez, que es lo que ninguna de
 las alternativas hacía. El art. 10.2 exige acreditar el **intento de negociación** —«la solicitud o
@@ -611,16 +630,22 @@ consten para que nadie los reinvente:
 exactamente. Para cada página de la reproducción extrae el texto y lo casa, normalizado, contra las
 páginas de B. Es independiente del orden, del número de adjuntos y de que Codicert los fusione.
 
-**Y sus dos paradas duras**, porque un instrumento sin control positivo no acredita nada:
+**La parada, y hay que calibrarla bien** (rev. 7). La regla es **una sola** y se enuncia por el
+lado de B, no por el de la página suelta:
 
-- **El número de páginas casadas debe ser igual al número de páginas de B.** Si sobra o falta una,
-  el motor para y no produce aportable.
-- **Si alguna página de la reproducción no tiene texto extraíble, el motor para.** Está medido que
-  ocurre: las páginas 7 y 8 de `006ar9bel3n` solo contienen el pie —45 caracteres— porque el
-  adjunto original era un escaneo. Sobre una página así no se puede afirmar qué contiene, y
-  recortar a ciegas es justo lo que no puede pasar. Nuestros PDF nacen de un RTF y llevan texto,
-  así que el caso no debería darse; si se da, es que alguien adjuntó un escaneo y hace falta un
-  humano.
+> **Si las páginas de B no se localizan TODAS, el motor para y no produce aportable.**
+
+Enunciarla al revés —«si alguna página de la reproducción no tiene texto extraíble, para»— es lo
+que escribió la rev. 6, y **habría bloqueado el caso normal**: los envíos reales adjuntan la
+factura y el documento de la negativa, que suelen ser escaneos sin capa de texto. Está medido que
+ocurre: las páginas 7 y 8 de `006ar9bel3n` traen 45 caracteres —solo el pie— porque ese adjunto era
+una imagen. Con aquella redacción, el motor no habría producido un aportable jamás.
+
+La regla buena es segura por construcción: **si B está localizado entero, lo que quede fuera no es
+B**, y se conserva aunque sea ilegible para la máquina. El riesgo de dejar dentro algo confidencial
+solo existe cuando B **no** se ha localizado del todo, y ese es exactamente el caso en que se para.
+Nuestro B nace de un RTF y lleva texto siempre; si un día no se localizara, es que algo cambió y
+hace falta un humano.
 
 ### 7.4 Qué produce, y el aviso que sí tiene discriminante
 
