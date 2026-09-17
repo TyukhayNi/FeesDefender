@@ -1,7 +1,7 @@
 ---
 name: engel-volkers
-description: "Skill de cliente para los asuntos del despacho con Engel & Völkers en España y Andorra (EV MMC SPAIN y ENGEL & VÖLKERS SPAIN): identidad y estructura societaria, Market Centers, tipologías del CRM y criterios de trato. Actívala SIEMPRE que el asunto sea de este cliente o se mencione, aun sin pedirlo, en cualquier grafía: Engel & Völkers, Engel&Völkers, Engel y Völkers, Engel Völkers, engel volkers (minúsculas o sin diéresis), E&V, EV MMC, MMC Spain, Engel & Völkers Spain; incluido el caso defensivo en que se demanda A E&V por actos u omisiones de un franquiciado. NO la actives por términos inmobiliarios genéricos sin este cliente (agencia inmobiliaria, mediación inmobiliaria, otra agencia o promotora), NI cuando el despacho defienda a un FRANQUICIADO demandado por su propia actuación, NI ante falsos amigos como Friedrich Engels o Völkerrecht. No genera escritos ni jurisprudencia: combínala con escritos-judiciales, preparacion-litigio-civil y preparacion-juicio-oral."
-version: "1.1"
+description: "Skill de cliente para los asuntos del despacho con Engel & Völkers en España y Andorra (EV MMC SPAIN y ENGEL & VÖLKERS SPAIN): identidad y estructura societaria, Market Centers, tipologías del CRM, el circuito de bad debt y criterios de trato. Actívala SIEMPRE que el asunto sea de este cliente o se mencione, aun sin pedirlo, en cualquier grafía: Engel & Völkers, Engel&Völkers, Engel y Völkers, Engel Völkers, engel volkers (minúsculas o sin diéresis), E&V, EV MMC, MMC Spain, Engel & Völkers Spain; incluido el caso defensivo en que se demanda A E&V por actos u omisiones de un franquiciado. NO la actives por términos inmobiliarios genéricos sin este cliente (agencia inmobiliaria, mediación inmobiliaria, otra agencia o promotora), NI cuando el despacho defienda a un FRANQUICIADO demandado por su propia actuación, NI ante falsos amigos como Friedrich Engels o Völkerrecht. No genera escritos ni jurisprudencia: combínala con escritos-judiciales, preparacion-litigio-civil y preparacion-juicio-oral."
+version: "1.2"
 status: vigente
 ---
 
@@ -156,7 +156,107 @@ En todas: **siempre se opone**.
 
 ---
 
-## 6. Documentación contractual habitual de E&V
+## 6. El circuito de bad debt de E&V
+
+La tipología `BAD_DEBT` del §3 no nace en el despacho: llega desde un circuito interno del
+cliente. Conviene conocerlo porque fija **qué documentación existe, quién la tiene y con cuánto
+retraso llega**.
+
+### 6.1 Dónde vive
+
+Cinco hojas de cálculo en Drive, una por agrupación de Market Centers. Las mantiene Finanzas y
+las anota Jurídico.
+
+| Fichero | Plazas | ID de Drive |
+|---|---|---|
+| `BD_BCN_MC1` | Barcelona MMC1 | `1pyFwXEQ-AY0Qzj3lBqS07kvli0WjPKqwGxmdgopjKWY` |
+| `BD_BCN MC2` | Barcelona MMC2 | `1zkyXOBr0tXB1HHwBWUI3BVcv762-ie91mACVJPp-tPk` |
+| `BD MAD 2026` | Madrid | `1B2dr_XEPYV5RObXzW8VqyS5SllvxKM9KC6xXVVd0vnA` |
+| `BD_VLC` | Valencia | `1cA9Rs4uNFSk6eXosoV4Ln0XXsWeiKoD28fIqTsJqsAE` |
+| `BD SEV, SAN, SSE, BIL 2026` | Sevilla, Santander, San Sebastián, Bilbao | `1E2LBTJsyI1etYGx6A53Oo8BZXKsiANYCU1yu2l13nx8` |
+
+### 6.2 Cómo se leen (cinco trampas medidas)
+
+1. **Dos pestañas de trabajo.** La operativa del MC es la pestaña `BD DD.MM.AAAA` más reciente,
+   que se **congela en copia cada semana**; las copias antiguas permiten reconstruir la historia
+   de un caso. Jurídico anota en `JURIDICO`. Hay además `Listado Mails` (destinatario por plaza y
+   equipo: TL, TA y Finanzas) y `BP List` (contacto por código de cliente).
+2. **`JURIDICO` es acumulativa desde 2018 y no se purga.** Sin filtrar, sus totales no significan
+   nada. El filtro es la columna **`Pdte`: `1` sigue pendiente, `0` está pagado, abonado o dado de
+   baja**.
+3. **El layout de columnas no es igual en los cinco ficheros.** Localizar siempre por nombre de
+   cabecera, nunca por posición: en Madrid no existe `Fecha IVA`, en Valencia no existe `Fecha
+   envío factura abono`, y en el de Sevilla la cabecera real está en la fila 4 porque la 1 es una
+   cabecera parcial.
+4. **`Fecha importación` no es la fecha de la factura.** Registra cuándo entró el caso al circuito
+   jurídico; la fecha de la factura está en `Posting Date`. Confundirlas produjo tres facturas
+   rectificativas de IVA con fecha errónea en septiembre de 2026.
+5. **Tres de los cinco superan el límite de exportación a xlsx de Google** y fallan con
+   `exportSizeLimitExceeded`. La vía que funciona es el CSV por hoja,
+   `…/gviz/tq?tqx=out:csv&sheet=JURIDICO`, agregando los datos sin descargar el libro entero.
+
+### 6.3 Los catorce estados de `Situacion`
+
+Lista cerrada. `OVC` es la **oferta vinculante confidencial** del artículo 17 de la Ley Orgánica
+1/2025, el medio adecuado de solución de controversias que E&V usa como requisito de
+procedibilidad antes de demandar. El expediente avanza por ella, aunque el estado suele ir por delante del dato: hay
+más filas marcadas `14. Judicial` que filas con fecha de demanda.
+
+`01. Enviar burofax` · `02. No enviar burofax` · `03. Burofax enviado` · `04. Enviar OVC` ·
+`05. Enviada OVC` · `06. Proximo abono` · `07. Pendiente info` · `08. Proximo write off` ·
+`09. Pendiente pago` · `10. Revisar viabilidad` · `11. Preparar propuesta` · `12. Preparar demanda` ·
+`13. Prejudicial` · `14. Judicial`
+
+El grueso se concentra en `13. Prejudicial` y `01. Enviar burofax`; los que el despacho ve
+llegar son del `11` en adelante.
+
+La fila se cierra con `Cobrada / Abonada`: `Cobrada KPI`, `Cobrada No KPI`, `Abonada KPI`,
+`Abonada no KPI` y `Write off`. La distinción KPI es de control interno de E&V, sin efecto
+jurídico.
+
+### 6.4 El motivo de impago lo clasifica el TL de ventas
+
+Es obligatorio en todo registro, tiene procedimiento escrito propio (`Procedimiento_Clasificacion_Impago`)
+y ante la duda manda `NO_RESPONSE` documentando el último intento de contacto. Traduce así al
+vocabulario del §3:
+
+| Motivo en el fichero | Qué alega el cliente | Suele anunciar |
+|---|---|---|
+| `AGENCY_DISPUTE` | La agencia no cumplió o el servicio no fue el pactado | Oposición de fondo; vigilar `RESPONSABILIDAD_PROFESIONAL` |
+| `REFUSES_TO_SIGN` | Se niega a formalizar pese a haber cumplido la agencia | `NEGATIVA_ARRAS` o `NEGATIVA_ESCRITURA` |
+| `NO_FUNDS` | Reconoce el servicio pero dice no tener fondos | `BAD_DEBT` puro; deuda reconocida |
+| `NO_RESPONSE` | No justifica y deja de responder | `BAD_DEBT`; es también el cajón por defecto |
+| `PENDING_SIGNATURE` | La operación sigue viva y se firmará | Todavía no hay caso |
+
+### 6.5 Quién ejecuta qué
+
+**El burofax y la oferta vinculante los envía Finanzas a petición de Jurídico**, no el despacho.
+El rastro literal en la columna de seguimiento es `PIDO BF A FINANZAS` → `BF ENVIADO` → `PIDO OVC
+A FINANZAS` → `OVC ENVIADA` → `PREPARO PROPUESTA` → `DOC. PREPARADA` / `CARPETA COMPARTIDA` →
+demanda. Por eso los certificados del prestador de servicios de confianza salen de una cuenta de
+administración del Market Center y no de la nuestra: cualquier defecto en ellos se corrige en su
+cuenta.
+
+### 6.6 Qué significa para el despacho
+
+- **La ventana fiscal llega medio consumida.** De burofax a demanda pasaron 15 y 16 meses en los
+  dos casos medidos, y el artículo 80.Cuatro.B) de la Ley del IVA da 18 meses desde el devengo
+  para recuperar la cuota repercutida. Al aceptar un `BAD_DEBT` conviene mirar de entrada cuánto
+  plazo fiscal queda, no solo la prescripción civil.
+- **El seguimiento del IVA apenas se anota.** `Fecha IVA` está vacía en la inmensa mayoría de
+  las filas y en Madrid la columna ni existe: la recuperación se lleva en un fichero aparte que
+  no vuelve al de bad debt. Desde aquí no se ve si una factura ya pasó por el artículo 80, así
+  que ese dato hay que pedirlo.
+- **Antes de pedir documentación, mirar la ficha.** La fila del W-code en `JURIDICO` da fecha de
+  burofax, de oferta vinculante, de demanda, estado y saldo. Ahorra la mitad de las preguntas al
+  Market Center.
+
+*Los dos plazos citados se midieron sobre casos reales el 15-09-2026. El volumen vivo de cada
+Market Center se lee de su propia hoja filtrando por `Pdte = 1`: no se cita de memoria.*
+
+---
+
+## 7. Documentación contractual habitual de E&V
 
 Documentos tipo que aparecen recurrentemente en los expedientes (útiles para identificar prueba y encuadrar la operación):
 
@@ -172,7 +272,7 @@ Terminología de partes en estas operaciones: **propietario** (quien ofrece el b
 
 ---
 
-## 7. Estructura interna de carpetas y nomenclatura
+## 8. Estructura interna de carpetas y nomenclatura
 
 Convención estándar del expediente (fuente: `core/config.py`, `CASO_SUBDIRS`):
 
@@ -194,7 +294,7 @@ Otras convenciones:
 
 ---
 
-## 8. Telemetría y feedback (Fase 1 del plan de evolución)
+## 9. Telemetría y feedback (Fase 1 del plan de evolución)
 
 Esta skill registra su propio uso para alimentar el plan de mejora del despacho (ver `EVOLUCION.md`). Es **best-effort y no debe entorpecer el trabajo**: si el registro falla, continúa con el asunto sin bloquear. Como es una skill de **contexto** (no genera documentos), el registro lo hace el propio asistente, no un script.
 
