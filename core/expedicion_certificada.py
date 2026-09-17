@@ -5,10 +5,14 @@ El transporte vive en `core/codicert.py` y no sabe qué es un expediente.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+import uuid
 
 from dataclasses import dataclass
 from decimal import Decimal
+from pathlib import Path
 
 
 class ExpedicionError(RuntimeError):
@@ -211,3 +215,71 @@ def texto_de(w_code: str) -> tuple[str, str]:
     """Asunto y cuerpo de la comunicación. Nunca nombran los términos de la oferta."""
     _asegurar_sin_prohibidos(f"{_ASUNTO_TPL} {_CUERPO_TPL}")
     return _ASUNTO_TPL.format(w_code=w_code), _CUERPO_TPL.format(w_code=w_code)
+
+
+class RegistroIntencion:
+    """Rastro append-only de que *nosotros* llamamos, antes de que el servidor responda.
+
+    No es una segunda fuente de verdad sobre los envíos —esa es Codicert— sino sobre un
+    hecho nuestro que la plataforma no puede contarnos. Sin él, un timeout deja un
+    burofax pagado cuyo `IdEnvio` no se puede reencontrar: `GET /envios` no filtra por
+    `id_personalizado`.
+    """
+
+    def __init__(self, ruta: Path) -> None:
+        self.ruta = Path(ruta)
+        self.ruta.parent.mkdir(parents=True, exist_ok=True)
+
+    def _lineas(self) -> list[dict]:
+        if not self.ruta.is_file():
+            return []
+        return [json.loads(l) for l in
+                self.ruta.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+    def _escribir(self, fila: dict) -> None:
+        with self.ruta.open("a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(fila, ensure_ascii=False) + "\n")
+
+    def anotar(self, canal: str, etiqueta: str) -> str:
+        """Anota la intención SIN persistir datos personales del destinatario.
+
+        La etiqueta lleva nombre, correo o móvil de un tercero, y este fichero se
+        queda en disco: `docs/SEGURIDAD_DATOS.md` §7 prohíbe volcar ahí a una persona
+        por su nombre. Se guarda una **huella corta** que basta para casar la anotación
+        con su cierre y para que un humano distinga dos envíos del mismo canal, y no
+        permite reconstruir el dato.
+        """
+        clave = uuid.uuid4().hex
+        huella = hashlib.sha256(etiqueta.encode("utf-8")).hexdigest()[:12]
+        self._escribir({"clave": clave, "canal": canal, "destinatario_huella": huella,
+                        "estado": "en_vuelo"})
+        return clave
+
+    def cerrar(self, clave: str, id_envio: str) -> None:
+        self._escribir({"clave": clave, "estado": "hecho", "id_envio": id_envio})
+
+    def en_vuelo(self) -> list[dict]:
+        abiertas: dict[str, dict] = {}
+        for fila in self._lineas():
+            if fila.get("estado") == "en_vuelo":
+                abiertas[fila["clave"]] = fila
+            else:
+                abiertas.pop(fila["clave"], None)
+        return list(abiertas.values())
+
+    def hechos(self) -> set[str]:
+        return {f["id_envio"] for f in self._lineas() if f.get("estado") == "hecho"}
+
+    def exigir_sin_pendientes(self) -> None:
+        """Para el flujo en vez de arriesgar un duplicado."""
+        if (p := self.en_vuelo()):
+            raise ExpedicionError(
+                f"hay {len(p)} envío(s) anotados y sin confirmar: "
+                + ", ".join(f"{f['canal']}/{f['destinatario_huella']}" for f in p)
+                + ". Queda SIN VERIFICAR si salieron. Compruébalo en el portal antes de "
+                  "reintentar: un censo negativo del listado no autoriza a gastar.")
+
+
+def ya_expedido(listado: list[dict], id_personalizado: str) -> set[str]:
+    """`IdEnvio` que la plataforma ya tiene con ese identificador exacto."""
+    return {e["id"] for e in listado if e.get("id_personalizado") == id_personalizado}
