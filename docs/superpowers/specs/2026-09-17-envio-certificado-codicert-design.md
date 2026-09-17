@@ -899,6 +899,28 @@ arriba cuando conviene, se puede leer para abajo cuando conviene.
 
 ## 12. Revisión adversarial
 
+### 12.1 Qué cubre la R1 y qué NO — cobertura declarada
+
+**La R1 revisó la rev. 1, no esta.** Entre aquel objeto (`d895d1d`) y la rev. 11 hay **760 líneas
+añadidas y 225 borradas**: el spec pasó de 374 a 909. El **§3 entero es nuevo** —y es el remedio
+del hallazgo más grave de la ronda— y el **§7 está reescrito de raíz**. **Nada de eso lo ha mirado
+un revisor.**
+
+Se declara y no se remedia con otra ronda, por dos razones que conviene dejar escritas para que
+nadie las confunda con desidia:
+
+1. **La mayor parte de lo añadido es medición, no razonamiento.** Las revisiones 3 a 11 cierran
+   huecos contra el servidor, contra certificados reales y contra la lista de confianza. Eso no se
+   refuta leyéndolo: se refuta reproduciéndolo, y varias mediciones ya se reprodujeron al
+   adjudicar.
+2. **Lo que sí es razonamiento puro —el §3 y el §7.3— es exactamente lo que el diff encarnará.**
+   La ronda del diff lo cubre leyendo el código que lo implementa, que es donde un defecto deja de
+   ser una frase y pasa a gastar 16,97 € y mandar una comunicación irreversible.
+
+Gastar aquí la segunda ronda obligaría a pedir una tercera para el diff, y «la anterior encontró
+algo» es un argumento que **nunca se agota**: es el que llevó a encadenar R10→R11→R12→R13 en el
+precedente que `CLAUDE.md` documenta. Se para donde la regla dice que se para.
+
 **Dos rondas: la primera está hecha (§11) y la segunda irá sobre el diff.** Son dos **por decisión
 expresa**, no por lectura de la tabla de `CLAUDE.md`, que a esta pieza le asigna una: no decide
 quién escribe sobre qué copia ni destruye datos de cliente. Se amplía porque **gasta dinero y manda
