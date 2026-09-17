@@ -222,6 +222,26 @@ def texto_de(w_code: str) -> tuple[str, str]:
     return _ASUNTO_TPL.format(w_code=w_code), _CUERPO_TPL.format(w_code=w_code)
 
 
+def _huella(etiqueta: str) -> str:
+    """Huella corta y no reversible de una etiqueta con datos personales.
+
+    `RegistroIntencion.anotar` la usa para no persistir el dato en claro
+    (`docs/SEGURIDAD_DATOS.md` §7), y `ejecutar` la reutiliza para saber, al reanudar
+    una expedición a medias, qué par (canal, huella) ya consta cerrado.
+    """
+    return hashlib.sha256(etiqueta.encode("utf-8")).hexdigest()[:12]
+
+
+def _reloj_utc() -> datetime:
+    """Reloj por defecto de `RegistroIntencion`: UTC real, como siempre.
+
+    `ejecutar` inyecta `entorno_exp.ahora` en su lugar: todo lo no determinista de este
+    módulo entra por el puerto único de `EntornoExpedicion`, y sin esta conexión el
+    docstring de `ahora` sería de boquilla.
+    """
+    return datetime.now(timezone.utc)
+
+
 class RegistroIntencion:
     """Rastro append-only de que *nosotros* llamamos, antes de que el servidor responda.
 
@@ -231,9 +251,10 @@ class RegistroIntencion:
     `id_personalizado`.
     """
 
-    def __init__(self, ruta: Path) -> None:
+    def __init__(self, ruta: Path, *, ahora: Callable[[], datetime] = _reloj_utc) -> None:
         self.ruta = Path(ruta)
         self.ruta.parent.mkdir(parents=True, exist_ok=True)
+        self._ahora = ahora
 
     def _lineas(self) -> list[dict]:
         """Cada línea no vacía, parseada. Una línea ilegible se declara, no se oculta.
@@ -279,8 +300,8 @@ class RegistroIntencion:
         un código de expediente— y ese sí va en claro.
         """
         clave = uuid.uuid4().hex
-        huella = hashlib.sha256(etiqueta.encode("utf-8")).hexdigest()[:12]
-        marca = datetime.now(timezone.utc).isoformat()
+        huella = _huella(etiqueta)
+        marca = self._ahora().isoformat()
         self._escribir({"clave": clave, "id_personalizado": id_personalizado, "canal": canal,
                         "destinatario_huella": huella, "timestamp": marca, "estado": "en_vuelo"})
         return clave
@@ -316,6 +337,44 @@ class RegistroIntencion:
     def hechos(self) -> set[str]:
         return {f["id_envio"] for f in self._lineas() if f.get("estado") == "hecho"}
 
+    def _cerrados_de(self, id_personalizado: str) -> list[dict]:
+        """Anotaciones de `id_personalizado` que ya se cerraron, con su `id_envio` añadido.
+
+        La línea "hecho" solo lleva `clave` e `id_envio` (spec §4.3): no dice de qué
+        expedición era ni por qué canal. Se cruza con la anotación "en_vuelo" que la
+        abrió —única por `clave`, la genera `uuid4()`— para recuperar `id_personalizado`,
+        `canal` y `destinatario_huella`. Sin este cruce, `ejecutar` no puede saber qué
+        falta al reanudar una expedición a medias.
+        """
+        filas = self._lineas()
+        anotaciones = {f["clave"]: f for f in filas if f.get("estado") == "en_vuelo"}
+        salida: list[dict] = []
+        for f in filas:
+            if f.get("estado") != "hecho":
+                continue
+            origen = anotaciones.get(f["clave"])
+            if origen is not None and origen.get("id_personalizado") == id_personalizado:
+                salida.append({**origen, "id_envio": f["id_envio"]})
+        return salida
+
+    def pares_cerrados(self, id_personalizado: str) -> set[tuple[str, str]]:
+        """Pares (canal, huella) ya cerrados para esta expedición.
+
+        `ejecutar` los usa para saltar, al reanudar, los envíos que ya se hicieron y
+        mandar solo los que faltan: nunca repetir lo hecho.
+        """
+        return {(f["canal"], f["destinatario_huella"]) for f in self._cerrados_de(id_personalizado)}
+
+    def ids_hechos_de(self, id_personalizado: str) -> set[str]:
+        """`IdEnvio` que el registro local explica para esta expedición.
+
+        `ejecutar` contrasta esto contra lo que la plataforma diga tener: si la
+        plataforma sabe de un envío que este conjunto no explica, la ausencia no se
+        puede sostener sobre algo inmediato y el flujo se para (spec §5.2): pudo
+        expedirse desde otra máquina o desde el portal.
+        """
+        return {f["id_envio"] for f in self._cerrados_de(id_personalizado)}
+
     def exigir_sin_pendientes(self, id_personalizado: str | None = None) -> None:
         """Para el flujo en vez de arriesgar un duplicado. Puede acotarse a una expedición."""
         if (p := self.en_vuelo(id_personalizado)):
@@ -334,17 +393,24 @@ def ya_expedido(listado: list[dict], id_personalizado: str) -> set[str]:
 
 @dataclass(frozen=True)
 class EntornoExpedicion:
-    """Puerto único de inyección: transporte, CRM, reloj y raíz de escritura.
+    """Puerto único de inyección: transporte, CRM, reloj, raíz de escritura y entorno.
 
     Sin él no hay dónde enchufar un doble y los tests escribirían en el árbol real, que
     la regla de `CLAUDE.md` §Tests prohíbe sin escotilla. Todo lo no determinista de
     `planificar`/`ejecutar` entra por aquí.
+
+    `plaza` y `entorno` describen DÓNDE y CONTRA QUÉ se ejecuta de verdad (la plaza
+    resuelta y "sandbox"/"produccion"): `ejecutar` los contrasta contra los mismos
+    campos del `Plan` y para si no coinciden, para que un plan leído como sandbox no
+    pueda ejecutarse por error contra producción.
     """
 
     codicert: Any
     partes_de: Callable[[str], list[dict]]
     ahora: Callable[[], datetime]
     raiz: Path
+    plaza: str
+    entorno: str
 
 
 @dataclass(frozen=True)
@@ -383,14 +449,19 @@ class Plan:
         return self.credito >= self.coste
 
 
-def _digest_de(w_code: str, tipo: str, envios: list[EnvioPrevisto], shas: list[str]) -> str:
-    """Huella del plan: expediente, tipo, documentos y destinatarios ya resueltos.
+def _digest_de(w_code: str, tipo: str, plaza: str, entorno: str,
+              envios: list[EnvioPrevisto], shas: list[str]) -> str:
+    """Huella del plan: expediente, tipo, plaza, entorno, documentos y destinatarios.
 
     `ejecutar` la recalcula para comparar contra el plan aprobado (spec §5.1): si
     difiere, algo cambió en el CRM o en el documento entre el `planificar` y el
     `ejecutar`, y no se manda a ciegas.
+
+    `plaza` y `entorno` entran en la huella para que dos planes idénticos salvo por el
+    entorno ("sandbox" frente a "produccion") nunca compartan digest: si lo hicieran,
+    una confirmación leída para uno autorizaría, sin que nadie lo notara, el otro.
     """
-    crudo = "|".join([w_code, tipo, *shas,
+    crudo = "|".join([w_code, tipo, plaza, entorno, *shas,
                       *sorted(f"{e.canal}:{sorted(e.destinatario.items())}" for e in envios)])
     return hashlib.sha256(crudo.encode("utf-8")).hexdigest()
 
@@ -409,37 +480,102 @@ def planificar(w_code: str, tipo: str, documentos: list[Path], *,
                 coste=coste, credito=entorno_exp.codicert.credito(),
                 documentos=[Path(d) for d in documentos], documentos_sha256=shas,
                 asunto=asunto, cuerpo=cuerpo,
-                digest=_digest_de(w_code, tipo, envios, shas))
+                digest=_digest_de(w_code, tipo, plaza, entorno, envios, shas))
+
+
+def _rehash_documentos(documentos: list[Path]) -> list[str]:
+    """Vuelve a leer cada documento del plan AHORA, desde disco.
+
+    `ejecutar` compara esto contra el digest aprobado para replanificar (spec §5.1):
+    comparar `plan.documentos_sha256` —el valor ya guardado en el plan— contra sí mismo
+    nunca detecta un documento sobrescrito en su misma ruta entre que el humano aprueba
+    el plan y se ejecuta. Un documento que ya no existe se declara aquí con un mensaje
+    claro, no con el `FileNotFoundError` crudo de leerlo más abajo al construir los
+    adjuntos.
+    """
+    shas = []
+    for d in documentos:
+        ruta = Path(d)
+        try:
+            shas.append(hashlib.sha256(ruta.read_bytes()).hexdigest())
+        except FileNotFoundError as exc:
+            raise ExpedicionError(
+                f"el documento {ruta} ya no existe en su ruta: no se puede comprobar que "
+                "es el mismo que aprobó el humano. Vuelve a planificar."
+            ) from exc
+    return shas
 
 
 def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
             entorno_exp: EntornoExpedicion) -> list[str]:
-    """Ejecuta el plan aprobado. Replanifica y compara antes de gastar (spec §5.1)."""
+    """Ejecuta el plan aprobado.
+
+    Antes de gastar: comprueba que el entorno de llamada es el que produjo el plan, que
+    la confirmación corresponde a este plan, que el crédito EN VIVO cubre el coste, que
+    el expediente no ha cambiado (destinatarios, domicilios o documento —rehasheado
+    desde disco—) y que lo que la plataforma ya tenga lo explica el registro local.
+    Reanuda completando lo que falte; nunca repite lo hecho (spec §5.1, §5.2).
+    """
+    if entorno_exp.plaza != plan.plaza or entorno_exp.entorno != plan.entorno:
+        raise ExpedicionError(
+            f"el entorno de ejecución (plaza={entorno_exp.plaza!r}, "
+            f"entorno={entorno_exp.entorno!r}) no coincide con el que produjo el plan "
+            f"(plaza={plan.plaza!r}, entorno={plan.entorno!r}): no se manda nada. Vuelve "
+            "a planificar en el entorno correcto.")
     if confirmacion.digest != plan.digest:
         raise ExpedicionError("la confirmación no corresponde a este plan: no se envía nada.")
-    if not plan.ejecutable:
+
+    credito_ahora = entorno_exp.codicert.credito()
+    if credito_ahora < plan.coste:
         raise ExpedicionError(
-            f"crédito insuficiente: {plan.credito} € para un coste de {plan.coste} €.")
+            f"crédito insuficiente para ejecutar: {credito_ahora} € ahora para un coste "
+            f"de {plan.coste} € (al planificar había {plan.credito} €). No se manda nada.")
 
     envios_ahora, _ = destinatarios_de(entorno_exp.partes_de(plan.w_code))
-    if _digest_de(plan.w_code, plan.tipo, envios_ahora, plan.documentos_sha256) != plan.digest:
+    shas_ahora = _rehash_documentos(plan.documentos)
+    if (_digest_de(plan.w_code, plan.tipo, plan.plaza, plan.entorno, envios_ahora, shas_ahora)
+            != plan.digest):
         raise ExpedicionError(
             "el expediente ha cambiado desde que se aprobó el plan (destinatarios, "
             "domicilios o documento). Vuelve a planificar y revísalo.")
 
-    if ya_expedido(list(entorno_exp.codicert.listar()), plan.id_personalizado):
-        raise ExpedicionError(
-            f"ya existe al menos un envío con {plan.id_personalizado!r} en la plataforma. "
-            "No se repite: revisa el portal.")
-
-    registro = RegistroIntencion(entorno_exp.raiz / "_codicert_intencion.jsonl")
-    # Acotado a ESTA expedición: un pendiente de otro expediente no debe bloquearla.
+    registro = RegistroIntencion(entorno_exp.raiz / "_codicert_intencion.jsonl",
+                                 ahora=entorno_exp.ahora)
+    # Acotado a ESTA expedición: un pendiente de otro expediente no debe bloquearla. Y
+    # es incondicional: una anotación en vuelo sin cerrar es, por definición, un envío
+    # cuyo desenlace no se puede sostener sobre nada inmediato (spec §5.2) — jamás se
+    # reintenta solo, así que bloquea aunque la plataforma no muestre nada todavía.
     registro.exigir_sin_pendientes(plan.id_personalizado)
+
+    ids_en_plataforma = ya_expedido(list(entorno_exp.codicert.listar()), plan.id_personalizado)
+    if ids_en_plataforma:
+        # El censo positivo tampoco autoriza por sí solo a completar: solo si el
+        # registro local explica CADA envío que la plataforma dice tener se puede
+        # sostener qué falta. Si no, para y declara SIN VERIFICAR — pudo expedirse
+        # desde otra máquina o desde el portal, y completar a ciegas duplicaría.
+        sin_explicar = ids_en_plataforma - registro.ids_hechos_de(plan.id_personalizado)
+        if sin_explicar:
+            raise ExpedicionError(
+                f"la plataforma tiene {len(sin_explicar)} envío(s) con "
+                f"{plan.id_personalizado!r} que el registro local no explica (¿se "
+                "expidió desde otra máquina o desde el portal?). Queda SIN VERIFICAR "
+                "qué falta: no se manda nada. Compruébalo en el portal antes de "
+                "continuar.")
+        pares_hechos = registro.pares_cerrados(plan.id_personalizado)
+        pendientes = [e for e in plan.envios if (e.canal, _huella(e.etiqueta)) not in pares_hechos]
+        if not pendientes:
+            raise ExpedicionError(
+                f"la expedición {plan.id_personalizado!r} ya está completa: sus "
+                f"{len(ids_en_plataforma)} envío(s) ya constan hechos y explicados en "
+                "el registro local. No hay nada pendiente que mandar.")
+    else:
+        pendientes = list(plan.envios)
+
     adjuntos = [_cod.adjunto(d) for d in plan.documentos]
     asunto, cuerpo = plan.asunto, plan.cuerpo   # los mismos que el humano leyó
 
     ids: list[str] = []
-    for e in plan.envios:
+    for e in pendientes:
         clave = registro.anotar(plan.id_personalizado, e.canal, e.etiqueta)
         if e.canal == "burofax":
             i = entorno_exp.codicert.enviar_burofax(
