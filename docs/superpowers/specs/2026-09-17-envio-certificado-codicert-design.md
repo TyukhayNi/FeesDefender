@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "8"
+rev: "9"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,12 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 9 (2026-09-17).** Primera expedición real en sandbox (1,06 € de los 20 €). Los dos
+> canales **no tratan igual los adjuntos**: el burofax los fusiona, pero **la entrega electrónica
+> los lista uno a uno con su nombre y su `sha256`**, así que el valor probatorio de la división A/B
+> existe por la vía electrónica. Y el orden de la reproducción **sí es el de subida**, lo que
+> corrige una inferencia que la rev. 6 presentó como medición.
+>
 > **Rev. 8 (2026-09-17).** Primer contacto real con la API del sandbox, ya con credenciales.
 > **Deshace una alarma falsa mía**: la provincia es obligatoria pero **no se valida contra lista**,
 > así que no hay 422 a mitad de expedición. A cambio destapa que el servidor **exige `asunto`,
@@ -563,22 +569,30 @@ prohíbe mencionar el contenido **de la oferta**, que son sus términos económi
 Cortar antes (dejando fuera la parte general) blinda el 17.4 y sacrifica el 10.2; cortar después
 —la práctica de `CONVENCIONES` §7— hace lo contrario.
 
-⚠️ **Y aquí la rev. 5 daba por bueno un beneficio que NO existe** (corregido en rev. 6, medido el
-2026-09-17 sobre el certificado de burofax `006ar9bel3n`, que Nikolai aportó).
+**Los dos canales se comportan DISTINTO con los adjuntos, y eso decide qué prueba da cada uno**
+(rev. 9, medido con una expedición real en sandbox el 2026-09-17):
 
-La rev. 5 decía que «el certificado reproduce cada adjunto y el acta lista nombre y `sha256` de
-cada uno», y de ahí deducía que el aportable seguiría acreditando que se remitió un segundo
-documento sin revelar su contenido. **Es falso: Codicert fusiona los adjuntos en un único PDF.**
-En ese envío se subieron **tres** ficheros y el acta lista **uno solo**, con nombre UUID
-—`9dc535a2-…-6a1d86d90dfd.pdf`— y **una sola huella**. Ni los nombres ni las huellas individuales
-sobreviven, así que **ni el nombre neutro `ANEXO II.pdf` sirve de nada**: no llega al acta.
+| | Burofax | Entrega electrónica certificada |
+|---|---|---|
+| Adjuntos en el acta | **Fusionados en uno**, con nombre UUID y **una sola huella** | **Uno por uno, con su nombre real y su `sha256`** |
+| Orden de la reproducción | sin medir | **el de subida** |
+| Portada añadida | sí (asunto y cuerpo son obligatorios) | **ninguna** |
 
-**Qué queda en pie y qué no.** La línea A/B sigue siendo la correcta por el motivo jurídico de
-arriba, y sigue siendo útil en nuestro lado: nos deja el bloque B identificado byte a byte, que es
-lo que después permite localizarlo dentro de la reproducción (§7.3). Lo que **no** se puede
-sostener es que la división mejore por sí sola la prueba: **el acta no documenta los adjuntos por
-separado**, así que el aportable no podrá decir «se remitió además un segundo documento con esta
-huella». Si eso se quiere, hay que decirlo en la demanda, no esperarlo del certificado.
+En el burofax `006ar9bel3n` se subieron **tres** ficheros y el acta lista **uno solo**,
+`9dc535a2-…-6a1d86d90dfd.pdf`. En la expedición de prueba, el acta de la entrega electrónica lista
+`SONDA_PRIMERO.pdf` y `SONDA_SEGUNDO.pdf` **con sus dos huellas**, y coinciden con las calculadas
+en local antes de enviar.
+
+**Qué significa para la división A/B.** El beneficio probatorio que la rev. 5 le atribuía —que el
+aportable siga acreditando el envío de un segundo documento, con su huella, sin su contenido—
+**existe en los canales electrónicos y se pierde en el postal**. Como el requerimiento sale por los
+tres a la vez, basta con que **uno** lo acredite: el certificado de la entrega electrónica nombra B
+y da su huella aunque el del burofax no. La línea A/B se mantiene, y ahora con su fundamento
+medido en vez de supuesto.
+
+**Y el nombre neutro de B sigue importando**, justo por eso: en los electrónicos **sí llega al
+acta**, así que `ANEXO II.pdf` evita que el propio listado de ficheros anuncie que hay unas
+condiciones económicas.
 
 **Y hay una vía mejor que el spec no contemplaba:** el propio certificado dice que las partes
 pueden **solicitar acta notarial** de la comunicación durante los cinco años de custodia, y el
@@ -663,10 +677,12 @@ consten para que nadie los reinvente:
 
 1. ~~Por el pie de sección.~~ La rev. 2 lo daba por bueno; la plantilla viva lleva **el mismo** pie
    en sus tres páginas. Los dos pies distintos son del prototipo de `W-02SRFU`, otro documento.
-2. ~~Por el orden y el conteo de adjuntos.~~ La rev. 5 asumía que la reproducción respeta el orden
-   de composición. **Falso, medido:** en `006ar9bel3n` el requerimiento aparece el **último**
-   (página 10) y una factura proforma antes (página 9). El orden no es el de envío, así que contar
-   páginas desde el principio de la reproducción **no localiza nada**.
+2. **Por el orden y el conteo de adjuntos: sirve, pero no basta solo.** La rev. 6 lo declaró
+   «falso, medido» apoyándose en que el requerimiento de `006ar9bel3n` aparece el último; **eso era
+   una inferencia, no una medición** —nadie sabe en qué orden se subieron aquellos tres ficheros—.
+   Lo medido, en la expedición de prueba: **la reproducción sigue el orden de subida** (páginas 5-6
+   el primer adjunto, 7 el segundo). Vale como control cruzado del instrumento de abajo, no como
+   instrumento único: del burofax no está medido.
 
 **El instrumento que sí funciona: casar el texto.** El motor compone B, luego conoce su texto
 exactamente. Para cada página de la reproducción extrae el texto y lo casa, normalizado, contra las
