@@ -12515,3 +12515,42 @@ Quien la atienda los localiza en los ficheros ya señalados: `tests/test_abrir_c
 planes que los mencionan.
 
 **Disparador.** El próximo saneado de PII, o que alguien tenga que tocar esos fixtures.
+
+## 275. `scripts/recalc.py` de la skill `xlsx` no corre en Windows
+
+**Lo medido** (2026-09-17): al recalcular un libro generado con `openpyxl`, el script muere
+antes de abrir nada:
+
+```
+File "…/.claude/skills/xlsx/scripts/office/soffice.py", line 46, in _needs_shim
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+AttributeError: module 'socket' has no attribute 'AF_UNIX'
+```
+
+El script detecta si necesita un shim para sockets Unix, y esa comprobación se ejecuta
+**siempre**, también donde `AF_UNIX` no existe. En Windows el atributo no está en el módulo
+`socket`, así que revienta en el arranque y **ningún libro se recalcula**. No es una
+incompatibilidad de LibreOffice: LibreOffice está instalado y funciona.
+
+**Por qué importa.** La skill `xlsx` declara la recalculación como paso **obligatorio** cuando
+el libro lleva fórmulas, y ese paso es el que acredita cero errores (`#REF!`, `#DIV/0!`…). En
+Windows ese control no está disponible por la vía que la propia skill manda, así que su
+obligatoriedad queda incumplida por construcción y en silencio.
+
+**Remedio usado, y verificado.** Invocar LibreOffice directamente y comprobar después por
+lectura, no por código de salida:
+
+```powershell
+& "C:\Program Files\LibreOffice\program\soffice.exe" --headless --norestore `
+    --convert-to xlsx:"Calc MS Excel 2007 XML" --outdir <dir> <fichero>
+```
+
+y releer el resultado con `openpyxl(data_only=True)` barriendo todas las celdas en busca de
+literales de error y cuadrando los totales contra un control conocido. Comprobado además que
+la conversión **conserva** anchos, fuentes, rellenos, autofiltro, paneles inmovilizados y
+formato de número.
+
+**Disparador.** La próxima vez que haya que entregar un `.xlsx` con fórmulas desde este PC.
+Arreglo natural: guardar la comprobación del shim tras un `hasattr(socket, "AF_UNIX")`, o
+envolverla en `try/except AttributeError`. Es un parche de una línea en una skill de
+Anthropic, así que conviene decidir si se parchea en local o se reporta aguas arriba.

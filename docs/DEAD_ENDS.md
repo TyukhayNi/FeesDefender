@@ -987,6 +987,26 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
 - **Acción pendiente:** un hook `SessionStart` para sesiones web que instale `requirements.txt`
   haría medible la suite; sin disparador todavía.
 
+## El conector nativo de Drive para leer los ficheros de bad debt de E&V
+
+### Bajar las tablas de morosidad con el conector nativo de Google Drive
+- **Intentado:** leer las cinco tablas de bad debt de E&V (`BD_BCN_MC1`, `BD_BCN MC2`,
+  `BD MAD 2026`, `BD SEV, SAN, SSE, BIL 2026`, `BD_VLC`) con el conector nativo de Drive,
+  por sus ids, para no depender de un MCP local.
+- **Resultado:** ve **1 de los 5**. Los otros cuatro devuelven `Requested entity was not
+  found` — alcanza solo el que figura como compartido con su cuenta. Y del que sí ve, **no
+  permite elegir pestaña**: devuelve el libro desde el principio, y el principio de estos
+  ficheros es una **copia semanal congelada**, no la pestaña `JURIDICO`. El snippet que
+  devolvió empezaba en una copia de noviembre de 2025.
+- **Confirmado:** 2026-09-17, con los cinco ids.
+- **Conclusión:** no es cuestión de velocidad, es de cobertura y de granularidad. La vía que
+  funciona es el endpoint CSV por hoja con el token OAuth de disco — 1,72 MB de las cinco
+  pestañas en 7,2 s, sin pasar por el modelo. Receta en
+  `docs/PROCESO_BAD_DEBT_EV.md` §9.
+- **Acción pendiente:** ninguna. Compartir los otros cuatro ficheros con esa cuenta
+  resolvería la cobertura pero no la granularidad, así que seguiría sin servir para leer
+  `JURIDICO`.
+
 ## Plantilla para nuevas entradas
 
 ```markdown
