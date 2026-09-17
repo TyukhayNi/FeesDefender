@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "3"
+rev: "4"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,18 +14,24 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
-> **Rev. 2 (2026-09-17).** Reescrito tras la R1 adversarial: **34 hallazgos**, 12 altos, sobre
-> tres lentes. Veredicto agregado **REQUIERE-REVISION**. Cambian de raíz el **§3** (la gramática
-> del identificador, que antes no existía y hacía que la OVC no saliera nunca), el **§5** (los
-> plazos corren por requerido, no por expedición) y el **§6** (el documento se parte en dos PDF).
-> Adjudicación en el **§11**; acta literal en
-> [`…-r1-adversarial-review.md`](2026-09-17-envio-certificado-codicert-r1-adversarial-review.md).
+> **Rev. 4 (2026-09-17).** Segunda tanda de medición sobre la UI del sandbox: se cierran los
+> huecos **1**, **4** y **8**. El 8 destapa un defecto que habría reventado en producción —**siete
+> provincias del CRM no existen con ese nombre en Codicert**, y una es Valencia—; el 1 dice que
+> **el texto del SMS no es configurable**, así que el literal de `CONVENCIONES` §5 no cabe donde
+> se creía.
 >
 > **Rev. 3 (2026-09-17).** Se cierran por medición los huecos **5** y **7**, a petición de
 > Nikolai. El 5 trae una consecuencia que refuerza el hallazgo J-06: el prestador **es cualificado**
 > y el art. 326.4 LEC juega, luego romper la firma cuesta más de lo que la rev. 2 suponía. El 7
 > **retira un discriminante que la rev. 2 daba por bueno** —el pie por sección, que la plantilla
 > viva no tiene— y lo sustituye por uno medido.
+>
+> **Rev. 2 (2026-09-17).** Reescrito tras la R1 adversarial: **34 hallazgos**, 12 altos, sobre
+> tres lentes. Veredicto agregado **REQUIERE-REVISION**. Cambian de raíz el **§3** (la gramática
+> del identificador, que antes no existía y hacía que la OVC no saliera nunca), el **§5** (los
+> plazos corren por requerido, no por expedición) y el **§6** (el documento se parte en dos PDF).
+> Adjudicación en el **§11**; acta literal en
+> [`…-r1-adversarial-review.md`](2026-09-17-envio-certificado-codicert-r1-adversarial-review.md).
 
 ## 1. El contrato de la API, medido
 
@@ -130,10 +136,19 @@ Un burofax cuesta **unas veinte veces** el correo certificado y **treinta y seis
 La regla «un burofax por domicilio distinto» tiene, además del fundamento jurídico, una
 consecuencia económica que el plan debe poner delante antes de gastar.
 
-**Los bytes se pagan y viajan inflados.** Los dos endpoints aceptan los ficheros **en base64
-dentro del JSON**, lo que añade un tercio al tamaño, y la tarifa cobra por megabyte adicional. El
-contrato **no declara un límite de tamaño**, así que es un hueco (§9): el plan estima los MB y los
-muestra, y el límite real se mide en sandbox antes de F1.
+**Los bytes se pagan, y el límite lo dice la UI, no el contrato** (rev. 4, hueco 4 cerrado el
+2026-09-17). Los dos endpoints aceptan los ficheros **en base64 dentro del JSON**, lo que añade un
+tercio al tamaño en tránsito. El formulario declara: **máximo 6 ficheros, 60 MB en total, y el
+precio del producto incluye 1 MB**; por encima, cargo adicional a 0,0288 €/MB. Con dos adjuntos de
+un requerimiento normal se está muy por debajo, así que el coste por bytes es ruido — pero el plan
+los estima igual, porque el margen del §5.2 tiene que cuadrar.
+
+⚠️ **La UI dice 6 ficheros y el contrato de la API dice `1..10`.** Discrepan, y no se ha medido
+cuál manda. El motor se ciñe a **6**, que es el suelo seguro, y el diseño con dos adjuntos cabe de
+sobra. El burofax añade dos avisos propios: los PDF deben ir en **DIN A4** o no se asegura la
+impresión, y **se eliminan las firmas electrónicas** y marcas de autor del adjunto — irrelevante
+para nuestros PDF, que no van firmados, pero conviene que conste antes de que a alguien se le
+ocurra adjuntar uno que sí lo esté.
 
 ## 2. El proceso real, medido en producción
 
@@ -292,17 +307,49 @@ Entrada: el expediente y el **tipo de comunicación**. Del CRM salen las partes 
    la R1: ver §11, H-03 de la lente jurídica.
 4. **Lo que falta se declara, no se inventa.** Un requerido sin móvil sale como «sin canal SMS».
    Un requerido **sin ningún canal** detiene el plan.
-5. **La ficha se valida entera antes de gastar, no en el 422.** El móvil se normaliza y se
-   comprueba; `pais` solo admite `"España"`, así que un domicilio extranjero para el burofax se
-   detiene en el plan; y `provincia` llega del CRM como literal de un Select de 52 valores que
-   **hay que cruzar con lo que Codicert acepta** antes de F1. Un 422 a mitad de expedición deja las
-   electrónicas mandadas y el burofax no.
+5. **La ficha se valida entera antes de gastar, no en el 422.** El móvil se normaliza —el prefijo
+   va en campo aparte, que es por qué el destinatario real de producción es `34645508869`— y
+   `pais` solo admite `"España"`, así que un domicilio extranjero para el burofax se detiene en el
+   plan.
+
+   **Y la provincia hay que traducirla** (rev. 4, hueco 8 cerrado el 2026-09-17). Las dos listas
+   tienen 52 valores, **45 coinciden y 7 no**: el CRM escribe en castellano lo que Codicert escribe
+   en la lengua cooficial. Sin esta tabla, un requerido de la Comunidad Valenciana o del País Vasco
+   produce el 422 **a mitad de expedición**, con las electrónicas mandadas y el burofax no.
+
+   | CRM | Codicert |
+   |---|---|
+   | Alicante | `Alacant` |
+   | **Valencia** | **`València`** |
+   | Castellón | `Castelló` |
+   | Álava | `Araba` |
+   | Guipúzcoa | `Gipuzkoa` |
+   | Vizcaya | `Bizkaia` |
+   | Baleares (Illes) | `Islas Baleares` |
+
+   Valencia es una de las siete plazas, así que esto no es un caso de laboratorio. El contrato de
+   la API declara `provincia` como texto libre y es la **UI** la que ofrece la lista cerrada: que
+   el servidor rechace un valor fuera de ella está por medir, pero el motor envía lo que la lista
+   ofrece, que es el suelo seguro.
 6. **El asunto y el cuerpo son literal cerrado**, compuestos por el motor a partir de una plantilla
    de la casa, y **van en el `Plan`** para que el humano los lea antes de gastar. Pueden nombrar el
    objeto de la controversia y la remisión de una oferta vinculante —el art. 9.1 exceptúa
    expresamente «el objeto de la controversia» y el art. 17.4 exige la manifestación de la
    remisión—, pero **no pueden contener términos de la oferta**: ni importe, ni calendario, ni
    quita, ni plazo. El acta del certificado los reproduce y **el acta no se recorta**.
+7. **El SMS no lleva texto propio, y eso obliga a revisar el literal de la casa** (rev. 4, hueco 1
+   cerrado el 2026-09-17). Medido por tres vías que coinciden: el formulario de entrega electrónica
+   certificada **no tiene campo** para el texto del SMS —solo asunto, cuerpo, adjuntos y
+   destinatarios—; el contrato de la API tampoco lo expone; y entre los tipos de comunicación
+   **personalizables** solo están *Logo*, *Página de lectura*, *Correo de notificación* y *Correo
+   de confirmación de firma*: **el SMS no está**. Lo único que se controla es el **nombre del
+   remitente** (`de`, 60 caracteres), que es lo que el destinatario lee.
+
+   Consecuencia práctica: el literal de `CONVENCIONES_DESPACHO.md` §5 —«EV MMC SPAIN, S.L.U. le
+   remite Oferta Vinculante Confidencial (OVC) y propuesta de negociación extrajudicial. Consulte
+   el documento adjunto»— **no se puede poner en el SMS**. Donde sí cabe es en el **correo de
+   notificación**, que es personalizable, y en el asunto y el cuerpo. Queda por confirmar el texto
+   exacto que compone la plataforma, que se leerá en el primer envío de sandbox.
 
 ### 5.1 La puerta humana
 
@@ -558,14 +605,20 @@ del certificado emitido.
 
 ## 10. Huecos declarados
 
-1. **Si el texto de la notificación SMS es configurable.** El contrato no expone campo para él. Se
-   mide en sandbox.
+1. ~~**Si el texto de la notificación SMS es configurable.**~~ **CERRADO el 2026-09-17** (§5 regla
+   7): **no lo es**, por tres vías que coinciden. Lo que se controla es el nombre del remitente, y
+   el literal de la casa hay que llevarlo al correo de notificación. Queda por leer el texto exacto
+   que compone la plataforma.
 2. **La anatomía del certificado de un burofax**, frente a las 4 páginas de acta medidas en el de
    una entrega electrónica certificada. El discriminante del §7.2 no depende del número, pero no
-   está comprobado que la cabecera sea idéntica en el certificado postal.
+   está comprobado que la cabecera sea idéntica en el certificado postal. Buscado el 2026-09-17 en
+   el gestor documental de diez expedientes: **no hay ninguno archivado**, solo certificados de
+   entrega electrónica. Se cierra con uno del portal de producción.
 3. **Si la portada del burofax se imprime como página adicional**, y por tanto desplaza la
    numeración de la reproducción. La portada **es opcional en el contrato**: si estorba, se omite.
-4. **El límite de tamaño de los adjuntos**, que el contrato no declara.
+4. ~~**El límite de tamaño de los adjuntos.**~~ **CERRADO el 2026-09-17** (§1.4): 6 ficheros, 60 MB
+   en total, 1 MB incluido en el precio. **Queda un resto**: la UI dice 6 ficheros y el contrato
+   `1..10`, y no se ha medido cuál manda.
 5. ~~**Si Codicert figura en la lista de confianza como prestador cualificado.**~~ **CERRADO el
    2026-09-17** (§7.2): sí figura, con tres servicios `EDS/Q` `granted`. El art. 326.4 LEC juega
    para los certificados electrónicos. **Queda un resto abierto**: ninguno de esos tres servicios
@@ -579,11 +632,16 @@ del certificado emitido.
    cae en una frontera de página que ya existe, y el discriminante es el literal
    `CONFIDENCIAL - CONDICIONES`. De paso se retiró el discriminante «por el pie» que la rev. 2 daba
    por bueno y que el documento vivo no soporta.
-8. **Los 52 valores de `provincia` del CRM** cruzados con lo que el burofax acepta.
+8. ~~**Los 52 valores de `provincia` del CRM** cruzados con lo que el burofax acepta.~~ **CERRADO
+   el 2026-09-17** (§5 regla 5): 45 coinciden, **7 no**, y hacen falta traducirse. Afecta a la
+   Comunidad Valenciana entera y al País Vasco.
 
-Los huecos 1 y 4 se cierran con una expedición completa en sandbox, que es el primer hito de F1.
-Los huecos 2 y 3 son del **burofax postal** y **no se cierran ahí**: que el sandbox emita un
-certificado postal con la misma anatomía que producción es, a su vez, una hipótesis sin medir.
+**Balance tras la tanda del 2026-09-17:** de los ocho, **cinco cerrados** (1, 4, 5, 7, 8) y tres
+abiertos (2, 3, 6), más dos restos menores —el cauce de la fehaciencia postal y la discrepancia
+`6` contra `1..10` en el número de adjuntos—.
+
+Los tres abiertos **no se cierran en sandbox**: el 2 y el 3 necesitan un certificado de burofax
+real, y el 6 una lectura del portal de producción. Ninguno bloquea F1.
 
 ## 11. Adjudicación de la revisión adversarial (Claude Code en sesión independiente, 2026-09-17) — REQUIERE-REVISION, parcial
 
