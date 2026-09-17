@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "5"
+rev: "6"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,13 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 6 (2026-09-17).** Nikolai aporta un certificado de **burofax** real y tumba el fundamento
+> del §7: **Codicert fusiona los adjuntos en un solo PDF**, con nombre UUID y una sola huella, así
+> que el acta no documenta A y B por separado y el nombre neutro no sirve de nada. El orden de la
+> reproducción **tampoco es el de envío**. El §7.3 se rehace sobre el único instrumento que
+> sobrevive —casar el texto de B— con dos paradas duras. Se cierra el hueco **2** y se añade el
+> estado **19**.
+>
 > **Rev. 5 (2026-09-17).** Corrección de Nikolai sobre la UI: **hay dos vías para el SMS**, y la
 > rev. 4 describió mal la segunda —el SMS Certificado sí tiene `cuerpo` propio y admite un
 > adjunto—. Se mantiene la entrega electrónica certificada, ahora por la razón correcta: es la que
@@ -136,11 +143,13 @@ renderizada). Para el despacho cuentan estos, y la frontera entre los tres prime
 | 17 | Entregado | Entrega acreditada |
 | 20 | Leído · Documentación accedida | Acceso al contenido — art. 10.2 |
 | **21** | **Recordatorio lectura entregado** | **Entrega acreditada del recordatorio, sin acceso al contenido** |
+| **19** | **Entregado con albarán** | **Terminal del burofax.** Entrega con copia del albarán firmado por el receptor |
 | 28 | Rechazado | Entrega fallida por rechazo. **Tiene valor afirmativo**, ver §5 |
 | 42 / 40 | Fallido / Caducado | Sin entrega |
 
 El **21** faltaba en la rev. 1 y es exactamente donde quedaron **dos de los tres envíos de
-producción** que el §2 pone de ejemplo. Sin clasificarlo, una expedición real no cerraría nunca.
+producción** que el §2 pone de ejemplo. El **19** faltaba hasta la rev. 6 y es el estado en que
+termina un burofax entregado en mano. Sin clasificarlos, una expedición real no cerraría nunca.
 
 Y se repite aquí porque el motor tiene que codificarlo: **«Procesado» no es «Entregado»**.
 
@@ -493,20 +502,28 @@ prohíbe mencionar el contenido **de la oferta**, que son sus términos económi
 Cortar antes (dejando fuera la parte general) blinda el 17.4 y sacrifica el 10.2; cortar después
 —la práctica de `CONVENCIONES` §7— hace lo contrario.
 
-**Por qué es robusto.** El recorte deja de ser una heurística sobre el texto y pasa a ser
-estructural: el certificado reproduce **cada adjunto** y el acta lista **nombre y `sha256` de cada
-uno**, así que la frontera la fijamos nosotros al componer el envío. Y es gratis: mismo número de
-envíos, mismo precio.
+⚠️ **Y aquí la rev. 5 daba por bueno un beneficio que NO existe** (corregido en rev. 6, medido el
+2026-09-17 sobre el certificado de burofax `006ar9bel3n`, que Nikolai aportó).
 
-**Por qué mejora la prueba.** El acta es irrecortable y se conserva entera, de modo que el
-aportable **sigue diciendo que se remitió un segundo documento, con su nombre, su huella y su
-fecha, sin su contenido**. Eso es literalmente lo que pide el art. 17.4: «el justificante de
-haberla enviado y de que la misma ha sido recibida por la parte requerida, sin que pueda hacerse
-mención a su contenido».
+La rev. 5 decía que «el certificado reproduce cada adjunto y el acta lista nombre y `sha256` de
+cada uno», y de ahí deducía que el aportable seguiría acreditando que se remitió un segundo
+documento sin revelar su contenido. **Es falso: Codicert fusiona los adjuntos en un único PDF.**
+En ese envío se subieron **tres** ficheros y el acta lista **uno solo**, con nombre UUID
+—`9dc535a2-…-6a1d86d90dfd.pdf`— y **una sola huella**. Ni los nombres ni las huellas individuales
+sobreviven, así que **ni el nombre neutro `ANEXO II.pdf` sirve de nada**: no llega al acta.
 
-Dos condiciones para no estropearlo: **B se nombra de forma neutra** (`ANEXO II.pdf`), porque el
-nombre viaja en el acta que no se recorta; y el íntegro se custodia con los dos adjuntos y sus
-huellas.
+**Qué queda en pie y qué no.** La línea A/B sigue siendo la correcta por el motivo jurídico de
+arriba, y sigue siendo útil en nuestro lado: nos deja el bloque B identificado byte a byte, que es
+lo que después permite localizarlo dentro de la reproducción (§7.3). Lo que **no** se puede
+sostener es que la división mejore por sí sola la prueba: **el acta no documenta los adjuntos por
+separado**, así que el aportable no podrá decir «se remitió además un segundo documento con esta
+huella». Si eso se quiere, hay que decirlo en la demanda, no esperarlo del certificado.
+
+**Y hay una vía mejor que el spec no contemplaba:** el propio certificado dice que las partes
+pueden **solicitar acta notarial** de la comunicación durante los cinco años de custodia, y el
+portal tiene el botón. Un acta notarial del estado y contenido es prueba más fuerte que un
+certificado recortado con la firma rota. Queda anotado como alternativa a valorar por caso, no
+como parte del motor.
 
 ### 7.1 Cosecha
 
@@ -540,50 +557,70 @@ Sobre el certificado `006casm113n` (gdocu 42990 del W-04A6LI, 6 páginas):
   Lo que **no he verificado** y sigue como hueco: por qué vía concreta se le reconoce esa
   fehaciencia cuando el envío lo cursa Codicert —si actúa como operador postal o deposita en un
   tercero—, dato que solo importa si alguien llega a impugnar el certificado postal.
-- **Acta y reproducción se distinguen por el texto.** Las páginas del acta llevan en cabecera
-  *«Este certificado contiene un sello temporal y se encuentra firmado digitalmente con un
-  certificado reconocido»*; las de la reproducción no. En ese certificado: 1-4 acta, 5-6
-  reproducción.
+- **Acta y reproducción se distinguen por el texto, y el discriminante vale para los DOS tipos**
+  (rev. 6, hueco 2 cerrado). Las páginas del acta llevan en cabecera *«Este certificado contiene un
+  sello temporal y se encuentra firmado digitalmente con un certificado reconocido»*; las de la
+  reproducción no. Medido en los dos:
 
-### 7.3 Los tres marcos de referencia, y el discriminante doble
+  | Certificado | Total | Acta | Reproducción |
+  |---|---|---|---|
+  | Entrega electrónica `006casm113n` | 6 | 1-4 | 5-6 |
+  | **Burofax `006ar9bel3n`** | **10** | **1-6** | **7-10** |
 
-Se recorta **la reproducción dentro del certificado**, no el documento. Hay tres numeraciones
-distintas y el motor debe nombrar siempre cuál usa: página del documento, página de la reproducción
-y página del certificado —desplazada por las páginas de acta y, en el burofax, quizá por la
-portada—.
+  El acta del burofax trae dos secciones que la electrónica no: el **histórico de estados** con sus
+  incidencias —«destinatario ausente en el primer intento»— y una **copia del albarán de entrega
+  firmado**, con su propia advertencia: se exhibe «únicamente a título informativo… y no como
+  prueba legal de la entrega», y el original se pide compulsado notarialmente. Conviene saberlo
+  antes de aportarlo como si fuera el acuse.
 
-**El documento vivo, medido** (rev. 3, hueco 7 cerrado el 2026-09-17). La plantilla **281**
-renderizada por la API sobre un expediente real y convertida a PDF da **tres páginas**:
+- **El certificado se emite a fecha de descarga, no de envío.** El del burofax del 23-04-2026 dice
+  «Madrid, a 17 de septiembre de 2026». Es la confirmación estructural de la regla que ya estaba
+  escrita: un certificado bajado el día del envío dirá «Procesado», y hay que **volver a bajarlo**
+  cuando el histórico haya avanzado.
+
+### 7.3 Cómo se localiza B dentro de la reproducción
+
+Se recorta **la reproducción dentro del certificado**, no el documento. Hay tres numeraciones y el
+motor debe nombrar siempre cuál usa: página del documento, página de la reproducción y página del
+certificado.
+
+**El documento vivo, medido** (hueco 7, 2026-09-17). La plantilla **281** renderizada por la API
+sobre un expediente real y convertida a PDF da **tres páginas**:
 
 | Página | Bloque | Cómo se reconoce |
 |---|---|---|
-| 1 | Requerimiento | Encabezado `OFERTA VINCULANTE CONFIDENCIAL Y PROPUESTA DE NEGOCIACIÓN DIRECTA`; lleva el `100 %` de honorarios y los tres IBAN |
+| 1 | Requerimiento | Encabezado `OFERTA VINCULANTE CONFIDENCIAL Y PROPUESTA DE NEGOCIACIÓN DIRECTA`; el `100 %` de honorarios y los tres IBAN |
 | 2 | OVC, motor MASC | Diez menciones de «oferta vinculante»; el «UN MES» del art. 17.4 |
 | 3 | Condiciones económicas | Abre con el literal **`CONFIDENCIAL - CONDICIONES`**; calendario de `DIEZ (10)` y `TREINTA (30)` días |
 
-**La línea A/B del §7 cae en una frontera de página que ya existe**: A = páginas 1-2, B = página 3.
-Y se comprobó por el lado que importa: **en A no hay términos económicos**. No hay un solo importe
-en euros en todo el documento —las condiciones no llevan cifra, que es deuda conocida de la
-plantilla—, el `100 %` de la página 1 es el porcentaje de honorarios reclamado y pertenece al
-requerimiento, y el «UN MES» de la página 2 es el plazo legal del art. 17.4, no un término
-negociado.
+La línea A/B cae en una frontera de página que ya existe: **A = páginas 1-2, B = página 3**. Y en A
+**no hay términos económicos**: ni un importe en euros en todo el documento, el `100 %` pertenece
+al requerimiento y el «UN MES» es el plazo legal del art. 17.4.
 
-**Un discriminante que la rev. 2 dio por bueno y NO existe.** La rev. 2 proponía localizar B «por
-el pie», apoyándose en que el refundido lleva pie propio en su sección confidencial. Eso es cierto
-del **prototipo de `W-02SRFU`** —cinco páginas, pies distintos en 1-3 y 4-5— y **falso de la
-plantilla 281 viva**: sus tres páginas llevan **el mismo** pie de requerimiento fehaciente. Medido.
-Un control que el documento real no soporta no es un control.
+**Dos instrumentos que la medición del certificado de burofax ha descartado**, y conviene que
+consten para que nadie los reinvente:
 
-El motor localiza B por **dos instrumentos independientes que deben coincidir**:
+1. ~~Por el pie de sección.~~ La rev. 2 lo daba por bueno; la plantilla viva lleva **el mismo** pie
+   en sus tres páginas. Los dos pies distintos son del prototipo de `W-02SRFU`, otro documento.
+2. ~~Por el orden y el conteo de adjuntos.~~ La rev. 5 asumía que la reproducción respeta el orden
+   de composición. **Falso, medido:** en `006ar9bel3n` el requerimiento aparece el **último**
+   (página 10) y una factura proforma antes (página 9). El orden no es el de envío, así que contar
+   páginas desde el principio de la reproducción **no localiza nada**.
 
-1. **Por estructura**: el motor compuso A y B, conoce el número de páginas de cada uno y su orden;
-   la reproducción empieza donde acaba el acta, por el discriminante del §7.2.
-2. **Por el literal de apertura de B**: `CONFIDENCIAL - CONDICIONES`, que es texto exacto del
-   documento y no una heurística. Como B lo compone el motor, su primera línea se conoce siempre,
-   también si la plantilla cambia.
+**El instrumento que sí funciona: casar el texto.** El motor compone B, luego conoce su texto
+exactamente. Para cada página de la reproducción extrae el texto y lo casa, normalizado, contra las
+páginas de B. Es independiente del orden, del número de adjuntos y de que Codicert los fusione.
 
-**Si los dos no coinciden, el motor para.** Un solo instrumento que no puede dar el otro valor no
-acredita nada; dos que deben coincidir sí.
+**Y sus dos paradas duras**, porque un instrumento sin control positivo no acredita nada:
+
+- **El número de páginas casadas debe ser igual al número de páginas de B.** Si sobra o falta una,
+  el motor para y no produce aportable.
+- **Si alguna página de la reproducción no tiene texto extraíble, el motor para.** Está medido que
+  ocurre: las páginas 7 y 8 de `006ar9bel3n` solo contienen el pie —45 caracteres— porque el
+  adjunto original era un escaneo. Sobre una página así no se puede afirmar qué contiene, y
+  recortar a ciegas es justo lo que no puede pasar. Nuestros PDF nacen de un RTF y llevan texto,
+  así que el caso no debería darse; si se da, es que alguien adjuntó un escaneo y hace falta un
+  humano.
 
 ### 7.4 Qué produce, y el aviso que sí tiene discriminante
 
@@ -648,13 +685,14 @@ del certificado emitido.
    7): **no lo es**, por tres vías que coinciden. Lo que se controla es el nombre del remitente, y
    el literal de la casa hay que llevarlo al correo de notificación. Queda por leer el texto exacto
    que compone la plataforma.
-2. **La anatomía del certificado de un burofax**, frente a las 4 páginas de acta medidas en el de
-   una entrega electrónica certificada. El discriminante del §7.2 no depende del número, pero no
-   está comprobado que la cabecera sea idéntica en el certificado postal. Buscado el 2026-09-17 en
-   el gestor documental de diez expedientes: **no hay ninguno archivado**, solo certificados de
-   entrega electrónica. Se cierra con uno del portal de producción.
-3. **Si la portada del burofax se imprime como página adicional**, y por tanto desplaza la
-   numeración de la reproducción. La portada **es opcional en el contrato**: si estorba, se omite.
+2. ~~**La anatomía del certificado de un burofax.**~~ **CERRADO el 2026-09-17** (§7.2) sobre
+   `006ar9bel3n`, aportado por Nikolai: 10 páginas, **6 de acta y 4 de reproducción**, y **el
+   discriminante del sello temporal funciona igual** que en el electrónico. De paso destapó que
+   Codicert **fusiona los adjuntos** y que el orden de la reproducción no es el de envío (§7).
+3. **Si la portada del burofax se imprime como página adicional.** Sigue abierto, pero ya no
+   importa: el método del §7.3 casa por texto y **no depende de la numeración**. En `006ar9bel3n`
+   no se ve portada —las cuatro páginas de reproducción son los adjuntos—, aunque ese envío pudo no
+   llevar asunto ni cuerpo. La portada **es opcional en el contrato**: si estorba, se omite.
 4. ~~**El límite de tamaño de los adjuntos.**~~ **CERRADO el 2026-09-17** (§1.4): 6 ficheros, 60 MB
    en total, 1 MB incluido en el precio. **Queda un resto**: la UI dice 6 ficheros y el contrato
    `1..10`, y no se ha medido cuál manda.
@@ -677,12 +715,12 @@ del certificado emitido.
    el 2026-09-17** (§5 regla 5): 45 coinciden, **7 no**, y hacen falta traducirse. Afecta a la
    Comunidad Valenciana entera y al País Vasco.
 
-**Balance tras la tanda del 2026-09-17:** de los ocho, **seis cerrados** (1, 4, 5, 6, 7, 8) y dos
-abiertos (2 y 3), más dos restos menores —el cauce de la fehaciencia postal y la discrepancia
+**Balance tras la tanda del 2026-09-17:** de los ocho, **siete cerrados** (1, 2, 4, 5, 6, 7, 8) y uno
+abierto (el 3, ya inocuo), más dos restos menores —el cauce de la fehaciencia postal y la discrepancia
 `6` contra `1..10` en el número de adjuntos—.
 
-Los dos abiertos **no se cierran en sandbox**: necesitan un certificado de burofax real, y no hay
-ninguno archivado en el gestor documental. Ninguno bloquea F1.
+El único abierto ya no condiciona el diseño: el método del §7.3 no depende de la numeración de
+páginas. Ninguno bloquea F1.
 
 ## 11. Adjudicación de la revisión adversarial (Claude Code en sesión independiente, 2026-09-17) — REQUIERE-REVISION, parcial
 
