@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "4"
+rev: "5"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,12 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 5 (2026-09-17).** Corrección de Nikolai sobre la UI: **hay dos vías para el SMS**, y la
+> rev. 4 describió mal la segunda —el SMS Certificado sí tiene `cuerpo` propio y admite un
+> adjunto—. Se mantiene la entrega electrónica certificada, ahora por la razón correcta: es la que
+> acredita el acceso al contenido del art. 10.2. Se cierra el hueco **6** y se anotan tres
+> discrepancias medidas entre la UI y el contrato de la API.
+>
 > **Rev. 4 (2026-09-17).** Segunda tanda de medición sobre la UI del sandbox: se cierran los
 > huecos **1**, **4** y **8**. El 8 destapa un defecto que habría reventado en producción —**siete
 > provincias del CRM no existen con ese nombre en Codicert**, y una es Valencia—; el 1 dice que
@@ -61,11 +67,29 @@ Los dos endpoints exigen la cabecera **`x-json-ficheros: 1`** cuando el cuerpo e
 ficheros en base64, que es siempre en nuestro caso. La declaran diez endpoints del contrato y
 olvidarla es el error fácil de este formato.
 
-El «SMS» del proceso de la casa **no es** `POST /envios/sms-certificado`. Ese producto existe y
-es texto pelado —`cuerpo` más un móvil, sin adjunto—, y no sirve para remitir un documento. Lo
-que se usa es la **entrega electrónica certificada notificada por SMS**, que entrega el
-documento. De ahí el literal de `CONVENCIONES_DESPACHO.md` §5, *«Consulte el documento
-adjunto»*: hay documento que consultar porque el canal lo lleva.
+**Hay DOS vías para mandar un SMS, y la rev. 4 describió mal la segunda** (corregido en rev. 5 tras
+la observación de Nikolai, medido en la UI de producción el 2026-09-17):
+
+| Vía | Texto del SMS | Adjunto | Qué acredita |
+|---|---|---|---|
+| **EEC con `tipo_entrega: "sms"`** | **Lo compone la plataforma.** No hay campo | 6 ficheros | Entrega **y acceso al contenido** (estado 20) |
+| **SMS Certificado** (`/envios/sms-certificado`) | **`cuerpo`, obligatorio y nuestro** | **1 fichero** | Entrega del SMS (estados 29/30) |
+
+Lo que la rev. 4 dijo —«el SMS no lleva texto propio»— es cierto de la primera vía y **falso de la
+segunda**: el formulario de SMS Certificado tiene un `Cuerpo` obligatorio con contador de
+caracteres GSM y aviso de no usar tildes, que es inequívocamente el texto que llega al móvil. Y
+tampoco es «texto pelado»: admite **un adjunto**.
+
+**Se sigue eligiendo la EEC por SMS, pero ahora por la razón correcta.** No es que la otra no
+tenga texto: es que el art. 10.2 exige acreditar que la otra parte **«ha podido acceder a su
+contenido íntegro»**, y eso es lo que da el estado 20 de la entrega electrónica certificada. El
+SMS Certificado acredita que el SMS se entregó, no que se accediera al documento. Es además lo que
+E&V ya hace: los tres envíos de producción del §2 son entregas electrónicas certificadas.
+
+El precio de esa elección, dicho: **el literal de `CONVENCIONES_DESPACHO.md` §5 no se puede poner
+en el SMS por esta vía.** Lo que el destinatario lee lo compone la plataforma con el nombre del
+remitente. Si se quisiera controlar ese texto palabra por palabra, habría que usar SMS Certificado
+y renunciar al acuse de acceso — que es peor negocio.
 
 Consecuencia operativa que gobierna todo el motor: **el burofax admite un destinatario por
 llamada**. Dos domicilios son dos llamadas, siempre.
@@ -143,9 +167,23 @@ precio del producto incluye 1 MB**; por encima, cargo adicional a 0,0288 €/MB.
 un requerimiento normal se está muy por debajo, así que el coste por bytes es ruido — pero el plan
 los estima igual, porque el margen del §5.2 tiene que cuadrar.
 
-⚠️ **La UI dice 6 ficheros y el contrato de la API dice `1..10`.** Discrepan, y no se ha medido
-cuál manda. El motor se ciñe a **6**, que es el suelo seguro, y el diseño con dos adjuntos cabe de
-sobra. El burofax añade dos avisos propios: los PDF deben ir en **DIN A4** o no se asegura la
+**Y el MB incluido depende de la tarifa, no del producto.** El mismo formulario de entrega
+electrónica certificada declara **1 MB incluido en el sandbox y 6 MB en producción**. Con nuestros
+dos adjuntos no habrá cargo en producción; el plan lo estima igual porque el margen del §5.2 debe
+cuadrar, pero la cifra sale de la tarifa del usuario, no de una constante.
+
+**Se cobra un envío por destinatario** —lo dice la propia UI—, así que agrupar destinatarios en un
+envío no ahorra nada. Eso quita el único argumento que podría haber a favor de agrupar, y deja la
+regla del §5 apoyada solo en lo que importa: cada requerido necesita su propio acuse.
+
+⚠️ **La UI y el contrato de la API discrepan en tres sitios**, y ninguno se ha medido contra el
+servidor. El motor se ciñe siempre al **suelo seguro**:
+
+| | Contrato | UI | Motor |
+|---|---|---|---|
+| Adjuntos de la EEC | `1..10` | 6 ficheros | **6** |
+| Adjuntos del SMS Certificado | no declara | 1 fichero | **1** |
+| Destinatarios del SMS Certificado | `maxItems: 1` | hasta 30 | **1** | El burofax añade dos avisos propios: los PDF deben ir en **DIN A4** o no se asegura la
 impresión, y **se eliminan las firmas electrónicas** y marcas de autor del adjunto — irrelevante
 para nuestros PDF, que no van firmados, pero conviene que conste antes de que a alguien se le
 ocurra adjuntar uno que sí lo esté.
@@ -337,19 +375,20 @@ Entrada: el expediente y el **tipo de comunicación**. Del CRM salen las partes 
    expresamente «el objeto de la controversia» y el art. 17.4 exige la manifestación de la
    remisión—, pero **no pueden contener términos de la oferta**: ni importe, ni calendario, ni
    quita, ni plazo. El acta del certificado los reproduce y **el acta no se recorta**.
-7. **El SMS no lleva texto propio, y eso obliga a revisar el literal de la casa** (rev. 4, hueco 1
-   cerrado el 2026-09-17). Medido por tres vías que coinciden: el formulario de entrega electrónica
-   certificada **no tiene campo** para el texto del SMS —solo asunto, cuerpo, adjuntos y
-   destinatarios—; el contrato de la API tampoco lo expone; y entre los tipos de comunicación
-   **personalizables** solo están *Logo*, *Página de lectura*, *Correo de notificación* y *Correo
-   de confirmación de firma*: **el SMS no está**. Lo único que se controla es el **nombre del
-   remitente** (`de`, 60 caracteres), que es lo que el destinatario lee.
+7. **Por la vía elegida, el texto del SMS lo compone la plataforma** (rev. 5). No hay campo en el
+   formulario de entrega electrónica certificada, no lo expone el contrato, y entre los tipos de
+   comunicación **personalizables** solo están *Logo*, *Página de lectura*, *Correo de
+   notificación* y *Correo de confirmación de firma*. Lo que se controla es el **nombre del
+   remitente** (`de`, 60 caracteres), que es lo que el destinatario lee junto al enlace.
 
-   Consecuencia práctica: el literal de `CONVENCIONES_DESPACHO.md` §5 —«EV MMC SPAIN, S.L.U. le
-   remite Oferta Vinculante Confidencial (OVC) y propuesta de negociación extrajudicial. Consulte
-   el documento adjunto»— **no se puede poner en el SMS**. Donde sí cabe es en el **correo de
-   notificación**, que es personalizable, y en el asunto y el cuerpo. Queda por confirmar el texto
-   exacto que compone la plataforma, que se leerá en el primer envío de sandbox.
+   La otra vía —**SMS Certificado**— sí tiene `cuerpo` propio, pero no acredita el acceso al
+   contenido que pide el art. 10.2 (§1.1). Se descarta por eso, no por falta de texto.
+
+   Consecuencia práctica que hay que corregir fuera de este spec: el literal de
+   `CONVENCIONES_DESPACHO.md` §5 —«EV MMC SPAIN, S.L.U. le remite Oferta Vinculante Confidencial
+   (OVC)…»— describe un SMS que **por esta vía no se puede componer**. Donde sí cabe es en el
+   **correo de notificación**, que es personalizable, y en el asunto y el cuerpo de la
+   comunicación.
 
 ### 5.1 La puerta humana
 
@@ -625,8 +664,10 @@ del certificado emitido.
    cubre el **envío postal**. El burofax es fehaciente por su propia vía —certifica contenido y
    entrega—; lo que no está verificado es por qué cauce concreto se le reconoce cuando lo cursa
    Codicert.
-6. **El volumen de envíos de la cuenta de un Market Center**, del que depende que paginar sea
-   barato.
+6. ~~**El volumen de envíos de la cuenta de un Market Center.**~~ **CERRADO el 2026-09-17**
+   (§4.3): `barcelona.bd` acumula **1.954** envíos históricos y `madrid.bd` **953**. Son veinte
+   páginas para el histórico completo de la plaza más activa, y una o dos acotando por fecha.
+   Paginar es barato.
 7. ~~**El mapeo página→bloque del documento refundido vivo.**~~ **CERRADO el 2026-09-17** (§7.3):
    la plantilla 281 renderizada da tres páginas —requerimiento, OVC, condiciones—, la línea A/B
    cae en una frontera de página que ya existe, y el discriminante es el literal
@@ -636,12 +677,12 @@ del certificado emitido.
    el 2026-09-17** (§5 regla 5): 45 coinciden, **7 no**, y hacen falta traducirse. Afecta a la
    Comunidad Valenciana entera y al País Vasco.
 
-**Balance tras la tanda del 2026-09-17:** de los ocho, **cinco cerrados** (1, 4, 5, 7, 8) y tres
-abiertos (2, 3, 6), más dos restos menores —el cauce de la fehaciencia postal y la discrepancia
+**Balance tras la tanda del 2026-09-17:** de los ocho, **seis cerrados** (1, 4, 5, 6, 7, 8) y dos
+abiertos (2 y 3), más dos restos menores —el cauce de la fehaciencia postal y la discrepancia
 `6` contra `1..10` en el número de adjuntos—.
 
-Los tres abiertos **no se cierran en sandbox**: el 2 y el 3 necesitan un certificado de burofax
-real, y el 6 una lectura del portal de producción. Ninguno bloquea F1.
+Los dos abiertos **no se cierran en sandbox**: necesitan un certificado de burofax real, y no hay
+ninguno archivado en el gestor documental. Ninguno bloquea F1.
 
 ## 11. Adjudicación de la revisión adversarial (Claude Code en sesión independiente, 2026-09-17) — REQUIERE-REVISION, parcial
 
