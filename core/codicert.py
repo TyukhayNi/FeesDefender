@@ -7,9 +7,12 @@ Contrato y mediciones: `docs/superpowers/specs/2026-09-17-envio-certificado-codi
 """
 from __future__ import annotations
 
+import datetime as _dt
 import os
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Protocol
 
 
 class CodicertError(RuntimeError):
@@ -111,11 +114,6 @@ def credenciales(plaza: str | None, entorno: str) -> tuple[str, str]:
     return usuario, clave  # type: ignore[return-value]
 
 
-import datetime as _dt
-from dataclasses import dataclass
-from typing import Any, Protocol
-
-
 class Cliente(Protocol):
     """Superficie mínima de `httpx.Client` que usa este módulo."""
 
@@ -143,12 +141,33 @@ def _cliente_real() -> Cliente:
     return _C()
 
 
+def _json_o_vacio(r: Any) -> Any:
+    """El cuerpo de `r` como JSON, o `{}` si no parsea — sin mirar `status_code`.
+
+    El blindaje anterior (`r.json() if r.status_code != 500 else {}`) solo cubría el
+    500, un número arbitrario que no está medido contra el servidor en ningún sitio
+    del proyecto. Un 502/503/504 de un proxy, o un cuerpo corrupto con cualquier otro
+    estado, hacía explotar `r.json()` con un `JSONDecodeError` crudo que rompía el
+    contrato de este módulo: solo falla con `CodicertError`/`CodicertAuthError`.
+    Pensado para que lo reutilicen los envíos y las lecturas que se añadan a este
+    mismo módulo.
+    """
+    try:
+        return r.json()
+    except ValueError:
+        # `json.JSONDecodeError` es un `ValueError`; igual cualquier otro fallo de
+        # decodificación del cuerpo. Las dos cosas son "no parsea".
+        return {}
+
+
 def acceso(usuario: str, clave: str, *, entorno: str, cliente: Cliente | None = None) -> Ficha:
     """`POST /usuarios/acceso`. La clave no aparece nunca en el error."""
+    if entorno not in BASES:
+        raise CodicertError(f"entorno desconocido: {entorno!r}; son {sorted(BASES)}")
     cliente = cliente or _cliente_real()
     r = cliente.request("POST", f"{BASES[entorno]}/usuarios/acceso",
                         json={"usuario": usuario, "clave": clave})
-    cuerpo = r.json() if r.status_code != 500 else {}
+    cuerpo = _json_o_vacio(r)
     if r.status_code != 200 or (cuerpo or {}).get("estado") != "OK":
         raise CodicertAuthError(
             f"Codicert rechazó el acceso de {usuario!r} en {entorno}: "
