@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "2"
+rev: "3"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -20,6 +20,12 @@ certificados** y producir la versión **aportable** como prueba.
 > plazos corren por requerido, no por expedición) y el **§6** (el documento se parte en dos PDF).
 > Adjudicación en el **§11**; acta literal en
 > [`…-r1-adversarial-review.md`](2026-09-17-envio-certificado-codicert-r1-adversarial-review.md).
+>
+> **Rev. 3 (2026-09-17).** Se cierran por medición los huecos **5** y **7**, a petición de
+> Nikolai. El 5 trae una consecuencia que refuerza el hallazgo J-06: el prestador **es cualificado**
+> y el art. 326.4 LEC juega, luego romper la firma cuesta más de lo que la rev. 2 suponía. El 7
+> **retira un discriminante que la rev. 2 daba por bueno** —el pie por sección, que la plantilla
+> viva no tiene— y lo sustituye por uno medido.
 
 ## 1. El contrato de la API, medido
 
@@ -428,10 +434,21 @@ lo subido y se compara el `sha256`.
 Sobre el certificado `006casm113n` (gdocu 42990 del W-04A6LI, 6 páginas):
 
 - **Va firmado digitalmente.** `AcroForm` con `SigFlags: 3`, `/ByteRange`, `adbe.pkcs7` y
-  `DocMDP`. **Recortar páginas rompe la firma.** Con ello se pierde la presunción del **art. 326.4
-  LEC** —que además exige que el prestador sea **cualificado** y figure en la lista de confianza,
-  extremo **sin verificar** (§9)— y la inversión de la carga al impugnante. Por eso el recorte nace
-  como **documento derivado con trazabilidad**, nunca como «el certificado».
+  `DocMDP`. **Recortar páginas rompe la firma.** Por eso el recorte nace como **documento derivado
+  con trazabilidad**, nunca como «el certificado».
+- **Y la presunción que se pierde al romperla es real** (rev. 3, hueco 5 cerrado el 2026-09-17).
+  `SERVICIOS DE MAILCERTIFICADO SL`, CIF `B85804532`, **figura en la lista de confianza española**
+  —`https://tsl.digital.gob.es/TSL.xml`, alcanzada desde la LOTL europea
+  `https://ec.europa.eu/tools/lotl/eu-lotl.xml`, no desde la web del prestador— con **tres
+  servicios de tipo `http://uri.etsi.org/TrstSvc/Svctype/EDS/Q`** —entrega electrónica certificada
+  **cualificada**—, los tres en estado `granted`, el vigente desde el 2026-07-01. Luego el **art.
+  326.4 LEC** juega: presunción de que el documento reúne la característica cuestionada y **carga
+  de la comprobación a quien impugne**, con sus costas y la multa por temeridad. Romper la firma
+  cuesta eso, y hay que decidirlo sabiéndolo.
+- **El burofax postal no está cubierto por ninguno de esos tres servicios.** Los tres son de
+  entrega **electrónica**. La consecuencia es contraintuitiva y conviene tenerla presente: el canal
+  más caro —16,97 €— es el que se queda sin la presunción del art. 326.4 por esta vía. Qué régimen
+  probatorio ampara el certificado postal **no lo he verificado** y sigue como hueco.
 - **Acta y reproducción se distinguen por el texto.** Las páginas del acta llevan en cabecera
   *«Este certificado contiene un sello temporal y se encuentra firmado digitalmente con un
   certificado reconocido»*; las de la reproducción no. En ese certificado: 1-4 acta, 5-6
@@ -444,18 +461,38 @@ distintas y el motor debe nombrar siempre cuál usa: página del documento, pág
 y página del certificado —desplazada por las páginas de acta y, en el burofax, quizá por la
 portada—.
 
-El motor localiza las páginas de B por **dos instrumentos independientes que deben coincidir**:
+**El documento vivo, medido** (rev. 3, hueco 7 cerrado el 2026-09-17). La plantilla **281**
+renderizada por la API sobre un expediente real y convertida a PDF da **tres páginas**:
 
-1. **Por estructura**: el motor compuso A y B, conoce el número de páginas de cada uno y el orden
-   en que van; la reproducción empieza donde acaba el acta, por el discriminante del §7.2.
-2. **Por el pie**: el documento refundido lleva **pie propio en su sección confidencial**, medido
-   en el spec hermano —el prototipo de `W-02SRFU` tiene **cinco** páginas, «1-3 con el pie de
-   requerimiento fehaciente; páginas 4-5 con el pie de confidencialidad»—.
+| Página | Bloque | Cómo se reconoce |
+|---|---|---|
+| 1 | Requerimiento | Encabezado `OFERTA VINCULANTE CONFIDENCIAL Y PROPUESTA DE NEGOCIACIÓN DIRECTA`; lleva el `100 %` de honorarios y los tres IBAN |
+| 2 | OVC, motor MASC | Diez menciones de «oferta vinculante»; el «UN MES» del art. 17.4 |
+| 3 | Condiciones económicas | Abre con el literal **`CONFIDENCIAL - CONDICIONES`**; calendario de `DIEZ (10)` y `TREINTA (30)` días |
+
+**La línea A/B del §7 cae en una frontera de página que ya existe**: A = páginas 1-2, B = página 3.
+Y se comprobó por el lado que importa: **en A no hay términos económicos**. No hay un solo importe
+en euros en todo el documento —las condiciones no llevan cifra, que es deuda conocida de la
+plantilla—, el `100 %` de la página 1 es el porcentaje de honorarios reclamado y pertenece al
+requerimiento, y el «UN MES» de la página 2 es el plazo legal del art. 17.4, no un término
+negociado.
+
+**Un discriminante que la rev. 2 dio por bueno y NO existe.** La rev. 2 proponía localizar B «por
+el pie», apoyándose en que el refundido lleva pie propio en su sección confidencial. Eso es cierto
+del **prototipo de `W-02SRFU`** —cinco páginas, pies distintos en 1-3 y 4-5— y **falso de la
+plantilla 281 viva**: sus tres páginas llevan **el mismo** pie de requerimiento fehaciente. Medido.
+Un control que el documento real no soporta no es un control.
+
+El motor localiza B por **dos instrumentos independientes que deben coincidir**:
+
+1. **Por estructura**: el motor compuso A y B, conoce el número de páginas de cada uno y su orden;
+   la reproducción empieza donde acaba el acta, por el discriminante del §7.2.
+2. **Por el literal de apertura de B**: `CONFIDENCIAL - CONDICIONES`, que es texto exacto del
+   documento y no una heurística. Como B lo compone el motor, su primera línea se conoce siempre,
+   también si la plantilla cambia.
 
 **Si los dos no coinciden, el motor para.** Un solo instrumento que no puede dar el otro valor no
-acredita nada; dos que deben coincidir sí. La rev. 1 decía «3 páginas, económicas en la 3», que
-contradice la única medición del repo: **el mapeo página→bloque del refundido está sin medir para
-el documento vivo**, y medirlo es hito de F3 antes de escribir código.
+acredita nada; dos que deben coincidir sí.
 
 ### 7.4 Qué produce, y el aviso que sí tiene discriminante
 
@@ -524,12 +561,18 @@ del certificado emitido.
 3. **Si la portada del burofax se imprime como página adicional**, y por tanto desplaza la
    numeración de la reproducción. La portada **es opcional en el contrato**: si estorba, se omite.
 4. **El límite de tamaño de los adjuntos**, que el contrato no declara.
-5. **Si Codicert figura en la lista de confianza como prestador cualificado.** De ello depende el
-   art. 326.4 LEC y, con él, el precio real de romper la firma al recortar. La firma de sus correos
-   lo afirma, pero eso es autodeclaración.
+5. ~~**Si Codicert figura en la lista de confianza como prestador cualificado.**~~ **CERRADO el
+   2026-09-17** (§7.2): sí figura, con tres servicios `EDS/Q` `granted`. El art. 326.4 LEC juega
+   para los certificados electrónicos. **Queda un resto abierto**: ninguno de esos tres servicios
+   cubre el **envío postal**, y qué régimen probatorio ampara el certificado del burofax no está
+   verificado.
 6. **El volumen de envíos de la cuenta de un Market Center**, del que depende que paginar sea
    barato.
-7. **El mapeo página→bloque del documento refundido vivo** (§7.3).
+7. ~~**El mapeo página→bloque del documento refundido vivo.**~~ **CERRADO el 2026-09-17** (§7.3):
+   la plantilla 281 renderizada da tres páginas —requerimiento, OVC, condiciones—, la línea A/B
+   cae en una frontera de página que ya existe, y el discriminante es el literal
+   `CONFIDENCIAL - CONDICIONES`. De paso se retiró el discriminante «por el pie» que la rev. 2 daba
+   por bueno y que el documento vivo no soporta.
 8. **Los 52 valores de `provincia` del CRM** cruzados con lo que el burofax acepta.
 
 Los huecos 1 y 4 se cierran con una expedición completa en sandbox, que es el primer hito de F1.
