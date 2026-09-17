@@ -7,6 +7,7 @@ Contrato y mediciones: `docs/superpowers/specs/2026-09-17-envio-certificado-codi
 """
 from __future__ import annotations
 
+import base64
 import datetime as _dt
 import os
 import subprocess
@@ -174,3 +175,54 @@ def acceso(usuario: str, clave: str, *, entorno: str, cliente: Cliente | None = 
             f"{(cuerpo or {}).get('mensaje') or r.status_code}")
     datos = cuerpo["datos"]
     return Ficha(token=datos["ficha"], vence=_dt.datetime.fromisoformat(datos["fecha_vencimiento"]))
+
+
+TIPOS_ENTREGA = ("correo", "sms")
+
+
+def adjunto(ruta: Path) -> dict[str, str]:
+    """Fichero en el formato que piden los dos endpoints: base64 dentro del JSON."""
+    return {"nombre": ruta.name,
+            "datos": base64.b64encode(ruta.read_bytes()).decode("ascii"),
+            "mime": "application/pdf"}
+
+
+def _cabeceras(ficha: Ficha) -> dict[str, str]:
+    return {"Authorization": f"Bearer {ficha.token}", "x-json-ficheros": "1"}
+
+
+def _id_de(r: Any, que: str) -> str:
+    cuerpo = _json_o_vacio(r)
+    if r.status_code == 422:
+        raise CodicertDatosInvalidosError(
+            cuerpo.get("mensaje") or "datos no válidos", cuerpo.get("datos") or {})
+    if r.status_code != 200 or cuerpo.get("estado") != "OK":
+        raise CodicertError(f"{que}: HTTP {r.status_code} — {cuerpo.get('mensaje')!r}")
+    return cuerpo["datos"]["id"]
+
+
+def enviar_burofax(ficha: Ficha, *, destinatario: dict, adjuntos: list[dict], asunto: str,
+                   cuerpo: str, id_personalizado: str, entorno: str,
+                   cliente: Cliente | None = None) -> str:
+    """`POST /envios/burofax`. UN destinatario por llamada: el contrato no admite más."""
+    cliente = cliente or _cliente_real()
+    r = cliente.request("POST", f"{BASES[entorno]}/envios/burofax", headers=_cabeceras(ficha),
+                        json={"destinatarios": [destinatario], "adjuntos": adjuntos,
+                              "asunto": asunto, "cuerpo": cuerpo,
+                              "id_personalizado": id_personalizado})
+    return _id_de(r, "burofax")
+
+
+def enviar_eec(ficha: Ficha, *, destinatarios: list[dict], adjuntos: list[dict], asunto: str,
+               cuerpo: str, tipo_entrega: str, id_personalizado: str, entorno: str,
+               cliente: Cliente | None = None) -> str:
+    """`POST /envios/entrega-electronica-certificada`, por correo o por SMS."""
+    if tipo_entrega not in TIPOS_ENTREGA:
+        raise CodicertError(f"tipo_entrega {tipo_entrega!r}; son {TIPOS_ENTREGA}")
+    cliente = cliente or _cliente_real()
+    r = cliente.request("POST", f"{BASES[entorno]}/envios/entrega-electronica-certificada",
+                        headers=_cabeceras(ficha),
+                        json={"destinatarios": destinatarios, "adjuntos": adjuntos,
+                              "asunto": asunto, "cuerpo": cuerpo, "tipo_entrega": tipo_entrega,
+                              "id_personalizado": id_personalizado})
+    return _id_de(r, f"entrega electrónica ({tipo_entrega})")
