@@ -10,10 +10,14 @@ import json
 import re
 import uuid
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
+
+from core import codicert as _cod
 
 
 class ExpedicionError(RuntimeError):
@@ -326,3 +330,126 @@ class RegistroIntencion:
 def ya_expedido(listado: list[dict], id_personalizado: str) -> set[str]:
     """`IdEnvio` que la plataforma ya tiene con ese identificador exacto."""
     return {e["id"] for e in listado if e.get("id_personalizado") == id_personalizado}
+
+
+@dataclass(frozen=True)
+class EntornoExpedicion:
+    """Puerto único de inyección: transporte, CRM, reloj y raíz de escritura.
+
+    Sin él no hay dónde enchufar un doble y los tests escribirían en el árbol real, que
+    la regla de `CLAUDE.md` §Tests prohíbe sin escotilla. Todo lo no determinista de
+    `planificar`/`ejecutar` entra por aquí.
+    """
+
+    codicert: Any
+    partes_de: Callable[[str], list[dict]]
+    ahora: Callable[[], datetime]
+    raiz: Path
+
+
+@dataclass(frozen=True)
+class Confirmacion:
+    """Lo que el CLI construye a partir del plan leído por un humano.
+
+    Un `bool` no distingue «alguien leyó» de «alguien puso `True`»; el digest sí,
+    porque solo se puede producir a partir del plan concreto que se aprobó (spec §5.1).
+    """
+
+    digest: str
+
+
+@dataclass(frozen=True)
+class Plan:
+    """El plan de una expedición: lo que un humano lee y aprueba antes de gastar."""
+
+    w_code: str
+    tipo: str
+    id_personalizado: str
+    plaza: str
+    entorno: str
+    envios: list[EnvioPrevisto]
+    ausencias: list[str]
+    coste: Decimal
+    credito: Decimal
+    documentos: list[Path]
+    documentos_sha256: list[str]
+    asunto: str
+    cuerpo: str
+    digest: str = field(default="", compare=False)
+
+    @property
+    def ejecutable(self) -> bool:
+        """`False` si el crédito disponible al planificar no cubre el coste estimado."""
+        return self.credito >= self.coste
+
+
+def _digest_de(w_code: str, tipo: str, envios: list[EnvioPrevisto], shas: list[str]) -> str:
+    """Huella del plan: expediente, tipo, documentos y destinatarios ya resueltos.
+
+    `ejecutar` la recalcula para comparar contra el plan aprobado (spec §5.1): si
+    difiere, algo cambió en el CRM o en el documento entre el `planificar` y el
+    `ejecutar`, y no se manda a ciegas.
+    """
+    crudo = "|".join([w_code, tipo, *shas,
+                      *sorted(f"{e.canal}:{sorted(e.destinatario.items())}" for e in envios)])
+    return hashlib.sha256(crudo.encode("utf-8")).hexdigest()
+
+
+def planificar(w_code: str, tipo: str, documentos: list[Path], *,
+              entorno_exp: EntornoExpedicion, plaza: str, entorno: str = "sandbox",
+              ordinal: int = 1) -> Plan:
+    """Construye el plan de la expedición. **No envía nada.**"""
+    envios, ausencias = destinatarios_de(entorno_exp.partes_de(w_code))
+    shas = [hashlib.sha256(Path(d).read_bytes()).hexdigest() for d in documentos]
+    coste = coste_de(envios)
+    asunto, cuerpo = texto_de(w_code)
+    return Plan(w_code=w_code, tipo=tipo,
+                id_personalizado=componer_id(w_code, tipo, ordinal),
+                plaza=plaza, entorno=entorno, envios=envios, ausencias=ausencias,
+                coste=coste, credito=entorno_exp.codicert.credito(),
+                documentos=[Path(d) for d in documentos], documentos_sha256=shas,
+                asunto=asunto, cuerpo=cuerpo,
+                digest=_digest_de(w_code, tipo, envios, shas))
+
+
+def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
+            entorno_exp: EntornoExpedicion) -> list[str]:
+    """Ejecuta el plan aprobado. Replanifica y compara antes de gastar (spec §5.1)."""
+    if confirmacion.digest != plan.digest:
+        raise ExpedicionError("la confirmación no corresponde a este plan: no se envía nada.")
+    if not plan.ejecutable:
+        raise ExpedicionError(
+            f"crédito insuficiente: {plan.credito} € para un coste de {plan.coste} €.")
+
+    envios_ahora, _ = destinatarios_de(entorno_exp.partes_de(plan.w_code))
+    if _digest_de(plan.w_code, plan.tipo, envios_ahora, plan.documentos_sha256) != plan.digest:
+        raise ExpedicionError(
+            "el expediente ha cambiado desde que se aprobó el plan (destinatarios, "
+            "domicilios o documento). Vuelve a planificar y revísalo.")
+
+    if ya_expedido(list(entorno_exp.codicert.listar()), plan.id_personalizado):
+        raise ExpedicionError(
+            f"ya existe al menos un envío con {plan.id_personalizado!r} en la plataforma. "
+            "No se repite: revisa el portal.")
+
+    registro = RegistroIntencion(entorno_exp.raiz / "_codicert_intencion.jsonl")
+    # Acotado a ESTA expedición: un pendiente de otro expediente no debe bloquearla.
+    registro.exigir_sin_pendientes(plan.id_personalizado)
+    adjuntos = [_cod.adjunto(d) for d in plan.documentos]
+    asunto, cuerpo = plan.asunto, plan.cuerpo   # los mismos que el humano leyó
+
+    ids: list[str] = []
+    for e in plan.envios:
+        clave = registro.anotar(plan.id_personalizado, e.canal, e.etiqueta)
+        if e.canal == "burofax":
+            i = entorno_exp.codicert.enviar_burofax(
+                destinatario=e.destinatario, adjuntos=adjuntos, asunto=asunto, cuerpo=cuerpo,
+                id_personalizado=plan.id_personalizado)
+        else:
+            i = entorno_exp.codicert.enviar_eec(
+                destinatarios=[e.destinatario], adjuntos=adjuntos, asunto=asunto, cuerpo=cuerpo,
+                tipo_entrega="correo" if e.canal == "correo" else "sms",
+                id_personalizado=plan.id_personalizado)
+        registro.cerrar(clave, i)
+        ids.append(i)
+    return ids
