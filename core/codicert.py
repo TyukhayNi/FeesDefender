@@ -11,7 +11,9 @@ import base64
 import datetime as _dt
 import os
 import subprocess
+from collections.abc import Iterator
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -36,6 +38,8 @@ BASES: dict[str, str] = {
     "sandbox": "https://ws.codicert.tk/v2",
     "produccion": "https://ws.codicert.io/v2",
 }
+
+LONGITUD_PAGINA = 100  # el contrato dice [1..100]; medido, acepta [10..100]
 
 # Ciudad canónica de `core.ciudades.CIUDADES` -> prefijo de variable de entorno.
 # El slug se fija aquí y no se deriva: "San Sebastián" no admite espacio ni tilde.
@@ -263,3 +267,65 @@ def enviar_eec(ficha: Ficha, *, destinatarios: list[dict], adjuntos: list[dict],
                               "asunto": asunto, "cuerpo": cuerpo, "tipo_entrega": tipo_entrega,
                               "id_personalizado": id_personalizado})
     return _id_de(r, f"entrega electrónica ({tipo_entrega})")
+
+
+def _get(ficha: Ficha, ruta: str, *, entorno: str, cliente: Cliente | None = None, **kw: Any) -> Any:
+    """GET genérico con autorización. Levanta `CodicertError` si status != 200."""
+    base = _base_de(entorno)
+    cliente = cliente or _cliente_real()
+    r = cliente.request("GET", f"{base}{ruta}",
+                        headers={"Authorization": f"Bearer {ficha.token}"}, **kw)
+    if r.status_code != 200:
+        raise CodicertError(f"GET {ruta}: HTTP {r.status_code}")
+    return r
+
+
+def credito(ficha: Ficha, *, entorno: str, cliente: Cliente | None = None) -> Decimal:
+    """Saldo del usuario. `Decimal` y no `float`: con esto se decide si se gasta."""
+    r = _get(ficha, "/usuarios/credito", entorno=entorno, cliente=cliente)
+    cuerpo = _json_o_vacio(r)
+    datos = cuerpo.get("datos")
+    if not isinstance(datos, dict) or "credito" not in datos:
+        raise CodicertError("GET /usuarios/credito: respuesta sin datos.credito")
+    return Decimal(str(datos["credito"]))
+
+
+def estados(ficha: Ficha, id_envio: str, *, entorno: str,
+            cliente: Cliente | None = None) -> list[dict]:
+    """Histórico de estados certificados de una comunicación."""
+    r = _get(ficha, f"/envios/{id_envio}/estados", entorno=entorno, cliente=cliente)
+    cuerpo = _json_o_vacio(r)
+    return cuerpo.get("datos") or []
+
+
+def certificado(ficha: Ficha, id_envio: str, *, entorno: str,
+                cliente: Cliente | None = None) -> bytes:
+    """El certificado, en PDF. Se emite **a fecha de descarga**, no de envío."""
+    return _get(ficha, f"/certificados/comunicacion/{id_envio}",
+                entorno=entorno, cliente=cliente).content
+
+
+def descargar_adjunto(ficha: Ficha, id_envio: str, nombre: str, *, entorno: str,
+                      cliente: Cliente | None = None) -> bytes:
+    """El adjunto **tal como salió**. Su `sha256` es la verificación por resultado."""
+    clave = base64.urlsafe_b64encode(nombre.encode()).decode().rstrip("=")
+    return _get(ficha, f"/envios/{id_envio}/adjuntos/{clave}",
+                entorno=entorno, cliente=cliente).content
+
+
+def listar(ficha: Ficha, *, entorno: str, cliente: Cliente | None = None,
+           **filtros: Any) -> Iterator[dict]:
+    """Recorre `GET /envios` entero. Acota siempre por fecha cuando se pueda.
+
+    No hay filtro por `id_personalizado`: viene en cada elemento y se filtra en casa.
+    """
+    pagina = 1
+    while True:
+        params = {"longitud": LONGITUD_PAGINA, "pagina": pagina, **filtros}
+        cuerpo = _get(ficha, "/envios", entorno=entorno, cliente=cliente, params=params).json()
+        datos = cuerpo.get("datos")
+        if datos:
+            yield from datos
+        if pagina >= (cuerpo.get("totalPaginas") or 0):
+            return
+        pagina += 1
