@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "10"
+rev: "11"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,11 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 11 (2026-09-17).** Lectura contra **producción** con `madrid.bd`. Se cierra el hueco **3**
+> —la portada del burofax **no entra en la reproducción**, medido por diferencia exacta— y con él
+> los ocho. La gramática del identificador del §3 **se alinea con la que ya está en uso**
+> (`W-04AKM2 - OVC`) en vez de inventar otra.
+>
 > **Rev. 10 (2026-09-17).** Se cierra del todo el hueco **1** con el literal del SMS, y un
 > certificado real de OVC confirma dos cosas sobre envíos del despacho: el acta electrónica **lista
 > los ficheros uno a uno con su huella** —partir A y B quedaría reflejado— y el discriminante
@@ -162,7 +167,7 @@ GET  /envios                               listado paginado (100 máx. por pági
 GET  /envios/{IdEnvio}/estados             histórico de estados certificados
 GET  /certificados/comunicacion/{IdEnvio}  el certificado, en PDF
 GET  /certificados/eml/{IdEnvio}           el EML de la comunicación
-GET  /envios/{IdEnvio}/adjuntos/{Adjunto}  el adjunto tal como se envió
+GET  /envios/{IdEnvio}/adjuntos/{Adjunto}  el adjunto tal como se envió (nombre en base64url)
 GET  /usuarios/credito                     crédito del usuario
 ```
 
@@ -170,6 +175,12 @@ GET  /usuarios/credito                     crédito del usuario
 cinco devuelven el total sin filtrar— pero **sí acepta `fecha_inicio`, `fecha_fin`, `tipo` y
 `estado`**, ejercidos contra el sandbox, y cada elemento **devuelve su `id_personalizado`**. Esos
 dos hechos juntos son los que hacen viable el §4.3: se acota por fecha y se filtra en casa.
+
+**`GET /envios/{id}/adjuntos/{nombre}` funciona y es la verificación por resultado del envío**
+(rev. 11): devuelve el fichero **tal como salió**, con el nombre en base64url sin relleno. Comparar
+su `sha256` con el del bloque que el motor compuso es la única forma de acreditar que se envió lo
+que se quería enviar, y no una versión anterior. Es la misma disciplina que el §7.1 aplica a la
+subida al CRM.
 
 Dos correcciones al contrato, medidas: la envoltura real es
 `{estado, datos, pagina, longitud, total, totalPaginas}` —el OpenAPI escribe `total_paginas`— y
@@ -311,15 +322,23 @@ W-code solo, el modo de fallo es silencioso y positivo:
 expediente*: también un segundo requerimiento a un domicilio nuevo, o un reenvío por otro canal
 tras una entrega fallida. Por eso el discriminante no es un booleano, es una secuencia:
 
+**La convención ya existe en producción y el motor la adopta**, en vez de inventar otra (rev. 11,
+leído por API en `madrid.bd`): los envíos vivos llevan `W-02W9BO - OVC` y `W-04AKM2 - OVC`, es
+decir **`<W-code> - <TIPO>`**. Lo único que falta es el ordinal, y solo desde la segunda expedición
+del mismo tipo:
+
 ```
-<W-code>-<TIPO><n>
-W-04A6LI-REQ1      requerimiento, primera expedición
-W-04A6LI-OVC1      oferta vinculante, primera expedición
-W-04A6LI-REQ2      segunda expedición del requerimiento (domicilio nuevo, reenvío)
+W-04AKM2 - REQ     requerimiento
+W-04AKM2 - OVC     oferta vinculante
+W-04AKM2 - REQ 2   segunda expedición del requerimiento (domicilio nuevo, reenvío)
 ```
 
-Caben: 20 − 8 (W-code) − 1 (guion) = **11 caracteres**, de sobra. `TIPO` es un enum cerrado y `n`
-lo calcula el motor contando las expediciones previas del mismo tipo.
+Caben: `W-04AKM2 - REQ 2` son 16 de los 20 disponibles. `TIPO` es un enum cerrado y el ordinal lo
+calcula el motor contando las expediciones previas del mismo tipo.
+
+Que la convención esté ya en uso tiene además una consecuencia práctica: **el equipo lee esos
+identificadores en el portal**, así que el motor no puede escribir algo que a Ana o a Olga les
+resulte ajeno.
 
 **El tipo de comunicación es un parámetro obligatorio de `planificar`**, no un dato derivable del
 expediente: el mismo expediente da varias comunicaciones y ninguna propiedad suya dice cuál toca.
@@ -790,12 +809,11 @@ del certificado emitido.
    `006ar9bel3n`, aportado por Nikolai: 10 páginas, **6 de acta y 4 de reproducción**, y **el
    discriminante del sello temporal funciona igual** que en el electrónico. De paso destapó que
    Codicert **fusiona los adjuntos** y que el orden de la reproducción no es el de envío (§7).
-3. **Si la portada del burofax se imprime como página adicional.** Sigue abierto, y en la rev. 8
-   **empeora su premisa**: el servidor exige `asunto` y `cuerpo` (§1.1), luego **la portada no es
-   opcional** y la salida que el spec proponía —omitirla— no existe. Lo que salva la situación es
-   que el método del §7.3 casa por texto y **no depende de la numeración**, así que la portada puede
-   estar donde quiera. En `006ar9bel3n` no se ve portada entre las cuatro páginas de reproducción,
-   lo que sugiere que se imprime aparte y no entra en ella; sin medir.
+3. ~~**Si la portada del burofax se imprime como página adicional.**~~ **CERRADO el 2026-09-17**
+   por diferencia exacta: se bajó el adjunto de `006ar9bel3n` con
+   `GET /envios/{id}/adjuntos/{nombre}` y tiene **4 páginas**; la reproducción del certificado tiene
+   **4**. **La portada no entra en la reproducción**, aunque el servidor exija `asunto` y `cuerpo`
+   y esa portada se imprima en el sobre. La reproducción son los adjuntos y nada más.
 4. ~~**El límite de tamaño de los adjuntos.**~~ **CERRADO el 2026-09-17** (§1.4): 6 ficheros, 60 MB
    en total, 1 MB incluido en el precio. **Queda un resto**: la UI dice 6 ficheros y el contrato
    `1..10`, y no se ha medido cuál manda.
@@ -818,12 +836,11 @@ del certificado emitido.
    el 2026-09-17** (§5 regla 5): 45 coinciden, **7 no**, y hacen falta traducirse. Afecta a la
    Comunidad Valenciana entera y al País Vasco.
 
-**Balance tras la tanda del 2026-09-17:** de los ocho, **siete cerrados** (1, 2, 4, 5, 6, 7, 8) y uno
-abierto (el 3, ya inocuo), más dos restos menores —el cauce de la fehaciencia postal y la discrepancia
+**Balance tras la tanda del 2026-09-17:** de los ocho, **los ocho cerrados**, y solo quedan dos restos menores: el cauce por el que se reconoce la
+fehaciencia del burofax y la discrepancia `6` contra `1..10` en el número de adjuntos, más dos restos menores —el cauce de la fehaciencia postal y la discrepancia
 `6` contra `1..10` en el número de adjuntos—.
 
-El único abierto ya no condiciona el diseño: el método del §7.3 no depende de la numeración de
-páginas. Ninguno bloquea F1.
+Ninguno de los dos restos condiciona el diseño ni bloquea F1.
 
 ## 11. Adjudicación de la revisión adversarial (Claude Code en sesión independiente, 2026-09-17) — REQUIERE-REVISION, parcial
 
