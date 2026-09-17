@@ -11,6 +11,7 @@ import re
 import uuid
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -231,51 +232,93 @@ class RegistroIntencion:
         self.ruta.parent.mkdir(parents=True, exist_ok=True)
 
     def _lineas(self) -> list[dict]:
+        """Cada línea no vacía, parseada. Una línea ilegible se declara, no se oculta.
+
+        Un corte a mitad de `write` puede dejar la última línea truncada. Tragarla en
+        silencio perdería el rastro de un envío que ya se pagó, así que se declara con
+        fichero y número de línea para que un humano la revise.
+        """
         if not self.ruta.is_file():
             return []
-        return [json.loads(l) for l in
-                self.ruta.read_text(encoding="utf-8").splitlines() if l.strip()]
+        filas: list[dict] = []
+        for numero, l in enumerate(
+                self.ruta.read_text(encoding="utf-8").splitlines(), start=1):
+            if not l.strip():
+                continue
+            try:
+                filas.append(json.loads(l))
+            except json.JSONDecodeError as exc:
+                raise ExpedicionError(
+                    f"{self.ruta}: la línea {numero} del registro de intención no es "
+                    f"JSON válido ({exc}). No se ignora: puede ser el rastro de un "
+                    "envío ya pagado. Revísala a mano antes de continuar."
+                ) from exc
+        return filas
 
     def _escribir(self, fila: dict) -> None:
         with self.ruta.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(fila, ensure_ascii=False) + "\n")
 
-    def anotar(self, canal: str, etiqueta: str) -> str:
+    def anotar(self, id_personalizado: str, canal: str, etiqueta: str) -> str:
         """Anota la intención SIN persistir datos personales del destinatario.
+
+        El diseño (§4.3) exige `(id_personalizado, canal, destinatario, timestamp,
+        en_vuelo)` antes de cada POST: sin ellos, el humano que lee un "SIN VERIFICAR"
+        no sabe de qué expedición era el pendiente ni cuándo se quedó abierto, que es
+        justo lo que necesita para ir al portal a comprobarlo.
 
         La etiqueta lleva nombre, correo o móvil de un tercero, y este fichero se
         queda en disco: `docs/SEGURIDAD_DATOS.md` §7 prohíbe volcar ahí a una persona
         por su nombre. Se guarda una **huella corta** que basta para casar la anotación
         con su cierre y para que un humano distinga dos envíos del mismo canal, y no
-        permite reconstruir el dato.
+        permite reconstruir el dato. El `id_personalizado` no es un dato personal —es
+        un código de expediente— y ese sí va en claro.
         """
         clave = uuid.uuid4().hex
         huella = hashlib.sha256(etiqueta.encode("utf-8")).hexdigest()[:12]
-        self._escribir({"clave": clave, "canal": canal, "destinatario_huella": huella,
-                        "estado": "en_vuelo"})
+        marca = datetime.now(timezone.utc).isoformat()
+        self._escribir({"clave": clave, "id_personalizado": id_personalizado, "canal": canal,
+                        "destinatario_huella": huella, "timestamp": marca, "estado": "en_vuelo"})
         return clave
 
     def cerrar(self, clave: str, id_envio: str) -> None:
+        """Cierra una anotación en vuelo.
+
+        Cerrar una `clave` que no está en vuelo —porque ya se cerró antes, o porque
+        nunca se abrió— dejaría `hechos()` con dos ids como si fueran dos envíos
+        legítimos: exactamente lo que este registro existe para detectar. Se para
+        aquí, en el propio punto de cierre, en vez de en una lectura posterior.
+        """
+        if clave not in {f["clave"] for f in self.en_vuelo()}:
+            raise ExpedicionError(
+                f"la clave {clave!r} no tiene una anotación en vuelo: ya se cerró, o "
+                "nunca se abrió. Cerrarla ahora simularía un segundo envío que no "
+                "existió.")
         self._escribir({"clave": clave, "estado": "hecho", "id_envio": id_envio})
 
-    def en_vuelo(self) -> list[dict]:
+    def en_vuelo(self, id_personalizado: str | None = None) -> list[dict]:
+        """Anotaciones sin cerrar. Con `id_personalizado`, solo las de esa expedición."""
         abiertas: dict[str, dict] = {}
         for fila in self._lineas():
             if fila.get("estado") == "en_vuelo":
                 abiertas[fila["clave"]] = fila
             else:
                 abiertas.pop(fila["clave"], None)
-        return list(abiertas.values())
+        filas = list(abiertas.values())
+        if id_personalizado is None:
+            return filas
+        return [f for f in filas if f.get("id_personalizado") == id_personalizado]
 
     def hechos(self) -> set[str]:
         return {f["id_envio"] for f in self._lineas() if f.get("estado") == "hecho"}
 
-    def exigir_sin_pendientes(self) -> None:
-        """Para el flujo en vez de arriesgar un duplicado."""
-        if (p := self.en_vuelo()):
+    def exigir_sin_pendientes(self, id_personalizado: str | None = None) -> None:
+        """Para el flujo en vez de arriesgar un duplicado. Puede acotarse a una expedición."""
+        if (p := self.en_vuelo(id_personalizado)):
             raise ExpedicionError(
                 f"hay {len(p)} envío(s) anotados y sin confirmar: "
-                + ", ".join(f"{f['canal']}/{f['destinatario_huella']}" for f in p)
+                + ", ".join(f"{f['canal']}/{f['destinatario_huella']} (clave {f['clave']}, "
+                            f"anotado {f['timestamp']})" for f in p)
                 + ". Queda SIN VERIFICAR si salieron. Compruébalo en el portal antes de "
                   "reintentar: un censo negativo del listado no autoriza a gastar.")
 
