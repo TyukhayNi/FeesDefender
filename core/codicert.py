@@ -109,3 +109,49 @@ def credenciales(plaza: str | None, entorno: str) -> tuple[str, str]:
             "faltan credenciales de Codicert: " + ", ".join(faltan)
             + ". Se ponen como variables de entorno de usuario de Windows.")
     return usuario, clave  # type: ignore[return-value]
+
+
+import datetime as _dt
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+
+class Cliente(Protocol):
+    """Superficie mínima de `httpx.Client` que usa este módulo."""
+
+    def request(self, metodo: str, url: str, **kw: Any) -> Any: ...
+
+
+@dataclass(frozen=True)
+class Ficha:
+    """Token de sesión con su vencimiento. La API lo da con 24 h de vida."""
+
+    token: str
+    vence: _dt.datetime
+
+    def caducada(self, *, ahora: _dt.datetime) -> bool:
+        return ahora >= self.vence
+
+
+def _cliente_real() -> Cliente:
+    import httpx
+
+    class _C:
+        def request(self, metodo: str, url: str, **kw: Any) -> Any:
+            return httpx.request(metodo, url, timeout=kw.pop("timeout", 120), **kw)
+
+    return _C()
+
+
+def acceso(usuario: str, clave: str, *, entorno: str, cliente: Cliente | None = None) -> Ficha:
+    """`POST /usuarios/acceso`. La clave no aparece nunca en el error."""
+    cliente = cliente or _cliente_real()
+    r = cliente.request("POST", f"{BASES[entorno]}/usuarios/acceso",
+                        json={"usuario": usuario, "clave": clave})
+    cuerpo = r.json() if r.status_code != 500 else {}
+    if r.status_code != 200 or (cuerpo or {}).get("estado") != "OK":
+        raise CodicertAuthError(
+            f"Codicert rechazó el acceso de {usuario!r} en {entorno}: "
+            f"{(cuerpo or {}).get('mensaje') or r.status_code}")
+    datos = cuerpo["datos"]
+    return Ficha(token=datos["ficha"], vence=_dt.datetime.fromisoformat(datos["fecha_vencimiento"]))
