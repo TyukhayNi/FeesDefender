@@ -110,7 +110,13 @@ class EnvioPrevisto:
 
 
 def _clave_domicilio(p: dict) -> tuple:
-    return tuple(str(p.get(c) or "").strip().upper()
+    """Clave de agrupación por domicilio.
+
+    Colapsa también los espacios internos (no solo los de borde): un doble espacio de
+    captura del CRM —"C Mayor 1" frente a "C  Mayor 1"— no debe partir en dos un
+    domicilio que es el mismo (17 € de burofax y un certificado de más).
+    """
+    return tuple(" ".join(str(p.get(c) or "").split()).upper()
                  for c in ("direccion", "poblacion", "provincia", "cp"))
 
 
@@ -133,8 +139,10 @@ def destinatarios_de(partes: list[dict]) -> tuple[list[EnvioPrevisto], list[str]
         else:
             ausencias.append(f"{nombre}: sin canal CORREO (el CRM no tiene email)")
         if (movil := movil_normalizado(p.get("movil"))):
-            envios.append(EnvioPrevisto("sms", {"correo": correo or "", "telefono": movil,
-                                                "nombre": nombre}, f"{nombre} · {movil}"))
+            envios.append(EnvioPrevisto(
+                "sms",
+                {"telefono": movil, "nombre": nombre, **({"correo": correo} if correo else {})},
+                f"{nombre} · {movil}"))
             tiene = True
         else:
             ausencias.append(f"{nombre}: sin canal SMS (el CRM no tiene un móvil español)")
@@ -153,7 +161,12 @@ def destinatarios_de(partes: list[dict]) -> tuple[list[EnvioPrevisto], list[str]
             por_domicilio.setdefault(_clave_domicilio(p), []).append(p)
     for grupo in por_domicilio.values():
         base = dict(grupo[0])
+        # Se captura ANTES de sobrescribir "nombre": si no, el fallback de ficha_postal
+        # (a_atencion or nombre) recupera el nombre YA conjunto, no la persona de
+        # contacto (regla del despacho: "nombre" lleva a los dos, "a_atencion" a uno).
+        contacto = base.get("a_atencion") or base["nombre"]
         base["nombre"] = " Y ".join(str(g["nombre"]) for g in grupo)
+        base["a_atencion"] = contacto
         ficha = ficha_postal(base)
         etiqueta = f"{ficha['nombre']} · {ficha['direccion']}, {ficha['poblacion']}"
         if len(grupo) > 1:
@@ -170,19 +183,31 @@ def coste_de(envios: list[EnvioPrevisto]) -> Decimal:
 # El asunto y el cuerpo son LITERAL CERRADO y viajan en el Plan, para que la puerta
 # humana los lea antes de gastar (spec §5 regla 6). Pueden nombrar el objeto de la
 # controversia y la remisión de una comunicación —el art. 9.1 exceptúa el objeto y el
-# art. 17.4 exige la manifestación— pero NO pueden contener términos de la oferta.
-# El acta del certificado los reproduce, y el acta no se recorta.
-PROHIBIDO_EN_TEXTO = ("oferta vinculante", "ovc", "€", "%", "quita", "plazo de aceptación")
+# art. 17.4 exige la manifestación— pero NO pueden contener términos de la oferta: ni
+# importe (€, %), ni calendario, ni quita, ni plazo —a secas, no solo la frase «plazo de
+# aceptación»—. El acta del certificado los reproduce, y el acta no se recorta.
+PROHIBIDO_EN_TEXTO = ("oferta vinculante", "ovc", "€", "%", "quita", "plazo", "calendario")
+
+# Plantillas SIN interpolar: la guarda de términos prohibidos se aplica AQUÍ, nunca al
+# texto ya compuesto con el w_code. El w_code es un identificador de expediente, no
+# prosa del motor, y puede llevar por azar una subcadena vetada —p. ej. "ovc" dentro de
+# "W-0OVC12"— sin que eso sea una infracción de la regla.
+_ASUNTO_TPL = "Comunicación certificada · expediente {w_code}"
+_CUERPO_TPL = ("<p>Se le remite comunicación certificada relativa al expediente {w_code}. "
+               "Consulte el documento adjunto.</p>")
+
+
+def _asegurar_sin_prohibidos(texto: str) -> None:
+    """Lanza `ExpedicionError` si `texto` contiene algún término vetado por la regla."""
+    texto_l = texto.lower()
+    for prohibido in PROHIBIDO_EN_TEXTO:
+        if prohibido in texto_l:
+            raise ExpedicionError(
+                f"el asunto o el cuerpo contienen {prohibido!r}: el acta los reproduce y "
+                "no se puede recortar (art. 17.4).")
 
 
 def texto_de(w_code: str) -> tuple[str, str]:
     """Asunto y cuerpo de la comunicación. Nunca nombran los términos de la oferta."""
-    asunto = f"Comunicación certificada · expediente {w_code}"
-    cuerpo = (f"<p>Se le remite comunicación certificada relativa al expediente {w_code}. "
-              "Consulte el documento adjunto.</p>")
-    for prohibido in PROHIBIDO_EN_TEXTO:
-        if prohibido in f"{asunto} {cuerpo}".lower():
-            raise ExpedicionError(
-                f"el asunto o el cuerpo contienen {prohibido!r}: el acta los reproduce y "
-                "no se puede recortar (art. 17.4).")
-    return asunto, cuerpo
+    _asegurar_sin_prohibidos(f"{_ASUNTO_TPL} {_CUERPO_TPL}")
+    return _ASUNTO_TPL.format(w_code=w_code), _CUERPO_TPL.format(w_code=w_code)

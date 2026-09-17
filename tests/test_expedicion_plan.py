@@ -73,3 +73,50 @@ def test_el_asunto_y_el_cuerpo_NO_nombran_la_oferta_ni_sus_terminos():
 def test_el_texto_nombra_el_expediente_que_es_lo_permitido():
     asunto, _ = exp.texto_de("W-02W9BO")
     assert "W-02W9BO" in asunto
+
+
+def test_doble_espacio_interno_no_parte_el_mismo_domicilio_en_dos():
+    """"C Mayor 1" y "C  Mayor 1" (doble espacio, defecto tipico de captura del CRM) son
+    el mismo domicilio: deben compartir UN burofax, no generar uno de mas (hallazgo 1)."""
+    con_doble_espacio = {**LUIS, "direccion": "C  Mayor 1"}
+    envios, _ = exp.destinatarios_de([ANA, con_doble_espacio])
+    assert _canales(envios).count("burofax") == 1
+
+
+def test_sobre_conjunto_guarda_nombre_conjunto_y_atencion_individual():
+    """En un sobre conjunto "nombre" lleva a los dos requeridos, pero "a_atencion" queda
+    para la persona de contacto individual: no debe perderse tras la union (hallazgo 2)."""
+    envios, _ = exp.destinatarios_de([ANA, LUIS])
+    postal = next(e for e in envios if e.canal == "burofax")
+    assert postal.destinatario["nombre"] == "ANA LOPEZ Y LUIS PEREZ"
+    assert postal.destinatario["a_atencion"] == "ANA LOPEZ"
+
+
+def test_un_w_code_que_contiene_ovc_por_azar_no_bloquea_el_texto():
+    """"W-0OVC12" lleva "ovc" de casualidad: es un identificador de expediente, no
+    prosa del motor, y no debe bloquear la comunicacion (hallazgo 3)."""
+    asunto, cuerpo = exp.texto_de("W-0OVC12")
+    assert "W-0OVC12" in asunto
+    assert "W-0OVC12" in cuerpo
+
+
+def test_la_guarda_de_prohibidos_sigue_saltando_sobre_el_texto_compuesto():
+    """La guarda no se desactiva al aplicarse solo a la plantilla: sigue vetando
+    "calendario" (ausente antes) y "plazo" a secas (antes acotado a la frase exacta
+    "plazo de aceptacion") (hallazgo 3)."""
+    with pytest.raises(exp.ExpedicionError):
+        exp._asegurar_sin_prohibidos("un texto que fija un plazo de pago")
+    with pytest.raises(exp.ExpedicionError):
+        exp._asegurar_sin_prohibidos("un texto con un calendario de cobro")
+
+
+def test_el_sms_lleva_correo_solo_si_la_parte_tiene_email():
+    """Mandar un campo vacio a la API es peor que omitirlo (hallazgo 4)."""
+    envios, _ = exp.destinatarios_de([ANA])
+    sms_con_email = next(e for e in envios if e.canal == "sms")
+    assert sms_con_email.destinatario["correo"] == "ana@x.es"
+
+    sin_email = {**ANA, "email": ""}
+    envios_sin, _ = exp.destinatarios_de([sin_email])
+    sms_sin_email = next(e for e in envios_sin if e.canal == "sms")
+    assert "correo" not in sms_sin_email.destinatario
