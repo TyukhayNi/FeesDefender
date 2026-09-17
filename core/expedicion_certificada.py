@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import re
 
+from dataclasses import dataclass
+from decimal import Decimal
+
 
 class ExpedicionError(RuntimeError):
     """El plan no se puede construir o el envío no se puede ejecutar."""
@@ -86,3 +89,100 @@ def ficha_postal(parte: dict) -> dict:
             "pais": "España", "direccion": parte["direccion"], "poblacion": parte["poblacion"],
             "provincia": provincia_codicert(parte["provincia"]), "cp": parte["cp"],
             **({"telefono": m} if (m := movil_normalizado(parte.get("movil"))) else {})}
+
+
+# Tarifa «80», leída del portal de producción el 2026-09-17. Cada línea incluye la
+# notificación: la entrega electrónica son 0,3867 € más el canal.
+TARIFA: dict[str, Decimal] = {
+    "burofax": Decimal("16.9716"),
+    "correo": Decimal("0.3867") + Decimal("0.4064"),
+    "sms": Decimal("0.3867") + Decimal("0.0834"),
+}
+
+
+@dataclass(frozen=True)
+class EnvioPrevisto:
+    """Un envío del plan: un canal y un destinatario ya resuelto."""
+
+    canal: str            # "burofax" | "correo" | "sms"
+    destinatario: dict    # ficha postal, o {"correo": ...} / {"telefono": ...}
+    etiqueta: str         # para que el humano lo lea en el plan
+
+
+def _clave_domicilio(p: dict) -> tuple:
+    return tuple(str(p.get(c) or "").strip().upper()
+                 for c in ("direccion", "poblacion", "provincia", "cp"))
+
+
+def destinatarios_de(partes: list[dict]) -> tuple[list[EnvioPrevisto], list[str]]:
+    """Los envíos previstos y las ausencias declaradas.
+
+    Correo y SMS van **uno por requerido**: agrupar no ahorra —la plataforma cobra un
+    envío por destinatario— y cada uno necesita su propio acuse, del que cuelgan sus
+    plazos. El burofax va **uno por domicilio distinto**.
+    """
+    envios: list[EnvioPrevisto] = []
+    ausencias: list[str] = []
+    for p in partes:
+        nombre = p.get("nombre") or "(sin nombre)"
+        tiene = False
+        if (correo := str(p.get("email") or "").strip()):
+            envios.append(EnvioPrevisto("correo", {"correo": correo, "nombre": nombre},
+                                        f"{nombre} · {correo}"))
+            tiene = True
+        else:
+            ausencias.append(f"{nombre}: sin canal CORREO (el CRM no tiene email)")
+        if (movil := movil_normalizado(p.get("movil"))):
+            envios.append(EnvioPrevisto("sms", {"correo": correo or "", "telefono": movil,
+                                                "nombre": nombre}, f"{nombre} · {movil}"))
+            tiene = True
+        else:
+            ausencias.append(f"{nombre}: sin canal SMS (el CRM no tiene un móvil español)")
+        if all(str(p.get(c) or "").strip() for c in _OBLIGATORIOS_POSTAL):
+            tiene = True
+        else:
+            ausencias.append(f"{nombre}: sin canal BUROFAX (domicilio incompleto)")
+        if not tiene:
+            raise ExpedicionError(
+                f"{nombre} no tiene ningún canal: ni domicilio, ni email, ni móvil. "
+                "Complétalo en el CRM antes de expedir.")
+
+    por_domicilio: dict[tuple, list[dict]] = {}
+    for p in partes:
+        if all(str(p.get(c) or "").strip() for c in _OBLIGATORIOS_POSTAL):
+            por_domicilio.setdefault(_clave_domicilio(p), []).append(p)
+    for grupo in por_domicilio.values():
+        base = dict(grupo[0])
+        base["nombre"] = " Y ".join(str(g["nombre"]) for g in grupo)
+        ficha = ficha_postal(base)
+        etiqueta = f"{ficha['nombre']} · {ficha['direccion']}, {ficha['poblacion']}"
+        if len(grupo) > 1:
+            etiqueta += "  ⚠ sobre conjunto: acredita entrega EN EL DOMICILIO, no a cada uno"
+        envios.append(EnvioPrevisto("burofax", ficha, etiqueta))
+    return envios, ausencias
+
+
+def coste_de(envios: list[EnvioPrevisto]) -> Decimal:
+    """Suma la tarifa por canal de cada envío previsto."""
+    return sum((TARIFA[e.canal] for e in envios), Decimal("0"))
+
+
+# El asunto y el cuerpo son LITERAL CERRADO y viajan en el Plan, para que la puerta
+# humana los lea antes de gastar (spec §5 regla 6). Pueden nombrar el objeto de la
+# controversia y la remisión de una comunicación —el art. 9.1 exceptúa el objeto y el
+# art. 17.4 exige la manifestación— pero NO pueden contener términos de la oferta.
+# El acta del certificado los reproduce, y el acta no se recorta.
+PROHIBIDO_EN_TEXTO = ("oferta vinculante", "ovc", "€", "%", "quita", "plazo de aceptación")
+
+
+def texto_de(w_code: str) -> tuple[str, str]:
+    """Asunto y cuerpo de la comunicación. Nunca nombran los términos de la oferta."""
+    asunto = f"Comunicación certificada · expediente {w_code}"
+    cuerpo = (f"<p>Se le remite comunicación certificada relativa al expediente {w_code}. "
+              "Consulte el documento adjunto.</p>")
+    for prohibido in PROHIBIDO_EN_TEXTO:
+        if prohibido in f"{asunto} {cuerpo}".lower():
+            raise ExpedicionError(
+                f"el asunto o el cuerpo contienen {prohibido!r}: el acta los reproduce y "
+                "no se puede recortar (art. 17.4).")
+    return asunto, cuerpo
