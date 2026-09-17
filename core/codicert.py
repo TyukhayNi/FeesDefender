@@ -13,7 +13,7 @@ import os
 import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -281,13 +281,25 @@ def _get(ficha: Ficha, ruta: str, *, entorno: str, cliente: Cliente | None = Non
 
 
 def credito(ficha: Ficha, *, entorno: str, cliente: Cliente | None = None) -> Decimal:
-    """Saldo del usuario. `Decimal` y no `float`: con esto se decide si se gasta."""
+    """Saldo del usuario. `Decimal` y no `float`: con esto se decide si se gasta.
+
+    Hallazgo de revisión (2026-09-17): la guarda de arriba comprobaba que `datos`
+    fuera un `dict` con la clave `credito` presente, pero no que su VALOR fuera
+    numérico — `{"datos": {"credito": None}}` la pasaba y `Decimal(str(None))`
+    reventaba con `decimal.InvalidOperation` crudo, fuera del contrato del módulo
+    (solo falla con `CodicertError`/`CodicertAuthError`).
+    """
     r = _get(ficha, "/usuarios/credito", entorno=entorno, cliente=cliente)
     cuerpo = _json_o_vacio(r)
     datos = cuerpo.get("datos")
     if not isinstance(datos, dict) or "credito" not in datos:
         raise CodicertError("GET /usuarios/credito: respuesta sin datos.credito")
-    return Decimal(str(datos["credito"]))
+    try:
+        return Decimal(str(datos["credito"]))
+    except InvalidOperation as exc:
+        raise CodicertError(
+            f"GET /usuarios/credito: datos.credito no es numérico — {datos['credito']!r}"
+        ) from exc
 
 
 def estados(ficha: Ficha, id_envio: str, *, entorno: str,
@@ -318,14 +330,38 @@ def listar(ficha: Ficha, *, entorno: str, cliente: Cliente | None = None,
     """Recorre `GET /envios` entero. Acota siempre por fecha cuando se pueda.
 
     No hay filtro por `id_personalizado`: viene en cada elemento y se filtra en casa.
+
+    Dos guardas de una revisión de código (2026-09-17):
+
+    1. El cuerpo pasa por `_json_o_vacio`, como las otras cuatro lecturas del
+       módulo — antes llamaba a `.json()` a pelo, así que un cuerpo no parseable en
+       UNA SOLA página de una iteración larga reventaba con `JSONDecodeError` crudo
+       en vez de `CodicertError`.
+    2. Se valida que el cuerpo sea un `dict` y que `totalPaginas` sea numérico ANTES
+       de usarlos. Por eso `totalPaginas` ya no lleva el `or 0` que tenía: un cuerpo
+       no parseable se cuela como `{}` vía `_json_o_vacio`, y con `or 0` esa página
+       rota se leía como "ya no hay más" y el listado se TRUNCABA EN SILENCIO — el
+       fallo más caro de los tres, porque no revienta, solo faltan resultados.
+
+    `longitud` y `pagina` van DESPUÉS de `**filtros` en `params`: son reservados y
+    deben ganar siempre. Si fueran antes, un llamador que pasara `longitud` en
+    `filtros` lo sobrescribiría — medido, el servidor rechaza `longitud` por debajo
+    de 10.
     """
     pagina = 1
     while True:
-        params = {"longitud": LONGITUD_PAGINA, "pagina": pagina, **filtros}
-        cuerpo = _get(ficha, "/envios", entorno=entorno, cliente=cliente, params=params).json()
+        params = {**filtros, "longitud": LONGITUD_PAGINA, "pagina": pagina}
+        cuerpo = _json_o_vacio(
+            _get(ficha, "/envios", entorno=entorno, cliente=cliente, params=params))
+        if not isinstance(cuerpo, dict):
+            raise CodicertError(f"GET /envios: cuerpo no es un objeto — {cuerpo!r}")
+        total_paginas = cuerpo.get("totalPaginas")
+        if not isinstance(total_paginas, (int, float)):
+            raise CodicertError(
+                f"GET /envios: totalPaginas no es numérico — {total_paginas!r}")
         datos = cuerpo.get("datos")
         if datos:
             yield from datos
-        if pagina >= (cuerpo.get("totalPaginas") or 0):
+        if pagina >= total_paginas:
             return
         pagina += 1
