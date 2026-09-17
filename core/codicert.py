@@ -54,12 +54,15 @@ def _de_fuentes_lentas(nombre: str) -> str | None:
     `.env`; y una variable creada después de arrancar el proceso no se hereda.
     """
     try:
-        raiz = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+        # `--git-common-dir`, NO `--show-toplevel`: desde un worktree, el segundo
+        # devuelve el propio worktree —que es justo donde no hay `.env`— y esta
+        # función reproduciría el defecto que existe para corregir. Medido.
+        comun = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
             capture_output=True, encoding="utf-8", errors="replace", timeout=10,
         )
-        if raiz.returncode == 0:
-            env = Path(raiz.stdout.strip()) / ".env"
+        if comun.returncode == 0:
+            env = Path(comun.stdout.strip()).parent / ".env"
             if env.is_file():
                 for linea in env.read_text(encoding="utf-8", errors="replace").splitlines():
                     if linea.startswith(f"{nombre}="):
