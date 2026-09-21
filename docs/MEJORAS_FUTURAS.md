@@ -12554,3 +12554,49 @@ formato de número.
 Arreglo natural: guardar la comprobación del shim tras un `hasattr(socket, "AF_UNIX")`, o
 envolverla en `try/except AttributeError`. Es un parche de una línea en una skill de
 Anthropic, así que conviene decidir si se parchea en local o se reporta aguas arriba.
+
+## 276. `viabilidad_json.escribir` falla con `WinError 1` sobre el mount de Drive for Desktop
+
+**Lo medido** (2026-09-17, apertura de W-0462E1): la etapa `viabilidad` de la secuencia V1
+terminó en `fallo` con `OSError: [WinError 1] Función incorrecta` al publicar
+`_viabilidad.json`, y con ella la corrida entera salió `bloqueado` en vez de
+`preparado_con_pendientes`.
+
+**La causa.** `core/viabilidad_json.py::escribir` publica el temporal con `os.link` — no
+`os.rename`/`os.replace` — precisamente para que la exclusividad falle con
+`FileExistsError` en los dos mundos (POSIX y Windows; el docstring documenta
+`CreateHardLink` → `WinError 183` en NTFS local, capturado). Pero el caso vivía en
+`G:\Unidades compartidas\...` (Drive for Desktop, filesystem virtual), y ahí
+`CreateHardLink` no devuelve `WinError 183` (no soportado): devuelve **`WinError 1`**
+— Función incorrecta —, que el código no captura. El docstring llama "portable" a la
+técnica pero solo la midió contra NTFS local, nunca contra el mount que usa `CASOS_ROOT`
+en producción.
+
+**Efecto.** Ninguna apertura en V1 puede escribir `_viabilidad.json` mientras el caso esté
+en `G:` (que es siempre, salvo el modo local de `[APER-41]`). El pendiente
+`viabilidad_no_escrita` queda sin remedio automático; hay que escribir el fichero a mano o
+correr el pre-relleno por otra vía (así se hizo en W-0462E1: `viabilidad-prerelleno` corrió
+aparte y sí generó el informe, sin pasar por esta etapa).
+
+**Disparador.** Cualquier apertura en V1 que llegue a la etapa `viabilidad` sobre un caso
+en `G:` — es decir, la próxima apertura estándar.
+
+## 277. Censo remoto de Drive: colisión de forma Unicode y más de un checksum para el mismo nombre
+
+**Lo medido** (2026-09-17, `verificar_apertura --con-red` sobre W-0462E1):
+
+- "Censo remoto de E&V contra los ficheros locales": 1 colisión de clave en el remoto —dos
+  ficheros que solo se distinguen por su forma Unicode (NFC/NFD) o por un carácter que
+  Windows no admite— y en local no caben los dos.
+- "Hash local contra el `sha256Checksum` que declara Drive": una clave con **más de un
+  checksum** en el censo remoto (mismo nombre, contenido distinto, en el propio Drive del
+  cliente — carpeta `03. OFERTAS/01. OFERTA 1 - Elena Cacho`).
+
+**Sin investigar a fondo** (fue una sesión de apertura, no de reparación). Puede ser la
+misma familia que `[APER-65]`/`MEJORAS #214`/`#251` (nombres sin extensión que Drive
+Desktop normaliza) o un defecto distinto — mismo síntoma general (el censo remoto no es
+una clave única fiable), causa por confirmar.
+
+**Disparador.** La próxima vez que `verificar_apertura --con-red` levante este mismo par de
+fallos en otro caso, o que alguien revise `#214`/`#251` y quiera comprobar si esto encaja
+ahí.
