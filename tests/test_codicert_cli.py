@@ -245,3 +245,66 @@ def test_main_no_vuelve_a_resolver_credenciales_usa_el_usuario_de_entorno_real(
     assert codigo == 0
     assert llamadas == []
     assert "BD-YA-RESUELTO" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------------
+# H-05 (alto, estructural; revisión adversarial r2). `enviar` tiene que sostener el
+# mutex de la expedición ANTES de llamar a `exp.ejecutar` -- si no, dos terminales
+# pueden admitir y ejecutar la MISMA expedición a la vez y duplicar el envío. La
+# mitad de esa exclusión que vive en `core/` (exigirla, nunca adquirirla) la prueba
+# `tests/test_expedicion_ejecutar.py`; esta prueba la otra mitad, la que vive aquí:
+# que `main()` la ADQUIERE antes de ejecutar, y que si otro proceso de esta máquina
+# ya la sostiene, aborta limpio sin llegar a mandar nada.
+# ---------------------------------------------------------------------------------
+
+def test_enviar_con_el_mutex_ya_ocupado_aborta_sin_llegar_a_ejecutar(
+        tmp_path, monkeypatch, capsys):
+    """Simula OTRO proceso sosteniendo el lock de esta misma expedición con la
+    primitiva de verdad (`case_mutex.tomado`, no `mutex_sesion`: esta última es
+    reentrante DENTRO de un proceso -- se uniría a la sesión en vez de chocar con
+    ella -- así que hace falta la primitiva cruda para reproducir fielmente "otro
+    proceso ya lo tiene". Los tests, a diferencia de `core/`/`scripts/`, no están
+    vetados de llamarla directamente -- el guard de
+    `tests/test_escritura_censo.py::test_produccion_no_llama_a_la_primitiva_en_crudo`
+    solo vigila producción).
+
+    `enviar` tiene que abortar con código 2 -- el mismo que usan los demás
+    entrypoints ocupados -- SIN alcanzar `exp.ejecutar`: el doble de transporte
+    revienta con `AssertionError` si se le llega a invocar `listar`/`enviar_*`.
+    """
+    from core.casos import case_mutex
+    from core.utils import now_iso_utc
+
+    class _CodTransporteQueRevienta(_CodTransporteFalso):
+        def listar(self, **kw):
+            raise AssertionError("no debía alcanzar listar(): el mutex estaba ocupado")
+
+        def enviar_burofax(self, **kw):
+            raise AssertionError("no debía alcanzar enviar_burofax(): el mutex estaba ocupado")
+
+        def enviar_eec(self, **kw):
+            raise AssertionError("no debía alcanzar enviar_eec(): el mutex estaba ocupado")
+
+    def _entorno_real_falso(*, plaza, entorno):
+        return exp.EntornoExpedicion(
+            codicert=_CodTransporteQueRevienta(), partes_de=lambda _w: [],
+            ahora=lambda: dt.datetime(2026, 9, 17, 12, 0, tzinfo=dt.timezone.utc),
+            raiz=tmp_path, plaza=plaza, entorno=entorno, usuario="BD-OCUPADO")
+
+    monkeypatch.setattr(cli._cod, "credenciales", lambda *a, **kw: ("BD-FALSO", "clave"))
+    monkeypatch.setattr(cli.exp, "entorno_real", _entorno_real_falso)
+
+    doc = tmp_path / "A.pdf"
+    doc.write_bytes(b"%PDF-1.4 falso")
+    plan = exp.planificar("W-04AKM2", "OVC", [doc],
+                          entorno_exp=_entorno_real_falso(plaza="Madrid", entorno="sandbox"),
+                          plaza="Madrid")
+    clave = exp.clave_mutex_expedicion(plan)
+
+    with case_mutex.tomado(clave, ahora_fn=now_iso_utc):
+        codigo = cli.main(["enviar", "W-04AKM2", "--tipo", "OVC", "--plaza", "Madrid",
+                           "--doc", str(doc), "--confirmar", "lo-que-sea"])
+
+    assert codigo == 2
+    err = capsys.readouterr().err
+    assert "ERROR" in err

@@ -5,11 +5,15 @@ import base64
 import dataclasses
 import datetime as dt
 import json
+import threading
 from decimal import Decimal
 
 import pytest
 
 from core import expedicion_certificada as exp
+from core.casos import mutex_sesion
+from core.casos.workspace_model import CaseRef
+from core.utils import now_iso_utc
 
 # H-06: campos separados como los devuelve `clientes_contrarios` de verdad (docs/
 # CRM_SUDESPACHO_ATLAS.md § clientes_contrarios), no el nombre completo embutido en
@@ -77,6 +81,21 @@ def _doc(tmp_path):
     return [d]
 
 
+def _ejecutar(plan, confirmacion, *, entorno_exp):
+    """Adquiere el mutex de la expedición y llama a `exp.ejecutar` (H-05, revisión
+    adversarial r2): desde ese hallazgo, `ejecutar` EXIGE con `mutex_sesion.vigente`
+    que quien llama ya sostenga la sesión de `clave_mutex_expedicion(plan)` -- nunca
+    la adquiere ella misma (core/ exige, `scripts/` adquiere). En producción, quien
+    la adquiere es `scripts/codicert.py`; este helper hace lo mismo para que los 26
+    sitios de este fichero que ya llamaban a `exp.ejecutar(...)` directamente sigan
+    probando exactamente lo que probaban antes, sin repetir en cada uno las tres
+    líneas de `mutex_sesion.sostenido(...)`. No cambia ningún assert existente.
+    """
+    clave = exp.clave_mutex_expedicion(plan)
+    with mutex_sesion.sostenido(CaseRef(w_code=clave), ahora_fn=now_iso_utc):
+        return exp.ejecutar(plan, confirmacion, entorno_exp=entorno_exp)
+
+
 def test_planificar_resuelve_identificador_coste_y_ausencias(tmp_path):
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=_entorno(tmp_path),
                           plaza="Madrid")
@@ -90,7 +109,7 @@ def test_ejecutar_sin_confirmacion_NO_manda_nada(tmp_path):
     ent = _entorno(tmp_path, cod)
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
     with pytest.raises(exp.ExpedicionError):
-        exp.ejecutar(plan, exp.Confirmacion(digest="digest-que-no-es"), entorno_exp=ent)
+        _ejecutar(plan, exp.Confirmacion(digest="digest-que-no-es"), entorno_exp=ent)
     assert cod.enviados == []
 
 
@@ -98,7 +117,7 @@ def test_ejecutar_con_la_confirmacion_del_plan_manda_los_tres(tmp_path):
     cod = _CodicertFalso()
     ent = _entorno(tmp_path, cod)
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
-    exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert sorted(c for c, _ in cod.enviados) == ["burofax", "correo", "sms"]
     assert {i for _, i in cod.enviados} == {"W-04AKM2 - OVC"}
 
@@ -111,7 +130,7 @@ def test_un_plan_rancio_se_rechaza_si_el_CRM_cambio(tmp_path):
                                  plaza=ent.plaza, entorno=ent.entorno,
                                  partes_de=lambda _w: [{**ANA, "direccion": "OTRA CALLE 9"}])
     with pytest.raises(exp.ExpedicionError) as e:
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=otro)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=otro)
     assert "cambiado" in str(e.value).lower()
     assert cod.enviados == []
 
@@ -127,7 +146,7 @@ def test_no_repite_lo_que_la_plataforma_ya_tiene_y_el_registro_NO_explica(tmp_pa
     ent = _entorno(tmp_path, cod)
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
     with pytest.raises(exp.ExpedicionError) as e:
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert "sin verificar" in str(e.value).lower()
     assert cod.enviados == []
 
@@ -137,7 +156,7 @@ def test_sin_credito_suficiente_el_plan_nace_NO_ejecutable(tmp_path):
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
     assert plan.ejecutable is False
     with pytest.raises(exp.ExpedicionError):
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
 
 
 def test_un_pendiente_de_otro_expediente_no_bloquea_este(tmp_path):
@@ -153,7 +172,7 @@ def test_un_pendiente_de_otro_expediente_no_bloquea_este(tmp_path):
     exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl").anotar(
         "W-OTRO - REQ", "burofax", "alguien")
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
-    ids = exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    ids = _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert len(ids) == 3
 
 
@@ -173,7 +192,7 @@ def test_un_pendiente_del_MISMO_expediente_si_bloquea(tmp_path):
         "W-04AKM2 - OVC", "burofax", "alguien")
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
     with pytest.raises(exp.ExpedicionError):
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert cod.enviados == []
 
 
@@ -194,7 +213,7 @@ def test_replanificacion_rehashea_el_documento_no_reusa_el_del_plan(tmp_path):
     plan = exp.planificar("W-04AKM2", "OVC", doc, entorno_exp=ent, plaza="Madrid")
     doc[0].write_bytes(b"%PDF OTRO CONTENIDO, SOBRESCRITO TRAS APROBAR EL PLAN")
     with pytest.raises(exp.ExpedicionError) as e:
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert "cambiado" in str(e.value).lower()
     assert cod.enviados == []
 
@@ -209,7 +228,7 @@ def test_documento_desaparecido_para_la_ejecucion_con_mensaje_claro(tmp_path):
     plan = exp.planificar("W-04AKM2", "OVC", doc, entorno_exp=ent, plaza="Madrid")
     doc[0].unlink()
     with pytest.raises(exp.ExpedicionError) as e:
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     mensaje = str(e.value).lower()
     assert "ya no existe" in mensaje
     assert doc[0].name.lower() in mensaje
@@ -253,7 +272,7 @@ def test_ejecutar_para_si_el_entorno_de_llamada_no_coincide_con_el_del_plan(tmp_
                           plaza="Madrid", entorno="sandbox")
     ent_ejecucion = _entorno(tmp_path, cod, plaza="Madrid", entorno="produccion")
     with pytest.raises(exp.ExpedicionError) as e:
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent_ejecucion)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent_ejecucion)
     assert "entorno" in str(e.value).lower()
     assert cod.enviados == []
 
@@ -297,7 +316,7 @@ def test_tras_fallo_a_mitad_la_segunda_ejecucion_completa_solo_lo_que_falta(tmp_
         ids_plataforma.append(id_envio)
     cod.listado = [{"id": i, "id_personalizado": plan.id_personalizado} for i in ids_plataforma]
 
-    ids = exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    ids = _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
 
     assert len(ids) == 4
     assert sorted(c for c, _ in cod.enviados) == ["burofax", "burofax", "correo", "sms"]
@@ -331,7 +350,7 @@ def test_expedicion_ya_completa_lo_dice_sin_error_generico(tmp_path):
     cod.listado = [{"id": i, "id_personalizado": plan.id_personalizado} for i in ids_plataforma]
 
     with pytest.raises(exp.ExpedicionError) as e:
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert "completa" in str(e.value).lower()
     assert cod.enviados == []
 
@@ -363,7 +382,7 @@ def test_ejecutar_conecta_el_reloj_del_entorno_al_registro(tmp_path):
                                 ahora=lambda: reloj_fijo, raiz=tmp_path,
                                 plaza="Madrid", entorno="sandbox")
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
-    exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     filas = [json.loads(l) for l in
              (tmp_path / "_codicert_intencion.jsonl").read_text(encoding="utf-8").splitlines()]
     anotaciones = [f for f in filas if f.get("estado") == "en_vuelo"]
@@ -385,7 +404,7 @@ def test_ejecutar_relee_el_credito_en_vivo_antes_de_gastar(tmp_path):
     assert plan.ejecutable is True
     cod.credito_ = Decimal("0.01")  # otra expedición gastó el saldo mientras tanto
     with pytest.raises(exp.ExpedicionError) as e:
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert "crédito" in str(e.value).lower()
     assert cod.enviados == []
 
@@ -420,7 +439,7 @@ def test_H01_confirmar_un_ordinal_no_autoriza_ejecutar_otro_ordinal(tmp_path):
         "autorizaría ejecutar el otro")
 
     with pytest.raises(exp.ExpedicionError):
-        exp.ejecutar(plan_2, exp.Confirmacion(digest=plan_1.digest), entorno_exp=ent)
+        _ejecutar(plan_2, exp.Confirmacion(digest=plan_1.digest), entorno_exp=ent)
     assert cod.enviados == []
 
 
@@ -439,7 +458,7 @@ def test_H01_mutar_el_destinatario_tras_aprobar_no_desvia_el_envio(tmp_path):
     correo_original = envio_correo.destinatario["correo"]
     envio_correo.destinatario["correo"] = "atacante@evil.example"
 
-    exp.ejecutar(plan, confirmacion, entorno_exp=ent)
+    _ejecutar(plan, confirmacion, entorno_exp=ent)
 
     correos_mandados = [dest.get("correo") for (canal, _), dest
                         in zip(cod.enviados, cod.destinatarios) if canal == "correo"]
@@ -465,7 +484,7 @@ def test_H01_sustituir_asunto_cuerpo_y_coste_no_burla_la_confirmacion(tmp_path):
     assert plan_manipulado.digest == plan.digest  # el campo se copia tal cual, sin recalcular
 
     with pytest.raises(exp.ExpedicionError):
-        exp.ejecutar(plan_manipulado, confirmacion, entorno_exp=ent)
+        _ejecutar(plan_manipulado, confirmacion, entorno_exp=ent)
     assert cod.enviados == []
 
 
@@ -488,7 +507,7 @@ def test_H01_cambiar_la_cuenta_emisora_no_burla_la_confirmacion(tmp_path):
         raiz=tmp_path, plaza="Madrid", entorno="sandbox", usuario="BD-OTRO-EMISOR")
 
     with pytest.raises(exp.ExpedicionError) as e:
-        exp.ejecutar(plan, confirmacion, entorno_exp=ent_otro_emisor)
+        _ejecutar(plan, confirmacion, entorno_exp=ent_otro_emisor)
     assert "entorno" in str(e.value).lower()
     assert cod.enviados == []
 
@@ -521,7 +540,7 @@ def test_H02_el_documento_no_se_relee_tras_validar_su_huella(tmp_path):
     plan = exp.planificar("W-04AKM2", "OVC", doc, entorno_exp=ent, plaza="Madrid")
     confirmacion = exp.Confirmacion(digest=plan.digest)
 
-    exp.ejecutar(plan, confirmacion, entorno_exp=ent)
+    _ejecutar(plan, confirmacion, entorno_exp=ent)
 
     assert doc[0].read_bytes() == sustituto  # la sustitución sí ocurrió
     primer_adjunto = cod.adjuntos[0][0]
@@ -548,14 +567,14 @@ def test_H03_listado_remoto_vacio_no_reactiva_cierres_ya_hechos(tmp_path):
     cod = _CodicertFalso()
     ent = _entorno(tmp_path, cod)
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
-    exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert len(cod.enviados) == 3
     cod.enviados = []
 
     assert cod.listado == []  # el listado remoto sigue vacío: no se sembró
 
     with pytest.raises(exp.ExpedicionError) as e:
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert "completa" in str(e.value).lower()
     assert cod.enviados == []  # nada se manda por segunda vez
 
@@ -584,7 +603,7 @@ def test_H04_cierres_de_sandbox_no_completan_produccion(tmp_path):
     ent_sandbox = _entorno(tmp_path, cod, entorno="sandbox")
     plan_sandbox = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent_sandbox,
                                   plaza="Madrid", entorno="sandbox")
-    exp.ejecutar(plan_sandbox, exp.Confirmacion(digest=plan_sandbox.digest), entorno_exp=ent_sandbox)
+    _ejecutar(plan_sandbox, exp.Confirmacion(digest=plan_sandbox.digest), entorno_exp=ent_sandbox)
     assert len(cod.enviados) == 3
     cod.enviados = []  # a partir de aquí solo se cuentan los envíos de producción
 
@@ -599,7 +618,7 @@ def test_H04_cierres_de_sandbox_no_completan_produccion(tmp_path):
     reg_prod.cerrar(clave, "PROD-1")
     cod.listado = [{"id": "PROD-1", "id_personalizado": plan_prod.id_personalizado}]
 
-    ids = exp.ejecutar(plan_prod, exp.Confirmacion(digest=plan_prod.digest), entorno_exp=ent_prod)
+    ids = _ejecutar(plan_prod, exp.Confirmacion(digest=plan_prod.digest), entorno_exp=ent_prod)
 
     assert len(ids) == 2
     assert sorted(c for c, _ in cod.enviados) == sorted(
@@ -617,7 +636,7 @@ def test_H04_contenido_distinto_del_destinatario_no_se_da_por_completo(tmp_path)
     ent = _entorno(tmp_path, cod)
     doc = _doc(tmp_path)
     plan_1 = exp.planificar("W-04AKM2", "OVC", doc, entorno_exp=ent, plaza="Madrid")
-    ids_1 = exp.ejecutar(plan_1, exp.Confirmacion(digest=plan_1.digest), entorno_exp=ent)
+    ids_1 = _ejecutar(plan_1, exp.Confirmacion(digest=plan_1.digest), entorno_exp=ent)
     assert len(ids_1) == 3
     cod.listado = [{"id": i, "id_personalizado": plan_1.id_personalizado} for i in ids_1]
     cod.enviados = []
@@ -626,7 +645,7 @@ def test_H04_contenido_distinto_del_destinatario_no_se_da_por_completo(tmp_path)
     ent_2 = _entorno(tmp_path, cod, partes=(ana_cp_nuevo,))
     plan_2 = exp.planificar("W-04AKM2", "OVC", doc, entorno_exp=ent_2, plaza="Madrid")
 
-    ids_2 = exp.ejecutar(plan_2, exp.Confirmacion(digest=plan_2.digest), entorno_exp=ent_2)
+    ids_2 = _ejecutar(plan_2, exp.Confirmacion(digest=plan_2.digest), entorno_exp=ent_2)
 
     assert len(ids_2) == 1
     assert cod.enviados == [("burofax", plan_2.id_personalizado)]
@@ -648,6 +667,110 @@ def test_H04_formato_antiguo_sin_entorno_para_y_declara(tmp_path):
     ruta.write_text(fila_vieja + "\n", encoding="utf-8", newline="\n")
 
     with pytest.raises(exp.ExpedicionError) as e:
-        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert "formato antiguo" in str(e.value).lower()
+    assert cod.enviados == []
+
+
+# ---------------------------------------------------------------------------------
+# H-05 (alto, estructural; revisión adversarial r2). Comprobar los pendientes y el
+# listado remoto, y reservar la intención, eran operaciones separadas y SIN exclusión
+# entre ejecutores. El revisor lo reprodujo con una barrera de dos hilos: dos
+# invocaciones del MISMO plan leen el registro sin pendientes, las dos quedan
+# esperando en la consulta del listado, las dos reciben vacío, y las dos anotan y
+# mandan -- 2 envíos para 1 aprobado, sin ningún error. No hace falta un actor
+# malicioso: bastan dos terminales.
+# ---------------------------------------------------------------------------------
+
+class _CodicertConBarrera(_CodicertFalso):
+    """Como `_CodicertFalso`, pero `listar()` espera en una barrera de dos hilos.
+
+    Reproduce el solape exacto del hallazgo: las dos ejecuciones tienen que estar
+    paradas EN LA CONSULTA DEL LISTADO a la vez, no una detrás de otra -- si no, el
+    propio orden de los hilos evitaría el duplicado sin que la exclusión tuviera
+    nada que ver, y el test no probaría lo que dice probar.
+
+    El `timeout` es a propósito CORTO y el `BrokenBarrierError` se traga: con el
+    arreglo puesto, el segundo hilo NUNCA llega a coincidir aquí con el primero --
+    el candado de `ejecutar` ya lo serializó ANTES de esta llamada --, así que la
+    barrera revienta por timeout en vez de liberarse por los dos lados. Eso es el
+    arreglo funcionando, no un fallo del test: sin el `try/except`, este mismo test
+    se quedaría colgado en vez de ponerse en verde.
+    """
+
+    def __init__(self, *, barrera, **kw):
+        super().__init__(**kw)
+        self._barrera = barrera
+
+    def listar(self, **kw):
+        try:
+            self._barrera.wait(timeout=2)
+        except threading.BrokenBarrierError:
+            pass
+        return super().listar(**kw)
+
+
+def test_H05_dos_ejecuciones_simultaneas_no_duplican_el_envio(tmp_path):
+    """Dos hilos ejecutan el MISMO plan a la vez, con una barrera que los hace
+    coincidir dentro de `listar()` -- el punto exacto del hallazgo.
+
+    Sin exclusión (RED): los dos hilos pasan `exigir_sin_pendientes` (ninguno anotó
+    todavía), los dos quedan esperando en la barrera dentro de `listar()`, los dos
+    reciben el listado vacío, los dos calculan los mismos 3 pendientes y los dos
+    mandan: 6 envíos para 1 plan de 3, y NINGUNO de los dos hilos lanza error.
+
+    Con exclusión (GREEN): exactamente un hilo manda los 3; el otro se encuentra la
+    expedición completa (el mismo mensaje que ya prueba, para dos llamadas
+    SECUENCIALES, `test_H03_listado_remoto_vacio_no_reactiva_cierres_ya_hechos`) y
+    no manda nada.
+    """
+    barrera = threading.Barrier(2)
+    cod = _CodicertConBarrera(barrera=barrera)
+    ent = _entorno(tmp_path, cod)
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+    confirmacion = exp.Confirmacion(digest=plan.digest)
+
+    resultados: list[tuple[str, object]] = []
+    candado_resultados = threading.Lock()
+
+    def _intentar():
+        try:
+            ids = _ejecutar(plan, confirmacion, entorno_exp=ent)
+            resultado = ("ok", ids)
+        except exp.ExpedicionError as e:
+            resultado = ("error", e)
+        with candado_resultados:
+            resultados.append(resultado)
+
+    hilos = [threading.Thread(target=_intentar) for _ in range(2)]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join(timeout=10)
+    assert not any(h.is_alive() for h in hilos), "un hilo no terminó: ¿deadlock?"
+
+    oks = [r for tipo, r in resultados if tipo == "ok"]
+    errores = [r for tipo, r in resultados if tipo == "error"]
+    assert len(oks) == 1, (
+        f"tiene que mandar exactamente UNA de las dos ejecuciones simultáneas, no "
+        f"{len(oks)}: {resultados}")
+    assert len(errores) == 1, f"la otra tiene que rechazarse, no: {resultados}"
+    assert "completa" in str(errores[0]).lower()
+    assert len(cod.enviados) == 3, (
+        f"se mandaron {len(cod.enviados)} envíos para un plan de 3 -- duplicado")
+    assert sorted(c for c, _ in cod.enviados) == ["burofax", "correo", "sms"]
+
+
+def test_ejecutar_sin_el_mutex_sostenido_se_rechaza(tmp_path):
+    """`ejecutar` EXIGE el mutex y nunca lo adquiere (regla dura del proyecto): quien
+    lo llama sin haberlo sostenido antes -- un test que se salte `_ejecutar` y
+    llame a `exp.ejecutar` a pelo, o un caller nuevo que olvide envolverlo -- tiene
+    que encontrarse un rechazo claro, no colarse silenciosamente por el mismo hueco
+    que abrió H-05."""
+    cod = _CodicertFalso()
+    ent = _entorno(tmp_path, cod)
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    assert "exige el mutex" in str(e.value).lower()
     assert cod.enviados == []

@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import re
+import threading
 import uuid
 
 from collections.abc import Callable
@@ -716,6 +717,94 @@ def _leer_documentos(documentos: list[Path] | tuple[Path, ...]) -> list[bytes]:
     return contenidos
 
 
+#: Un `threading.Lock` por expedición (clave = `clave_mutex_expedicion`). Ver
+#: `_candado_de`: protege DENTRO de este proceso, que es un hueco distinto del que
+#: cierra el mutex de casos.
+_CANDADOS_POR_EXPEDICION: dict[str, threading.Lock] = {}
+#: Protege la creación de una entrada nueva en `_CANDADOS_POR_EXPEDICION`. No protege
+#: la expedición en sí -- eso lo hace el `Lock` que guarda, una vez obtenido.
+_CANDADO_DEL_REGISTRO = threading.Lock()
+
+
+def clave_mutex_expedicion(plan: Plan) -> str:
+    """Identidad de la exclusión de H-05 (revisión adversarial r2): cuenta + entorno + expedición.
+
+    El recurso que hay que proteger no es un expediente -- el mutex de casos
+    (`case_mutex`/`mutex_sesion`) protege el árbol de UNO -- sino la CUENTA de
+    Codicert: dos expediciones con el mismo (usuario emisor, entorno,
+    id_personalizado) no pueden admitirse ni ejecutarse a la vez, vengan de dos
+    hilos del mismo proceso o de dos terminales distintos ("bastan dos terminales",
+    dice el hallazgo -- no hace falta un actor malicioso).
+
+    Se reutiliza la MISMA primitiva de exclusión entre procesos que protege los
+    casos -- mismo lock nativo, misma reentrancia de `mutex_sesion` dentro de un
+    proceso -- con una clave derivada por hash de esos tres campos, en la forma
+    `^W-[A-Z0-9]{3,20}$` que exige `case_mutex._w_code_valido`. NO es un W-code
+    real: no nombra ningún expediente del catálogo, y su longitud (18 caracteres
+    tras `W-`, frente a los 6 habituales de un código real) evita cualquier
+    colisión con uno -- vive en el mismo directorio de locks que los casos, pero
+    ninguna clave sintética puede confundirse con una real.
+    """
+    crudo = "|".join([plan.usuario or "", plan.entorno, plan.id_personalizado])
+    return "W-COD" + hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:15].upper()
+
+
+def _candado_de(clave: str) -> threading.Lock:
+    """El `threading.Lock` DE ESTE PROCESO para la expedición `clave`.
+
+    No es el mutex de casos, y hace falta ADEMÁS de él (H-05, revisión adversarial
+    r2, reproducido por el revisor con una barrera de dos hilos): `mutex_sesion.
+    sostenido` protege entre PROCESOS, pero es deliberadamente REENTRANTE dentro de
+    uno -- dos hilos del mismo proceso que pidan la misma sesión se UNEN a ella y
+    corren a la vez (así tiene que ser: es lo que permite que la secuencia de V1 y
+    las etapas que invoca no choquen contra su propio lease, ver el docstring de
+    `mutex_sesion.sostenido`). Sin este candado, dos hilos de un mismo proceso que
+    llamaran a `ejecutar` para la MISMA expedición pasarían los dos la comprobación
+    de mutex entre procesos -- el proceso SÍ lo sostiene -- y reproducirían
+    exactamente el hallazgo: los dos leen "sin pendientes", los dos ven el listado
+    remoto vacío, los dos mandan. Este candado cierra ESE hueco; `_exigir_mutex_de_
+    expedicion` cierra el de verdad entre procesos. Bloquear cada escritura del
+    fichero por separado (`RegistroIntencion._escribir`) no basta: hace falta que
+    el CHEQUEO Y EL ENVÍO enteros sean atómicos frente a otro ejecutor, y por eso
+    `ejecutar` sostiene este candado durante todo su cuerpo, no solo al escribir.
+    """
+    with _CANDADO_DEL_REGISTRO:
+        candado = _CANDADOS_POR_EXPEDICION.setdefault(clave, threading.Lock())
+    return candado
+
+
+def _exigir_mutex_de_expedicion(plan: Plan, *, clave: str) -> None:
+    """`ejecutar` EXIGE el mutex entre procesos de esta expedición; nunca lo adquiere.
+
+    Regla dura del proyecto: `core/` exige la exclusión y nunca la adquiere -- eso
+    lo hace `scripts/` (guard permanente `tests/test_entrypoints_mutex.py::
+    test_e5_ningun_modulo_de_core_adquiere_el_mutex`, que prohíbe llamar aquí a
+    `sostenido`/`tomado`/`adquirir`). Esta función solo COMPRUEBA con
+    `mutex_sesion.vigente` -- nunca `.sostenido()` -- que el proceso que llama ya
+    sostiene la sesión de `clave`. `scripts/codicert.py` es quien la adquiere,
+    envolviendo la llamada a `ejecutar` con `scripts/_mutex_cli.sostener`.
+
+    `vigente()` puede lanzar `MutexPerdido` si la sesión se sostuvo y se perdió
+    DURANTE la operación (lease vencido, reloj movido): eso NO se captura aquí a
+    propósito, igual que en `core/casos/escritura.py` -- perder el mutex a mitad no
+    es lo mismo que no haberlo tenido nunca, y degradarlo a "no lo tengo" ocultaría
+    justo el escenario en que otro proceso pudo haber entrado mientras tanto.
+    """
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import CaseRef
+
+    if mutex_sesion.vigente(CaseRef(w_code=clave)) is None:
+        raise ExpedicionError(
+            f"ejecutar() exige el mutex de la expedición {plan.id_personalizado!r} "
+            f"(entorno={plan.entorno!r}, usuario={plan.usuario!r}) sostenido ANTES "
+            "de llamar: core/ nunca lo adquiere por su cuenta (H-05, revisión "
+            "adversarial r2). En la CLI ya lo hace `scripts/codicert.py`; si llamas "
+            "a ejecutar() desde otro sitio, envuélvelo con `mutex_sesion.sostenido("
+            "CaseRef(w_code=clave_mutex_expedicion(plan)), ahora_fn=...)` antes de "
+            "invocarlo."
+        )
+
+
 def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
             entorno_exp: EntornoExpedicion) -> list[str]:
     """Ejecuta el plan aprobado.
@@ -747,6 +836,31 @@ def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
     registro tiene, para esta expedición, alguna anotación en formato antiguo (sin
     entorno/cuenta), el flujo se para y lo declara -- no se puede sostener de quién
     es esa anotación.
+
+    **H-05 (alto, estructural; revisión adversarial r2):** comprobar los pendientes,
+    consultar el listado remoto y reservar la intención eran, hasta este hallazgo,
+    operaciones separadas y SIN exclusión entre ejecutores -- dos invocaciones
+    simultáneas del mismo plan podían leer las dos "sin pendientes", ver las dos el
+    listado remoto vacío, y anotar y mandar las dos: 2 envíos para 1 aprobado, sin
+    ningún error, bastando dos terminales. Todo el cuerpo de esta función -- desde
+    aquí hasta el envío -- corre ahora bajo `_candado_de(clave)` (exclusión DENTRO de
+    este proceso) y exige `_exigir_mutex_de_expedicion` (exclusión ENTRE procesos,
+    comprobada, nunca adquirida aquí): el estado se vuelve a comprobar DENTRO de esa
+    doble exclusión, no fuera de ella.
+    """
+    clave = clave_mutex_expedicion(plan)
+    with _candado_de(clave):
+        _exigir_mutex_de_expedicion(plan, clave=clave)
+        return _ejecutar_bajo_candado(plan, confirmacion, entorno_exp=entorno_exp)
+
+
+def _ejecutar_bajo_candado(plan: Plan, confirmacion: Confirmacion, *,
+                           entorno_exp: EntornoExpedicion) -> list[str]:
+    """El cuerpo de `ejecutar`, YA dentro de la doble exclusión de la expedición.
+
+    Separado de `ejecutar` para que el candado y la comprobación del mutex no
+    obliguen a reindentar el resto: nada de lo que sigue cambia de comportamiento,
+    solo de a qué función pertenece.
     """
     if (entorno_exp.plaza != plan.plaza or entorno_exp.entorno != plan.entorno
             or entorno_exp.usuario != plan.usuario):

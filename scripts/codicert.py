@@ -19,6 +19,7 @@ from core import codicert as _cod
 from core import expedicion_certificada as exp
 from core.ciudades import CIUDADES, ciudad_de_equipo
 from core.sudespacho_relations import SudespachoRelationsError
+from scripts._mutex_cli import CasoOcupado, MutexPerdidoEnCli, sostener
 
 ENTORNOS: tuple[str, ...] = ("sandbox", "produccion")
 
@@ -149,7 +150,21 @@ def main(argv: list[str] | None = None) -> int:
         print(render_plan(plan, usuario=entorno_exp.usuario))
         if args.orden == "plan":
             return 0
-        ids = exp.ejecutar(plan, exp.Confirmacion(digest=args.confirmar), entorno_exp=entorno_exp)
+        # H-05 (alto, estructural; revisión adversarial r2): admitir y ejecutar una
+        # expedición sin exclusión entre procesos deja pasar dos terminales a la vez
+        # -- las dos leen "sin pendientes", las dos ven el listado remoto vacío, las
+        # dos mandan. `sostener` es el mismo "único sitio" que ya usan los demás
+        # entrypoints (`scripts/_mutex_cli.py`) para el mutex de casos; aquí protege
+        # la CUENTA de Codicert con la clave sintética que arma
+        # `clave_mutex_expedicion` (cuenta+entorno+expedición, con forma de W-code).
+        # `core/expedicion_certificada.ejecutar` EXIGE esta sesión -- nunca la
+        # adquiere ella misma -- así que sin este `with` fallaría igual, pero tarde
+        # y sin haber cerrado la ventana entre "comprobar" y "ejecutar".
+        with sostener(exp.clave_mutex_expedicion(plan),
+                     avisar=lambda m: print(m, file=sys.stderr),
+                     que="el envío de la expedición"):
+            ids = exp.ejecutar(plan, exp.Confirmacion(digest=args.confirmar),
+                               entorno_exp=entorno_exp)
     except (exp.ExpedicionError, _cod.CodicertError, SudespachoRelationsError, ValueError) as err:
         # `entorno_exp.partes_de` (dentro de `planificar`) resuelve el expediente
         # del CRM y puede lanzar `SudespachoRelationsError`, o `ValueError` si
@@ -157,6 +172,17 @@ def main(argv: list[str] | None = None) -> int:
         # Python cruda no es lo que debe leer ante un fallo del CRM (hallazgo 2).
         print(f"\nERROR: {err}", file=sys.stderr)
         return 1
+    except CasoOcupado as exc:
+        # Otro proceso de esta máquina ya está ejecutando la MISMA expedición
+        # (misma cuenta, entorno y `id_personalizado`): cero bytes escritos por
+        # esta invocación. Mismo código de salida que el resto de entrypoints
+        # ocupados (`scripts/export_label_emails.py`, `scripts/sync_sudespacho.py`).
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        return 2
+    except MutexPerdidoEnCli as exc:
+        print(f"\nERROR: {exc} Artefactos: el registro de intención "
+              "(`_codicert_intencion.jsonl`) de esta corrida.", file=sys.stderr)
+        return 2
 
     print("\nENVIADO:", ", ".join(ids))
     return 0
