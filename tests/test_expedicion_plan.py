@@ -7,12 +7,22 @@ import pytest
 
 from core import expedicion_certificada as exp
 
-ANA = {"nombre": "ANA LOPEZ", "direccion": "C Mayor 1", "poblacion": "Madrid",
-       "provincia": "Madrid", "cp": "28001", "email": "ana@x.es", "movil": "665130883"}
-LUIS = {"nombre": "LUIS PEREZ", "direccion": "C Mayor 1", "poblacion": "Madrid",
-        "provincia": "Madrid", "cp": "28001", "email": "luis@x.es", "movil": "677000111"}
-OTRO = {"nombre": "MAR GIL", "direccion": "Av Sur 9", "poblacion": "Sevilla",
-        "provincia": "Sevilla", "cp": "41001", "email": "mar@x.es", "movil": "688222333"}
+# H-06 (revisión adversarial r2): el CRM real de `clientes_contrarios` separa nombre y
+# apellidos en tres campos (docs/CRM_SUDESPACHO_ATLAS.md § clientes_contrarios) y NUNCA
+# junta el nombre completo en "nombre". Estas fixtures antes ponían "ANA LOPEZ" entero en
+# "nombre" -- una forma que el CRM no produce -- y ese doble tapaba el defecto: los tests
+# pasaban aunque el código solo leyera "nombre". Separados, "ANA" + "LOPEZ" siguen
+# componiendo "ANA LOPEZ": los mismos asertos de más abajo prueban ahora la composición
+# real (nombre_completo_de), no una coincidencia de fixture.
+ANA = {"nombre": "ANA", "1apellido": "LOPEZ", "2apellido": "", "direccion": "C Mayor 1",
+       "poblacion": "Madrid", "provincia": "Madrid", "cp": "28001", "email": "ana@x.es",
+       "movil": "665130883"}
+LUIS = {"nombre": "LUIS", "1apellido": "PEREZ", "2apellido": "", "direccion": "C Mayor 1",
+        "poblacion": "Madrid", "provincia": "Madrid", "cp": "28001", "email": "luis@x.es",
+        "movil": "677000111"}
+OTRO = {"nombre": "MAR", "1apellido": "GIL", "2apellido": "", "direccion": "Av Sur 9",
+        "poblacion": "Sevilla", "provincia": "Sevilla", "cp": "41001", "email": "mar@x.es",
+        "movil": "688222333"}
 
 
 def _canales(envios):
@@ -120,3 +130,37 @@ def test_el_sms_lleva_correo_solo_si_la_parte_tiene_email():
     envios_sin, _ = exp.destinatarios_de([sin_email])
     sms_sin_email = next(e for e in envios_sin if e.canal == "sms")
     assert "correo" not in sms_sin_email.destinatario
+
+
+# ---------------------------------------------------------------------------------
+# H-06 (revisión adversarial r2). El código leía solo "nombre" -- el nombre de pila --
+# en vez de componer nombre + apellidos como los separa `clientes_contrarios`
+# (docs/CRM_SUDESPACHO_ATLAS.md). ANA y LUIS arriba solo llevan un apellido (para que
+# los asertos de siempre seguían valiendo), así que aquí se fuerzan los DOS apellidos
+# de cada uno para que el defecto -- "ANA Y LUIS" en vez del nombre completo de cada
+# requerido -- no pueda esconderse detrás de un fixture con un solo apellido.
+# ---------------------------------------------------------------------------------
+
+def test_sobre_conjunto_compone_el_nombre_completo_de_cada_requerido():
+    """El defecto: el sobre conjunto salía como "ANA Y LUIS" -- solo los nombres de
+    pila -- en vez de con los apellidos de cada requerido."""
+    ana_dos_apellidos = {**ANA, "1apellido": "LOPEZ", "2apellido": "GIL"}
+    luis_dos_apellidos = {**LUIS, "1apellido": "PEREZ", "2apellido": "RUIZ"}
+    envios, _ = exp.destinatarios_de([ana_dos_apellidos, luis_dos_apellidos])
+    postal = next(e for e in envios if e.canal == "burofax")
+    assert postal.destinatario["nombre"] == "ANA LOPEZ GIL Y LUIS PEREZ RUIZ"
+    assert postal.destinatario["a_atencion"] == "ANA LOPEZ GIL"
+
+
+def test_correo_y_sms_llevan_el_nombre_completo_no_solo_el_de_pila():
+    """Misma causa que el sobre conjunto: el payload de correo/SMS y su etiqueta
+    también leían solo "nombre". Con un segundo apellido debe llegar completo a los
+    dos, no solo a la ficha postal."""
+    ana_dos_apellidos = {**ANA, "1apellido": "LOPEZ", "2apellido": "GIL"}
+    envios, _ = exp.destinatarios_de([ana_dos_apellidos])
+    correo = next(e for e in envios if e.canal == "correo")
+    sms = next(e for e in envios if e.canal == "sms")
+    assert correo.destinatario["nombre"] == "ANA LOPEZ GIL"
+    assert sms.destinatario["nombre"] == "ANA LOPEZ GIL"
+    assert "ANA LOPEZ GIL" in correo.etiqueta
+    assert "ANA LOPEZ GIL" in sms.etiqueta

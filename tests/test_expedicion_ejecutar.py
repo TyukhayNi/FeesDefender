@@ -9,10 +9,17 @@ import pytest
 
 from core import expedicion_certificada as exp
 
-ANA = {"nombre": "ANA LOPEZ", "direccion": "C Mayor 1", "poblacion": "Madrid",
-       "provincia": "Madrid", "cp": "28001", "email": "ana@x.es", "movil": "665130883"}
-MAR = {"nombre": "MAR GIL", "direccion": "Av Sur 9", "poblacion": "Sevilla",
-       "provincia": "Sevilla", "cp": "41001", "email": "mar@x.es", "movil": "688222333"}
+# H-06: campos separados como los devuelve `clientes_contrarios` de verdad (docs/
+# CRM_SUDESPACHO_ATLAS.md § clientes_contrarios), no el nombre completo embutido en
+# "nombre". Este fichero no asierta sobre el contenido de "nombre" -- ver
+# tests/test_expedicion_plan.py y tests/test_expedicion_ficha_postal.py para eso --
+# pero las fixtures deben reflejar la forma real igualmente.
+ANA = {"nombre": "ANA", "1apellido": "LOPEZ", "2apellido": "", "direccion": "C Mayor 1",
+       "poblacion": "Madrid", "provincia": "Madrid", "cp": "28001", "email": "ana@x.es",
+       "movil": "665130883"}
+MAR = {"nombre": "MAR", "1apellido": "GIL", "2apellido": "", "direccion": "Av Sur 9",
+       "poblacion": "Sevilla", "provincia": "Sevilla", "cp": "41001", "email": "mar@x.es",
+       "movil": "688222333"}
 
 
 class _CodicertFalso:

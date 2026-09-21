@@ -96,7 +96,11 @@ def test_partes_de_resuelve_el_w_code_desnudo_a_su_caso_real(tmp_path, monkeypat
                     case_id="BaRS11 - Falsa 1 (W-000AAA) - Vuelta",
                     w_code="W-000AAA", direccion="Falsa 1", exp_id="606")
 
-    esperado = [{"nombre": "JUAN PEREZ", "direccion": "C Mayor 1", "poblacion": "Madrid",
+    # H-06: campos separados, como los devuelve `clientes_contrarios` de verdad (docs/
+    # CRM_SUDESPACHO_ATLAS.md); este test compara paso-a-través (partes_de == esperado),
+    # no la composición del nombre, pero la fixture debe reflejar la forma real.
+    esperado = [{"nombre": "JUAN", "1apellido": "PEREZ", "2apellido": "",
+                "direccion": "C Mayor 1", "poblacion": "Madrid",
                 "provincia": "Madrid", "cp": "28001", "email": "juan@x.es",
                 "movil": "600111222"}]
     monkeypatch.setattr(

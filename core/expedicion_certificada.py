@@ -80,6 +80,30 @@ def movil_normalizado(bruto: str | None) -> str | None:
     return f"34{m.group(1)}" if m else None
 
 
+_CAMPOS_NOMBRE_COMPLETO = ("nombre", "1apellido", "2apellido")
+
+
+def nombre_completo_de(parte: dict) -> str:
+    """Nombre completo de una parte tal como la devuelve el CRM (hallazgo H-06).
+
+    `clientes_contrarios` separa el nombre en tres campos independientes —``nombre``,
+    ``1apellido``, ``2apellido``—, confirmado en el atlas del repositorio
+    (`docs/CRM_SUDESPACHO_ATLAS.md` § clientes_contrarios) y en
+    `core/sudespacho_relations.NuevoClienteContrario`; el CRM nunca junta el nombre
+    completo en un solo campo. Leer solo ``nombre`` sacaba al requerido con únicamente
+    su nombre de pila en una comunicación jurídica irreversible.
+
+    Para una persona física compone "nombre 1apellido 2apellido" con los apellidos que
+    haya —el segundo puede faltar, como campo ausente o como cadena vacía—, en el mismo
+    orden que ya usa el CRM: no se inventa uno distinto. Para una razón social, la
+    convención de la casa deja ``nombre`` con la razón social completa en mayúsculas y
+    los dos apellidos vacíos: no hay nada que concatenar y el resultado es ``nombre``
+    tal cual. Cualquier espacio sobrante, interno o de borde, se normaliza a uno solo.
+    """
+    trozos = [" ".join(str(parte.get(campo) or "").split()) for campo in _CAMPOS_NOMBRE_COMPLETO]
+    return " ".join(t for t in trozos if t)
+
+
 _OBLIGATORIOS_POSTAL = ("nombre", "direccion", "poblacion", "provincia", "cp")
 
 
@@ -94,7 +118,8 @@ def ficha_postal(parte: dict) -> dict:
         raise ExpedicionError(
             f"la ficha postal de {(parte.get('nombre') or '').strip() or '(sin nombre)'} no tiene: "
             + ", ".join(faltan))
-    return {"nombre": parte["nombre"], "a_atencion": parte.get("a_atencion") or parte["nombre"],
+    nombre = nombre_completo_de(parte)
+    return {"nombre": nombre, "a_atencion": parte.get("a_atencion") or nombre,
             "pais": "España", "direccion": parte["direccion"], "poblacion": parte["poblacion"],
             "provincia": provincia_codicert(parte["provincia"]), "cp": parte["cp"],
             **({"telefono": m} if (m := movil_normalizado(parte.get("movil"))) else {})}
@@ -139,7 +164,7 @@ def destinatarios_de(partes: list[dict]) -> tuple[list[EnvioPrevisto], list[str]
     envios: list[EnvioPrevisto] = []
     ausencias: list[str] = []
     for p in partes:
-        nombre = p.get("nombre") or "(sin nombre)"
+        nombre = nombre_completo_de(p) or "(sin nombre)"
         tiene = False
         if (correo := str(p.get("email") or "").strip()):
             envios.append(EnvioPrevisto("correo", {"correo": correo, "nombre": nombre},
@@ -170,11 +195,19 @@ def destinatarios_de(partes: list[dict]) -> tuple[list[EnvioPrevisto], list[str]
             por_domicilio.setdefault(_clave_domicilio(p), []).append(p)
     for grupo in por_domicilio.values():
         base = dict(grupo[0])
-        # Se captura ANTES de sobrescribir "nombre": si no, el fallback de ficha_postal
-        # (a_atencion or nombre) recupera el nombre YA conjunto, no la persona de
-        # contacto (regla del despacho: "nombre" lleva a los dos, "a_atencion" a uno).
-        contacto = base.get("a_atencion") or base["nombre"]
-        base["nombre"] = " Y ".join(str(g["nombre"]) for g in grupo)
+        # Se captura ANTES de sobrescribir "nombre" (y de vaciar los apellidos): si no,
+        # el fallback de ficha_postal (a_atencion or nombre completo) recupera el
+        # nombre YA conjunto, no la persona de contacto (regla del despacho: "nombre"
+        # lleva a los dos, "a_atencion" a uno).
+        contacto = base.get("a_atencion") or nombre_completo_de(base)
+        base["nombre"] = " Y ".join(nombre_completo_de(g) for g in grupo)
+        # Los apellidos que trae "base" son los del PRIMER miembro del grupo (heredados
+        # de dict(grupo[0])) y ya están dentro del "nombre" conjunto de arriba: si se
+        # dejan, ficha_postal() los concatenaría una segunda vez (H-06 al cuadrado).
+        # Vacíos, nombre_completo_de(base) devuelve "nombre" tal cual -- el mismo camino
+        # que ya usa una razón social.
+        base["1apellido"] = ""
+        base["2apellido"] = ""
         base["a_atencion"] = contacto
         ficha = ficha_postal(base)
         etiqueta = f"{ficha['nombre']} · {ficha['direccion']}, {ficha['poblacion']}"
@@ -626,7 +659,9 @@ def partes_de(w_code: str) -> list[dict]:
     Lee el ``exp_id`` numérico del elemento CRM ``extrajudiciales`` por el índice
     local del caso, y sus relaciones con `sudespacho_relations.get_relaciones`.
     `clientes_contrarios` ya trae los campos que `destinatarios_de` necesita (spec
-    §5): nombre, dirección, población, provincia, cp, email, móvil.
+    §5): nombre, 1apellido, 2apellido, dirección, población, provincia, cp, email,
+    móvil. El nombre y los apellidos llegan SEPARADOS (hallazgo H-06, revisión
+    adversarial r2) -- `nombre_completo_de` los compone antes de usarlos.
     """
     from core import case_manager
     from core.casos import case_locator
