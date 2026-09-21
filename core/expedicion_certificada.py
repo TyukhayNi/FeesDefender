@@ -266,14 +266,27 @@ def texto_de(w_code: str) -> tuple[str, str]:
     return _ASUNTO_TPL.format(w_code=w_code), _CUERPO_TPL.format(w_code=w_code)
 
 
-def _huella(etiqueta: str) -> str:
-    """Huella corta y no reversible de una etiqueta con datos personales.
+def _huella(contenido: str | dict) -> str:
+    """Huella corta y no reversible del CONTENIDO aprobado (hallazgo H-04, r2).
+
+    Antes se calculaba sobre la ETIQUETA de presentación (`EnvioPrevisto.etiqueta`),
+    pensada solo para que la lea un humano en el plan: en el burofax ni siquiera
+    incluye el código postal, la provincia o la persona de atención. Cambiar el
+    código postal y aprobar el plan nuevo daba "ya está completa" con el domicilio
+    VIEJO, porque la etiqueta -- y por tanto la huella -- no cambiaba. `ejecutar` le
+    pasa ahora el `dict` `destinatario` completo, resuelto DE NUEVO contra el CRM: se
+    canonicaliza con las claves ordenadas antes de hashear, así que cualquier campo
+    que cambie -- código postal incluido -- produce una huella distinta y el envío
+    vuelve a contar como pendiente. Sigue aceptando una cadena simple para los tests
+    que ejercitan `RegistroIntencion` de forma aislada, sin pasar por `ejecutar`.
 
     `RegistroIntencion.anotar` la usa para no persistir el dato en claro
     (`docs/SEGURIDAD_DATOS.md` §7), y `ejecutar` la reutiliza para saber, al reanudar
     una expedición a medias, qué par (canal, huella) ya consta cerrado.
     """
-    return hashlib.sha256(etiqueta.encode("utf-8")).hexdigest()[:12]
+    crudo = (json.dumps(contenido, sort_keys=True, ensure_ascii=False)
+             if isinstance(contenido, dict) else contenido)
+    return hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:12]
 
 
 def _reloj_utc() -> datetime:
@@ -293,12 +306,45 @@ class RegistroIntencion:
     hecho nuestro que la plataforma no puede contarnos. Sin él, un timeout deja un
     burofax pagado cuyo `IdEnvio` no se puede reencontrar: `GET /envios` no filtra por
     `id_personalizado`.
+
+    Todas las plazas y cuentas comparten hoy el mismo fichero bajo el directorio de
+    trabajo (`entorno_exp.raiz`): sin `entorno`/`usuario` en cada anotación (hallazgo
+    H-04, revisión adversarial r2), un cierre de sandbox se confundía con uno de
+    producción, o el de una cuenta con el de otra, porque `id_personalizado` por sí
+    solo no distingue de dónde vino cada cierre -- el mismo w_code puede expedirse en
+    los dos. Ver `__init__`, `_coincide_entorno` y `_exigir_formato_reconocido`.
     """
 
-    def __init__(self, ruta: Path, *, ahora: Callable[[], datetime] = _reloj_utc) -> None:
+    def __init__(self, ruta: Path, *, entorno: str | None = None, usuario: str | None = None,
+                ahora: Callable[[], datetime] = _reloj_utc) -> None:
+        """`entorno` y `usuario` identifican DE QUIÉN es cada anotación (hallazgo
+        H-04, r2): todas las plazas y todas las cuentas escribían en el mismo
+        fichero bajo el directorio de trabajo, así que un cierre de sandbox se
+        confundía con uno de producción, o el de una cuenta con el de otra. Van en
+        claro -- ninguno de los dos es un dato personal del destinatario, que es lo
+        que protege `docs/SEGURIDAD_DATOS.md` §7 -- y viajan en la fila `en_vuelo`
+        para que las consultas puedan filtrar por ellos (`ejecutar` los rellena con
+        `entorno_exp.entorno`/`entorno_exp.usuario`). `None` por defecto: los tests
+        que ejercitan este primitivo de forma aislada, sin pasar por `ejecutar`, no
+        necesitan declarar ninguno de los dos para seguir funcionando como siempre
+        -- solo importa que quien escribe y quien lee compartan el mismo par.
+        """
         self.ruta = Path(ruta)
         self.ruta.parent.mkdir(parents=True, exist_ok=True)
+        self.entorno = entorno
+        self.usuario = usuario
         self._ahora = ahora
+
+    def _coincide_entorno(self, fila: dict) -> bool:
+        """¿Esta fila 'en_vuelo' pertenece al entorno/cuenta de ESTA instancia?
+
+        Por IGUALDAD exacta, no por ausencia: una fila sin campo `entorno` (formato
+        viejo, anterior a H-04) nunca coincide con una instancia que tiene un
+        entorno concreto -- no se puede sostener que sea de este entorno, así que
+        no cuenta como si lo fuera. `_exigir_formato_reconocido` es quien declara
+        ese caso en vez de dejarlo pasar en silencio.
+        """
+        return fila.get("entorno") == self.entorno and fila.get("usuario") == self.usuario
 
     def _lineas(self) -> list[dict]:
         """Cada línea no vacía, parseada. Una línea ilegible se declara, no se oculta.
@@ -328,7 +374,7 @@ class RegistroIntencion:
         with self.ruta.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(fila, ensure_ascii=False) + "\n")
 
-    def anotar(self, id_personalizado: str, canal: str, etiqueta: str) -> str:
+    def anotar(self, id_personalizado: str, canal: str, contenido: str | dict) -> str:
         """Anota la intención SIN persistir datos personales del destinatario.
 
         El diseño (§4.3) exige `(id_personalizado, canal, destinatario, timestamp,
@@ -336,18 +382,23 @@ class RegistroIntencion:
         no sabe de qué expedición era el pendiente ni cuándo se quedó abierto, que es
         justo lo que necesita para ir al portal a comprobarlo.
 
-        La etiqueta lleva nombre, correo o móvil de un tercero, y este fichero se
-        queda en disco: `docs/SEGURIDAD_DATOS.md` §7 prohíbe volcar ahí a una persona
-        por su nombre. Se guarda una **huella corta** que basta para casar la anotación
-        con su cierre y para que un humano distinga dos envíos del mismo canal, y no
-        permite reconstruir el dato. El `id_personalizado` no es un dato personal —es
-        un código de expediente— y ese sí va en claro.
+        `contenido` lleva nombre, dirección, correo o móvil de un tercero, y este
+        fichero se queda en disco: `docs/SEGURIDAD_DATOS.md` §7 prohíbe volcar ahí a
+        una persona por su nombre. Se guarda una **huella corta** (hallazgo H-04: del
+        `dict` destinatario completo, no de la etiqueta de presentación -- ver
+        `_huella`) que basta para casar la anotación con su cierre, para que un
+        humano distinga dos envíos del mismo canal, y para detectar que el contenido
+        cambió entre dos ejecuciones -- y no permite reconstruir el dato.
+        `id_personalizado` no es un dato personal —es un código de expediente—, y
+        `entorno`/`usuario` tampoco —es la cuenta propia del despacho, no la del
+        destinatario—: los tres van en claro.
         """
         clave = uuid.uuid4().hex
-        huella = _huella(etiqueta)
+        huella = _huella(contenido)
         marca = self._ahora().isoformat()
         self._escribir({"clave": clave, "id_personalizado": id_personalizado, "canal": canal,
-                        "destinatario_huella": huella, "timestamp": marca, "estado": "en_vuelo"})
+                        "destinatario_huella": huella, "entorno": self.entorno,
+                        "usuario": self.usuario, "timestamp": marca, "estado": "en_vuelo"})
         return clave
 
     def cerrar(self, clave: str, id_envio: str) -> None:
@@ -366,14 +417,16 @@ class RegistroIntencion:
         self._escribir({"clave": clave, "estado": "hecho", "id_envio": id_envio})
 
     def en_vuelo(self, id_personalizado: str | None = None) -> list[dict]:
-        """Anotaciones sin cerrar. Con `id_personalizado`, solo las de esa expedición."""
+        """Anotaciones sin cerrar de ESTE entorno/cuenta. Con `id_personalizado`, solo
+        las de esa expedición (hallazgo H-04: una anotación de otro entorno u otra
+        cuenta no pertenece a esta instancia, así que no cuenta ni bloquea aquí)."""
         abiertas: dict[str, dict] = {}
         for fila in self._lineas():
             if fila.get("estado") == "en_vuelo":
                 abiertas[fila["clave"]] = fila
             else:
                 abiertas.pop(fila["clave"], None)
-        filas = list(abiertas.values())
+        filas = [f for f in abiertas.values() if self._coincide_entorno(f)]
         if id_personalizado is None:
             return filas
         return [f for f in filas if f.get("id_personalizado") == id_personalizado]
@@ -381,17 +434,50 @@ class RegistroIntencion:
     def hechos(self) -> set[str]:
         return {f["id_envio"] for f in self._lineas() if f.get("estado") == "hecho"}
 
+    def _anotaciones_de(self, id_personalizado: str) -> list[dict]:
+        """Filas 'en_vuelo' -- origen, sigan abiertas o ya cerradas -- de esta
+        expedición, SIN filtrar por entorno/cuenta: es la base para detectar formato
+        antiguo (hallazgo H-04) antes de decidir si una anotación cuenta o no."""
+        return [f for f in self._lineas()
+               if f.get("estado") == "en_vuelo" and f.get("id_personalizado") == id_personalizado]
+
+    def _exigir_formato_reconocido(self, id_personalizado: str) -> None:
+        """Para y declara si `id_personalizado` tiene anotaciones en FORMATO ANTIGUO.
+
+        Un registro escrito antes de H-04 no lleva `entorno` ni `usuario`: no se puede
+        sostener si esa anotación es de este entorno/cuenta o de otro -- ni incluirla
+        ni excluirla en silencio es defendible, así que se declara y se para, igual
+        que cualquier otra ausencia que no se sostiene sobre algo inmediato (spec
+        §5.2, mismo criterio que `sin_explicar` en `ejecutar`).
+        """
+        viejas = [f for f in self._anotaciones_de(id_personalizado)
+                 if "entorno" not in f or "usuario" not in f]
+        if viejas:
+            claves = ", ".join(sorted(f["clave"] for f in viejas))
+            raise ExpedicionError(
+                f"{self.ruta}: el registro local tiene {len(viejas)} anotación(es) de "
+                f"{id_personalizado!r} en FORMATO ANTIGUO -- sin entorno ni cuenta "
+                f"emisora (clave(s): {claves}). No se puede sostener si son de este "
+                "entorno/cuenta o de otro. Queda SIN VERIFICAR: reconcílialas a mano "
+                "(compruébalas en el portal y añádeles entorno/usuario, o ciérralas) "
+                "antes de continuar.")
+
     def _cerrados_de(self, id_personalizado: str) -> list[dict]:
-        """Anotaciones de `id_personalizado` que ya se cerraron, con su `id_envio` añadido.
+        """Anotaciones de `id_personalizado`, DE ESTE ENTORNO/CUENTA, que ya se
+        cerraron, con su `id_envio` añadido.
 
         La línea "hecho" solo lleva `clave` e `id_envio` (spec §4.3): no dice de qué
-        expedición era ni por qué canal. Se cruza con la anotación "en_vuelo" que la
-        abrió —única por `clave`, la genera `uuid4()`— para recuperar `id_personalizado`,
-        `canal` y `destinatario_huella`. Sin este cruce, `ejecutar` no puede saber qué
-        falta al reanudar una expedición a medias.
+        expedición era, por qué canal, ni de qué entorno/cuenta. Se cruza con la
+        anotación "en_vuelo" que la abrió —única por `clave`, la genera `uuid4()`—
+        para recuperar `id_personalizado`, `canal`, `destinatario_huella`, `entorno`
+        y `usuario`. El cruce exige además que esa anotación de origen sea de ESTE
+        entorno/cuenta (hallazgo H-04): un cierre de sandbox no debe explicar ni
+        completar una expedición de producción, aunque compartan `id_personalizado`
+        -- el mismo w_code puede expedirse en los dos.
         """
         filas = self._lineas()
-        anotaciones = {f["clave"]: f for f in filas if f.get("estado") == "en_vuelo"}
+        anotaciones = {f["clave"]: f for f in filas
+                       if f.get("estado") == "en_vuelo" and self._coincide_entorno(f)}
         salida: list[dict] = []
         for f in filas:
             if f.get("estado") != "hecho":
@@ -420,7 +506,16 @@ class RegistroIntencion:
         return {f["id_envio"] for f in self._cerrados_de(id_personalizado)}
 
     def exigir_sin_pendientes(self, id_personalizado: str | None = None) -> None:
-        """Para el flujo en vez de arriesgar un duplicado. Puede acotarse a una expedición."""
+        """Para el flujo en vez de arriesgar un duplicado. Puede acotarse a una expedición.
+
+        Acotada a una expedición, primero comprueba que el registro no tenga
+        anotaciones de ESA expedición en formato antiguo (hallazgo H-04): sin esa
+        comprobación, una anotación sin entorno/cuenta se colaría en `en_vuelo()` (si
+        coincide por casualidad, `None == None`) o se descartaría en silencio, en vez
+        de declararse.
+        """
+        if id_personalizado is not None:
+            self._exigir_formato_reconocido(id_personalizado)
         if (p := self.en_vuelo(id_personalizado)):
             raise ExpedicionError(
                 f"hay {len(p)} envío(s) anotados y sin confirmar: "
@@ -642,6 +737,16 @@ def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
     `listar()` (H-02). Mandar solo lo que el sello acaba de certificar en esta misma
     llamada hace que mutar `plan.envios` después de aprobarlo, o sobrescribir un
     documento durante la consulta remota, no tengan ningún efecto sobre lo que sale.
+
+    El registro local de cierres (`RegistroIntencion`) cuenta SIEMPRE al decidir qué
+    falta, también si el listado remoto vuelve vacío (hallazgo H-03): un censo
+    negativo no es evidencia de que no se mandó nada. Y cuenta solo si es DE ESTE
+    entorno y cuenta emisora, sobre el contenido de destinatario que acaba de
+    resolverse DE NUEVO (hallazgo H-04): un cierre de otro entorno, de otra cuenta, o
+    sobre un destinatario que ya cambió, no explica ni completa esta llamada. Si el
+    registro tiene, para esta expedición, alguna anotación en formato antiguo (sin
+    entorno/cuenta), el flujo se para y lo declara -- no se puede sostener de quién
+    es esa anotación.
     """
     if (entorno_exp.plaza != plan.plaza or entorno_exp.entorno != plan.entorno
             or entorno_exp.usuario != plan.usuario):
@@ -674,36 +779,47 @@ def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
             f"de {plan.coste} € (al planificar había {plan.credito} €). No se manda nada.")
 
     registro = RegistroIntencion(entorno_exp.raiz / "_codicert_intencion.jsonl",
+                                 entorno=entorno_exp.entorno, usuario=entorno_exp.usuario,
                                  ahora=entorno_exp.ahora)
     # Acotado a ESTA expedición: un pendiente de otro expediente no debe bloquearla. Y
     # es incondicional: una anotación en vuelo sin cerrar es, por definición, un envío
     # cuyo desenlace no se puede sostener sobre nada inmediato (spec §5.2) — jamás se
     # reintenta solo, así que bloquea aunque la plataforma no muestre nada todavía.
+    # `registro` queda ligado a `entorno_exp.entorno`/`.usuario` (hallazgo H-04): una
+    # anotación de otro entorno o de otra cuenta no pertenece a esta instancia.
     registro.exigir_sin_pendientes(plan.id_personalizado)
 
     ids_en_plataforma = ya_expedido(list(entorno_exp.codicert.listar()), plan.id_personalizado)
-    if ids_en_plataforma:
-        # El censo positivo tampoco autoriza por sí solo a completar: solo si el
-        # registro local explica CADA envío que la plataforma dice tener se puede
-        # sostener qué falta. Si no, para y declara SIN VERIFICAR — pudo expedirse
-        # desde otra máquina o desde el portal, y completar a ciegas duplicaría.
-        sin_explicar = ids_en_plataforma - registro.ids_hechos_de(plan.id_personalizado)
-        if sin_explicar:
-            raise ExpedicionError(
-                f"la plataforma tiene {len(sin_explicar)} envío(s) con "
-                f"{plan.id_personalizado!r} que el registro local no explica (¿se "
-                "expidió desde otra máquina o desde el portal?). Queda SIN VERIFICAR "
-                "qué falta: no se manda nada. Compruébalo en el portal antes de "
-                "continuar.")
-        pares_hechos = registro.pares_cerrados(plan.id_personalizado)
-        pendientes = [e for e in envios_ahora if (e.canal, _huella(e.etiqueta)) not in pares_hechos]
-        if not pendientes:
-            raise ExpedicionError(
-                f"la expedición {plan.id_personalizado!r} ya está completa: sus "
-                f"{len(ids_en_plataforma)} envío(s) ya constan hechos y explicados en "
-                "el registro local. No hay nada pendiente que mandar.")
-    else:
-        pendientes = list(envios_ahora)
+    # El censo positivo tampoco autoriza por sí solo a completar: solo si el
+    # registro local explica CADA envío que la plataforma dice tener se puede
+    # sostener qué falta. Si no, para y declara SIN VERIFICAR — pudo expedirse
+    # desde otra máquina o desde el portal, y completar a ciegas duplicaría.
+    sin_explicar = ids_en_plataforma - registro.ids_hechos_de(plan.id_personalizado)
+    if sin_explicar:
+        raise ExpedicionError(
+            f"la plataforma tiene {len(sin_explicar)} envío(s) con "
+            f"{plan.id_personalizado!r} que el registro local no explica (¿se "
+            "expidió desde otra máquina o desde el portal?). Queda SIN VERIFICAR "
+            "qué falta: no se manda nada. Compruébalo en el portal antes de "
+            "continuar.")
+
+    # H-03: los cierres locales cuentan SIEMPRE, también ante un censo remoto VACÍO.
+    # Antes, `ids_en_plataforma` vacío tomaba la rama "pendientes = todos los envíos"
+    # sin consultar `pares_cerrados` ni una sola vez: un listado que no refleja esta
+    # expedición -- latencia, paginación, un fallo transitorio -- no es evidencia de
+    # que no se mandó nada, y el registro local SÍ es un hecho inmediato. La huella
+    # de cada par (canal, huella) sale del `destinatario` YA resuelto DE NUEVO
+    # (hallazgo H-04): si el contenido aprobado cambió -- p. ej. el código postal --
+    # la huella cambia con él y el envío vuelve a contar como pendiente.
+    pares_hechos = registro.pares_cerrados(plan.id_personalizado)
+    pendientes = [e for e in envios_ahora if (e.canal, _huella(e.destinatario)) not in pares_hechos]
+    if not pendientes:
+        raise ExpedicionError(
+            f"la expedición {plan.id_personalizado!r} ya está completa en "
+            f"entorno={plan.entorno!r}, usuario={plan.usuario!r}: sus "
+            f"{len(pares_hechos)} envío(s) ya constan cerrados en el registro local "
+            "-- cuentan aunque el listado remoto no los muestre. No hay nada "
+            "pendiente que mandar.")
 
     # Los adjuntos salen de los MISMOS bytes que se acaban de leer y hashear arriba
     # (hallazgo H-02): ninguna ruta se reabre aquí, así que la ventana larga de
@@ -717,7 +833,10 @@ def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
 
     ids: list[str] = []
     for e in pendientes:
-        clave = registro.anotar(plan.id_personalizado, e.canal, e.etiqueta)
+        # `e.destinatario`, no `e.etiqueta` (hallazgo H-04): la huella tiene que
+        # ligarse al contenido aprobado -- lo que de verdad viaja en el envío --,
+        # no a una etiqueta pensada solo para que la lea un humano en el plan.
+        clave = registro.anotar(plan.id_personalizado, e.canal, e.destinatario)
         if e.canal == "burofax":
             i = entorno_exp.codicert.enviar_burofax(
                 destinatario=e.destinatario, adjuntos=adjuntos, asunto=asunto, cuerpo=cuerpo,

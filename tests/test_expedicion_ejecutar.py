@@ -159,10 +159,17 @@ def test_un_pendiente_de_otro_expediente_no_bloquea_este(tmp_path):
 
 def test_un_pendiente_del_MISMO_expediente_si_bloquea(tmp_path):
     """El mismo mecanismo, pero con el pendiente anotado para ESTA expedición: sí debe
-    bloquear el envío en vez de arriesgar un duplicado."""
+    bloquear el envío en vez de arriesgar un duplicado.
+
+    El `RegistroIntencion` sembrado a mano lleva `entorno`/`usuario` iguales a los de
+    `ent` (hallazgo H-04): sin ellos, la anotación pertenecería a un entorno/cuenta
+    DISTINTO del que usa `ejecutar` y no bloquearía nada -- justo el defecto que
+    H-04 corrige, no lo que este test quiere probar.
+    """
     cod = _CodicertFalso()
     ent = _entorno(tmp_path, cod)
-    exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl").anotar(
+    exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl",
+                          entorno=ent.entorno, usuario=ent.usuario).anotar(
         "W-04AKM2 - OVC", "burofax", "alguien")
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
     with pytest.raises(exp.ExpedicionError):
@@ -267,17 +274,24 @@ def test_tras_fallo_a_mitad_la_segunda_ejecucion_completa_solo_lo_que_falta(tmp_
 
     Una segunda ejecución debe mandar EXACTAMENTE los cuatro que faltan: ni repetir los
     dos ya hechos (la plataforma solo debe crecer en 4, no en 6) ni quedarse callada.
+
+    El `reg` sembrado lleva `entorno`/`usuario` de `ent` y anota con `e.destinatario`,
+    no `e.etiqueta` (hallazgo H-04): son los mismos dos campos que `ejecutar` usa para
+    decidir qué cuenta como cerrado, y sembrar con otros distintos simularía el propio
+    defecto que H-04 corrige en vez de un fallo a mitad de camino dentro del MISMO
+    entorno/cuenta.
     """
     cod = _CodicertFalso()
     ent = _entorno(tmp_path, cod, partes=(ANA, MAR))
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
     assert len(plan.envios) == 6  # 2 partes x (correo + sms + burofax), domicilios distintos
 
-    reg = exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl", ahora=ent.ahora)
+    reg = exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl",
+                                entorno=ent.entorno, usuario=ent.usuario, ahora=ent.ahora)
     ya_hechos = plan.envios[:2]          # "envíos 1 y 2": ya se mandaron y están en la plataforma
     ids_plataforma = []
     for numero, e in enumerate(ya_hechos, start=1):
-        clave = reg.anotar(plan.id_personalizado, e.canal, e.etiqueta)
+        clave = reg.anotar(plan.id_personalizado, e.canal, e.destinatario)
         id_envio = f"ID-{numero}"
         reg.cerrar(clave, id_envio)
         ids_plataforma.append(id_envio)
@@ -296,14 +310,21 @@ def test_expedicion_ya_completa_lo_dice_sin_error_generico(tmp_path):
     """Si los seis envíos ya están hechos y la plataforma los explica en su totalidad,
     el mensaje debe decir que la expedición YA ESTÁ COMPLETA -- no el "ya existe... no
     se repite" genérico de antes, que no distinguía "ya se mandaron los 6" de "se
-    mandaron 2 de 6"."""
+    mandaron 2 de 6".
+
+    Mismo motivo que en el test anterior para sembrar con `entorno`/`usuario` de `ent`
+    y con `e.destinatario` (hallazgo H-04): tienen que casar con lo que `ejecutar`
+    usa, o esto dejaría de probar "ya completa" y pasaría a probar, sin querer, el
+    propio defecto de H-04.
+    """
     cod = _CodicertFalso()
     ent = _entorno(tmp_path, cod, partes=(ANA, MAR))
     plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
-    reg = exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl", ahora=ent.ahora)
+    reg = exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl",
+                                entorno=ent.entorno, usuario=ent.usuario, ahora=ent.ahora)
     ids_plataforma = []
     for numero, e in enumerate(plan.envios, start=1):
-        clave = reg.anotar(plan.id_personalizado, e.canal, e.etiqueta)
+        clave = reg.anotar(plan.id_personalizado, e.canal, e.destinatario)
         id_envio = f"ID-{numero}"
         reg.cerrar(clave, id_envio)
         ids_plataforma.append(id_envio)
@@ -507,3 +528,126 @@ def test_H02_el_documento_no_se_relee_tras_validar_su_huella(tmp_path):
     bytes_mandados = base64.b64decode(primer_adjunto["datos"])
     assert bytes_mandados == original
     assert bytes_mandados != sustituto
+
+
+# ---------------------------------------------------------------------------------
+# H-03 (alto, acotado; revisión adversarial r2). Los pares ya cerrados del registro
+# local solo se consultaban DENTRO de la rama que se ejecuta cuando el listado remoto
+# muestra algo (`if ids_en_plataforma:`). Un listado vacío -- latencia, paginación, un
+# fallo transitorio -- tomaba la rama `else: pendientes = list(envios_ahora)` SIN
+# consultar `pares_cerrados` ni una sola vez, aunque el registro local tuviera la
+# evidencia inmediata de que ya se había mandado.
+# ---------------------------------------------------------------------------------
+
+def test_H03_listado_remoto_vacio_no_reactiva_cierres_ya_hechos(tmp_path):
+    """Primera ejecución: manda y cierra los tres envíos. Segunda ejecución: el
+    listado remoto vuelve VACÍO (se simula no sembrando `cod.listado`, que
+    `_CodicertFalso` deja en `()` por defecto -- exactamente lo que devolvería una
+    consulta que no refleja todavía esta expedición). Reejecutar el MISMO plan no
+    debe mandar nada más: los cierres locales cuentan también con censo negativo."""
+    cod = _CodicertFalso()
+    ent = _entorno(tmp_path, cod)
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+    exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    assert len(cod.enviados) == 3
+    cod.enviados = []
+
+    assert cod.listado == []  # el listado remoto sigue vacío: no se sembró
+
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    assert "completa" in str(e.value).lower()
+    assert cod.enviados == []  # nada se manda por segunda vez
+
+
+# ---------------------------------------------------------------------------------
+# H-04 (alto, estructural; revisión adversarial r2). El registro de intención no
+# identificaba el ENTORNO ni la CUENTA emisora -- todos comparten el mismo fichero
+# bajo el directorio de trabajo --, y la huella de cada envío se calculaba sobre la
+# ETIQUETA de presentación, que en el burofax ni siquiera incluye el código postal,
+# la provincia o la persona de atención. Tres modos de fallo cubiertos: cierres de
+# SANDBOX completando una expedición de PRODUCCIÓN en el mismo directorio; un cambio
+# de código postal que seguía dando "ya está completa" con el domicilio viejo; y un
+# registro en formato antiguo (sin entorno/cuenta) que no se puede sostener de quién
+# es, así que para y lo declara en vez de adivinar.
+# ---------------------------------------------------------------------------------
+
+def test_H04_cierres_de_sandbox_no_completan_produccion(tmp_path):
+    """Se expiden los tres canales de "W-04AKM2 - OVC" en SANDBOX, los tres cerrados.
+    En el MISMO directorio se arranca la MISMA expedición en PRODUCCIÓN y se
+    interrumpe tras cerrar solo el primer envío (correo): se siembra ese único cierre
+    -- en el entorno "produccion" -- y el listado remoto de producción lo refleja.
+    Reanudar en producción debe mandar los DOS que faltan ahí -- no los tres de
+    sandbox, que no pertenecen a este entorno --, nunca declarar "ya está completa"."""
+    cod = _CodicertFalso()
+
+    ent_sandbox = _entorno(tmp_path, cod, entorno="sandbox")
+    plan_sandbox = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent_sandbox,
+                                  plaza="Madrid", entorno="sandbox")
+    exp.ejecutar(plan_sandbox, exp.Confirmacion(digest=plan_sandbox.digest), entorno_exp=ent_sandbox)
+    assert len(cod.enviados) == 3
+    cod.enviados = []  # a partir de aquí solo se cuentan los envíos de producción
+
+    ent_prod = _entorno(tmp_path, cod, entorno="produccion")
+    plan_prod = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent_prod,
+                               plaza="Madrid", entorno="produccion")
+    reg_prod = exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl",
+                                     entorno="produccion", usuario=ent_prod.usuario,
+                                     ahora=ent_prod.ahora)
+    primero = plan_prod.envios[0]
+    clave = reg_prod.anotar(plan_prod.id_personalizado, primero.canal, primero.destinatario)
+    reg_prod.cerrar(clave, "PROD-1")
+    cod.listado = [{"id": "PROD-1", "id_personalizado": plan_prod.id_personalizado}]
+
+    ids = exp.ejecutar(plan_prod, exp.Confirmacion(digest=plan_prod.digest), entorno_exp=ent_prod)
+
+    assert len(ids) == 2
+    assert sorted(c for c, _ in cod.enviados) == sorted(
+        c for c in ("burofax", "correo", "sms") if c != primero.canal)
+
+
+def test_H04_contenido_distinto_del_destinatario_no_se_da_por_completo(tmp_path):
+    """Se expiden los tres canales con el código postal "28001". Antes de la segunda
+    ejecución, el CRM corrige el código postal a "28099": la ETIQUETA del burofax
+    (nombre · dirección, población) no incluye el cp, así que la huella vieja -- si
+    se calcula sobre la etiqueta -- no distingue el domicilio corregido del viejo.
+    Aprobar el plan con el cp nuevo debe mandar el burofax otra vez, a la dirección
+    correcta -- nunca darlo por completo con el cp viejo."""
+    cod = _CodicertFalso()
+    ent = _entorno(tmp_path, cod)
+    doc = _doc(tmp_path)
+    plan_1 = exp.planificar("W-04AKM2", "OVC", doc, entorno_exp=ent, plaza="Madrid")
+    ids_1 = exp.ejecutar(plan_1, exp.Confirmacion(digest=plan_1.digest), entorno_exp=ent)
+    assert len(ids_1) == 3
+    cod.listado = [{"id": i, "id_personalizado": plan_1.id_personalizado} for i in ids_1]
+    cod.enviados = []
+
+    ana_cp_nuevo = {**ANA, "cp": "28099"}
+    ent_2 = _entorno(tmp_path, cod, partes=(ana_cp_nuevo,))
+    plan_2 = exp.planificar("W-04AKM2", "OVC", doc, entorno_exp=ent_2, plaza="Madrid")
+
+    ids_2 = exp.ejecutar(plan_2, exp.Confirmacion(digest=plan_2.digest), entorno_exp=ent_2)
+
+    assert len(ids_2) == 1
+    assert cod.enviados == [("burofax", plan_2.id_personalizado)]
+    assert cod.destinatarios[-1]["cp"] == "28099"
+
+
+def test_H04_formato_antiguo_sin_entorno_para_y_declara(tmp_path):
+    """Una fila en el formato ANTERIOR a H-04 -- sin `entorno` ni `usuario` -- no se
+    puede sostener como de este entorno ni de otro: no cuenta como hecho, no se
+    ignora en silencio. `ejecutar` debe pararse y declararlo, no adivinar."""
+    cod = _CodicertFalso()
+    ent = _entorno(tmp_path, cod)
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+
+    ruta = tmp_path / "_codicert_intencion.jsonl"
+    fila_vieja = json.dumps({"clave": "clave-vieja", "id_personalizado": plan.id_personalizado,
+                             "canal": "burofax", "destinatario_huella": "abc123abc123",
+                             "timestamp": "2026-09-01T00:00:00+00:00", "estado": "en_vuelo"})
+    ruta.write_text(fila_vieja + "\n", encoding="utf-8", newline="\n")
+
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    assert "formato antiguo" in str(e.value).lower()
+    assert cod.enviados == []
