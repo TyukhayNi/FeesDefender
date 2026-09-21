@@ -26,17 +26,40 @@ _ESTE_FICHERO = Path(__file__).name
 
 # --- 1. Red ----------------------------------------------------------------
 
-def test_la_BARRERA_muerde_cuando_se_olvida_el_cliente():
+def test_la_BARRERA_muerde_cuando_se_olvida_el_cliente(monkeypatch):
     """El control que hace de esto un instrumento: se le da el otro valor.
 
     Se llama a la API pública SIN `cliente=`, que es la forma ordinaria de llegar a
     la red y la que un barrido de texto no puede ver. Con la barrera instalada por
     la fixture `autouse`, la llamada tiene que morir ANTES de importar `httpx`.
+
+    **La clave sintética no es decorado** (hallazgo H-08 de la R1): sin ella, el
+    control depende de que la máquina tenga `SUDESPACHO_API_KEY` puesta. En este PC
+    la tiene y el test pasaba; en una limpia —o en CI— muere en `_api_key()` **sin
+    llegar a tocar la barrera**, así que el control quedaba verde sin probar nada
+    allí donde más falta hace. Ninguna credencial real interviene.
     """
     from core import sudespacho_documentos as doc
     from tests import _barrera_sudespacho_documentos as barrera
 
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "clave-sintetica-de-guard")
     with pytest.raises(barrera.BarreraSudespachoViolada):
+        doc.descargar_documento("42990")
+
+
+def test_sin_API_KEY_se_para_ANTES_de_la_red_y_ese_orden_es_el_bueno(monkeypatch):
+    """El otro lado de H-08, que conviene fijar como comportamiento y no como azar.
+
+    Con la variable ausente, la llamada muere en la comprobación de la clave y no
+    llega al transporte. Es lo correcto —no se intenta nada sin credencial— pero
+    significa que ese camino **no ejerce la barrera**, y por eso el control de
+    arriba tiene que fijar una clave. Escrito aquí para que quien lea los dos sepa
+    que la diferencia es deliberada.
+    """
+    from core import sudespacho_documentos as doc
+
+    monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
+    with pytest.raises(doc.SudespachoDocumentosError, match="SUDESPACHO_API_KEY"):
         doc.descargar_documento("42990")
 
 

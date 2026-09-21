@@ -263,21 +263,56 @@ def test_la_segunda_cosecha_NI_SIQUIERA_baja_el_certificado(tmp_path):
     assert t.certificados_pedidos == ["006a"]
 
 
-def test_MUTANTE_una_idempotencia_por_el_LISTADO_no_sirve(tmp_path):
-    """Control de que la guarda mira el registro local y no un censo remoto.
+def test_H05_perder_el_registro_local_NO_autoriza_a_subir_otra_vez(tmp_path):
+    """R1/H-05 (media), y el revisor tenía razón también sobre mi test anterior.
 
-    Se borra el registro dejando el documento en el CRM: si la guarda consultara un
-    censo del gestor, seguiría diciendo «ya está». Como mira el registro local —que
-    es lo que el §17.4 autoriza a sostener— vuelve a subir, y ESO es lo correcto:
-    sin registro no se puede sostener la ausencia... ni la presencia.
+    El registro cuelga de `entorno_exp.raiz`, que en producción es `Path.cwd()`:
+    lanzar la orden desde otro worktree lo pierde y el mismo certificado se sube
+    dos veces. Mi test previo —`test_MUTANTE_…`— **exigía** ese segundo envío,
+    razonando que «sin registro no se puede sostener la ausencia... ni la
+    presencia». La primera mitad es cierta; de ella no se sigue permiso para
+    escribir, sino lo contrario: el spec §5.2 dice que un vacío no autoriza a
+    gastar, y aquí el vacío era de mi propio registro.
+
+    El remedio no es solo mover el fichero: es que la ausencia de registro se
+    sostenga contra algo inmediato antes de subir. `related_register` lo es —el
+    §17.4 lo autoriza expresamente— y ve el documento aunque el registro local se
+    haya perdido.
     """
+    class GestorQueRecuerda(FakeGestor):
+        """Como el CRM: lo subido sigue ahí aunque mi registro local desaparezca."""
+
+        def __init__(self):
+            super().__init__()
+            self.por_nombre: dict[str, str] = {}
+
+        def subir(self, contenido, *, nombrefinal, mime, related, al_reservar=None):
+            r = super().subir(contenido, nombrefinal=nombrefinal, mime=mime,
+                              related=related, al_reservar=al_reservar)
+            self.por_nombre[nombrefinal] = r.doc_id
+            return r
+
+        def buscar_por_nombre(self, nombrefinal, *, element, exp_id):
+            return self.por_nombre.get(nombrefinal)
+
     t = FakeTransporte([_ev("006a")], {"006a": _h20()}, {"006a": CERT})
-    g = FakeGestor()
+    g = GestorQueRecuerda()
     entorno = _entorno(tmp_path, t, g)
     exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
-    (tmp_path / "_codicert_cosecha.jsonl").unlink()
-    exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
-    assert len(g.subidos) == 2
+    assert len(g.subidos) == 1
+
+    (tmp_path / "_codicert_cosecha.jsonl").unlink()      # otro worktree, otro cwd
+    segunda = exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
+    assert len(g.subidos) == 1, "se subió dos veces el mismo certificado"
+    assert segunda[0].ya_estaba and segunda[0].doc_id == "doc1"
+
+
+def test_H05_si_el_censo_inmediato_dice_que_NO_esta_se_sube(tmp_path):
+    """El control positivo: la guarda nueva no puede bloquear el caso legítimo."""
+    t = FakeTransporte([_ev("006a")], {"006a": _h20()}, {"006a": CERT})
+    g = FakeGestor()                       # no implementa `buscar_por_nombre`
+    r = exp.cosechar("W-04AKM2", "OVC", entorno_exp=_entorno(tmp_path, t, g))
+    assert len(g.subidos) == 1 and not r[0].ya_estaba
 
 
 def test_H02_recuperar_una_reserva_NO_da_por_bueno_un_binario_sin_comprobarlo(tmp_path):
@@ -382,6 +417,67 @@ def test_escribe_solo_bajo_la_carpeta_que_le_dan(tmp_path):
     r = exp.cosechar("W-04AKM2", "OVC",
                      entorno_exp=_entorno(tmp_path, t, FakeGestor()))
     assert tmp_path in r[0].ruta_local.parents
+
+
+def test_H06_dos_hilos_sobre_el_core_NO_suben_el_certificado_dos_veces(tmp_path):
+    """R1/H-06 (media): la exclusión vivía solo en el CLI, no en la función pública.
+
+    `ejecutar` de F1 **exige** el mutex y sostiene además un candado intraproceso;
+    `cosechar` no hacía ni lo uno ni lo otro. Dos llamadas concurrentes al core
+    leían las dos «no está» y subían las dos: basta un script que llame a la
+    función, sin pasar por el frontal que sí serializa.
+    """
+    import threading
+
+    en_subir = threading.Barrier(2, timeout=10)
+
+    class GestorLento:
+        def __init__(self):
+            self.subidos = []
+            self.descargas = []
+            self._lock = threading.Lock()
+
+        def subir(self, contenido, *, nombrefinal, mime, related, al_reservar=None):
+            try:                      # los dos hilos se citan DENTRO de la subida
+                en_subir.wait()
+            except threading.BrokenBarrierError:
+                pass
+            if al_reservar:
+                al_reservar(f"uuid-{len(self.subidos)}")
+            with self._lock:
+                self.subidos.append(nombrefinal)
+                n = len(self.subidos)
+            return exp.DocumentoEnCrm(doc_id=f"doc{n}", origen_id=f"uuid-{n - 1}",
+                                      nombrefinal=nombrefinal,
+                                      sha256=hashlib.sha256(contenido).hexdigest())
+
+        def buscar_por_origen_id(self, origen_id, *, element, exp_id):
+            return None
+
+        def descargar(self, doc_id):
+            self.descargas.append(doc_id)
+            return CERT
+
+    t = FakeTransporte([_ev("006a")], {"006a": _h20()}, {"006a": CERT})
+    g = GestorLento()
+    entorno = _entorno(tmp_path, t, g)
+    fallos: list[BaseException] = []
+
+    def correr():
+        try:
+            exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
+        except BaseException as exc:      # noqa: BLE001 — se inspecciona abajo
+            fallos.append(exc)
+
+    hilos = [threading.Thread(target=correr) for _ in range(2)]
+    for h in hilos:
+        h.start()
+    en_subir.abort()          # si el candado funciona, el segundo nunca llega
+    for h in hilos:
+        h.join(timeout=15)
+
+    assert len(g.subidos) == 1, (
+        f"dos hilos subieron {len(g.subidos)} veces el mismo certificado")
 
 
 def test_un_entorno_SIN_los_puertos_de_escritura_para_antes_de_nada(tmp_path):

@@ -34,33 +34,53 @@ from core import expedicion_certificada as exp
 MODULO = Path(exp.__file__)
 
 
-def _metodos_consumidos() -> set[str]:
-    """Todo `<algo>.codicert.<metodo>(...)` que aparece en el core.
+def _metodos_consumidos(puerto: str = "codicert") -> set[str]:
+    """Todo `<algo>.<puerto>.<metodo>(...)` que aparece en el core.
 
     Casa `entorno_exp.codicert.estados(...)` y cualquier variante futura del nombre de
-    la variable: lo que importa es el atributo `codicert` de por medio.
+    la variable: lo que importa es el atributo del puerto de por medio.
+
+    **Sirve para los dos puertos**, y eso no es generalidad gratuita: el defecto
+    original (`estados`/`certificado` ausentes del transporte) es una propiedad del
+    patrón —«un puerto inyectable cuyo doble está completo y cuya implementación real
+    no»—, no del puerto de Codicert. `gestor` tiene la misma forma y ganó tres
+    métodos remediando la R1. Cubrir uno solo sería remediar el ejemplo.
     """
     arbol = ast.parse(MODULO.read_text(encoding="utf-8"))
     consumidos: set[str] = set()
     for nodo in ast.walk(arbol):
         if (isinstance(nodo, ast.Attribute)
                 and isinstance(nodo.value, ast.Attribute)
-                and nodo.value.attr == "codicert"):
+                and nodo.value.attr == puerto):
             consumidos.add(nodo.attr)
     return consumidos
 
 
-def _transporte_real(monkeypatch):
-    """El `EntornoExpedicion` que monta `entorno_real`, sin tocar la red.
+def test_el_gestor_real_ofrece_TODO_lo_que_cosechar_le_pide(monkeypatch):
+    """El mismo guard sobre el OTRO puerto inyectable (la frontera de H-01)."""
+    gestor = _transporte_real(monkeypatch, atributo="gestor")
+    faltan = sorted(m for m in _metodos_consumidos("gestor")
+                    if not callable(getattr(gestor, m, None)))
+    assert not faltan, (
+        f"`entorno_real` monta un gestor documental al que le faltan {faltan}, y "
+        "`cosechar` los llama. Los dobles de los tests sí los tienen.")
+
+
+def test_el_censo_del_gestor_no_esta_vacio():
+    assert len(_metodos_consumidos("gestor")) >= 3, _metodos_consumidos("gestor")
+
+
+def _transporte_real(monkeypatch, atributo: str = "codicert"):
+    """El puerto que monta `entorno_real`, sin tocar la red.
 
     Se doblan `credenciales` y `acceso` —las dos únicas llamadas de red que hace— para
-    quedarnos con el objeto de transporte que devuelve, que es lo que se examina.
+    quedarnos con el objeto que devuelve, que es lo que se examina.
     """
     monkeypatch.setattr(_cod, "credenciales", lambda plaza, entorno: ("u.bd", "clave"))
     monkeypatch.setattr(
         _cod, "acceso",
         lambda u, c, *, entorno, cliente=None: _cod.Ficha(token="t", vence=datetime.max))
-    return exp.entorno_real(plaza="Madrid", entorno="sandbox").codicert
+    return getattr(exp.entorno_real(plaza="Madrid", entorno="sandbox"), atributo)
 
 
 def test_el_core_consume_algo_del_transporte():

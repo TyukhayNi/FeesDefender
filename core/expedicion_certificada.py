@@ -2214,6 +2214,73 @@ def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
             raise ExpedicionError(
                 f"el entorno no trae `{nombre}`: `cosechar` escribe en el expediente "
                 "y en el CRM, y sin ese puerto no hay dónde. Usa `entorno_real`.")
+    # H-06 (R1): la exclusión tiene que estar en la FUNCIÓN, no solo en el frontal.
+    # `ejecutar` de F1 sostiene un candado intraproceso Y exige el mutex entre
+    # procesos; `cosechar` no hacía ninguna de las dos, así que dos hilos llamando
+    # al core -- sin pasar por el CLI que sí serializa -- subían el mismo
+    # certificado dos veces. Medido con dos hilos citados dentro de `gestor.subir`.
+    clave_mutex = clave_mutex_cosecha(w_code, tipo, entorno_exp, ordinal)
+    with _candado_de(clave_mutex):
+        _exigir_mutex_de_cosecha(clave_mutex, w_code=w_code, tipo=tipo,
+                                 entorno_exp=entorno_exp)
+        return _cosechar_bajo_candado(
+            w_code, tipo, entorno_exp=entorno_exp, ordinal=ordinal,
+            emisor_esperado=emisor_esperado, verificar_plaza=verificar_plaza,
+            incluir_pendientes=incluir_pendientes)
+
+
+def _exigir_mutex_de_cosecha(clave: str, *, w_code: str, tipo: str,
+                             entorno_exp: EntornoExpedicion) -> None:
+    """`cosechar` EXIGE el mutex entre procesos; nunca lo adquiere.
+
+    Misma regla dura que `_exigir_mutex_de_expedicion`: `core/` comprueba y
+    `scripts/` adquiere, y el guard permanente `tests/test_entrypoints_mutex.py`
+    prohíbe que un módulo del core lo tome por su cuenta.
+
+    **Con una salida declarada:** si NADIE en este proceso sostiene una sesión de
+    mutex —el caso de los tests, que no montan el subsistema— se sigue adelante con
+    el candado intraproceso como única exclusión. Exigirlo siempre obligaría a todo
+    test de cosecha a montar el mutex real, que escribe en el directorio de locks
+    del usuario; y la exclusión ENTRE procesos la aporta el frontal, que sí lo
+    adquiere. Lo que no se admite es sostener el mutex de OTRA cosa.
+    """
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import CaseRef
+
+    if mutex_sesion.vigente(CaseRef(w_code=clave)) is None and _hay_mutex_vivo():
+        raise ExpedicionError(
+            f"cosechar() exige el mutex de la cosecha de {componer_id(w_code, tipo)!r} "
+            f"(entorno={entorno_exp.entorno!r}, usuario={entorno_exp.usuario!r}) "
+            "sostenido ANTES de llamar: core/ nunca lo adquiere por su cuenta. En la "
+            "CLI ya lo hace `scripts/codicert.py`.")
+
+
+def _hay_mutex_vivo() -> bool:
+    """¿Este proceso sostiene ALGUNA sesión de mutex ahora mismo?
+
+    Distingue «el llamador olvidó tomar el mutex de la cosecha» de «este proceso no
+    usa el subsistema de mutex en absoluto», que son cosas distintas y solo la
+    primera es un error. Sin esta distinción, cada test de cosecha tendría que
+    montar el mutex real -- que escribe en el directorio de locks del usuario -- y
+    la regla «ningún test escribe fuera de tmp_path» se rompería por el remedio.
+    """
+    try:
+        from core.casos import mutex_sesion
+
+        return bool(getattr(mutex_sesion, "_SESIONES", None))
+    except Exception:  # noqa: BLE001 — sin subsistema, no hay nada que exigir
+        return False
+
+
+def _cosechar_bajo_candado(w_code: str, tipo: str, *,
+                           entorno_exp: EntornoExpedicion, ordinal: int,
+                           emisor_esperado: str | None, verificar_plaza: bool,
+                           incluir_pendientes: bool) -> list[CertificadoCosechado]:
+    """El cuerpo de `cosechar`, YA dentro de la doble exclusión.
+
+    Separado igual que `_ejecutar_bajo_candado` en F1: nada de lo que sigue cambia
+    de comportamiento, solo de a qué función pertenece.
+    """
     esperado = emisor_esperado or EMISOR_ESPERADO
     expedicion = refrescar(w_code, tipo, entorno_exp=entorno_exp, ordinal=ordinal)
     registro = RegistroCosecha(entorno_exp.raiz / "_codicert_cosecha.jsonl",
@@ -2288,6 +2355,24 @@ def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
                 local_presente=destino.is_file()))
             continue
 
+        # H-05 (R1): el registro local es NUESTRO y se pierde al cambiar de
+        # worktree -- cuelga de `entorno_exp.raiz`, que en produccion es el cwd. Su
+        # ausencia no autoriza a subir: se sostiene primero contra algo inmediato.
+        # `related_register` lo es (§17.4 lo autoriza expresamente) y ve lo que el
+        # CRM tiene aunque mi fichero haya desaparecido. Un gestor que no sepa
+        # censar por nombre devuelve None y el flujo sigue como antes.
+        ya_en_crm = _censo_inmediato(entorno_exp.gestor, destino.name,
+                                     element=element, exp_id=exp_id)
+        if ya_en_crm is not None:
+            registro.reservar(clave, f"censo:{ya_en_crm}")
+            registro.cerrar(clave, doc_id=ya_en_crm, sha256="")
+            cosechados.append(CertificadoCosechado(
+                id_envio=envio.id_envio, ruta_local=destino, sha256="",
+                doc_id=ya_en_crm, razon_social_emisor=esperado,
+                usuario_emisor=None, ya_estaba=True, provisional=provisional,
+                local_presente=destino.is_file()))
+            continue
+
         pdf = entorno_exp.codicert.certificado(envio.id_envio)
         emisor = entorno_exp.leer_emisor(pdf)
         plaza = entorno_exp.usuario if verificar_plaza else None
@@ -2311,6 +2396,28 @@ def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
             doc_id=subido.doc_id, razon_social_emisor=emisor.razon_social,
             usuario_emisor=emisor.usuario, provisional=provisional))
     return cosechados
+
+
+def _censo_inmediato(gestor: Any, nombrefinal: str, *, element: str,
+                     exp_id: str) -> str | None:
+    """`doc_id` de un documento del expediente con ese nombre, o `None`.
+
+    Red de seguridad para cuando el registro local no está (H-05). Va por
+    `related_register`, que responde SIN la latencia del listado filtrado y es la
+    unica via que el §17.4 autoriza para sostener una ausencia.
+
+    ⚠️ `related_register` arrastra fantasmas -- sigue listando documentos borrados.
+    Para una guarda anti-duplicado eso cae del lado seguro: un fantasma produce
+    "ya existe" y NO se sube. El precio es no re-subir algo que se borro a
+    proposito, y se prefiere: el error caro es el duplicado.
+
+    Un gestor que no implemente `buscar_por_nombre` devuelve `None` y el flujo
+    sigue como antes -- no se inventa una guarda sobre un puerto que no existe.
+    """
+    buscar = getattr(gestor, "buscar_por_nombre", None)
+    if buscar is None:
+        return None
+    return buscar(nombrefinal, element=element, exp_id=exp_id)
 
 
 def _emisor_coincide(emisor: Any, *, razon_social: str, usuario: str | None) -> bool:
@@ -2362,6 +2469,14 @@ class _GestorDocumental:
         from core import sudespacho_documentos
 
         return sudespacho_documentos.buscar_por_origen_id(origen_id, **kw)
+
+    def buscar_por_nombre(self, nombrefinal: str, **kw: Any) -> str | None:
+        """Censo inmediato por nombre canónico. Red de seguridad de H-05: el
+        registro local cuelga del cwd y se pierde al cambiar de worktree; su
+        ausencia no autoriza a subir, y esto es lo que la sostiene."""
+        from core import sudespacho_documentos
+
+        return sudespacho_documentos.buscar_por_nombre(nombrefinal, **kw)
 
     def descargar(self, doc_id: str) -> bytes:
         """Los bytes que el CRM tiene. Lo usa la recuperación de una reserva (H-02):

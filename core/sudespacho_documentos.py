@@ -236,18 +236,20 @@ def descargar_documento(doc_id: str, *, cliente: ClienteHTTP | None = None) -> b
                      esperado=(200,)).content
 
 
-def buscar_por_origen_id(origen_id: str, *, element: str, exp_id: str,
-                         cliente: ClienteHTTP | None = None) -> str | None:
-    """El `doc_id` del documento con ese `origen_id`, o `None`. **Sin latencia.**
+def _buscar_por_propiedad(propiedad: str, valor: str, *, element: str, exp_id: str,
+                          cliente: ClienteHTTP | None = None) -> str | None:
+    """El `doc_id` del documento del expediente cuya `propiedad` vale `valor`.
 
-    Va por `GET /api/related_register/{element}/{id}`, que responde inmediatamente, y
-    **nunca por el listado filtrado**, cuya latencia hizo que una guarda anti-duplicado
-    dijera «aún no está» sobre algo que ya estaba y lo subiera dos veces (§17.4).
+    Recorrido común de `buscar_por_origen_id` y `buscar_por_nombre`: va por
+    `GET /api/related_register/{element}/{id}`, que responde inmediatamente, y
+    **nunca por el listado filtrado**, cuya latencia hizo que una guarda
+    anti-duplicado dijera «aún no está» sobre algo que ya estaba y lo subiera dos
+    veces (§17.4).
 
     ⚠️ **`related_register` arrastra fantasmas**: sigue listando documentos ya
     borrados. Para una guarda anti-duplicado eso cae del lado seguro —un fantasma
-    produce «ya existe» y NO se sube— y el precio es no re-subir algo que se borró a
-    propósito. Se prefiere así: el error caro es el duplicado.
+    produce «ya existe» y NO se sube— y el precio es no re-subir algo que se borró
+    a propósito. Se prefiere así: el error caro es el duplicado.
     """
     clave = _api_key()
     cliente = cliente or _cliente_real()
@@ -265,7 +267,32 @@ def buscar_por_origen_id(origen_id: str, *, element: str, exp_id: str,
         rr = _peticion(cliente, "GET", f"{base}/api/element_register/gdocu/{doc_id}",
                        que=f"relectura de gdocu/{doc_id}", esperado=(200,),
                        headers=cabeceras,
-                       params={"properties": "origen,origen_id"})
-        if _valores(_json_o_vacio(rr)).get("origen_id") == origen_id:
+                       params={"properties": f"origen,origen_id,{propiedad}"})
+        if _valores(_json_o_vacio(rr)).get(propiedad) == valor:
             return doc_id
     return None
+
+
+def buscar_por_origen_id(origen_id: str, *, element: str, exp_id: str,
+                         cliente: ClienteHTTP | None = None) -> str | None:
+    """El `doc_id` del documento con ese `origen_id`, o `None`. **Sin latencia.**
+
+    El `origen_id` es la clave que permite reencontrar un documento cuando el
+    `POST` salió y su respuesta se perdió: es lo único que conocemos de antes.
+    """
+    return _buscar_por_propiedad("origen_id", origen_id, element=element,
+                                 exp_id=exp_id, cliente=cliente)
+
+
+def buscar_por_nombre(nombrefinal: str, *, element: str, exp_id: str,
+                      cliente: ClienteHTTP | None = None) -> str | None:
+    """El `doc_id` del documento del expediente con ese nombre final, o `None`.
+
+    Red de seguridad de la cosecha cuando el registro local no está (hallazgo H-05
+    de la R1): ese registro cuelga del directorio de lanzamiento, así que cambiar
+    de worktree lo pierde, y su ausencia **no** autoriza a subir otra vez. El
+    nombre canónico lleva el `IdEnvio` dentro, así que identifica el certificado de
+    un envío concreto y sirve de clave de contenido.
+    """
+    return _buscar_por_propiedad("nombrefinal", nombrefinal, element=element,
+                                 exp_id=exp_id, cliente=cliente)

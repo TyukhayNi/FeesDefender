@@ -170,6 +170,34 @@ def test_buscar_por_origen_id_acepta_las_DOS_formas_de_la_relectura(monkeypatch)
                                     exp_id="123", cliente=http) == "42990"
 
 
+def test_buscar_por_nombre_censa_por_related_register(monkeypatch):
+    """La red de seguridad de H-05: ve lo que el CRM tiene sin registro local."""
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "clave-de-prueba")
+    http = FakeHTTP({
+        ("GET", "/api/related_register/extrajudiciales/123"):
+            (200, {"gdocu": [{"id": "42990"}, {"id": "42991"}]}),
+        ("GET", "/api/element_register/gdocu/42990"):
+            (200, [{"property": {"name": "nombrefinal"}, "value": "OTRA COSA.pdf"}]),
+        ("GET", "/api/element_register/gdocu/42991"):
+            (200, [{"property": {"name": "nombrefinal"}, "value": "CERT - W-1.pdf"}]),
+    })
+    assert doc.buscar_por_nombre("CERT - W-1.pdf", element="extrajudiciales",
+                                 exp_id="123", cliente=http) == "42991"
+    assert not any("element_registries" in url for _, url, _ in http.llamadas)
+
+
+def test_buscar_por_nombre_devuelve_None_si_no_esta(monkeypatch):
+    monkeypatch.setenv("SUDESPACHO_API_KEY", "clave-de-prueba")
+    http = FakeHTTP({
+        ("GET", "/api/related_register/extrajudiciales/123"):
+            (200, {"gdocu": [{"id": "42990"}]}),
+        ("GET", "/api/element_register/gdocu/42990"):
+            (200, [{"property": {"name": "nombrefinal"}, "value": "OTRA COSA.pdf"}]),
+    })
+    assert doc.buscar_por_nombre("CERT - W-1.pdf", element="extrajudiciales",
+                                 exp_id="123", cliente=http) is None
+
+
 def test_buscar_devuelve_None_cuando_no_esta(monkeypatch):
     monkeypatch.setenv("SUDESPACHO_API_KEY", "clave-de-prueba")
     http = FakeHTTP({("GET", "/api/related_register/extrajudiciales/123"):
