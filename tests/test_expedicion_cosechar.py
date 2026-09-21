@@ -142,6 +142,81 @@ def test_NO_cosecha_lo_que_aun_puede_mejorar(tmp_path):
     assert r == [] and g.subidos == [] and t.certificados_pedidos == []
 
 
+def _h(*pares):
+    return [{"codigo": c, "titulo": "", "fecha": f, "detalle": None} for c, f in pares]
+
+
+def test_con_incluir_pendientes_SI_baja_lo_provisional(tmp_path):
+    """El caso que destapó el humo del 2026-09-21, y no era hipotético.
+
+    El envío real `006catf83zx` lleva estados [17, 14, 21]: **entregado y nunca
+    leído**. Con el criterio por defecto no es cosechable —el 21 puede volverse 20—
+    así que su certificado quedaría fuera del expediente hasta que caducase, y no
+    está medido cuánto tarda eso. Era uno de los tres envíos de una expedición viva.
+    """
+    t = FakeTransporte([_ev("006a")],
+                       {"006a": _h((17, "2026-09-11T10:00:00+02:00"),
+                                   (21, "2026-09-11T19:00:23+02:00"))},
+                       {"006a": CERT})
+    g = FakeGestor()
+    entorno = _entorno(tmp_path, t, g)
+    assert exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno) == []
+    r = exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno, incluir_pendientes=True)
+    assert len(r) == 1 and r[0].provisional is True
+
+
+def test_el_provisional_lleva_su_ESTADO_en_el_nombre(tmp_path):
+    """Para que no ocupe el sitio del definitivo, que es por qué se excluía."""
+    t = FakeTransporte([_ev("006a")],
+                       {"006a": _h((21, "2026-09-11T19:00:23+02:00"))},
+                       {"006a": CERT})
+    r = exp.cosechar("W-04AKM2", "OVC", entorno_exp=_entorno(tmp_path, t, FakeGestor()),
+                     incluir_pendientes=True)
+    assert r[0].ruta_local.name == "REQUERIMIENTO - W-04AKM2-006a (estado 21).pdf"
+
+
+def test_el_provisional_NO_bloquea_al_definitivo_que_llegue_despues(tmp_path):
+    """La prueba de que las dos claves del registro no se pisan.
+
+    Se cosecha el provisional en 21, el envío avanza a 20, y el definitivo tiene
+    que poder cosecharse igualmente — con su nombre canónico, sin sufijo.
+    """
+    historicos = {"006a": _h((21, "2026-09-11T19:00:23+02:00"))}
+    t = FakeTransporte([_ev("006a")], historicos, {"006a": CERT})
+    g = FakeGestor()
+    entorno = _entorno(tmp_path, t, g)
+    exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno, incluir_pendientes=True)
+
+    historicos["006a"] = _h((21, "2026-09-11T19:00:23+02:00"),
+                            (20, "2026-09-12T23:03:43+02:00"))
+    r = exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
+    assert len(r) == 1 and r[0].provisional is False
+    assert r[0].ruta_local.name == "REQUERIMIENTO - W-04AKM2-006a.pdf"
+    assert len(g.subidos) == 2       # el provisional y el definitivo, ambos
+
+
+def test_el_provisional_tambien_es_idempotente(tmp_path):
+    t = FakeTransporte([_ev("006a")],
+                       {"006a": _h((21, "2026-09-11T19:00:23+02:00"))},
+                       {"006a": CERT})
+    g = FakeGestor()
+    entorno = _entorno(tmp_path, t, g)
+    exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno, incluir_pendientes=True)
+    segunda = exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno,
+                           incluir_pendientes=True)
+    assert len(g.subidos) == 1 and segunda[0].ya_estaba is True
+
+
+def test_el_provisional_tambien_verifica_el_emisor(tmp_path):
+    """La puerta del art. 17.2 no se relaja por bajar un provisional."""
+    t = FakeTransporte([_ev("006a")],
+                       {"006a": _h((21, "2026-09-11T19:00:23+02:00"))},
+                       {"006a": CERT})
+    entorno = _entorno(tmp_path, t, FakeGestor(), emisor="INMOBILIARIA RIVAL, S.L.")
+    with pytest.raises(exp.ExpedicionError, match="emisor"):
+        exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno, incluir_pendientes=True)
+
+
 def test_es_IDEMPOTENTE_por_el_registro_local(tmp_path):
     """Dos cosechas seguidas suben una sola vez. La segunda lo dice."""
     t = FakeTransporte([_ev("006a")], {"006a": _h20()}, {"006a": CERT})

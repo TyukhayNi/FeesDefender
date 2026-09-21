@@ -170,6 +170,8 @@ def render_cosecha(cosechados, pendientes) -> str:
     lineas = ["COSECHA", ""]
     for c in cosechados:
         marca = "ya estaba" if c.ya_estaba else "nuevo"
+        if c.provisional:
+            marca += ", PROVISIONAL"
         lineas.append(f"  {c.id_envio}  [{marca}]  gdocu {c.doc_id}")
         lineas.append(f"      emisor ... {c.razon_social_emisor} "
                       f"({c.usuario_emisor or 'usuario no releído en esta corrida'})")
@@ -210,6 +212,12 @@ def main(argv: list[str] | None = None) -> int:
         if nombre == "enviar":
             s.add_argument("--confirmar", required=True, metavar="DIGEST",
                            help="el digest que enseñó `plan`")
+        if nombre == "cosechar":
+            s.add_argument("--incluir-pendientes", action="store_true",
+                           dest="incluir_pendientes",
+                           help="baja también el certificado de los envíos que aún "
+                                "pueden mejorar; su nombre lleva el estado, así que "
+                                "no ocupan el sitio del definitivo")
     args = parser.parse_args(argv)
 
     entorno = entorno_de(argumento=args.entorno)
@@ -239,9 +247,10 @@ def main(argv: list[str] | None = None) -> int:
                                             args.ordinal),
                     avisar=lambda m: print(m, file=sys.stderr),
                     que="la cosecha de certificados"):
-                cosechados = exp.cosechar(args.w_code, args.tipo,
-                                          entorno_exp=entorno_exp,
-                                          ordinal=args.ordinal)
+                cosechados = exp.cosechar(
+                    args.w_code, args.tipo, entorno_exp=entorno_exp,
+                    ordinal=args.ordinal,
+                    incluir_pendientes=args.incluir_pendientes)
                 expedicion = exp.refrescar(args.w_code, args.tipo,
                                            entorno_exp=entorno_exp,
                                            ordinal=args.ordinal)

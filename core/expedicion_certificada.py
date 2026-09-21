@@ -2105,19 +2105,26 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
 _PROHIBIDOS_EN_NOMBRE = '<>:"/\\|?*'
 
 
-def nombre_canonico(asunto: str, w_code: str, id_envio: str) -> str:
+def nombre_canonico(asunto: str, w_code: str, id_envio: str,
+                    estado_provisional: int | None = None) -> str:
     """`<ASUNTO> - <REF>-<codigo>.pdf`, la convención del despacho (spec §7.1).
 
     Medida sobre el certificado del W-04A6LI:
     `RESPUESTA REQUERIMIENTO - W-04A6LI-006casm113n.pdf`. `REF` es el W-code, no el
     `id_personalizado` completo: el asunto ya suele llevar el tipo dentro.
 
+    `estado_provisional` añade ` (estado N)` al nombre. Es lo que permite bajar el
+    certificado de un envío que aún puede mejorar **sin que ocupe el sitio del
+    definitivo** — sin ese sufijo, los dos se llamarían igual y el provisional
+    bloquearía al bueno, que es justo por lo que `cosechar` los excluye por defecto.
+
     Un asunto vacío no produce ` - W-...pdf`: cae en `CERTIFICADO`. Un nombre que
     empieza por separador es difícil de teclear y de leer en una lista.
     """
     limpio = "".join(" " if c in _PROHIBIDOS_EN_NOMBRE else c for c in asunto)
     limpio = " ".join(limpio.split()).strip(". ") or "CERTIFICADO"
-    return f"{limpio} - {w_code}-{id_envio}.pdf"
+    sufijo = f" (estado {estado_provisional})" if estado_provisional is not None else ""
+    return f"{limpio} - {w_code}-{id_envio}{sufijo}.pdf"
 
 
 @dataclass(frozen=True)
@@ -2131,21 +2138,34 @@ class CertificadoCosechado:
     razon_social_emisor: str
     usuario_emisor: str | None = None
     ya_estaba: bool = False
+    #: `True` si se bajó con el envío aún sin culminar: acredita menos de lo que
+    #: acabará acreditando, y su nombre lleva el estado para no pisar al definitivo.
+    provisional: bool = False
 
 
 def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
              ordinal: int = 1, emisor_esperado: str | None = None,
-             verificar_plaza: bool = True) -> list[CertificadoCosechado]:
+             verificar_plaza: bool = True,
+             incluir_pendientes: bool = False) -> list[CertificadoCosechado]:
     """Baja el certificado de cada envío culminado, lo verifica, lo archiva y lo sube.
 
     El orden importa y es el único seguro: **verificar el emisor ANTES de escribir
     nada**. Un certificado que no firmó nuestro emisor no es nuestra prueba (art.
     17.2) y no tiene por qué entrar ni en el expediente ni en el CRM.
 
-    **Solo se cosecha lo culminado** (`EnvioObservado.cosechable`). Un envío en 17 o
-    en 21 todavía puede mejorar, y como el nombre canónico del spec §7.1 no lleva el
-    estado, el certificado provisional ocuparía el sitio del definitivo. Lo pendiente
-    no es un error: se queda fuera de la lista y el frontal lo enseña aparte.
+    **Por defecto solo se cosecha lo culminado** (`EnvioObservado.cosechable`). Un
+    envío en 17 o en 21 todavía puede mejorar, y como el nombre canónico del spec
+    §7.1 no lleva el estado, el certificado provisional ocuparía el sitio del
+    definitivo. Lo pendiente no es un error: se queda fuera y el frontal lo enseña
+    aparte.
+
+    **`incluir_pendientes=True` los baja igualmente**, con el estado en el nombre y
+    con su propia clave en el registro, así que ni se pisan ni bloquean al
+    definitivo que llegue después. No es una comodidad teórica: el humo del
+    2026-09-21 encontró `006catf83zx`, **entregado y nunca leído** — uno de los tres
+    envíos de una expedición viva—, que por el criterio de arriba se quedaría sin
+    cosechar hasta caducar, y cuánto tarda eso no está medido. La puerta del art.
+    17.2 no se relaja: el emisor se verifica igual.
 
     **La idempotencia se sostiene sobre el registro local**, que es nuestro y no tiene
     latencia — nunca sobre un censo del gestor documental, cuya latencia ya duplicó un
@@ -2171,13 +2191,26 @@ def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
     carpeta = Path(entorno_exp.carpeta_certificados(w_code))
     cosechados: list[CertificadoCosechado] = []
 
-    for envio in expedicion.cosechables:
-        destino = carpeta / nombre_canonico(envio.asunto, w_code, envio.id_envio)
-        hecho = registro.hecho(envio.id_envio)
+    objetivo = (expedicion.envios if incluir_pendientes else expedicion.cosechables)
+    for envio in objetivo:
+        # Un provisional se identifica por (envío, estado actual) y no por el envío
+        # a secas: son dos artefactos distintos, y el definitivo tiene que poder
+        # cosecharse después sin que la clave del provisional lo dé por hecho.
+        ultimo = max(envio.historico, key=lambda x: x.fecha) if envio.historico else None
+        provisional = not envio.cosechable
+        if provisional and ultimo is None:
+            # Sin histórico no hay estado que poner en el nombre ni hecho que
+            # acreditar. Se salta y el frontal lo sigue enseñando como pendiente.
+            continue
+        estado_en_nombre = ultimo.codigo if provisional else None
+        clave = f"{envio.id_envio}@{ultimo.codigo}" if provisional else envio.id_envio
+        destino = carpeta / nombre_canonico(envio.asunto, w_code, envio.id_envio,
+                                            estado_en_nombre)
+        hecho = registro.hecho(clave)
 
         if hecho is None:
             abierta = next((a for a in registro.abiertas()
-                            if a.get("clave") == envio.id_envio), None)
+                            if a.get("clave") == clave), None)
             if abierta is not None:
                 # Hubo un intento cuyo desenlace no consta. Se resuelve por
                 # `origen_id`, que es inmediato (§17.4); si el documento no
@@ -2192,14 +2225,15 @@ def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
                         "documento tampoco aparece en el CRM por ese origen_id. "
                         "Queda SIN VERIFICAR si la subida salió: compruébalo a mano "
                         "antes de reintentar. No se sube nada.")
-                registro.cerrar(envio.id_envio, doc_id=doc_id, sha256="")
-                hecho = registro.hecho(envio.id_envio)
+                registro.cerrar(clave, doc_id=doc_id, sha256="")
+                hecho = registro.hecho(clave)
 
         if hecho is not None:
             cosechados.append(CertificadoCosechado(
                 id_envio=envio.id_envio, ruta_local=destino,
                 sha256=hecho.get("sha256") or "", doc_id=str(hecho.get("doc_id") or ""),
-                razon_social_emisor=esperado, usuario_emisor=None, ya_estaba=True))
+                razon_social_emisor=esperado, usuario_emisor=None,
+                ya_estaba=True, provisional=provisional))
             continue
 
         pdf = entorno_exp.codicert.certificado(envio.id_envio)
@@ -2218,12 +2252,12 @@ def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
         subido = entorno_exp.gestor.subir(
             pdf, nombrefinal=destino.name, mime="application/pdf",
             related=f"{element}:{exp_id}:left",
-            al_reservar=lambda oid, _id=envio.id_envio: registro.reservar(_id, oid))
-        registro.cerrar(envio.id_envio, doc_id=subido.doc_id, sha256=subido.sha256)
+            al_reservar=lambda oid, _c=clave: registro.reservar(_c, oid))
+        registro.cerrar(clave, doc_id=subido.doc_id, sha256=subido.sha256)
         cosechados.append(CertificadoCosechado(
             id_envio=envio.id_envio, ruta_local=destino, sha256=subido.sha256,
             doc_id=subido.doc_id, razon_social_emisor=emisor.razon_social,
-            usuario_emisor=emisor.usuario))
+            usuario_emisor=emisor.usuario, provisional=provisional))
     return cosechados
 
 
