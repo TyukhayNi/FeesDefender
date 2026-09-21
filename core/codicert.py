@@ -165,6 +165,66 @@ def _json_o_vacio(r: Any) -> Any:
         return {}
 
 
+def _sin_la_clave(mensaje: str | None, clave: str) -> str | None:
+    """`mensaje`, con cualquier aparición literal de `clave` sustituida.
+
+    Hallazgo de revisión (H-12, r2): el mensaje que devuelve el SERVIDOR se copiaba tal
+    cual dentro de `CodicertAuthError`, pese al contrato de `acceso()` — "la clave no
+    aparece nunca en el error". Si esa respuesta refleja la clave (un mensaje de
+    validación que la repite, por ejemplo), el `str` de la excepción la llevaría íntegra
+    y el frontal la imprimiría en stderr. Verificado con credenciales sintéticas y una
+    respuesta fabricada: no se afirma que el servicio real de Codicert refleje
+    contraseñas — lo demostrado es que esta ruta rompía la garantía declarada.
+
+    `clave` vacía no se sustituye: no hay nada que ocultar y un `str.replace` con
+    cadena vacía no tiene un resultado seguro que definir. El nombre de usuario NO pasa
+    por aquí y sigue apareciendo tal cual en el mensaje final: el contrato solo prohíbe
+    la clave, y el diseño exige el usuario en la cabecera del plan.
+    """
+    if not mensaje or not clave:
+        return mensaje
+    return mensaje.replace(clave, "«clave omitida»")
+
+
+def _peticion(cliente: Cliente, metodo: str, url: str, *, que: str,
+              incierto: bool = False, **kw: Any) -> Any:
+    """`cliente.request(metodo, url, **kw)`, traduciendo cualquier fallo de transporte.
+
+    Hallazgo de revisión (H-11, r2): las cuatro puertas de red del módulo (`acceso`,
+    `enviar_burofax`, `enviar_eec`, `_get`) llamaban a `cliente.request` sin traducir sus
+    fallos. Un cliente que levanta una excepción de transporte — `httpx.ReadTimeout` y
+    semejantes, ante un servidor caído o una red lenta — la propagaba con su tipo
+    crudo, fuera del contrato del módulo (solo falla con `CodicertError`/
+    `CodicertAuthError`). Punto único para las cuatro puertas, en vez de repetir el
+    `try` en cada una.
+
+    `incierto=True` — solo lo pasan `enviar_burofax` y `enviar_eec`, los dos POST que
+    cuestan dinero o mandan una comunicación irreversible — añade el mismo aviso que ya
+    lleva `_id_de` para el sobre sin `datos.id`: la llamada PUDO HABER SALIDO antes de
+    que la excepción llegara aquí, así que el mensaje manda a comprobar el portal en vez
+    de invitar a reintentar a ciegas — este módulo no reintenta nada por su cuenta. Un
+    GET de solo lectura (`_get`, y con él `credito`/`estados`/`certificado`/
+    `descargar_adjunto`/`listar`) o el login (`acceso`) no tienen ese efecto de lado:
+    fallar ahí es solo no haber podido leer o autenticar, y decir "pudo haber salido"
+    sería un diagnóstico falso.
+
+    `AssertionError` NO se traduce: es la señal con la que los dobles de test marcan un
+    guion mal construido (`tests/_dobles/fake_codicert.py::FakeCliente`) — un fallo del
+    TEST, no del transporte. Traducirla la disfrazaría de error de dominio y ocultaría
+    el defecto real del doble en vez de dejarlo fallar con su propia traza.
+    """
+    try:
+        return cliente.request(metodo, url, **kw)
+    except AssertionError:
+        raise
+    except Exception as exc:
+        aviso = (" La llamada PUDO HABER SALIDO: compruébalo en el portal de Codicert "
+                 "antes de reintentar, no lo repitas a ciegas.") if incierto else ""
+        raise CodicertError(
+            f"{que}: fallo de transporte ({exc.__class__.__name__}: {exc}).{aviso}"
+        ) from exc
+
+
 def _base_de(entorno: str) -> str:
     """URL base de Codicert para `entorno`.
 
@@ -179,17 +239,30 @@ def _base_de(entorno: str) -> str:
 
 
 def acceso(usuario: str, clave: str, *, entorno: str, cliente: Cliente | None = None) -> Ficha:
-    """`POST /usuarios/acceso`. La clave no aparece nunca en el error."""
+    """`POST /usuarios/acceso`. La clave no aparece nunca en el error.
+
+    Hallazgos de revisión (H-11/H-12, r2): un fallo de transporte del cliente inyectado
+    propagaba su tipo crudo (arreglado vía `_peticion`); un `200 {"estado": "OK"}` sin
+    `datos` reventaba con `KeyError` (arreglado validando la forma antes de indexar); y
+    el `mensaje` que devuelve el servidor se copiaba sin filtrar, pudiendo reflejar la
+    clave si la respuesta la repetía (arreglado con `_sin_la_clave`).
+    """
     base = _base_de(entorno)
     cliente = cliente or _cliente_real()
-    r = cliente.request("POST", f"{base}/usuarios/acceso",
-                        json={"usuario": usuario, "clave": clave})
+    r = _peticion(cliente, "POST", f"{base}/usuarios/acceso", que="POST /usuarios/acceso",
+                 json={"usuario": usuario, "clave": clave})
     cuerpo = _json_o_vacio(r)
-    if r.status_code != 200 or (cuerpo or {}).get("estado") != "OK":
+    cuerpo = cuerpo if isinstance(cuerpo, dict) else {}
+    if r.status_code != 200 or cuerpo.get("estado") != "OK":
+        mensaje = _sin_la_clave(cuerpo.get("mensaje"), clave)
         raise CodicertAuthError(
             f"Codicert rechazó el acceso de {usuario!r} en {entorno}: "
-            f"{(cuerpo or {}).get('mensaje') or r.status_code}")
-    datos = cuerpo["datos"]
+            f"{mensaje or r.status_code}")
+    datos = cuerpo.get("datos")
+    if not isinstance(datos, dict) or "ficha" not in datos or "fecha_vencimiento" not in datos:
+        raise CodicertAuthError(
+            f"Codicert aceptó el acceso de {usuario!r} en {entorno} pero la respuesta no "
+            "trae datos.ficha / datos.fecha_vencimiento")
     return Ficha(token=datos["ficha"], vence=_dt.datetime.fromisoformat(datos["fecha_vencimiento"]))
 
 
@@ -222,8 +295,16 @@ def _id_de(r: Any, que: str) -> str:
     `CodicertAuthError`): se avisa de que el envío pudo haber salido para que
     quien llama lo compruebe en el portal antes de reintentar, en vez de
     reintentar a ciegas y arriesgar un envío duplicado.
+
+    Hallazgo de revisión (H-11, r2): un cuerpo que parsea pero no es un objeto — `[]`,
+    por ejemplo — hacía que `cuerpo.get(...)` reventara con `AttributeError` crudo, en
+    la rama del 422 y en la del resto de estados por igual. Mismo patrón que ya usa
+    `listar()` para su propio cuerpo: se valida la forma ANTES de llamar a `.get` en
+    ella, no después.
     """
     cuerpo = _json_o_vacio(r)
+    if not isinstance(cuerpo, dict):
+        raise CodicertError(f"{que}: cuerpo no es un objeto — {cuerpo!r}")
     if r.status_code == 422:
         raise CodicertDatosInvalidosError(
             cuerpo.get("mensaje") or "datos no válidos", cuerpo.get("datos") or {})
@@ -246,10 +327,11 @@ def enviar_burofax(ficha: Ficha, *, destinatario: dict, adjuntos: list[dict], as
     """`POST /envios/burofax`. UN destinatario por llamada: el contrato no admite más."""
     base = _base_de(entorno)
     cliente = cliente or _cliente_real()
-    r = cliente.request("POST", f"{base}/envios/burofax", headers=_cabeceras(ficha),
-                        json={"destinatarios": [destinatario], "adjuntos": adjuntos,
-                              "asunto": asunto, "cuerpo": cuerpo,
-                              "id_personalizado": id_personalizado})
+    r = _peticion(cliente, "POST", f"{base}/envios/burofax", que="burofax", incierto=True,
+                 headers=_cabeceras(ficha),
+                 json={"destinatarios": [destinatario], "adjuntos": adjuntos,
+                       "asunto": asunto, "cuerpo": cuerpo,
+                       "id_personalizado": id_personalizado})
     return _id_de(r, "burofax")
 
 
@@ -261,11 +343,12 @@ def enviar_eec(ficha: Ficha, *, destinatarios: list[dict], adjuntos: list[dict],
         raise CodicertError(f"tipo_entrega {tipo_entrega!r}; son {TIPOS_ENTREGA}")
     base = _base_de(entorno)
     cliente = cliente or _cliente_real()
-    r = cliente.request("POST", f"{base}/envios/entrega-electronica-certificada",
-                        headers=_cabeceras(ficha),
-                        json={"destinatarios": destinatarios, "adjuntos": adjuntos,
-                              "asunto": asunto, "cuerpo": cuerpo, "tipo_entrega": tipo_entrega,
-                              "id_personalizado": id_personalizado})
+    r = _peticion(cliente, "POST", f"{base}/envios/entrega-electronica-certificada",
+                 que=f"entrega electrónica ({tipo_entrega})", incierto=True,
+                 headers=_cabeceras(ficha),
+                 json={"destinatarios": destinatarios, "adjuntos": adjuntos,
+                       "asunto": asunto, "cuerpo": cuerpo, "tipo_entrega": tipo_entrega,
+                       "id_personalizado": id_personalizado})
     return _id_de(r, f"entrega electrónica ({tipo_entrega})")
 
 
@@ -273,8 +356,8 @@ def _get(ficha: Ficha, ruta: str, *, entorno: str, cliente: Cliente | None = Non
     """GET genérico con autorización. Levanta `CodicertError` si status != 200."""
     base = _base_de(entorno)
     cliente = cliente or _cliente_real()
-    r = cliente.request("GET", f"{base}{ruta}",
-                        headers={"Authorization": f"Bearer {ficha.token}"}, **kw)
+    r = _peticion(cliente, "GET", f"{base}{ruta}", que=f"GET {ruta}",
+                 headers={"Authorization": f"Bearer {ficha.token}"}, **kw)
     if r.status_code != 200:
         raise CodicertError(f"GET {ruta}: HTTP {r.status_code}")
     return r
@@ -288,10 +371,15 @@ def credito(ficha: Ficha, *, entorno: str, cliente: Cliente | None = None) -> De
     numérico — `{"datos": {"credito": None}}` la pasaba y `Decimal(str(None))`
     reventaba con `decimal.InvalidOperation` crudo, fuera del contrato del módulo
     (solo falla con `CodicertError`/`CodicertAuthError`).
+
+    Hallazgo de revisión (H-11, r2): un cuerpo JSON `null` parsea a `None` — no es
+    "no parsea", así que `_json_o_vacio` lo deja pasar tal cual — y `cuerpo.get(...)`
+    reventaba con `AttributeError` crudo, porque `None` no tiene `.get`. Se valida que
+    `cuerpo` sea un `dict` antes de preguntarle nada.
     """
     r = _get(ficha, "/usuarios/credito", entorno=entorno, cliente=cliente)
     cuerpo = _json_o_vacio(r)
-    datos = cuerpo.get("datos")
+    datos = cuerpo.get("datos") if isinstance(cuerpo, dict) else None
     if not isinstance(datos, dict) or "credito" not in datos:
         raise CodicertError("GET /usuarios/credito: respuesta sin datos.credito")
     try:

@@ -131,3 +131,51 @@ def test_eec_con_entorno_desconocido_levanta_codicert_error_sin_tocar_la_red(tmp
             asunto="A", cuerpo="C", tipo_entrega="sms", id_personalizado="W-1 - OVC",
             entorno="preproduccion", cliente=cliente)
     assert cliente.llamadas == []
+
+
+# ---------------------------------------------------------------------------------
+# H-11 (revisión adversarial r2): dos de los seis caminos del hallazgo viven en
+# `enviar_burofax` -- el peor de los tres pares, porque es un POST que puede costar
+# dinero: el mensaje del fallo de transporte debe conservar el carácter incierto
+# del envío, igual que ya hace `_id_de` para el sobre sin `datos.id`.
+# ---------------------------------------------------------------------------------
+
+class _ClienteFalloTransporte:
+    """Cliente ad hoc cuyo `request()` levanta un fallo de transporte -- como un
+    timeout real (`httpx.ReadTimeout` y semejantes) antes de que exista respuesta.
+
+    `TimeoutError` (builtin) y no `httpx.ReadTimeout`: este fichero cae bajo el
+    censo de `test_guard_codicert_sin_red.py`, que prohíbe importar `httpx` aquí.
+    """
+
+    def request(self, metodo, url, **kw):
+        raise TimeoutError("tiempo de espera agotado")
+
+
+def test_burofax_con_fallo_de_transporte_no_propaga_el_tipo_crudo(tmp_path):
+    """Hallazgo de revisión H-11: un cliente que levanta una excepción de
+    transporte la propagaba con su tipo crudo. Con un POST que puede costar
+    dinero, el mensaje debe avisar de que la comunicación PUDO HABER SALIDO antes
+    de mandar a comprobar el portal -- no cabe reintentar a ciegas."""
+    with pytest.raises(codicert.CodicertError) as exc:
+        codicert.enviar_burofax(
+            FICHA, destinatario={"nombre": "X", "pais": "España"},
+            adjuntos=[codicert.adjunto(_pdf(tmp_path))],
+            asunto="A", cuerpo="C", id_personalizado="W-1 - REQ", entorno="sandbox",
+            cliente=_ClienteFalloTransporte())
+    mensaje = str(exc.value).lower()
+    assert "pudo" in mensaje and "salido" in mensaje, mensaje
+    assert "portal" in mensaje, mensaje
+
+
+def test_burofax_con_json_lista_no_revienta_con_attributeerror(tmp_path):
+    """Hallazgo de revisión H-11: un cuerpo JSON `[]` (una lista, no un objeto)
+    hacía que `cuerpo.get("estado")` reventara con `AttributeError` crudo --
+    las listas no tienen `.get`."""
+    cliente = FakeCliente({("POST", "/envios/burofax"): (200, [])})
+    with pytest.raises(codicert.CodicertError):
+        codicert.enviar_burofax(
+            FICHA, destinatario={"nombre": "X", "pais": "España"},
+            adjuntos=[codicert.adjunto(_pdf(tmp_path))],
+            asunto="A", cuerpo="C", id_personalizado="W-1 - REQ", entorno="sandbox",
+            cliente=cliente)

@@ -30,6 +30,41 @@ def test_credito_con_valor_no_numerico_levanta_codicert_error():
         codicert.credito(FICHA, entorno="produccion", cliente=cliente)
 
 
+# ---------------------------------------------------------------------------------
+# H-11 (revisión adversarial r2): dos de los seis caminos del hallazgo viven en
+# `credito` -- comparte `_get`, la puerta común de las cinco lecturas del módulo.
+# ---------------------------------------------------------------------------------
+
+class _ClienteFalloTransporte:
+    """Cliente ad hoc cuyo `request()` levanta un fallo de transporte -- como un
+    timeout real (`httpx.ReadTimeout` y semejantes) antes de que exista respuesta.
+
+    `TimeoutError` (builtin) y no `httpx.ReadTimeout`: este fichero cae bajo el
+    censo de `test_guard_codicert_sin_red.py`, que prohíbe importar `httpx` aquí.
+    """
+
+    def request(self, metodo, url, **kw):
+        raise TimeoutError("tiempo de espera agotado")
+
+
+def test_credito_con_fallo_de_transporte_no_propaga_el_tipo_crudo():
+    """Hallazgo de revisión H-11: un cliente que levanta una excepción de
+    transporte la propagaba con su tipo crudo -- aquí vía `_get`, la puerta común
+    de las cinco lecturas."""
+    with pytest.raises(codicert.CodicertError):
+        codicert.credito(FICHA, entorno="produccion", cliente=_ClienteFalloTransporte())
+
+
+def test_credito_con_json_null_no_revienta_con_attributeerror():
+    """Hallazgo de revisión H-11: un cuerpo JSON `null` (`None` tras
+    `_json_o_vacio`, que no distingue "no parsea" de "parsea a null") hacía que
+    `cuerpo.get("datos")` reventara con `AttributeError` crudo -- `None` no tiene
+    `.get`."""
+    cliente = FakeCliente({("GET", "/usuarios/credito"): (200, None)})
+    with pytest.raises(codicert.CodicertError):
+        codicert.credito(FICHA, entorno="produccion", cliente=cliente)
+
+
 def test_listar_pide_longitud_100_y_no_menos_de_10():
     cliente = FakeCliente({("GET", "/envios"): (200, {
         "estado": "OK", "datos": [], "pagina": 1, "longitud": 100, "total": 0, "totalPaginas": 0})})
