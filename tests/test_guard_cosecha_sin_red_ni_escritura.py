@@ -9,9 +9,23 @@ Son dos riesgos distintos y ninguno lo cubría F1:
    Es el hallazgo H-13 de la R2 de F1 en su versión cara, así que se cierra con el
    mismo patrón: una BARRERA de ejecución, no un barrido de texto.
 2. **Disco.** `cosechar` es la primera función del proyecto que escribe PDFs en el
-   árbol de un caso. La regla de `CLAUDE.md` §Tests no tiene escotilla, y el único
-   camino por el que un test podría romperla es construir `EntornoExpedicion` sin
-   `carpeta_certificados`, cayendo en el default que resuelve contra `CASOS_ROOT`.
+   árbol de un caso, y la regla de `CLAUDE.md` §Tests no tiene escotilla.
+
+   ⚠️ **Lo que este guard cubre, dicho con exactitud** (hallazgo H-10 de la R1, que
+   me pilló afirmando de más). El barrido AST comprueba **presencia sintáctica** de
+   `carpeta_certificados` en los `EntornoExpedicion` de los tests de cosecha: ve los
+   entornos que ningún test llega a ejecutar, y **no** comprueba que el destino esté
+   bajo `tmp_path`. Un destino explícito equivocado, o cambiado después con
+   `dataclasses.replace`, lo pasa.
+
+   Por eso hay un segundo control —`test_H10_lo_que_cosechar_ESCRIBE_cae_bajo_la_raiz_del_test`—
+   que **ejecuta** la cosecha y mira dónde cayeron los bytes. Son complementarios y
+   ninguno basta solo.
+
+   Y se retira una afirmación falsa que estaba aquí: el guard **no** impide caer «en
+   el default que resuelve contra `CASOS_ROOT`», porque ese default ya no se alcanza
+   — `cosechar` para cuando falta el puerto. La frase describía un riesgo que el
+   propio código había cerrado.
 """
 from __future__ import annotations
 
@@ -61,6 +75,51 @@ def test_sin_API_KEY_se_para_ANTES_de_la_red_y_ese_orden_es_el_bueno(monkeypatch
     monkeypatch.delenv("SUDESPACHO_API_KEY", raising=False)
     with pytest.raises(doc.SudespachoDocumentosError, match="SUDESPACHO_API_KEY"):
         doc.descargar_documento("42990")
+
+
+def test_H09_la_barrera_esta_puesta_YA_en_tiempo_de_COLECCION():
+    """R1/H-09: una fixture de función se instala después de importar los tests.
+
+    Un test que llame a la API pública **en ámbito de módulo** resuelve el
+    transporte real durante la colección, antes de que ninguna fixture exista. El
+    guard AST no lo ve —ese test no necesita importar `httpx`— y la cabecera de la
+    barrera afirmaba proteger «independientemente de por qué camino se llegó».
+
+    El remedio es instalarla **al importar `conftest.py`**, que ocurre antes de
+    coleccionar nada, y dejar la fixture como segunda capa para que cada test la
+    reciba limpia. Este control comprueba la primera: en el momento en que este
+    módulo se importa, el binding ya tiene que estar sustituido.
+    """
+    from core import sudespacho_documentos as doc
+    from tests import _barrera_sudespacho_documentos as barrera
+
+    assert doc._cliente_real is barrera._sustituto_vetado, (
+        "el transporte real sigue enchufado en tiempo de import: un test que llame "
+        "a la API pública en ámbito de módulo alcanzaría el CRM durante la colección")
+
+
+#: Se ejecuta AL IMPORTAR este módulo, que es la fase que H-09 dejaba descubierta.
+#: Si la barrera de `conftest` no estuviera puesta ya, esto tocaría el transporte
+#: real. Es el control positivo de la instalación temprana, no un test más.
+_EN_COLECCION = None
+try:
+    from core import sudespacho_documentos as _doc_en_coleccion
+
+    _doc_en_coleccion.descargar_documento("SONDA-EN-COLECCION")
+except Exception as _exc:  # noqa: BLE001 — lo que interesa es el TIPO
+    _EN_COLECCION = type(_exc).__name__
+
+
+def test_H09_una_llamada_DURANTE_la_coleccion_tambien_muere_en_la_barrera():
+    """El otro valor del control de arriba, ejercido de verdad.
+
+    La llamada de ámbito de módulo de este fichero se hizo al importarlo. Tiene que
+    haber muerto en la barrera —no en la comprobación de la clave, ni alcanzando la
+    red—, y eso es lo que acredita que la protección existe antes de coleccionar.
+    """
+    assert _EN_COLECCION == "BarreraSudespachoViolada", (
+        f"la llamada en ámbito de módulo murió con {_EN_COLECCION}, no en la "
+        "barrera: la fase de colección sigue descubierta")
 
 
 def test_solo_hay_una_puerta_de_red_en_el_modulo():
@@ -182,3 +241,74 @@ def test_el_guard_de_disco_MUERDE_sobre_una_sonda(tmp_path):
     sin_defecto = "exp.EntornoExpedicion(codicert=None, carpeta_certificados=f)\n"
     assert _entornos_sin_carpeta(con_defecto) == [1]
     assert _entornos_sin_carpeta(sin_defecto) == []
+
+
+def test_H10_lo_que_cosechar_ESCRIBE_cae_bajo_la_raiz_del_test(tmp_path):
+    """R1/H-10: el AST comprueba una keyword, no el destino de la escritura.
+
+    Un `carpeta_certificados` con un destino equivocado —o cambiado después con
+    `dataclasses.replace`— pasa el barrido sintáctico y escribe donde le digan. El
+    revisor lo acreditó escribiendo un PDF fuera de `tmp_path` con los ocho guards
+    en verde.
+
+    Este control mide **el destino real**, ejecutando la cosecha y comprobando
+    dónde cayeron los bytes. Es lo que el barrido no puede hacer, y los dos juntos
+    cubren cosas distintas: el AST ve los entornos que NADIE ejecuta en este test,
+    y esto ve el que sí.
+    """
+    import hashlib
+    from datetime import datetime, timezone
+
+    from core import expedicion_certificada as exp
+
+    cert = b"%PDF-1.4 sonda de destino"
+
+    class _T:
+        def listar(self, **kw):
+            return [{"id": "006a", "tipo": "c", "asunto": "SONDA",
+                     "destinatarios": "x@y.es", "id_personalizado": "W-04AKM2 - OVC",
+                     "fecha": "2026-09-10T18:26:08+02:00"}]
+
+        def estados(self, i):
+            return [{"codigo": 20, "titulo": "Leído",
+                     "fecha": "2026-09-12T23:03:43+02:00", "detalle": None}]
+
+        def certificado(self, i):
+            return cert
+
+    class _G:
+        def subir(self, contenido, *, nombrefinal, mime, related, al_reservar=None):
+            if al_reservar:
+                al_reservar("uuid-0")
+            return exp.DocumentoEnCrm(
+                doc_id="doc1", origen_id="uuid-0", nombrefinal=nombrefinal,
+                sha256=hashlib.sha256(contenido).hexdigest())
+
+        def buscar_por_origen_id(self, oid, *, element, exp_id):
+            return None
+
+        def buscar_por_nombre(self, n, *, element, exp_id):
+            return None
+
+        def descargar(self, doc_id):
+            return cert
+
+    destino = tmp_path / "caso" / "04_Output predemanda" / "Certificados"
+    entorno = exp.EntornoExpedicion(
+        codicert=_T(), partes_de=lambda w: [],
+        ahora=lambda: datetime(2026, 9, 21, tzinfo=timezone.utc),
+        raiz=tmp_path, plaza="Madrid", entorno="produccion", usuario="madrid.bd",
+        carpeta_certificados=lambda w: destino, gestor=_G(),
+        exp_crm=lambda w: ("extrajudiciales", "123"),
+        leer_emisor=lambda pdf: exp.EmisorLeido(
+            razon_social="EV MMC SPAIN, S.L.U.", usuario="madrid.bd"))
+
+    antes = {p for p in RAIZ.parent.rglob("*.pdf")}
+    cosechados = exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
+
+    # 1) lo escrito está donde se dijo
+    assert cosechados[0].ruta_local.is_file()
+    assert tmp_path in cosechados[0].ruta_local.parents
+    # 2) y NADA nuevo apareció en el árbol del repositorio
+    assert {p for p in RAIZ.parent.rglob("*.pdf")} == antes, (
+        "la cosecha dejó un PDF dentro del repositorio")

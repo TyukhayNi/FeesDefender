@@ -189,6 +189,13 @@ def _barrera_sudespacho_documentos(monkeypatch):
     de más contra un servicio de lectura, sino un documento creado en el gestor
     documental de un expediente real. Detalle en
     `tests/_barrera_sudespacho_documentos.py`.
+
+    **Es la SEGUNDA capa**: la primera se instala al importar este fichero (abajo
+    del todo), porque una fixture —aunque sea `autouse`— se monta después de la
+    colección, y un test que llame a la API pública en ámbito de módulo la
+    esquivaría entera (hallazgo H-09 de la R1, acreditado con un `httpx` sintético).
+    Esta fixture sigue haciendo falta: da a cada test un binding limpio y deshace
+    lo que otro haya podido sustituir.
     """
     from tests import _barrera_sudespacho_documentos as barrera
 
@@ -244,3 +251,32 @@ def tmp_casos_root(tmp_path, monkeypatch):
     finally:
         monkeypatch.undo()          # devuelve CASOS_ROOT al valor real…
         importlib.reload(cfg)       # …y ahora sí el módulo lo relee
+
+
+# ---------------------------------------------------------------------------
+# Barreras instaladas AL IMPORTAR este fichero (antes de coleccionar nada)
+# ---------------------------------------------------------------------------
+#
+# Hallazgo H-09 de la R1 de F2: una fixture `autouse` se monta DESPUÉS de la
+# colección, así que un test que llame a la API pública del gestor documental en
+# ámbito de módulo —no dentro de una función— resuelve el transporte real durante
+# el import y alcanza el CRM. El guard de texto tampoco lo ve, porque ese test no
+# necesita importar `httpx`. Se acreditó con un `httpx` sintético: la llamada se
+# ejecutaba.
+#
+# `conftest.py` se importa antes de coleccionar cualquier test, así que sustituir
+# aquí el binding cierra esa fase. La fixture de arriba se queda como segunda capa
+# —da a cada test un binding limpio y deshace lo que otro haya sustituido—: son dos
+# capas sobre la misma puerta, no una repetida.
+#
+# Se hace solo para el gestor documental, que ESCRIBE. La barrera de Codicert vive
+# en su fixture y no se toca aquí: cambiarla es alcance de F1 y su ronda, y el
+# riesgo es menor (sus puertas leen o gastan, no crean documentos en expedientes).
+def _instalar_barrera_documental_en_import() -> None:
+    from core import sudespacho_documentos
+    from tests import _barrera_sudespacho_documentos as barrera
+
+    sudespacho_documentos._cliente_real = barrera._sustituto_vetado
+
+
+_instalar_barrera_documental_en_import()
