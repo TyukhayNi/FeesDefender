@@ -12600,3 +12600,35 @@ una clave única fiable), causa por confirmar.
 **Disparador.** La próxima vez que `verificar_apertura --con-red` levante este mismo par de
 fallos en otro caso, o que alguien revise `#214`/`#251` y quiera comprobar si esto encaja
 ahí.
+
+## 278. El registro de INTENCIÓN de Codicert sigue colgando del directorio de lanzamiento
+
+**De dónde sale:** hallazgo **H-05** de la R1 de F2
+(`docs/superpowers/plans/2026-09-21-codicert-f2-r1-adversarial-review.md`). Lo levantó
+sobre el registro de **cosecha**, y ahí quedó remediado; pero la causa es de **F1** y su
+otro registro sigue igual.
+
+**Lo medido:** `entorno_real` pone `raiz=Path.cwd()`, y sobre esa raíz cuelgan los dos
+registros locales — `_codicert_intencion.jsonl` (F1) y `_codicert_cosecha.jsonl` (F2).
+**Lanzar la orden desde otro worktree o desde otra carpeta los pierde**, y el de
+intención es el que impide mandar dos veces el mismo envío: perderlo cuesta **16,97 € por
+burofax** y una segunda comunicación al mismo requerido.
+
+**Por qué la cosecha ya no sufre y el envío sí:** a `cosechar` se le añadió un censo
+inmediato contra `related_register` por nombre canónico, que ve lo que el CRM tiene aunque
+el registro local no esté (§17.4 autoriza esa vía). **El envío no tiene equivalente**: el
+listado de Codicert no filtra por `id_personalizado` (spec §1.2) y el registro de
+intención es la única prueba de que *nosotros* llamamos.
+
+**Dos salidas, sin decidir:**
+
+1. **Ubicación estable** del registro —`%LOCALAPPDATA%\FeesDefender\codicert\`, el mismo
+   patrón que las aperturas— en vez del `cwd`. Barato, pero no cubre cambiar de máquina.
+2. **Anclarlo al expediente**, que es de quien de verdad es el rastro. Más correcto y más
+   caro: hay que resolver el caso local antes de planificar, y hoy `planificar` no lo
+   exige.
+
+**Disparador para promoverlo:** el primer envío real que se lance desde un worktree
+distinto del que lo planificó. Hasta entonces es un riesgo conocido y acotado —una sola
+máquina, un solo operador— y **está declarado**, que es lo que lo distingue de un olvido.
+

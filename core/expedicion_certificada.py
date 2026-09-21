@@ -15,7 +15,7 @@ import uuid
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -738,6 +738,31 @@ class RegistroIntencion:
         return [info["apertura"] for info in self._estados_por_clave().values()
                if info["apertura"].get("id_personalizado") == id_personalizado]
 
+    def primera_anotacion_de(self, id_personalizado: str) -> datetime | None:
+        """El `timestamp` más antiguo anotado para esta expedición, o `None`.
+
+        Lo usa `refrescar` para abrir la ventana de `GET /envios` por el sitio
+        correcto: el registro es nuestro y sabe CUÁNDO se expidió, mientras que la
+        ventana por defecto solo adivina.
+
+        Traga las fechas ilegibles en vez de parar, al revés que `_fecha_exigida`:
+        esta fecha solo ABRE una ventana de consulta, y una anotación con el
+        `timestamp` roto no debe impedir releer la expedición. El peor efecto de
+        ignorarla es consultar una ventana más corta, y para eso está el suelo de
+        `ventana_dias`. Público —y no `_privado`— porque `refrescar` lo consume
+        desde fuera de la clase: un módulo que hurga en los privados de otro es
+        exactamente cómo se pierde el contrato.
+        """
+        fechas: list[datetime] = []
+        for fila in self._anotaciones_de(id_personalizado):
+            try:
+                f = datetime.fromisoformat(str(fila.get("timestamp")))
+            except (TypeError, ValueError):
+                continue
+            if f.tzinfo is not None:
+                fechas.append(f)
+        return min(fechas) if fechas else None
+
     def _exigir_formato_reconocido(self, id_personalizado: str) -> None:
         """Para y declara si `id_personalizado` tiene anotaciones en FORMATO ANTIGUO.
 
@@ -825,9 +850,497 @@ class RegistroIntencion:
                   "reintentar: un censo negativo del listado no autoriza a gastar.")
 
 
+class RegistroCosecha:
+    """Rastro append-only de qué certificados se han subido ya al CRM.
+
+    **Es el instrumento que autoriza a NO subir**, y existe por el mismo motivo que
+    `RegistroIntencion` existe para los envíos: un censo del gestor documental no
+    puede sostener una ausencia. El listado filtrado del CRM tiene latencia medida y
+    ya duplicó un certificado el 2026-09-09 (`INTEGRACION_SUDESPACHO.md` §17.4); este
+    fichero es nuestro, se escribe antes de la llamada y no tiene latencia ninguna.
+
+    **La clave es el `IdEnvio`, no el `sha256` del certificado.** El PDF es estable
+    entre dos descargas seguidas (medido el 2026-09-21), pero se regenera cuando el
+    estado avanza, así que su huella no identifica «el certificado de este envío»:
+    identifica «el certificado de este envío en este estado». Como clave de
+    idempotencia sería inestable justo cuando importa.
+
+    Lleva `entorno` y `usuario` por la misma razón que `RegistroIntencion` (hallazgo
+    H-04 de su R2): todas las cuentas comparten fichero bajo el directorio de
+    trabajo, y sin ellos un cierre de sandbox explicaría uno de producción.
+    """
+
+    def __init__(self, ruta: Path, *, entorno: str | None = None,
+                 usuario: str | None = None,
+                 ahora: Callable[[], datetime] = _reloj_utc) -> None:
+        self.ruta = Path(ruta)
+        self.ruta.parent.mkdir(parents=True, exist_ok=True)
+        self.entorno, self.usuario, self._ahora = entorno, usuario, ahora
+
+    def _lineas(self) -> list[dict]:
+        """Cada línea no vacía, parseada. Una línea rota para la lectura entera."""
+        if not self.ruta.is_file():
+            return []
+        filas: list[dict] = []
+        for numero, linea in enumerate(
+                self.ruta.read_text(encoding="utf-8").splitlines(), start=1):
+            if not linea.strip():
+                continue
+            try:
+                filas.append(json.loads(linea))
+            except json.JSONDecodeError as exc:
+                raise ExpedicionError(
+                    f"{self.ruta}: la línea {numero} del registro de cosecha no es "
+                    f"JSON válido ({exc}). No se ignora: puede ser el rastro de un "
+                    "documento ya creado en el CRM. Revísala a mano."
+                ) from exc
+        return filas
+
+    def _mias(self) -> list[dict]:
+        """Las filas de ESTE entorno y ESTA cuenta, por igualdad exacta."""
+        return [f for f in self._lineas()
+                if f.get("entorno") == self.entorno and f.get("usuario") == self.usuario]
+
+    def _escribir(self, fila: dict) -> None:
+        with self.ruta.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(fila, ensure_ascii=False) + "\n")
+
+    def reservar(self, id_envio: str, origen_id: str) -> None:
+        """Anota, ANTES del `POST` que crea, que vamos a subir este certificado.
+
+        Es el gancho que `sudespacho_documentos.subir_documento` llama por
+        `al_reservar`. Si el `POST` sale y su respuesta se pierde, esta línea es lo
+        único que permite reencontrar el documento por `origen_id`.
+        """
+        self._escribir({"clave": id_envio, "estado": "reservado",
+                        "origen_id": origen_id, "entorno": self.entorno,
+                        "usuario": self.usuario,
+                        "timestamp": self._ahora().isoformat()})
+
+    def cerrar(self, id_envio: str, *, doc_id: str, sha256: str) -> None:
+        """Cierra la reserva con el `doc_id` y la huella de lo verificado."""
+        if not any(f.get("clave") == id_envio and f.get("estado") == "reservado"
+                   for f in self._mias()):
+            raise ExpedicionError(
+                f"cierre huérfano: se intenta cerrar la cosecha de {id_envio!r} sin "
+                "reserva previa de este entorno y cuenta. El registro se escribe "
+                "SIEMPRE antes de la llamada; un cierre sin reserva significa que "
+                "algo escribió fuera de este camino.")
+        self._escribir({"clave": id_envio, "estado": "hecho", "doc_id": doc_id,
+                        "sha256": sha256, "entorno": self.entorno,
+                        "usuario": self.usuario,
+                        "timestamp": self._ahora().isoformat()})
+
+    def hecho(self, id_envio: str) -> dict | None:
+        """La fila de cierre de este envío, o `None`. Solo cuenta lo CERRADO."""
+        for fila in reversed(self._mias()):
+            if fila.get("clave") == id_envio and fila.get("estado") == "hecho":
+                return fila
+        return None
+
+    def abiertas(self) -> list[dict]:
+        """Reservas sin cerrar: hubo un intento y no se sabe cómo acabó.
+
+        No se reintentan solas. `cosechar` las resuelve buscando por `origen_id` —que
+        es inmediato— y, si tampoco así, para y lo declara: el mismo criterio que
+        `RegistroIntencion.exigir_sin_pendientes` aplica a los envíos. Un desenlace
+        desconocido pide humano, no reintento.
+        """
+        cerradas = {f["clave"] for f in self._mias() if f.get("estado") == "hecho"}
+        return [f for f in self._mias()
+                if f.get("estado") == "reservado" and f.get("clave") not in cerradas]
+
+
 def ya_expedido(listado: list[dict], id_personalizado: str) -> set[str]:
     """`IdEnvio` que la plataforma ya tiene con ese identificador exacto."""
     return {e["id"] for e in listado if e.get("id_personalizado") == id_personalizado}
+
+
+# ---------------------------------------------------------------------------
+# F2 — la lectura: qué acredita cada envío
+# ---------------------------------------------------------------------------
+
+#: Las cinco familias en que cae un estado certificado. No son títulos de la
+#: plataforma: son lo que cada estado significa PARA NOSOTROS, que es lo que el
+#: motor necesita decidir.
+EN_CURSO = "en_curso"          #: el envío progresa; nada acreditado todavía
+RECEPCION = "recepcion"        #: recepción acreditada (art. 17.2, spec §6.2)
+ACCESO = "acceso"              #: acceso al contenido íntegro (art. 10.2)
+SIN_ENTREGA = "sin_entrega"    #: cerrado sin entrega (el 28 con valor afirmativo, §6.3)
+DESCONOCIDO = "desconocido"    #: medido por nadie — se declara, nunca se asume
+
+#: Códigos de la plataforma, por familia. Los nueve del spec §1.3 MÁS los seis
+#: medidos en producción el 2026-09-21 (M-2 del plan de F2): 3, 8, 11, 12, 14 y 31,
+#: que existen, aparecen en envíos reales y el spec no clasificaba.
+_FAMILIA_DE: dict[int, str] = {
+    # en curso — el envío se mueve, pero no hay hecho que acreditar
+    3: EN_CURSO,    # Enviado a imprenta para su impresión (burofax)
+    5: EN_CURSO,    # Procesado — «Procesado» NO es «Entregado» (spec §1.3)
+    8: EN_CURSO,    # Pendiente de recogida (burofax)
+    11: EN_CURSO,   # En tránsito a la ciudad de destino
+    12: EN_CURSO,   # En reparto
+    14: EN_CURSO,   # Recordatorio lectura ENVIADO (el 21 es el entregado)
+    27: EN_CURSO,   # Entregado en el SERVIDOR: llegó al servidor, no al destinatario
+    31: EN_CURSO,   # Incidencia — «se está gestionando»; acaba en 17/19 o en 42
+    # recepción acreditada (spec §6.2: «Estado 17, 20 o 21 con su fecha»)
+    17: RECEPCION,  # Entregado
+    19: RECEPCION,  # Entregado con albarán — terminal del burofax
+    21: RECEPCION,  # Recordatorio lectura entregado, sin acceso al contenido
+    # acceso al contenido íntegro (art. 10.2)
+    20: ACCESO,     # Leído · Documentación accedida
+    # cerrado sin entrega
+    28: SIN_ENTREGA,  # Rechazado — valor afirmativo, art. 7.4 y 395.1 LEC (§6.3)
+    40: SIN_ENTREGA,  # Caducado
+    42: SIN_ENTREGA,  # Fallido
+}
+
+
+def clasificar(codigo: int) -> str:
+    """La familia de un código de estado. Lo no medido se declara DESCONOCIDO.
+
+    No hay `EN_CURSO` por defecto, y esa es la decisión del diseño: un código que
+    la plataforma añada mañana —o uno de los 37 documentados que aquí no están—
+    caería en «aún en camino» y sería indistinguible de un envío que progresa. Si
+    resultara ser un cierre nuevo, la expedición no terminaría nunca y nadie se
+    enteraría. La regla de la casa es que «no lo sé» no es «no hay».
+    """
+    return _FAMILIA_DE.get(codigo, DESCONOCIDO)
+
+
+@dataclass(frozen=True)
+class EstadoCertificado:
+    """Una entrada del histórico de `GET /envios/{id}/estados`.
+
+    Forma medida el 2026-09-21: `{codigo, titulo, fecha, detalle}`, en orden
+    cronológico ascendente. El `detalle` del 20 identifica a quien leyó y desde qué
+    IP, lo que matiza el hallazgo API-01 de la R1 del spec («campos_verificacion
+    vacío: Leído no identifica a nadie»): por esta vía sí identifica.
+    """
+
+    codigo: int
+    titulo: str
+    fecha: datetime
+    detalle: str | None = None
+
+    @property
+    def familia(self) -> str:
+        return clasificar(self.codigo)
+
+
+def estado_de(crudo: dict) -> EstadoCertificado:
+    """`EstadoCertificado` desde el JSON de la API, validando la forma.
+
+    Exige zona horaria en la fecha. Un instante sin offset no se puede comparar con
+    otro que sí lo tiene —Python lanza `TypeError` al restarlos— y asumir UTC sobre
+    un servidor que responde en `+02:00` desplazaría dos horas todas las fechas de
+    entrega. Con plazos de procedibilidad de por medio, se para.
+    """
+    codigo = crudo.get("codigo")
+    if not isinstance(codigo, int) or isinstance(codigo, bool):
+        raise ExpedicionError(
+            f"estado sin `codigo` entero: {crudo.get('codigo')!r}. No se convierte "
+            "en silencio: el codigo decide si un envío está entregado.")
+    bruto = crudo.get("fecha")
+    try:
+        fecha = datetime.fromisoformat(str(bruto))
+    except (TypeError, ValueError) as exc:
+        raise ExpedicionError(f"estado {codigo}: fecha ilegible {bruto!r}") from exc
+    if fecha.tzinfo is None:
+        raise ExpedicionError(
+            f"estado {codigo}: la fecha {bruto!r} no trae zona horaria (offset). No "
+            "se asume UTC: el servidor responde en +02:00 y dos horas de desvío "
+            "mueven un plazo de procedibilidad.")
+    return EstadoCertificado(codigo=codigo, titulo=str(crudo.get("titulo") or ""),
+                             fecha=fecha, detalle=crudo.get("detalle"))
+
+
+#: `tipo` del listado -> canal nuestro. Medido el 2026-09-21 (M-7): la API usa una
+#: letra y `tipo_titulo` la traduce ('b' -> "Burofax", 'c' -> "Entrega Electrónica
+#: Certificada"). El canal interno NO distingue correo de SMS: los dos son 'c' para
+#: la plataforma, y lo que los separa —`tipo_entrega`— es del envío, no de la
+#: lectura. Quien necesite esa distinción la tiene en el registro de intención.
+CANAL_DE_TIPO: dict[str, str] = {"b": "burofax", "c": "electronico"}
+
+#: El estado en que cada canal culmina. Mientras no se alcance, el hecho acreditado
+#: PUEDE MEJORAR y el certificado bajado hoy quedaría corto: el burofax pasa de 17
+#: a 19 (medido: tres días después) y la entrega electrónica de 21 a 20.
+_CULMINACION: dict[str, int] = {"burofax": 19, "electronico": 20}
+
+
+@dataclass(frozen=True)
+class EnvioObservado:
+    """Un envío tal como la plataforma lo cuenta, con los hechos ya derivados.
+
+    Los hechos se derivan del HISTÓRICO completo, nunca del estado del listado
+    (M-1): el listado da el último evento, y el último no es ni el más temprano ni
+    el más fuerte. Las dos cosas importan y son ejes distintos.
+    """
+
+    id_envio: str
+    tipo: str
+    asunto: str
+    destinatario: str
+    id_personalizado: str
+    fecha_envio: datetime
+    historico: tuple[EstadoCertificado, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "historico", tuple(self.historico))
+
+    @property
+    def canal(self) -> str:
+        return CANAL_DE_TIPO.get(self.tipo, f"desconocido:{self.tipo}")
+
+    def _primera(self, *familias: str) -> datetime | None:
+        """La fecha MÁS TEMPRANA de las entradas de esas familias.
+
+        `min`, no «la última»: el art. 17.2 cuenta desde la recepción, y la primera
+        recepción acreditada es la que abre el plazo. Tomar la última desplazaría el
+        mes del art. 17.4 — medido, tres días en el burofax 006catfpdv6 (M-1).
+        """
+        fechas = [e.fecha for e in self.historico if e.familia in familias]
+        return min(fechas) if fechas else None
+
+    @property
+    def recibido_en(self) -> datetime | None:
+        """Recepción acreditada (art. 17.2). El acceso también es recepción."""
+        return self._primera(RECEPCION, ACCESO)
+
+    @property
+    def accedido_en(self) -> datetime | None:
+        """Acceso al contenido íntegro (art. 10.2). Solo el 20."""
+        return self._primera(ACCESO)
+
+    @property
+    def cerrado_en(self) -> datetime | None:
+        """Cierre sin entrega. El 28 es un hecho con valor afirmativo, no un error."""
+        return self._primera(SIN_ENTREGA)
+
+    @property
+    def desconocidos(self) -> tuple[int, ...]:
+        """Códigos del histórico que nadie ha clasificado. Se declaran."""
+        return tuple(sorted({e.codigo for e in self.historico
+                             if e.familia == DESCONOCIDO}))
+
+    @property
+    def cosechable(self) -> bool:
+        """¿El certificado de este envío ya es DEFINITIVO?
+
+        Lo es cuando el envío alcanzó la culminación de su canal (19 el burofax, 20
+        la entrega electrónica) o se cerró sin entrega (28/40/42). Antes no: un
+        certificado bajado con el envío en 17 o en 21 acredita menos de lo que
+        acabará acreditando, y como el nombre canónico del spec §7.1 no lleva el
+        estado, el provisional ocuparía el sitio del bueno.
+
+        Un código desconocido NO hace cosechable: no se sabe si culmina algo.
+        """
+        if self.desconocidos:
+            return False
+        codigos = {e.codigo for e in self.historico}
+        if _CULMINACION.get(self.canal) in codigos:
+            return True
+        return any(clasificar(c) == SIN_ENTREGA for c in codigos)
+
+
+@dataclass(frozen=True)
+class Expedicion:
+    """Los envíos de un `id_personalizado`, leídos de la plataforma.
+
+    El nivel de expedición es **comodidad de informe y no tiene efecto jurídico**
+    (spec §6.1): aquí no se calcula ninguna fecha agregada, justamente para que
+    nadie la use. El nivel que manda es el requerido, y lo arma `por_requerido`.
+    """
+
+    id_personalizado: str
+    entorno: str
+    envios: tuple[EnvioObservado, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "envios", tuple(self.envios))
+
+    @property
+    def cosechables(self) -> tuple[EnvioObservado, ...]:
+        return tuple(e for e in self.envios if e.cosechable)
+
+    @property
+    def pendientes(self) -> tuple[EnvioObservado, ...]:
+        return tuple(e for e in self.envios if not e.cosechable)
+
+    @property
+    def completa(self) -> bool:
+        """Todos los envíos culminaron.
+
+        Con cero envíos es `False`: no hay nada que dar por completo, y devolver
+        `True` sobre el vacío sería el mismo censo negativo que el spec §5.2
+        prohíbe — «no encuentro envíos» no es «la expedición terminó».
+        """
+        return bool(self.envios) and not self.pendientes
+
+    def por_requerido(self, partes: list[dict]) -> tuple[Requerido, ...]:
+        """Agrupa los envíos por requerido, casando `destinatarios` con las partes.
+
+        Es el nivel que manda para los plazos (§6.1): dos requeridos que reciben en
+        fechas distintas tienen DOS relojes, y agregarlos en uno puede llevar a
+        demandar a quien aún tiene vivo su mes del art. 17.4.
+
+        **Lo que no casa va al cajón `SIN_CASAR` y se declara.** Atribuirlo a la
+        primera parte inventaría un reloj sobre alguien a quien quizá no se le
+        entregó nada; dejarlo fuera del resultado lo escondería. Pasa de verdad: el
+        burofax lleva en `destinatarios` la razón social, que no tiene por qué
+        coincidir con el nombre compuesto de la ficha del CRM.
+
+        **Y lo AMBIGUO va al mismo cajón** (hallazgo H-04 de la R1). Un contacto que
+        aparece en dos fichas —dos partes con el mismo email, que este CRM tiene y su
+        dedup funde por eso— no identifica a nadie: la versión anterior se lo daba a
+        la primera de la lista con `setdefault`, así que **invertir el orden del CRM
+        invertía quién constaba como receptor de la misma prueba**, y sin un solo
+        aviso. Un contacto vale solo si es unívoco; si no, la recepción no se atribuye
+        a ninguno de los dos y el cajón lo dice.
+        """
+        grupos: dict[str, list[EnvioObservado]] = {}
+        etiquetas: dict[str, str] = {}
+        # contacto -> conjunto de partes que lo declaran. Con más de una, el contacto
+        # no identifica: no se resuelve por orden de lista.
+        candidatas: dict[str, set[str]] = {}
+        for i, parte in enumerate(partes):
+            clave = f"parte:{i}"
+            etiquetas[clave] = nombre_completo_de(parte)
+            grupos[clave] = []
+            for contacto in _claves_de_contacto(parte):
+                candidatas.setdefault(contacto, set()).add(clave)
+        indice = {c: next(iter(p)) for c, p in candidatas.items() if len(p) == 1}
+        for envio in self.envios:
+            clave = indice.get(envio.destinatario.strip().lower(), SIN_CASAR)
+            grupos.setdefault(clave, []).append(envio)
+        etiquetas[SIN_CASAR] = "(sin casar)"
+        return tuple(Requerido(clave=c, etiqueta=etiquetas.get(c, c), envios=tuple(v))
+                     for c, v in grupos.items())
+
+
+#: Clave del cajón de los envíos que no casan con ninguna parte del CRM.
+SIN_CASAR = "__sin_casar__"
+
+#: Días hacia atrás que se consultan cuando el registro local no sabe cuándo se
+#: expidió. No es un número mágico con pretensiones: es holgura para que una
+#: expedición vieja siga apareciendo, y `GET /envios` acotado por fecha cuesta una
+#: o dos páginas (spec, hueco 6: 1.954 envíos históricos en la plaza más activa).
+VENTANA_DIAS = 180
+
+
+@dataclass(frozen=True)
+class Requerido:
+    """Un requerido con sus canales y sus dos fechas. El nivel que manda (§6.1)."""
+
+    clave: str
+    etiqueta: str
+    envios: tuple[EnvioObservado, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "envios", tuple(self.envios))
+
+    @property
+    def recibido_en(self) -> datetime | None:
+        """La más temprana entre sus canales: al requerido le basta cualquiera.
+
+        Simétrico de la regla del spec §6.1: «un canal fallido no resta si otro del
+        mismo requerido acreditó recepción».
+        """
+        fechas = [e.recibido_en for e in self.envios if e.recibido_en]
+        return min(fechas) if fechas else None
+
+    @property
+    def accedido_en(self) -> datetime | None:
+        fechas = [e.accedido_en for e in self.envios if e.accedido_en]
+        return min(fechas) if fechas else None
+
+
+def _claves_de_contacto(parte: dict) -> set[str]:
+    """Con qué cadenas puede aparecer esta parte en `destinatarios` del listado.
+
+    El listado devuelve `destinatarios` como UN STRING (M-7): el email en la entrega
+    electrónica, el móvil en el SMS, la razón social en el burofax. Se normaliza todo
+    a minúsculas; el móvil, además, con y sin el prefijo `34`, porque el destinatario
+    SMS real de producción es `34645508869` (spec §1.1).
+    """
+    claves: set[str] = set()
+    email = (parte.get("email") or "").strip().lower()
+    if email:
+        claves.add(email)
+    movil = movil_normalizado(parte.get("movil"))
+    if movil:
+        desnudo = movil.removeprefix("34")
+        claves.update({movil, desnudo, f"34{desnudo}"})
+    nombre = nombre_completo_de(parte).strip().lower()
+    if nombre:
+        claves.add(nombre)
+    return claves
+
+
+def _fecha_exigida(bruto: Any, *, que: str) -> datetime:
+    """Una fecha con zona, o `ExpedicionError`. Mismo criterio que `estado_de`."""
+    try:
+        f = datetime.fromisoformat(str(bruto))
+    except (TypeError, ValueError) as exc:
+        raise ExpedicionError(f"{que}: fecha ilegible {bruto!r}") from exc
+    if f.tzinfo is None:
+        raise ExpedicionError(f"{que}: la fecha {bruto!r} no trae zona horaria")
+    return f
+
+
+def refrescar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
+              ordinal: int = 1, ventana_dias: int = VENTANA_DIAS) -> Expedicion:
+    """Relee en Codicert el estado de una expedición. No escribe nada.
+
+    Dos decisiones que el spec fija y conviene no perder de vista al leer el código:
+
+    1. **La consulta se acota siempre por fecha** (§4.3). Quien pagina `GET /envios`
+       no ve los envíos del jurídico: ve los de la cuenta compartida de la plaza, por
+       la que sale todo el bad debt. La ventana arranca en la anotación más antigua
+       del registro de intención —que es nuestra y sabe cuándo se expidió— y solo
+       cuando no hay registro cae en `ventana_dias`.
+    2. **El filtro por `id_personalizado` es igualdad exacta.** La API no filtra por
+       ese campo (spec §1.2), así que se filtra en casa; y no se intenta reconocer los
+       identificadores que alguien tecleó a mano en el portal, que existen y no siguen
+       la gramática del §3 (medido: `W-04A8PU`, `W-02XE7E/W-046HM4`). Adivinarlos
+       mezclaría expediciones distintas, que es justo lo que el §3 existe para evitar.
+
+    El histórico se pide envío a envío: el estado del listado es el último evento y no
+    sirve ni para la fecha más temprana ni para el hecho más fuerte (medido, M-1 del
+    plan de F2 — tres días de diferencia en un burofax real).
+    """
+    id_personalizado = componer_id(w_code, tipo, ordinal)
+    registro = RegistroIntencion(entorno_exp.raiz / "_codicert_intencion.jsonl",
+                                 entorno=entorno_exp.entorno,
+                                 usuario=entorno_exp.usuario, ahora=entorno_exp.ahora)
+    ahora = entorno_exp.ahora()
+    candidatas = [ahora - timedelta(days=ventana_dias)]
+    primera = registro.primera_anotacion_de(id_personalizado)
+    if primera is not None:
+        candidatas.append(primera)
+    desde = min(candidatas)
+
+    crudos = entorno_exp.codicert.listar(
+        fecha_inicio=desde.date().isoformat(), fecha_fin=ahora.date().isoformat())
+    envios: list[EnvioObservado] = []
+    for crudo in crudos:
+        if crudo.get("id_personalizado") != id_personalizado:
+            continue
+        id_envio = str(crudo.get("id") or "")
+        if not id_envio:
+            raise ExpedicionError(
+                f"{id_personalizado}: el listado trae un envío sin `id` — {crudo!r}. "
+                "Sin identificador no se puede leer su histórico ni cosechar su "
+                "certificado: se para en vez de saltárselo en silencio.")
+        envios.append(EnvioObservado(
+            id_envio=id_envio, tipo=str(crudo.get("tipo") or ""),
+            asunto=str(crudo.get("asunto") or ""),
+            destinatario=str(crudo.get("destinatarios") or ""),
+            id_personalizado=id_personalizado,
+            fecha_envio=_fecha_exigida(crudo.get("fecha"), que=f"envío {id_envio}"),
+            historico=tuple(estado_de(e)
+                            for e in entorno_exp.codicert.estados(id_envio))))
+    return Expedicion(id_personalizado=id_personalizado, entorno=entorno_exp.entorno,
+                      envios=tuple(envios))
 
 
 @dataclass(frozen=True)
@@ -858,6 +1371,24 @@ class EntornoExpedicion:
     plaza: str
     entorno: str
     usuario: str | None = None
+
+    # --- puertos que solo usa F2 (`cosechar`) --------------------------------
+    # Los cuatro son `None` por defecto a propósito: los tests de F1 construyen
+    # este dataclass con los siete campos de arriba y no deben cambiar. `cosechar`
+    # exige los cuatro y para si falta alguno, en vez de caer en un default que
+    # escribiría en el árbol real.
+    #
+    #: Carpeta donde se archiva el certificado íntegro, dada del w_code.
+    #: `entorno_real` la resuelve contra el árbol del caso; los tests pasan un
+    #: lambda a `tmp_path`, que es lo que hace cumplible la regla de `CLAUDE.md`
+    #: §Tests sin escotilla.
+    carpeta_certificados: Callable[[str], Path] | None = None
+    #: Puerto del gestor documental del CRM (`core.sudespacho_documentos`).
+    gestor: Any = None
+    #: `w_code -> (element, exp_id)` del expediente CRM al que colgar el documento.
+    exp_crm: Callable[[str], tuple[str, str]] | None = None
+    #: Lector del emisor de un certificado PDF (`core.certificado_lectura`).
+    leer_emisor: Callable[[bytes], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -1147,6 +1678,27 @@ def clave_mutex_expedicion(plan: Plan) -> str:
     """
     crudo = "|".join([plan.usuario or "", plan.entorno, plan.id_personalizado])
     return "W-COD" + hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:15].upper()
+
+
+def clave_mutex_cosecha(w_code: str, tipo: str, entorno_exp: EntornoExpedicion,
+                        ordinal: int = 1) -> str:
+    """Identidad de la exclusión de una COSECHA: cuenta + entorno + expedición.
+
+    Misma primitiva y misma forma sintética que `clave_mutex_expedicion` —18
+    caracteres tras `W-`, frente a los 6 de un W-code real, así que no puede
+    confundirse con ninguno del catálogo— pero con prefijo **propio** (`W-CSC`
+    frente a `W-COD`) y la palabra `cosecha` dentro del crudo.
+
+    Que sean claves distintas es deliberado: una cosecha y un envío del mismo
+    expediente tocan recursos distintos —la primera escribe en el gestor documental,
+    el segundo gasta saldo y manda una comunicación— y serializarlos entre sí solo
+    produciría esperas falsas. Lo que sí hay que serializar es cosecha contra
+    cosecha: dos terminales a la vez leerían las dos «no está» antes de que ninguna
+    escribiera, y el certificado subiría dos veces.
+    """
+    crudo = "|".join(["cosecha", entorno_exp.usuario or "", entorno_exp.entorno,
+                      componer_id(w_code, tipo, ordinal)])
+    return "W-CSC" + hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:15].upper()
 
 
 def _candado_de(clave: str) -> threading.Lock:
@@ -1525,7 +2077,17 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
     ficha = _cod.acceso(usuario, clave, entorno=entorno)
 
     class _Transporte:
-        """Superficie mínima que `ejecutar` consume. No expone la `Ficha`."""
+        """Superficie mínima que el core consume. No expone la `Ficha`.
+
+        **Tiene que ofrecer TODO lo que el core le pide**, y eso no lo detecta ningún
+        test de comportamiento: los tests inyectan dobles, y un doble completo hace
+        pasar un transporte real incompleto. Pasó con F2 —`estados` y `certificado`
+        faltaban aquí mientras `refrescar` y `cosechar` los llamaban, con los 92 tests
+        de la fase en verde— y el camino real habría muerto con `AttributeError` en la
+        primera invocación de `codicert estado`. Lo vigila
+        `tests/test_guard_transporte_real_completo.py`, que **deriva** la lista de lo
+        que el core consume en vez de escribirla, para que no se desincronice otra vez.
+        """
 
         def credito(self) -> Decimal:
             return _cod.credito(ficha, entorno=entorno)
@@ -1539,6 +2101,13 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
         def enviar_eec(self, **kw: Any) -> str:
             return _cod.enviar_eec(ficha, entorno=entorno, **kw)
 
+        # --- las dos de F2 -------------------------------------------------
+        def estados(self, id_envio: str) -> list[dict]:
+            return _cod.estados(ficha, id_envio, entorno=entorno)
+
+        def certificado(self, id_envio: str) -> bytes:
+            return _cod.certificado(ficha, id_envio, entorno=entorno)
+
     return EntornoExpedicion(
         codicert=_Transporte(),
         partes_de=partes_de,
@@ -1547,4 +2116,387 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
         plaza=plaza,
         entorno=entorno,
         usuario=usuario,
+        carpeta_certificados=_carpeta_certificados,
+        gestor=_GestorDocumental(),
+        exp_crm=_exp_crm_de,
+        leer_emisor=_leer_emisor_de,
     )
+
+
+# ---------------------------------------------------------------------------
+# F2 — la cosecha: del envío a la prueba archivada
+# ---------------------------------------------------------------------------
+
+#: Caracteres que Windows no admite en un nombre de fichero. El asunto viene del
+#: CRM y puede traerlos: medido, hay identificadores de producción con `/` dentro
+#: (`W-02XE7E/W-046HM4`), y una barra sin sanear convierte el nombre en una ruta.
+_PROHIBIDOS_EN_NOMBRE = '<>:"/\\|?*'
+
+
+def nombre_canonico(asunto: str, w_code: str, id_envio: str,
+                    estado_provisional: int | None = None) -> str:
+    """`<ASUNTO> - <REF>-<codigo>.pdf`, la convención del despacho (spec §7.1).
+
+    Medida sobre el certificado del W-04A6LI:
+    `RESPUESTA REQUERIMIENTO - W-04A6LI-006casm113n.pdf`. `REF` es el W-code, no el
+    `id_personalizado` completo: el asunto ya suele llevar el tipo dentro.
+
+    `estado_provisional` añade ` (estado N)` al nombre. Es lo que permite bajar el
+    certificado de un envío que aún puede mejorar **sin que ocupe el sitio del
+    definitivo** — sin ese sufijo, los dos se llamarían igual y el provisional
+    bloquearía al bueno, que es justo por lo que `cosechar` los excluye por defecto.
+
+    Un asunto vacío no produce ` - W-...pdf`: cae en `CERTIFICADO`. Un nombre que
+    empieza por separador es difícil de teclear y de leer en una lista.
+    """
+    limpio = "".join(" " if c in _PROHIBIDOS_EN_NOMBRE else c for c in asunto)
+    limpio = " ".join(limpio.split()).strip(". ") or "CERTIFICADO"
+    sufijo = f" (estado {estado_provisional})" if estado_provisional is not None else ""
+    return f"{limpio} - {w_code}-{id_envio}{sufijo}.pdf"
+
+
+@dataclass(frozen=True)
+class CertificadoCosechado:
+    """Un certificado ya archivado y colgado del expediente en el CRM."""
+
+    id_envio: str
+    ruta_local: Path
+    sha256: str
+    doc_id: str
+    razon_social_emisor: str
+    usuario_emisor: str | None = None
+    ya_estaba: bool = False
+    #: `True` si se bajó con el envío aún sin culminar: acredita menos de lo que
+    #: acabará acreditando, y su nombre lleva el estado para no pisar al definitivo.
+    provisional: bool = False
+    #: ¿El PDF está de verdad en el expediente? El registro acredita la subida al
+    #: CRM, que es otro sitio: si alguien borra el fichero local, «ya estaba» sería
+    #: una ruta muerta devuelta sin una palabra. Se comprueba y se dice.
+    local_presente: bool = True
+
+
+def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
+             ordinal: int = 1, emisor_esperado: str | None = None,
+             verificar_plaza: bool = True,
+             incluir_pendientes: bool = False) -> list[CertificadoCosechado]:
+    """Baja el certificado de cada envío culminado, lo verifica, lo archiva y lo sube.
+
+    El orden importa y es el único seguro: **verificar el emisor ANTES de escribir
+    nada**. Un certificado que no firmó nuestro emisor no es nuestra prueba (art.
+    17.2) y no tiene por qué entrar ni en el expediente ni en el CRM.
+
+    **Por defecto solo se cosecha lo culminado** (`EnvioObservado.cosechable`). Un
+    envío en 17 o en 21 todavía puede mejorar, y como el nombre canónico del spec
+    §7.1 no lleva el estado, el certificado provisional ocuparía el sitio del
+    definitivo. Lo pendiente no es un error: se queda fuera y el frontal lo enseña
+    aparte.
+
+    **`incluir_pendientes=True` los baja igualmente**, con el estado en el nombre y
+    con su propia clave en el registro, así que ni se pisan ni bloquean al
+    definitivo que llegue después. No es una comodidad teórica: el humo del
+    2026-09-21 encontró `006catf83zx`, **entregado y nunca leído** — uno de los tres
+    envíos de una expedición viva—, que por el criterio de arriba se quedaría sin
+    cosechar hasta caducar, y cuánto tarda eso no está medido. La puerta del art.
+    17.2 no se relaja: el emisor se verifica igual.
+
+    **La idempotencia se sostiene sobre el registro local**, que es nuestro y no tiene
+    latencia — nunca sobre un censo del gestor documental, cuya latencia ya duplicó un
+    certificado (`INTEGRACION_SUDESPACHO.md` §17.4). Una reserva abierta (hubo intento
+    y no se sabe cómo acabó) se resuelve buscando por `origen_id`, que es inmediato; si
+    tampoco así se puede sostener, **se para y se declara SIN VERIFICAR**, nunca se
+    reintenta a ciegas.
+    """
+    for nombre, valor in (("carpeta_certificados", entorno_exp.carpeta_certificados),
+                          ("gestor", entorno_exp.gestor),
+                          ("exp_crm", entorno_exp.exp_crm),
+                          ("leer_emisor", entorno_exp.leer_emisor)):
+        if valor is None:
+            raise ExpedicionError(
+                f"el entorno no trae `{nombre}`: `cosechar` escribe en el expediente "
+                "y en el CRM, y sin ese puerto no hay dónde. Usa `entorno_real`.")
+    # H-06 (R1): la exclusión tiene que estar en la FUNCIÓN, no solo en el frontal.
+    # `ejecutar` de F1 sostiene un candado intraproceso Y exige el mutex entre
+    # procesos; `cosechar` no hacía ninguna de las dos, así que dos hilos llamando
+    # al core -- sin pasar por el CLI que sí serializa -- subían el mismo
+    # certificado dos veces. Medido con dos hilos citados dentro de `gestor.subir`.
+    clave_mutex = clave_mutex_cosecha(w_code, tipo, entorno_exp, ordinal)
+    with _candado_de(clave_mutex):
+        _exigir_mutex_de_cosecha(clave_mutex, w_code=w_code, tipo=tipo,
+                                 entorno_exp=entorno_exp)
+        return _cosechar_bajo_candado(
+            w_code, tipo, entorno_exp=entorno_exp, ordinal=ordinal,
+            emisor_esperado=emisor_esperado, verificar_plaza=verificar_plaza,
+            incluir_pendientes=incluir_pendientes)
+
+
+def _exigir_mutex_de_cosecha(clave: str, *, w_code: str, tipo: str,
+                             entorno_exp: EntornoExpedicion) -> None:
+    """`cosechar` EXIGE el mutex entre procesos; nunca lo adquiere.
+
+    Misma regla dura que `_exigir_mutex_de_expedicion`: `core/` comprueba y
+    `scripts/` adquiere, y el guard permanente `tests/test_entrypoints_mutex.py`
+    prohíbe que un módulo del core lo tome por su cuenta.
+
+    **Con una salida declarada:** si NADIE en este proceso sostiene una sesión de
+    mutex —el caso de los tests, que no montan el subsistema— se sigue adelante con
+    el candado intraproceso como única exclusión. Exigirlo siempre obligaría a todo
+    test de cosecha a montar el mutex real, que escribe en el directorio de locks
+    del usuario; y la exclusión ENTRE procesos la aporta el frontal, que sí lo
+    adquiere. Lo que no se admite es sostener el mutex de OTRA cosa.
+    """
+    from core.casos import mutex_sesion
+    from core.casos.workspace_model import CaseRef
+
+    if mutex_sesion.vigente(CaseRef(w_code=clave)) is None and _hay_mutex_vivo():
+        raise ExpedicionError(
+            f"cosechar() exige el mutex de la cosecha de {componer_id(w_code, tipo)!r} "
+            f"(entorno={entorno_exp.entorno!r}, usuario={entorno_exp.usuario!r}) "
+            "sostenido ANTES de llamar: core/ nunca lo adquiere por su cuenta. En la "
+            "CLI ya lo hace `scripts/codicert.py`.")
+
+
+def _hay_mutex_vivo() -> bool:
+    """¿Este proceso sostiene ALGUNA sesión de mutex ahora mismo?
+
+    Distingue «el llamador olvidó tomar el mutex de la cosecha» de «este proceso no
+    usa el subsistema de mutex en absoluto», que son cosas distintas y solo la
+    primera es un error. Sin esta distinción, cada test de cosecha tendría que
+    montar el mutex real -- que escribe en el directorio de locks del usuario -- y
+    la regla «ningún test escribe fuera de tmp_path» se rompería por el remedio.
+    """
+    try:
+        from core.casos import mutex_sesion
+
+        return bool(getattr(mutex_sesion, "_SESIONES", None))
+    except Exception:  # noqa: BLE001 — sin subsistema, no hay nada que exigir
+        return False
+
+
+def _cosechar_bajo_candado(w_code: str, tipo: str, *,
+                           entorno_exp: EntornoExpedicion, ordinal: int,
+                           emisor_esperado: str | None, verificar_plaza: bool,
+                           incluir_pendientes: bool) -> list[CertificadoCosechado]:
+    """El cuerpo de `cosechar`, YA dentro de la doble exclusión.
+
+    Separado igual que `_ejecutar_bajo_candado` en F1: nada de lo que sigue cambia
+    de comportamiento, solo de a qué función pertenece.
+    """
+    esperado = emisor_esperado or EMISOR_ESPERADO
+    expedicion = refrescar(w_code, tipo, entorno_exp=entorno_exp, ordinal=ordinal)
+    registro = RegistroCosecha(entorno_exp.raiz / "_codicert_cosecha.jsonl",
+                               entorno=entorno_exp.entorno, usuario=entorno_exp.usuario,
+                               ahora=entorno_exp.ahora)
+    element, exp_id = entorno_exp.exp_crm(w_code)
+    carpeta = Path(entorno_exp.carpeta_certificados(w_code))
+    cosechados: list[CertificadoCosechado] = []
+
+    objetivo = (expedicion.envios if incluir_pendientes else expedicion.cosechables)
+    for envio in objetivo:
+        # Un provisional se identifica por (envío, estado actual) y no por el envío
+        # a secas: son dos artefactos distintos, y el definitivo tiene que poder
+        # cosecharse después sin que la clave del provisional lo dé por hecho.
+        ultimo = max(envio.historico, key=lambda x: x.fecha) if envio.historico else None
+        provisional = not envio.cosechable
+        if provisional and ultimo is None:
+            # Sin histórico no hay estado que poner en el nombre ni hecho que
+            # acreditar. Se salta y el frontal lo sigue enseñando como pendiente.
+            continue
+        estado_en_nombre = ultimo.codigo if provisional else None
+        clave = f"{envio.id_envio}@{ultimo.codigo}" if provisional else envio.id_envio
+        destino = carpeta / nombre_canonico(envio.asunto, w_code, envio.id_envio,
+                                            estado_en_nombre)
+        hecho = registro.hecho(clave)
+
+        if hecho is None:
+            abierta = next((a for a in registro.abiertas()
+                            if a.get("clave") == clave), None)
+            if abierta is not None:
+                # Hubo un intento cuyo desenlace no consta. Se resuelve por
+                # `origen_id`, que es inmediato (§17.4); si el documento no
+                # aparece, NO se reintenta: queda sin verificar y lo mira un humano.
+                doc_id = entorno_exp.gestor.buscar_por_origen_id(
+                    abierta["origen_id"], element=element, exp_id=exp_id)
+                if doc_id is None:
+                    raise ExpedicionError(
+                        f"{envio.id_envio}: hay una cosecha reservada el "
+                        f"{abierta.get('timestamp')} (origen_id "
+                        f"{abierta['origen_id']!r}) que no consta cerrada, y el "
+                        "documento tampoco aparece en el CRM por ese origen_id. "
+                        "Queda SIN VERIFICAR si la subida salió: compruébalo a mano "
+                        "antes de reintentar. No se sube nada.")
+                # **Encontrarlo no es verificarlo** (hallazgo H-02 de la R1). Aquí se
+                # cerraba con `sha256=""` sin mirar los bytes, y eso ANULABA la
+                # detección de la corrida anterior: si `subir_documento` había
+                # abortado porque el CRM devolvía un binario distinto del subido, la
+                # siguiente cosecha encontraba el `origen_id`, daba «ya estaba» y
+                # ninguna corrida posterior volvía a comprobarlo. Se termina la
+                # verificación que quedó a medias: se baja lo que el CRM tiene y se
+                # compara con el certificado que la plataforma da ahora.
+                bajado = entorno_exp.gestor.descargar(doc_id)
+                sha_crm = hashlib.sha256(bajado).hexdigest()
+                sha_esperado = hashlib.sha256(
+                    entorno_exp.codicert.certificado(envio.id_envio)).hexdigest()
+                if sha_crm != sha_esperado:
+                    raise ExpedicionError(
+                        f"{envio.id_envio}: el documento {doc_id} existe en el CRM "
+                        f"pero sus bytes NO coinciden con el certificado "
+                        f"(CRM {sha_crm[:16]}… contra Codicert {sha_esperado[:16]}…). "
+                        "Queda SIN VERIFICAR: NO se da por cosechado y NO se sube "
+                        "otro encima. Revisa ese documento a mano.")
+                registro.cerrar(clave, doc_id=doc_id, sha256=sha_crm)
+                hecho = registro.hecho(clave)
+
+        if hecho is not None:
+            cosechados.append(CertificadoCosechado(
+                id_envio=envio.id_envio, ruta_local=destino,
+                sha256=hecho.get("sha256") or "", doc_id=str(hecho.get("doc_id") or ""),
+                razon_social_emisor=esperado, usuario_emisor=None,
+                ya_estaba=True, provisional=provisional,
+                local_presente=destino.is_file()))
+            continue
+
+        # H-05 (R1): el registro local es NUESTRO y se pierde al cambiar de
+        # worktree -- cuelga de `entorno_exp.raiz`, que en produccion es el cwd. Su
+        # ausencia no autoriza a subir: se sostiene primero contra algo inmediato.
+        # `related_register` lo es (§17.4 lo autoriza expresamente) y ve lo que el
+        # CRM tiene aunque mi fichero haya desaparecido. Un gestor que no sepa
+        # censar por nombre devuelve None y el flujo sigue como antes.
+        ya_en_crm = _censo_inmediato(entorno_exp.gestor, destino.name,
+                                     element=element, exp_id=exp_id)
+        if ya_en_crm is not None:
+            registro.reservar(clave, f"censo:{ya_en_crm}")
+            registro.cerrar(clave, doc_id=ya_en_crm, sha256="")
+            cosechados.append(CertificadoCosechado(
+                id_envio=envio.id_envio, ruta_local=destino, sha256="",
+                doc_id=ya_en_crm, razon_social_emisor=esperado,
+                usuario_emisor=None, ya_estaba=True, provisional=provisional,
+                local_presente=destino.is_file()))
+            continue
+
+        pdf = entorno_exp.codicert.certificado(envio.id_envio)
+        emisor = entorno_exp.leer_emisor(pdf)
+        plaza = entorno_exp.usuario if verificar_plaza else None
+        if not _emisor_coincide(emisor, razon_social=esperado, usuario=plaza):
+            raise ExpedicionError(
+                f"{envio.id_envio}: el certificado declara como emisor "
+                f"{emisor.razon_social!r} (usuario {emisor.usuario!r}) y se esperaba "
+                f"{esperado!r} (usuario {plaza!r}). El art. 17.2 exige constancia de "
+                "la identidad del oferente: no se archiva ni se sube un certificado "
+                "que no acredita al nuestro.")
+
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_bytes(pdf)
+        subido = entorno_exp.gestor.subir(
+            pdf, nombrefinal=destino.name, mime="application/pdf",
+            related=f"{element}:{exp_id}:left",
+            al_reservar=lambda oid, _c=clave: registro.reservar(_c, oid))
+        registro.cerrar(clave, doc_id=subido.doc_id, sha256=subido.sha256)
+        cosechados.append(CertificadoCosechado(
+            id_envio=envio.id_envio, ruta_local=destino, sha256=subido.sha256,
+            doc_id=subido.doc_id, razon_social_emisor=emisor.razon_social,
+            usuario_emisor=emisor.usuario, provisional=provisional))
+    return cosechados
+
+
+def _censo_inmediato(gestor: Any, nombrefinal: str, *, element: str,
+                     exp_id: str) -> str | None:
+    """`doc_id` de un documento del expediente con ese nombre, o `None`.
+
+    Red de seguridad para cuando el registro local no está (H-05). Va por
+    `related_register`, que responde SIN la latencia del listado filtrado y es la
+    unica via que el §17.4 autoriza para sostener una ausencia.
+
+    ⚠️ `related_register` arrastra fantasmas -- sigue listando documentos borrados.
+    Para una guarda anti-duplicado eso cae del lado seguro: un fantasma produce
+    "ya existe" y NO se sube. El precio es no re-subir algo que se borro a
+    proposito, y se prefiere: el error caro es el duplicado.
+
+    Un gestor que no implemente `buscar_por_nombre` devuelve `None` y el flujo
+    sigue como antes -- no se inventa una guarda sobre un puerto que no existe.
+    """
+    buscar = getattr(gestor, "buscar_por_nombre", None)
+    if buscar is None:
+        return None
+    return buscar(nombrefinal, element=element, exp_id=exp_id)
+
+
+def _emisor_coincide(emisor: Any, *, razon_social: str, usuario: str | None) -> bool:
+    from core.certificado_lectura import es_emisor_esperado
+
+    return es_emisor_esperado(emisor, razon_social=razon_social, usuario=usuario)
+
+
+def _carpeta_certificados(w_code: str) -> Path:
+    """`<caso>/04_Output predemanda/Certificados`.
+
+    El certificado de un requerimiento o una OVC **es** output predemanda: no es
+    material que entra (eso es `00_Input` y la sala de lectura) ni work-product de
+    un litigio en curso (`05_Procedimiento`). Decisión del plan de F2, no del spec,
+    que no dice dónde se archiva en local.
+    """
+    from core.casos import case_locator
+
+    return (case_locator.localizar(case_locator.resolve_ref(w_code))
+            / "04_Output predemanda" / "Certificados")
+
+
+def _exp_crm_de(w_code: str) -> tuple[str, str]:
+    """`(element, exp_id)` del expediente extrajudicial al que colgar el documento."""
+    from core import case_manager
+    from core.casos import case_locator
+
+    estado = case_manager.get_case_status(case_locator.resolve_ref(w_code))
+    exp_id = next((str(e.get("id")) for e in estado["expedientes"]
+                   if isinstance(e, dict)
+                   and e.get("element") == _ELEMENT_EXTRAJUDICIAL), None)
+    if exp_id is None:
+        raise ExpedicionError(
+            f"{w_code}: sin expediente 'extrajudiciales' en su _caso.md; no hay de "
+            "qué colgar el certificado en el CRM. Date de alta primero: "
+            f"python -m scripts.crm_ficha --case-id {w_code}")
+    return _ELEMENT_EXTRAJUDICIAL, exp_id
+
+
+class _GestorDocumental:
+    """Puerto del gestor documental. Los tests inyectan un doble en su lugar."""
+
+    def subir(self, contenido: bytes, **kw: Any) -> Any:
+        from core import sudespacho_documentos
+
+        return sudespacho_documentos.subir_documento(contenido, **kw)
+
+    def buscar_por_origen_id(self, origen_id: str, **kw: Any) -> str | None:
+        from core import sudespacho_documentos
+
+        return sudespacho_documentos.buscar_por_origen_id(origen_id, **kw)
+
+    def buscar_por_nombre(self, nombrefinal: str, **kw: Any) -> str | None:
+        """Censo inmediato por nombre canónico. Red de seguridad de H-05: el
+        registro local cuelga del cwd y se pierde al cambiar de worktree; su
+        ausencia no autoriza a subir, y esto es lo que la sostiene."""
+        from core import sudespacho_documentos
+
+        return sudespacho_documentos.buscar_por_nombre(nombrefinal, **kw)
+
+    def descargar(self, doc_id: str) -> bytes:
+        """Los bytes que el CRM tiene. Lo usa la recuperación de una reserva (H-02):
+        encontrar el documento por `origen_id` acredita que existe, no que sea el
+        correcto — y la corrida que lo detectó incorrecto ya no está para decirlo."""
+        from core import sudespacho_documentos
+
+        return sudespacho_documentos.descargar_documento(doc_id)
+
+
+def _leer_emisor_de(pdf: bytes) -> Any:
+    from core import certificado_lectura
+
+    return certificado_lectura.leer_emisor(pdf)
+
+
+#: Reexportados para que quien use `cosechar` no tenga que importar dos módulos más
+#: solo para tipar un doble. Son alias, no copias.
+from core.certificado_lectura import (  # noqa: E402
+    EMISOR_ESPERADO,
+    EmisorCertificado as EmisorLeido,
+)
+from core.sudespacho_documentos import DocumentoSubido as DocumentoEnCrm  # noqa: E402
