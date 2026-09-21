@@ -1,7 +1,15 @@
 """Frontal del envío certificado. Es la ÚNICA puerta humana: `plan` enseña, `enviar` gasta.
 
-    python -m scripts.codicert plan   W-04AKM2 --tipo OVC --plaza Madrid --doc A.pdf
-    python -m scripts.codicert enviar W-04AKM2 --tipo OVC --plaza Madrid --doc A.pdf --confirmar <digest>
+    python -m scripts.codicert plan     W-04AKM2 --tipo OVC --plaza Madrid --doc A.pdf
+    python -m scripts.codicert enviar   W-04AKM2 --tipo OVC --plaza Madrid --doc A.pdf --confirmar <digest>
+    python -m scripts.codicert estado   W-04AKM2 --tipo OVC --plaza Madrid
+    python -m scripts.codicert cosechar W-04AKM2 --tipo OVC --plaza Madrid
+
+Las dos primeras son F1 y las dos últimas F2. Solo `enviar` exige confirmación con
+digest: es la que gasta 16,97 € y manda una comunicación irreversible a un tercero.
+`estado` solo lee; `cosechar` archiva el certificado en el expediente y lo cuelga del
+CRM, las dos cosas reversibles — pero corre bajo mutex, porque dos a la vez subirían
+el mismo certificado dos veces.
 
 La orden manda sobre la variable (spec §8): producción exige `--entorno produccion`
 escrito en la propia orden, aunque `CODICERT_ENTORNO=produccion` esté puesto en el
@@ -110,20 +118,90 @@ def render_plan(plan: exp.Plan, *, usuario: str | None = None) -> str:
     return "\n".join(lineas)
 
 
+def _fecha(f) -> str:
+    return f.strftime("%d/%m/%Y %H:%M") if f else "—"
+
+
+def render_estado(expedicion: exp.Expedicion, partes: list[dict]) -> str:
+    """Lo que el abogado lee para saber a quién se le ha entregado y cuándo.
+
+    Enseña el nivel REQUERIDO delante y el de envío detrás, en ese orden y no al
+    revés: el requerido es el que manda para los plazos (spec §6.1) y el de envío
+    es operativo. No se imprime ninguna fecha agregada de expedición — ese nivel no
+    tiene efecto jurídico y ponerlo invitaría a usarlo.
+    """
+    lineas = [
+        f"EXPEDICIÓN {expedicion.id_personalizado}   [{expedicion.entorno.upper()}]",
+        "",
+        "  POR REQUERIDO (el nivel que cuenta para los plazos):",
+    ]
+    for req in expedicion.por_requerido(partes):
+        lineas.append(f"    {req.etiqueta}")
+        lineas.append(f"      recibido ... {_fecha(req.recibido_en)}")
+        lineas.append(f"      accedido ... {_fecha(req.accedido_en)}   (art. 10.2)")
+    lineas += ["", f"  {'ENVÍO':<12} {'CANAL':<12} {'ÚLTIMO':<34} COSECHABLE"]
+    for e in expedicion.envios:
+        ultimo = max(e.historico, key=lambda x: x.fecha) if e.historico else None
+        etiqueta = f"{ultimo.codigo} · {ultimo.titulo}" if ultimo else "(sin histórico)"
+        lineas.append(f"  {e.id_envio:<12} {e.canal:<12} {etiqueta:<34} "
+                      f"{'sí' if e.cosechable else 'aún no'}")
+    if expedicion.pendientes:
+        lineas += ["", "  PENDIENTES (el hecho aún puede mejorar; no se cosechan):"]
+        lineas += [f"    · {e.id_envio} ({e.canal})" for e in expedicion.pendientes]
+    desconocidos = sorted({c for e in expedicion.envios for c in e.desconocidos})
+    if desconocidos:
+        lineas += [
+            "", "  ⚠️ CÓDIGOS DE ESTADO SIN CLASIFICAR: "
+            + ", ".join(str(c) for c in desconocidos),
+            "     No se tratan como benignos. Míralos en el portal y añádelos",
+            "     a `_FAMILIA_DE` en core/expedicion_certificada.py.",
+        ]
+    if not expedicion.envios:
+        lineas += [
+            "", "  Sin envíos con ese identificador en la ventana consultada.",
+            "  Eso NO prueba que no se expidiera: un censo vacío no es una ausencia",
+            "  (spec §5.2). Comprueba el identificador, el ordinal y la fecha.",
+        ]
+    return "\n".join(lineas)
+
+
+def render_cosecha(cosechados, pendientes) -> str:
+    """Qué se archivó y qué no, con el emisor verificado a la vista."""
+    lineas = ["COSECHA", ""]
+    for c in cosechados:
+        marca = "ya estaba" if c.ya_estaba else "nuevo"
+        lineas.append(f"  {c.id_envio}  [{marca}]  gdocu {c.doc_id}")
+        lineas.append(f"      emisor ... {c.razon_social_emisor} "
+                      f"({c.usuario_emisor or 'usuario no releído en esta corrida'})")
+        lineas.append(f"      local .... {c.ruta_local}")
+        lineas.append(f"      sha256 ... {c.sha256 or '(de una cosecha anterior)'}")
+    if pendientes:
+        lineas += ["", "  NO COSECHADOS (el hecho aún puede mejorar):"]
+        lineas += [f"    · {e.id_envio} ({e.canal})" for e in pendientes]
+    if not cosechados:
+        lineas.append("  Nada que cosechar todavía.")
+    return "\n".join(lineas)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="codicert", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="orden", required=True)
-    for nombre in ("plan", "enviar"):
-        s = sub.add_parser(
-            nombre,
-            help="enseña el plan; no gasta nada" if nombre == "plan"
-            else "ejecuta un plan ya confirmado; gasta",
-        )
+    AYUDA = {
+        "plan": "enseña el plan; no gasta nada",
+        "enviar": "ejecuta un plan ya confirmado; gasta",
+        "estado": "relee en Codicert qué ha recibido cada requerido",
+        "cosechar": "baja los certificados, los archiva y los sube al CRM",
+    }
+    for nombre in ("plan", "enviar", "estado", "cosechar"):
+        s = sub.add_parser(nombre, help=AYUDA[nombre])
         s.add_argument("w_code", help="expediente, p. ej. W-04AKM2")
         s.add_argument("--tipo", required=True, choices=list(exp.TIPOS_COMUNICACION))
-        s.add_argument("--doc", action="append", required=True, dest="docs",
-                       help="documento a adjuntar; repetible")
+        # `--doc` es del plan de ENVÍO: `estado` y `cosechar` solo leen lo que ya
+        # salió, y exigirles los documentos no tendría sentido.
+        if nombre in ("plan", "enviar"):
+            s.add_argument("--doc", action="append", required=True, dest="docs",
+                           help="documento a adjuntar; repetible")
         s.add_argument("--plaza", required=True,
                        help="ciudad canónica o código de equipo (p. ej. Madrid, BaRR3)")
         s.add_argument("--entorno",
@@ -144,6 +222,32 @@ def main(argv: list[str] | None = None) -> int:
         # argumentos, solo para tener qué enseñar en la cabecera del plan (spec
         # §8).
         entorno_exp = exp.entorno_real(plaza=plaza, entorno=entorno)
+
+        if args.orden == "estado":
+            expedicion = exp.refrescar(args.w_code, args.tipo,
+                                       entorno_exp=entorno_exp, ordinal=args.ordinal)
+            print(render_estado(expedicion, entorno_exp.partes_de(args.w_code)))
+            return 0
+
+        if args.orden == "cosechar":
+            # Mismo patrón de mutex que `enviar`, con clave PROPIA: `cosechar`
+            # escribe en el expediente y en el CRM, y dos terminales a la vez
+            # subirían el certificado dos veces -- el registro local no las separa,
+            # porque las dos leerían "no está" antes de que ninguna escribiera.
+            with sostener(
+                    exp.clave_mutex_cosecha(args.w_code, args.tipo, entorno_exp,
+                                            args.ordinal),
+                    avisar=lambda m: print(m, file=sys.stderr),
+                    que="la cosecha de certificados"):
+                cosechados = exp.cosechar(args.w_code, args.tipo,
+                                          entorno_exp=entorno_exp,
+                                          ordinal=args.ordinal)
+                expedicion = exp.refrescar(args.w_code, args.tipo,
+                                           entorno_exp=entorno_exp,
+                                           ordinal=args.ordinal)
+            print(render_cosecha(cosechados, expedicion.pendientes))
+            return 0
+
         plan = exp.planificar(args.w_code, args.tipo, [Path(d) for d in args.docs],
                               entorno_exp=entorno_exp, plaza=plaza, entorno=entorno,
                               ordinal=args.ordinal)

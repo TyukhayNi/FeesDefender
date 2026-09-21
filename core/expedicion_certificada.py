@@ -1669,6 +1669,27 @@ def clave_mutex_expedicion(plan: Plan) -> str:
     return "W-COD" + hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:15].upper()
 
 
+def clave_mutex_cosecha(w_code: str, tipo: str, entorno_exp: EntornoExpedicion,
+                        ordinal: int = 1) -> str:
+    """Identidad de la exclusión de una COSECHA: cuenta + entorno + expedición.
+
+    Misma primitiva y misma forma sintética que `clave_mutex_expedicion` —18
+    caracteres tras `W-`, frente a los 6 de un W-code real, así que no puede
+    confundirse con ninguno del catálogo— pero con prefijo **propio** (`W-CSC`
+    frente a `W-COD`) y la palabra `cosecha` dentro del crudo.
+
+    Que sean claves distintas es deliberado: una cosecha y un envío del mismo
+    expediente tocan recursos distintos —la primera escribe en el gestor documental,
+    el segundo gasta saldo y manda una comunicación— y serializarlos entre sí solo
+    produciría esperas falsas. Lo que sí hay que serializar es cosecha contra
+    cosecha: dos terminales a la vez leerían las dos «no está» antes de que ninguna
+    escribiera, y el certificado subiría dos veces.
+    """
+    crudo = "|".join(["cosecha", entorno_exp.usuario or "", entorno_exp.entorno,
+                      componer_id(w_code, tipo, ordinal)])
+    return "W-CSC" + hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:15].upper()
+
+
 def _candado_de(clave: str) -> threading.Lock:
     """El `threading.Lock` DE ESTE PROCESO para la expedición `clave`.
 
