@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from core import codicert as _cod
@@ -122,20 +123,40 @@ def _fecha(f) -> str:
     return f.strftime("%d/%m/%Y %H:%M") if f else "—"
 
 
-def render_estado(expedicion: exp.Expedicion, partes: list[dict]) -> str:
+def render_estado(expedicion: exp.Expedicion,
+                  partes: list[dict] | Callable[[str], list[dict]]) -> str:
     """Lo que el abogado lee para saber a quién se le ha entregado y cuándo.
 
     Enseña el nivel REQUERIDO delante y el de envío detrás, en ese orden y no al
     revés: el requerido es el que manda para los plazos (spec §6.1) y el de envío
     es operativo. No se imprime ninguna fecha agregada de expedición — ese nivel no
     tiene efecto jurídico y ponerlo invitaría a usarlo.
+
+    `partes` admite un **callable perezoso** además de la lista ya resuelta, y esa
+    es la diferencia que hace que la orden siga sirviendo cuando el expediente no
+    está en esta máquina: resolver las partes exige el caso indexado en `CASOS_ROOT`
+    y una lectura del CRM, mientras que los envíos y sus estados vienen de Codicert
+    y no dependen de ninguna de las dos cosas. Medido corriendo el camino real el
+    2026-09-21: con la lista resuelta antes de llamar, `codicert estado` moría entero
+    y los tres envíos que Codicert sí tenía no llegaban a verse.
     """
     lineas = [
         f"EXPEDICIÓN {expedicion.id_personalizado}   [{expedicion.entorno.upper()}]",
         "",
         "  POR REQUERIDO (el nivel que cuenta para los plazos):",
     ]
-    for req in expedicion.por_requerido(partes):
+    try:
+        resueltas = partes(expedicion.id_personalizado.split(" - ")[0]) \
+            if callable(partes) else partes
+        requeridos = expedicion.por_requerido(resueltas)
+    except Exception as err:  # noqa: BLE001 — el CRM o el catálogo local, indistintos
+        requeridos = ()
+        lineas += [
+            f"    ⚠️ no se pudo resolver: {err}",
+            "    Los envíos de abajo SÍ son válidos: vienen de Codicert, que no",
+            "    depende del expediente local. Lo que falta es a quién atribuirlos.",
+        ]
+    for req in requeridos:
         lineas.append(f"    {req.etiqueta}")
         lineas.append(f"      recibido ... {_fecha(req.recibido_en)}")
         lineas.append(f"      accedido ... {_fecha(req.accedido_en)}   (art. 10.2)")
@@ -235,7 +256,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.orden == "estado":
             expedicion = exp.refrescar(args.w_code, args.tipo,
                                        entorno_exp=entorno_exp, ordinal=args.ordinal)
-            print(render_estado(expedicion, entorno_exp.partes_de(args.w_code)))
+            # perezoso a proposito: ver el docstring de `render_estado`
+            print(render_estado(expedicion, entorno_exp.partes_de))
             return 0
 
         if args.orden == "cosechar":

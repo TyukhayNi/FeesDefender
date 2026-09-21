@@ -99,6 +99,26 @@ def test_estado_y_cosechar_NO_exigen_doc():
         assert parser_ok, orden
 
 
+def test_estado_SIGUE_dando_los_envios_aunque_el_caso_no_este_en_LOCAL():
+    """Lo que `estado` lee está en Codicert, no en el disco.
+
+    Medido corriendo el camino real el 2026-09-21: `codicert estado W-04AKM2` murió
+    entero con «el caso no está indexado en el catálogo local», y los tres envíos que
+    Codicert sí tenía no llegaron a verse. El nivel requerido necesita las partes del
+    CRM y el expediente local para resolverlas; **los envíos y sus estados, no**.
+    Perder lo segundo por falta de lo primero es tirar la información que se pedía.
+    """
+    def sin_caso(_w):
+        raise exp.ExpedicionError("el caso no está indexado en el catálogo local")
+
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(_envio("006a"),))
+    texto = cli.render_estado(e, sin_caso)
+    assert "006a" in texto                        # los envíos se ven igual
+    assert "no está indexado" in texto            # y se dice POR QUÉ falta el resto
+    assert "REQUERIDO" in texto.upper()
+
+
 def test_estado_traduce_un_fallo_del_CRM_a_un_mensaje_legible(monkeypatch, capsys):
     """El operador es un abogado: una traza de Python no es lo que debe leer."""
     def revienta(**kw):
