@@ -118,3 +118,71 @@ def test_las_paginas_del_acta_se_reconocen_por_el_sello_temporal():
                "Este certiﬁcado contiene un sello temporal y se encuentra ﬁrmado",
                "reproducción del documento", "más reproducción"]
     assert cert.paginas_de_acta_de_textos(paginas) == (1, 2)
+
+
+# --- sobre PDF de verdad, no sobre cadenas ---------------------------------
+#
+# Las funciones de arriba trabajan con texto ya extraído, que es lo que las hace
+# probables. Pero entre el PDF y ese texto está `pypdf`, y ahí es donde el
+# certificado real puede romper lo que la cadena sintética no rompe. Estas pruebas
+# fabrican un PDF de verdad para cubrir ese tramo, que si no queda solo acreditado
+# por una comprobación a mano contra tres certificados de producción — buena, pero
+# que no corre en la suite y no protege de una regresión.
+
+reportlab = pytest.importorskip("reportlab", reason="hace falta para fabricar el PDF")
+
+
+def _pdf(paginas: list[str]) -> bytes:
+    """Un PDF con una página por cadena, con capa de texto."""
+    import io
+
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer)
+    for texto in paginas:
+        y = 800
+        for linea in texto.splitlines():
+            c.drawString(40, y, linea)
+            y -= 14
+        c.showPage()
+    c.save()
+    return buffer.getvalue()
+
+
+def test_leer_emisor_sobre_un_PDF_de_verdad():
+    """El tramo PDF→texto→emisor, entero."""
+    pdf = _pdf([PAGINA_1, "reproducción del documento enviado"])
+    e = cert.leer_emisor(pdf)
+    assert e.razon_social == "EV MMC SPAIN, S.L.U."
+    assert e.usuario == "madrid.bd"
+
+
+def test_leer_emisor_encuentra_el_usuario_aunque_caiga_en_OTRA_pagina():
+    """M-6: el bloque «CERTIFICADO … nombre de usuario X» no siempre está en la 1.
+
+    Su posición depende de cuántas incidencias traiga el histórico, así que el
+    usuario se busca en el documento entero y la razón social solo en la primera.
+    """
+    cabeza, cola = PAGINA_1.split("CERTIFICADO", 1)
+    pdf = _pdf([cabeza, "CERTIFICADO" + cola, "reproducción"])
+    e = cert.leer_emisor(pdf)
+    assert e.razon_social == "EV MMC SPAIN, S.L.U." and e.usuario == "madrid.bd"
+
+
+def test_paginas_de_acta_sobre_un_PDF_de_verdad():
+    marca = "Este certiﬁcado contiene un sello temporal y se encuentra ﬁrmado"
+    pdf = _pdf([marca, marca, "reproducción", "más reproducción"])
+    assert cert.paginas_de_acta(pdf) == (1, 2)
+
+
+def test_un_PDF_ROTO_no_revienta_con_el_error_de_pypdf():
+    """El contrato del módulo: solo falla con `CertificadoIlegibleError`."""
+    with pytest.raises(cert.CertificadoIlegibleError, match="no se puede abrir|PDF"):
+        cert.leer_emisor(b"esto no es un PDF ni de lejos")
+
+
+def test_un_PDF_VALIDO_pero_que_no_es_un_certificado_se_declara():
+    """Un PDF legible sin la estructura del acta: se para, no se inventa emisor."""
+    with pytest.raises(cert.CertificadoIlegibleError, match="Datos del emisor"):
+        cert.leer_emisor(_pdf(["una factura cualquiera", "segunda página"]))
