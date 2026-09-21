@@ -928,6 +928,129 @@ def estado_de(crudo: dict) -> EstadoCertificado:
                              fecha=fecha, detalle=crudo.get("detalle"))
 
 
+#: `tipo` del listado -> canal nuestro. Medido el 2026-09-21 (M-7): la API usa una
+#: letra y `tipo_titulo` la traduce ('b' -> "Burofax", 'c' -> "Entrega Electrónica
+#: Certificada"). El canal interno NO distingue correo de SMS: los dos son 'c' para
+#: la plataforma, y lo que los separa —`tipo_entrega`— es del envío, no de la
+#: lectura. Quien necesite esa distinción la tiene en el registro de intención.
+CANAL_DE_TIPO: dict[str, str] = {"b": "burofax", "c": "electronico"}
+
+#: El estado en que cada canal culmina. Mientras no se alcance, el hecho acreditado
+#: PUEDE MEJORAR y el certificado bajado hoy quedaría corto: el burofax pasa de 17
+#: a 19 (medido: tres días después) y la entrega electrónica de 21 a 20.
+_CULMINACION: dict[str, int] = {"burofax": 19, "electronico": 20}
+
+
+@dataclass(frozen=True)
+class EnvioObservado:
+    """Un envío tal como la plataforma lo cuenta, con los hechos ya derivados.
+
+    Los hechos se derivan del HISTÓRICO completo, nunca del estado del listado
+    (M-1): el listado da el último evento, y el último no es ni el más temprano ni
+    el más fuerte. Las dos cosas importan y son ejes distintos.
+    """
+
+    id_envio: str
+    tipo: str
+    asunto: str
+    destinatario: str
+    id_personalizado: str
+    fecha_envio: datetime
+    historico: tuple[EstadoCertificado, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "historico", tuple(self.historico))
+
+    @property
+    def canal(self) -> str:
+        return CANAL_DE_TIPO.get(self.tipo, f"desconocido:{self.tipo}")
+
+    def _primera(self, *familias: str) -> datetime | None:
+        """La fecha MÁS TEMPRANA de las entradas de esas familias.
+
+        `min`, no «la última»: el art. 17.2 cuenta desde la recepción, y la primera
+        recepción acreditada es la que abre el plazo. Tomar la última desplazaría el
+        mes del art. 17.4 — medido, tres días en el burofax 006catfpdv6 (M-1).
+        """
+        fechas = [e.fecha for e in self.historico if e.familia in familias]
+        return min(fechas) if fechas else None
+
+    @property
+    def recibido_en(self) -> datetime | None:
+        """Recepción acreditada (art. 17.2). El acceso también es recepción."""
+        return self._primera(RECEPCION, ACCESO)
+
+    @property
+    def accedido_en(self) -> datetime | None:
+        """Acceso al contenido íntegro (art. 10.2). Solo el 20."""
+        return self._primera(ACCESO)
+
+    @property
+    def cerrado_en(self) -> datetime | None:
+        """Cierre sin entrega. El 28 es un hecho con valor afirmativo, no un error."""
+        return self._primera(SIN_ENTREGA)
+
+    @property
+    def desconocidos(self) -> tuple[int, ...]:
+        """Códigos del histórico que nadie ha clasificado. Se declaran."""
+        return tuple(sorted({e.codigo for e in self.historico
+                             if e.familia == DESCONOCIDO}))
+
+    @property
+    def cosechable(self) -> bool:
+        """¿El certificado de este envío ya es DEFINITIVO?
+
+        Lo es cuando el envío alcanzó la culminación de su canal (19 el burofax, 20
+        la entrega electrónica) o se cerró sin entrega (28/40/42). Antes no: un
+        certificado bajado con el envío en 17 o en 21 acredita menos de lo que
+        acabará acreditando, y como el nombre canónico del spec §7.1 no lleva el
+        estado, el provisional ocuparía el sitio del bueno.
+
+        Un código desconocido NO hace cosechable: no se sabe si culmina algo.
+        """
+        if self.desconocidos:
+            return False
+        codigos = {e.codigo for e in self.historico}
+        if _CULMINACION.get(self.canal) in codigos:
+            return True
+        return any(clasificar(c) == SIN_ENTREGA for c in codigos)
+
+
+@dataclass(frozen=True)
+class Expedicion:
+    """Los envíos de un `id_personalizado`, leídos de la plataforma.
+
+    El nivel de expedición es **comodidad de informe y no tiene efecto jurídico**
+    (spec §6.1): aquí no se calcula ninguna fecha agregada, justamente para que
+    nadie la use. El nivel que manda es el requerido, y lo arma `por_requerido`.
+    """
+
+    id_personalizado: str
+    entorno: str
+    envios: tuple[EnvioObservado, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "envios", tuple(self.envios))
+
+    @property
+    def cosechables(self) -> tuple[EnvioObservado, ...]:
+        return tuple(e for e in self.envios if e.cosechable)
+
+    @property
+    def pendientes(self) -> tuple[EnvioObservado, ...]:
+        return tuple(e for e in self.envios if not e.cosechable)
+
+    @property
+    def completa(self) -> bool:
+        """Todos los envíos culminaron.
+
+        Con cero envíos es `False`: no hay nada que dar por completo, y devolver
+        `True` sobre el vacío sería el mismo censo negativo que el spec §5.2
+        prohíbe — «no encuentro envíos» no es «la expedición terminó».
+        """
+        return bool(self.envios) and not self.pendientes
+
+
 @dataclass(frozen=True)
 class EntornoExpedicion:
     """Puerto único de inyección: transporte, CRM, reloj, raíz de escritura y entorno.
