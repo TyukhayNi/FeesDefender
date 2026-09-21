@@ -1,7 +1,7 @@
 """Transporte de la API de Codicert (Servicios de MailCertificado S.L.).
 
 Cliente puro: **no sabe qué es un expediente**. Recibe datos ya resueltos y devuelve lo
-que dice el servidor. El criterio del despacho vive en `core/expedicion_certificada.py`.
+que dice el servidor. El criterio del jurídico vive en `core/expedicion_certificada.py`.
 
 Contrato y mediciones: `docs/superpowers/specs/2026-09-17-envio-certificado-codicert-design.md`.
 """

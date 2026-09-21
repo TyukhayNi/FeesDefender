@@ -20,8 +20,9 @@ certificados** y producir la versión **aportable** como prueba.
 > (`W-04AKM2 - OVC`) en vez de inventar otra.
 >
 > **Rev. 10 (2026-09-17).** Se cierra del todo el hueco **1** con el literal del SMS, y un
-> certificado real de OVC confirma dos cosas sobre envíos del despacho: el acta electrónica **lista
-> los ficheros uno a uno con su huella** —partir A y B quedaría reflejado— y el discriminante
+> certificado real de OVC confirma dos cosas sobre envíos reales de E&V: el acta electrónica
+> **lista los ficheros uno a uno con su huella** —partir A y B quedaría reflejado— y el
+> discriminante
 > `CONFIDENCIAL - CONDICIONES` **se ve funcionar** sobre un documento que salió de verdad.
 >
 > **Rev. 9 (2026-09-17).** Primera expedición real en sandbox (1,06 € de los 20 €). Los dos
@@ -95,7 +96,7 @@ evitable.
 
 ### 1.1 Los tres canales son DOS endpoints, y esto es lo que más cambia el diseño
 
-| Canal del despacho | Endpoint | Límite duro |
+| Canal | Endpoint | Límite duro |
 |---|---|---|
 | Burofax postal | `POST /envios/burofax` | `destinatarios` array de **exactamente 1**; adjuntos **solo PDF**; `pais` solo `"España"` |
 | Correo certificado | `POST /envios/entrega-electronica-certificada` con `tipo_entrega: "correo"` | adjuntos 1..10 |
@@ -194,7 +195,7 @@ todos, que es el suelo seguro.
 ### 1.3 Los estados: son 37, y el que faltaba es el que cierra
 
 La plataforma documenta **37** códigos (la rev. 1 dijo 43; recontados sobre la documentación
-renderizada). Para el despacho cuentan estos, y la frontera entre los tres primeros decide plazos:
+renderizada). Para este motor cuentan estos, y la frontera entre los tres primeros decide plazos:
 
 | Código | Título | Qué significa para nosotros |
 |---|---|---|
@@ -351,8 +352,8 @@ Tres capas, como el resto del proyecto: CLI → core → CRM/Codicert.
 
 - **`core/codicert.py`** — transporte puro: token con su vencimiento, los dos endpoints de envío,
   estados, certificado, listado, crédito. No sabe qué es un expediente.
-- **`core/expedicion_certificada.py`** — la lógica del despacho: planificar, ejecutar, refrescar,
-  cosechar.
+- **`core/expedicion_certificada.py`** — el criterio del jurídico: planificar, ejecutar,
+  refrescar, cosechar.
 - **`core/certificado_aportable.py`** — anatomía del certificado, recorte y manifiesto.
 - **`core/sudespacho_documentos.py`** — **la subida al gestor documental**, con el contrato del
   §17.1 de `INTEGRACION_SUDESPACHO.md` dentro. Va en la familia `sudespacho_*` aunque este spec sea
@@ -365,7 +366,7 @@ ya tiene `get_relaciones(element, exp_id)`, que es exactamente eso.
 
 ### 4.2 El puerto de inyección, que es lo que hace probable el diseño
 
-Las cuatro funciones del despacho reciben un **`EntornoExpedicion`** por keyword, con default
+Las cuatro funciones del jurídico reciben un **`EntornoExpedicion`** por keyword, con default
 real, en la línea del `Entorno` de `scripts/repository_cli.py`:
 
 ```
@@ -399,13 +400,13 @@ cierra con el `IdEnvio` al recibir la respuesta. No es una segunda verdad sobre 
 el rastro de nuestra intención, y sin él un timeout deja un burofax pagado y sin `IdEnvio`
 recuperable, porque el listado no filtra por el único campo que lo identificaría.
 
-**El denominador es el Market Center, no el despacho** (rev. 2). Quien pagina `GET /envios` no ve
-los envíos del despacho: ve los de `barcelona.bd`, la cuenta compartida por la que sale todo el bad
-debt de la plaza. Ese volumen **está sin medir**, y por eso la consulta se acota siempre por
+**El denominador es el Market Center, no el jurídico** (rev. 2). Quien pagina `GET /envios` no ve
+los envíos del jurídico: ve los de `barcelona.bd`, la cuenta compartida por la que sale todo el
+bad debt de la plaza. Ese volumen **está sin medir**, y por eso la consulta se acota siempre por
 `fecha_inicio`/`fecha_fin`. Conviene además que conste: esa credencial da al motor **lectura de
-todo el tráfico certificado de la plaza**, incluidas comunicaciones ajenas al despacho.
+todo el tráfico certificado de la plaza**, incluidas comunicaciones ajenas al jurídico.
 
-## 5. Quién recibe qué: las reglas del despacho
+## 5. Quién recibe qué: las reglas del jurídico
 
 Entrada: el expediente y el **tipo de comunicación**. Del CRM salen las partes contrarias por
 `get_relaciones`, y `clientes_contrarios` tiene los campos necesarios —`nombre`, `1apellido`,
@@ -607,7 +608,7 @@ En el burofax `006ar9bel3n` se subieron **tres** ficheros y el acta lista **uno 
 `SONDA_PRIMERO.pdf` y `SONDA_SEGUNDO.pdf` **con sus dos huellas**, y coinciden con las calculadas
 en local antes de enviar.
 
-**Y se confirma sobre un envío real del despacho**, no solo sobre la sonda: el certificado de la
+**Y se confirma sobre un envío real de E&V**, no solo sobre la sonda: el certificado de la
 OVC `006catetonk` lista **dos** ficheros con sus dos huellas, y su reproducción respeta ese orden
 —tres páginas del primero, una del segundo—. Que en ese envío el requerimiento, la OVC y las
 condiciones fueran **un solo fichero** es decisión de quien lo compuso, no imposición de la
@@ -788,7 +789,7 @@ pruebas, «así no se cobrará nada».
 | **F2** | `refrescar` + `cosechar` + `core/sudespacho_documentos.py` + `estado`/`cosechar` | Sí: cierra la prueba del envío |
 | **F3** | `core/certificado_aportable.py` + el aportable y su manifiesto | Sí: produce lo que va al juzgado |
 
-**Lo que se prueba con doble y lo que no.** Con el puerto del §4.2, la lógica del despacho se
+**Lo que se prueba con doble y lo que no.** Con el puerto del §4.2, el criterio del jurídico se
 prueba entera contra dobles. Lo que **no se puede probar sin enviar de verdad** se nombra aquí para
 que nadie crea que la suite lo cubre: la anatomía del certificado de burofax, la portada del
 burofax y el texto de la notificación SMS. Y la guarda de idempotencia viene **con su control

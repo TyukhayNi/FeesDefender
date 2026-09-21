@@ -1,4 +1,4 @@
-"""El criterio del despacho para expedir una comunicación certificada.
+"""El criterio del jurídico para expedir una comunicación certificada.
 
 Spec: `docs/superpowers/specs/2026-09-17-envio-certificado-codicert-design.md`.
 El transporte vive en `core/codicert.py` y no sabe qué es un expediente.
@@ -307,7 +307,7 @@ def destinatarios_de(partes: list[dict]) -> tuple[list[EnvioPrevisto], list[str]
         base = dict(grupo[0])
         # Se captura ANTES de sobrescribir "nombre" (y de vaciar los apellidos): si no,
         # el fallback de ficha_postal (a_atencion or nombre completo) recupera el
-        # nombre YA conjunto, no la persona de contacto (regla del despacho: "nombre"
+        # nombre YA conjunto, no la persona de contacto (regla del jurídico: "nombre"
         # lleva a los dos, "a_atencion" a uno).
         contacto = base.get("a_atencion") or nombre_completo_de(base)
         base["nombre"] = " Y ".join(nombre_completo_de(g) for g in grupo)
@@ -633,7 +633,7 @@ class RegistroIntencion:
         humano distinga dos envíos del mismo canal, y para detectar que el contenido
         cambió entre dos ejecuciones -- y no permite reconstruir el dato.
         `id_personalizado` no es un dato personal —es un código de expediente—, y
-        `entorno`/`usuario` tampoco —es la cuenta propia del despacho, no la del
+        `entorno`/`usuario` tampoco —es la cuenta propia del jurídico, no la del
         destinatario—: los tres van en claro.
         """
         clave = uuid.uuid4().hex
