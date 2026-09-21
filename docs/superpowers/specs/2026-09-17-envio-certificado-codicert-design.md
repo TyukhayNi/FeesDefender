@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "11"
+rev: "12"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,16 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 12 (2026-09-21).** Actualizada al construir **F2**, con diez mediciones de producción
+> en solo lectura (0,00 € gastados). Tres cambian el diseño: el **§1.3** gana **seis códigos de
+> estado vivos** que no clasificaba —y la regla de que lo no clasificado se declara, nunca se
+> presume benigno—; el **§7.2** documenta **dónde** nombra el certificado a su emisor y por qué la
+> verificación del art. 17.2 tiene que acotarse a su bloque (la razón social aparece nueve veces
+> en el documento y una en el sitio bueno), más que el PDF **se cachea** en vez de re-emitirse; y
+> el **§9** cierra la vía de acreditación del mapeo ciudad→usuario, que el certificado sí lleva.
+> Se añaden tres certificados a la tabla de anatomía del §7.2, y uno de ellos tumba el «seis
+> páginas de acta» del burofax.
+>
 > **Rev. 11 (2026-09-17).** Lectura contra **producción** con `madrid.bd`. Se cierra el hueco **3**
 > —la portada del burofax **no entra en la reproducción**, medido por diferencia exacta— y con él
 > los ocho. La gramática del identificador del §3 **se alinea con la que ya está en uso**
@@ -213,6 +223,38 @@ producción** que el §2 pone de ejemplo. El **19** faltaba hasta la rev. 6 y es
 termina un burofax entregado en mano. Sin clasificarlos, una expedición real no cerraría nunca.
 
 Y se repite aquí porque el motor tiene que codificarlo: **«Procesado» no es «Entregado»**.
+
+**Y faltaban SEIS más, todos vivos** (rev. 12, medidos el 2026-09-21 leyendo el histórico de 22
+envíos de `madrid.bd` de tres semanas). Ninguno es terminal, pero un motor que clasificara solo
+los nueve de arriba dejaría envíos reales sin clasificar:
+
+| Código | Título | Dónde aparece |
+|---|---|---|
+| 3 | Enviado a imprenta para su impresión | burofax, primer estado |
+| 8 | Pendiente de recogida | burofax |
+| 11 | En tránsito a la ciudad de destino | burofax |
+| 12 | En reparto | burofax |
+| 14 | Recordatorio lectura **enviado** | entrega electrónica — el 21 es el *entregado* |
+| **31** | **Incidencia** | burofax. Dos veces, con detalles distintos: «No es posible realizar la entrega, esta se está gestionando» y «Dirección de entrega no encontrada» |
+
+**La regla que el motor codifica, y que importa más que la tabla:** un código que **no** esté
+clasificado no cae en «en curso» por defecto. Se declara **desconocido** y el frontal lo nombra.
+Si mañana la plataforma añade un cierre nuevo, con el default benigno la expedición no terminaría
+nunca y nadie se enteraría.
+
+**El histórico dice cosas que el listado calla, y la diferencia son días de plazo.** `GET /envios`
+devuelve **un solo estado**, el último; `GET /envios/{id}/estados`, el histórico entero. En el
+burofax `006catfpdv6` el listado dice `19 · Entregado con albarán` del **17-09** y el histórico
+trae un `17 · Entregado` del **14-09**. La fecha que cuenta para el art. 17.2 y para el mes del
+art. 17.4 es **la más temprana acreditada**: leer el listado se equivocaría en tres días en un
+cómputo de procedibilidad. Por eso `refrescar` lee el histórico de cada envío, uno a uno.
+
+Y el último evento tampoco es el más fuerte: en `006catetonk` el histórico va `21` (11-09), `21`
+(12-09) y **`20`** (12-09). Cronología y jerarquía jurídica son ejes distintos.
+
+**El `detalle` del 20 identifica al lector**, lo que matiza el hallazgo API-01 de la R1 («campos
+de verificación vacíos: Leído no identifica a nadie»): dice *«El destinatario ‹email› leyó la
+comunicación desde la ip ‹ip›»*. Por esa vía sí identifica.
 
 ### 1.4 El coste, que no es simétrico, y el presupuesto de bytes
 
@@ -673,6 +715,13 @@ Sobre el certificado `006casm113n` (gdocu 42990 del W-04A6LI, 6 páginas):
   |---|---|---|---|
   | Entrega electrónica `006casm113n` | 6 | 1-4 | 5-6 |
   | **Burofax `006ar9bel3n`** | **10** | **1-6** | **7-10** |
+  | Entrega electrónica `006catetonk` | 8 | 1-4 | 5-8 |
+  | Burofax `006catfpdv6` | 10 | 1-6 | 7-10 |
+  | **Burofax `006cdgfj5no`** | **9** | **1-5** | **6-9** |
+
+  Las tres últimas, medidas el 2026-09-21, y la última añade un dato que F3 necesita: **el acta
+  del burofax no mide siempre seis páginas**. Crece con el histórico de incidencias, así que no
+  hay número fijo que valga y el discriminante del sello temporal no es una comodidad.
 
   El acta del burofax trae dos secciones que la electrónica no: el **histórico de estados** con sus
   incidencias —«destinatario ausente en el primer intento»— y una **copia del albarán de entrega
@@ -684,6 +733,33 @@ Sobre el certificado `006casm113n` (gdocu 42990 del W-04A6LI, 6 páginas):
   «Madrid, a 17 de septiembre de 2026». Es la confirmación estructural de la regla que ya estaba
   escrita: un certificado bajado el día del envío dirá «Procesado», y hay que **volver a bajarlo**
   cuando el histórico haya avanzado.
+
+  ⚠️ **Matizado el 2026-09-21: no se emite en cada descarga, se emite UNA VEZ y se cachea.** Los
+  tres certificados bajados ese día siguen diciendo «Madrid, a **17** de septiembre», que es
+  cuando alguien los bajó por primera vez, y **dos descargas seguidas devuelven los mismos bytes
+  y el mismo `sha256`**. Lo que **no** está medido es si se regenera cuando el estado avanza. La
+  consecuencia de diseño para F2: el `sha256` del certificado **no** sirve como clave de
+  idempotencia —identificaría «este envío en este estado», no «este envío»—, así que la clave es
+  el `IdEnvio`.
+
+- **Cómo nombra el certificado a su emisor — y por qué importa dónde se lee** (2026-09-21, y es
+  lo que hace verificable el art. 17.2). Lo nombra **dos veces**, y son dos hechos distintos:
+
+  | Dónde | Qué da |
+  |---|---|
+  | `1. Datos del emisor.` → `Nombre y apellidos/Razón social:` + `CIF:` | la **persona jurídica** (`EV MMC SPAIN, S.L.U.`), idéntica en las siete plazas |
+  | bloque `CERTIFICADO` → «…del usuario dado de alta en la web www.codicert.io con nombre de usuario **madrid.bd**.» | la **cuenta emisora**, que es la plaza |
+
+  ⚠️ **`EV MMC SPAIN` aparece NUEVE veces en el documento entero y UNA sola en la página 1.** Las
+  otras ocho están en la reproducción de nuestro propio requerimiento, que nombra a E&V sin
+  parar. **Una búsqueda global de la razón social daría «emisor correcto» sobre el certificado de
+  otro remitente que nos mencione**, que es exactamente el documento que un tercero podría
+  aportar: el control sería inerte. La verificación se hace **solo dentro del bloque acotado**
+  entre `1. Datos del emisor.` y `2. Datos del receptor.`. Implementado así en
+  `core/certificado_lectura.py`, con su control negativo.
+
+  Detalle fino que ya costó un falso resultado: el literal termina en `madrid.bd.`, con el punto
+  de la frase pegado al login.
 
 ### 7.3 Cómo se localiza B dentro de la reproducción
 
@@ -799,6 +875,18 @@ discriminante del §3 es lo que hace que ese mutante pueda existir.
 **El mapeo ciudad→usuario no es verificable en sandbox**, donde hay una sola credencial: todas las
 plazas colapsan en el mismo usuario. Se acredita la primera vez en producción, leyendo el remitente
 del certificado emitido.
+
+> **Rev. 12 (2026-09-21), al construir F2.** El certificado **sí lleva la cuenta emisora**, en su
+> bloque `CERTIFICADO` («con nombre de usuario `madrid.bd`»), así que la vía de acreditación
+> existe y `cosechar` la ejerce en cada cosecha (§7.2). Queda acreditado para **Madrid**. Las
+> otras seis siguen sin medir, y no por falta de instrumento: **de las siete plazas solo Madrid
+> tiene credencial cargada** en la máquina — Barcelona, Bilbao, San Sebastián, Santander, Sevilla
+> y Valencia no están ni en el registro de usuario ni en el `.env`.
+>
+> **Y el sandbox no deja entrar:** su `POST /usuarios/acceso` devuelve
+> `400 "Error interno, contacte con el administrador"`, que no es «credenciales inválidas». El
+> humo de F2 va por eso contra producción, y **solo en lectura**, con el crédito comprobado antes
+> y después (medido: 861,0205 € en las dos, 0,0000 € gastados).
 
 ## 10. Huecos declarados
 
