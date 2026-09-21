@@ -930,3 +930,27 @@ defecto aquí no se arregla con un `git revert`.
 
 La R2 la ejecutará **Codex** si tiene cupo a partir del 2026-09-19; si no, Claude Code en sesión
 independiente con el mismo registro sin maquillar.
+
+### 12.2 La R2 se hizo; la R3 queda dispensada — y eso se declara, no se disimula
+
+**La R2 la ejecutó Codex el 2026-09-21** sobre el diff (commit `52c2c0e`, 8.102 líneas): veredicto
+**NO-SHIP**, 16 hallazgos —7 `alta`, 9 `media`— y **los dieciséis remediados** ese mismo día. La
+adjudicación, hallazgo por hallazgo, está en el §13 del plan; el informe literal, en su acta
+hermana. Esta ronda no leyó: **corrió**, con sondas ejecutables que reproducían cada defecto.
+
+**No hay R3, por decisión expresa de Nikolai del 2026-09-21.** Es suya por construcción: el techo
+duro de `CLAUDE.md` reserva la tercera ronda a su autorización, y aquí la denegó. Lo que sigue es
+la consecuencia, escrita para que nadie la lea de más:
+
+- **Los dieciséis remedios y la pasada de nomenclatura no los ha mirado ningún revisor
+  independiente.** Sobre ellos la cobertura es **AUSENTE**. No están refutados: están **sin
+  verificar**, que es distinto y menos tranquilizador.
+- **Lo que sí los acredita, y no es lo mismo:** cada remedio se escribió con su control visto
+  **en rojo antes** del arreglo, y la suite completa va verde con las dos semillas fijas. Eso
+  prueba que cada remedio hace lo que dice hacer. **No** prueba que ninguno haya abierto algo que
+  nadie fue a buscar — para eso hace falta un lector con interés contrario, y no lo hubo.
+- **La pasada de nomenclatura toca `core/`**, que el contrato no exime nunca «por inocente que
+  parezca el diff». No se declara exenta por trivial —esa lectura me correspondería a mí, que soy
+  la parte revisada, y la regla de cierre dice que lo que hay que argumentar como trivial no lo
+  es—: se declara **dispensada por quien tiene el techo duro**. La diferencia importa, porque una
+  exención es un juicio sobre el diff y una dispensa es una decisión sobre el coste.
