@@ -1361,6 +1361,24 @@ class EntornoExpedicion:
     entorno: str
     usuario: str | None = None
 
+    # --- puertos que solo usa F2 (`cosechar`) --------------------------------
+    # Los cuatro son `None` por defecto a propósito: los tests de F1 construyen
+    # este dataclass con los siete campos de arriba y no deben cambiar. `cosechar`
+    # exige los cuatro y para si falta alguno, en vez de caer en un default que
+    # escribiría en el árbol real.
+    #
+    #: Carpeta donde se archiva el certificado íntegro, dada del w_code.
+    #: `entorno_real` la resuelve contra el árbol del caso; los tests pasan un
+    #: lambda a `tmp_path`, que es lo que hace cumplible la regla de `CLAUDE.md`
+    #: §Tests sin escotilla.
+    carpeta_certificados: Callable[[str], Path] | None = None
+    #: Puerto del gestor documental del CRM (`core.sudespacho_documentos`).
+    gestor: Any = None
+    #: `w_code -> (element, exp_id)` del expediente CRM al que colgar el documento.
+    exp_crm: Callable[[str], tuple[str, str]] | None = None
+    #: Lector del emisor de un certificado PDF (`core.certificado_lectura`).
+    leer_emisor: Callable[[bytes], Any] | None = None
+
 
 @dataclass(frozen=True)
 class Confirmacion:
@@ -2049,4 +2067,206 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
         plaza=plaza,
         entorno=entorno,
         usuario=usuario,
+        carpeta_certificados=_carpeta_certificados,
+        gestor=_GestorDocumental(),
+        exp_crm=_exp_crm_de,
+        leer_emisor=_leer_emisor_de,
     )
+
+
+# ---------------------------------------------------------------------------
+# F2 — la cosecha: del envío a la prueba archivada
+# ---------------------------------------------------------------------------
+
+#: Caracteres que Windows no admite en un nombre de fichero. El asunto viene del
+#: CRM y puede traerlos: medido, hay identificadores de producción con `/` dentro
+#: (`W-02XE7E/W-046HM4`), y una barra sin sanear convierte el nombre en una ruta.
+_PROHIBIDOS_EN_NOMBRE = '<>:"/\\|?*'
+
+
+def nombre_canonico(asunto: str, w_code: str, id_envio: str) -> str:
+    """`<ASUNTO> - <REF>-<codigo>.pdf`, la convención del despacho (spec §7.1).
+
+    Medida sobre el certificado del W-04A6LI:
+    `RESPUESTA REQUERIMIENTO - W-04A6LI-006casm113n.pdf`. `REF` es el W-code, no el
+    `id_personalizado` completo: el asunto ya suele llevar el tipo dentro.
+
+    Un asunto vacío no produce ` - W-...pdf`: cae en `CERTIFICADO`. Un nombre que
+    empieza por separador es difícil de teclear y de leer en una lista.
+    """
+    limpio = "".join(" " if c in _PROHIBIDOS_EN_NOMBRE else c for c in asunto)
+    limpio = " ".join(limpio.split()).strip(". ") or "CERTIFICADO"
+    return f"{limpio} - {w_code}-{id_envio}.pdf"
+
+
+@dataclass(frozen=True)
+class CertificadoCosechado:
+    """Un certificado ya archivado y colgado del expediente en el CRM."""
+
+    id_envio: str
+    ruta_local: Path
+    sha256: str
+    doc_id: str
+    razon_social_emisor: str
+    usuario_emisor: str | None = None
+    ya_estaba: bool = False
+
+
+def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
+             ordinal: int = 1, emisor_esperado: str | None = None,
+             verificar_plaza: bool = True) -> list[CertificadoCosechado]:
+    """Baja el certificado de cada envío culminado, lo verifica, lo archiva y lo sube.
+
+    El orden importa y es el único seguro: **verificar el emisor ANTES de escribir
+    nada**. Un certificado que no firmó nuestro emisor no es nuestra prueba (art.
+    17.2) y no tiene por qué entrar ni en el expediente ni en el CRM.
+
+    **Solo se cosecha lo culminado** (`EnvioObservado.cosechable`). Un envío en 17 o
+    en 21 todavía puede mejorar, y como el nombre canónico del spec §7.1 no lleva el
+    estado, el certificado provisional ocuparía el sitio del definitivo. Lo pendiente
+    no es un error: se queda fuera de la lista y el frontal lo enseña aparte.
+
+    **La idempotencia se sostiene sobre el registro local**, que es nuestro y no tiene
+    latencia — nunca sobre un censo del gestor documental, cuya latencia ya duplicó un
+    certificado (`INTEGRACION_SUDESPACHO.md` §17.4). Una reserva abierta (hubo intento
+    y no se sabe cómo acabó) se resuelve buscando por `origen_id`, que es inmediato; si
+    tampoco así se puede sostener, **se para y se declara SIN VERIFICAR**, nunca se
+    reintenta a ciegas.
+    """
+    for nombre, valor in (("carpeta_certificados", entorno_exp.carpeta_certificados),
+                          ("gestor", entorno_exp.gestor),
+                          ("exp_crm", entorno_exp.exp_crm),
+                          ("leer_emisor", entorno_exp.leer_emisor)):
+        if valor is None:
+            raise ExpedicionError(
+                f"el entorno no trae `{nombre}`: `cosechar` escribe en el expediente "
+                "y en el CRM, y sin ese puerto no hay dónde. Usa `entorno_real`.")
+    esperado = emisor_esperado or EMISOR_ESPERADO
+    expedicion = refrescar(w_code, tipo, entorno_exp=entorno_exp, ordinal=ordinal)
+    registro = RegistroCosecha(entorno_exp.raiz / "_codicert_cosecha.jsonl",
+                               entorno=entorno_exp.entorno, usuario=entorno_exp.usuario,
+                               ahora=entorno_exp.ahora)
+    element, exp_id = entorno_exp.exp_crm(w_code)
+    carpeta = Path(entorno_exp.carpeta_certificados(w_code))
+    cosechados: list[CertificadoCosechado] = []
+
+    for envio in expedicion.cosechables:
+        destino = carpeta / nombre_canonico(envio.asunto, w_code, envio.id_envio)
+        hecho = registro.hecho(envio.id_envio)
+
+        if hecho is None:
+            abierta = next((a for a in registro.abiertas()
+                            if a.get("clave") == envio.id_envio), None)
+            if abierta is not None:
+                # Hubo un intento cuyo desenlace no consta. Se resuelve por
+                # `origen_id`, que es inmediato (§17.4); si el documento no
+                # aparece, NO se reintenta: queda sin verificar y lo mira un humano.
+                doc_id = entorno_exp.gestor.buscar_por_origen_id(
+                    abierta["origen_id"], element=element, exp_id=exp_id)
+                if doc_id is None:
+                    raise ExpedicionError(
+                        f"{envio.id_envio}: hay una cosecha reservada el "
+                        f"{abierta.get('timestamp')} (origen_id "
+                        f"{abierta['origen_id']!r}) que no consta cerrada, y el "
+                        "documento tampoco aparece en el CRM por ese origen_id. "
+                        "Queda SIN VERIFICAR si la subida salió: compruébalo a mano "
+                        "antes de reintentar. No se sube nada.")
+                registro.cerrar(envio.id_envio, doc_id=doc_id, sha256="")
+                hecho = registro.hecho(envio.id_envio)
+
+        if hecho is not None:
+            cosechados.append(CertificadoCosechado(
+                id_envio=envio.id_envio, ruta_local=destino,
+                sha256=hecho.get("sha256") or "", doc_id=str(hecho.get("doc_id") or ""),
+                razon_social_emisor=esperado, usuario_emisor=None, ya_estaba=True))
+            continue
+
+        pdf = entorno_exp.codicert.certificado(envio.id_envio)
+        emisor = entorno_exp.leer_emisor(pdf)
+        plaza = entorno_exp.usuario if verificar_plaza else None
+        if not _emisor_coincide(emisor, razon_social=esperado, usuario=plaza):
+            raise ExpedicionError(
+                f"{envio.id_envio}: el certificado declara como emisor "
+                f"{emisor.razon_social!r} (usuario {emisor.usuario!r}) y se esperaba "
+                f"{esperado!r} (usuario {plaza!r}). El art. 17.2 exige constancia de "
+                "la identidad del oferente: no se archiva ni se sube un certificado "
+                "que no acredita al nuestro.")
+
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_bytes(pdf)
+        subido = entorno_exp.gestor.subir(
+            pdf, nombrefinal=destino.name, mime="application/pdf",
+            related=f"{element}:{exp_id}:left",
+            al_reservar=lambda oid, _id=envio.id_envio: registro.reservar(_id, oid))
+        registro.cerrar(envio.id_envio, doc_id=subido.doc_id, sha256=subido.sha256)
+        cosechados.append(CertificadoCosechado(
+            id_envio=envio.id_envio, ruta_local=destino, sha256=subido.sha256,
+            doc_id=subido.doc_id, razon_social_emisor=emisor.razon_social,
+            usuario_emisor=emisor.usuario))
+    return cosechados
+
+
+def _emisor_coincide(emisor: Any, *, razon_social: str, usuario: str | None) -> bool:
+    from core.certificado_lectura import es_emisor_esperado
+
+    return es_emisor_esperado(emisor, razon_social=razon_social, usuario=usuario)
+
+
+def _carpeta_certificados(w_code: str) -> Path:
+    """`<caso>/04_Output predemanda/Certificados`.
+
+    El certificado de un requerimiento o una OVC **es** output predemanda: no es
+    material que entra (eso es `00_Input` y la sala de lectura) ni work-product de
+    un litigio en curso (`05_Procedimiento`). Decisión del plan de F2, no del spec,
+    que no dice dónde se archiva en local.
+    """
+    from core.casos import case_locator
+
+    return (case_locator.localizar(case_locator.resolve_ref(w_code))
+            / "04_Output predemanda" / "Certificados")
+
+
+def _exp_crm_de(w_code: str) -> tuple[str, str]:
+    """`(element, exp_id)` del expediente extrajudicial al que colgar el documento."""
+    from core import case_manager
+    from core.casos import case_locator
+
+    estado = case_manager.get_case_status(case_locator.resolve_ref(w_code))
+    exp_id = next((str(e.get("id")) for e in estado["expedientes"]
+                   if isinstance(e, dict)
+                   and e.get("element") == _ELEMENT_EXTRAJUDICIAL), None)
+    if exp_id is None:
+        raise ExpedicionError(
+            f"{w_code}: sin expediente 'extrajudiciales' en su _caso.md; no hay de "
+            "qué colgar el certificado en el CRM. Date de alta primero: "
+            f"python -m scripts.crm_ficha --case-id {w_code}")
+    return _ELEMENT_EXTRAJUDICIAL, exp_id
+
+
+class _GestorDocumental:
+    """Puerto del gestor documental. Los tests inyectan un doble en su lugar."""
+
+    def subir(self, contenido: bytes, **kw: Any) -> Any:
+        from core import sudespacho_documentos
+
+        return sudespacho_documentos.subir_documento(contenido, **kw)
+
+    def buscar_por_origen_id(self, origen_id: str, **kw: Any) -> str | None:
+        from core import sudespacho_documentos
+
+        return sudespacho_documentos.buscar_por_origen_id(origen_id, **kw)
+
+
+def _leer_emisor_de(pdf: bytes) -> Any:
+    from core import certificado_lectura
+
+    return certificado_lectura.leer_emisor(pdf)
+
+
+#: Reexportados para que quien use `cosechar` no tenga que importar dos módulos más
+#: solo para tipar un doble. Son alias, no copias.
+from core.certificado_lectura import (  # noqa: E402
+    EMISOR_ESPERADO,
+    EmisorCertificado as EmisorLeido,
+)
+from core.sudespacho_documentos import DocumentoSubido as DocumentoEnCrm  # noqa: E402
