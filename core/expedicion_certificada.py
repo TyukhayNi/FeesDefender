@@ -830,6 +830,104 @@ def ya_expedido(listado: list[dict], id_personalizado: str) -> set[str]:
     return {e["id"] for e in listado if e.get("id_personalizado") == id_personalizado}
 
 
+# ---------------------------------------------------------------------------
+# F2 — la lectura: qué acredita cada envío
+# ---------------------------------------------------------------------------
+
+#: Las cinco familias en que cae un estado certificado. No son títulos de la
+#: plataforma: son lo que cada estado significa PARA NOSOTROS, que es lo que el
+#: motor necesita decidir.
+EN_CURSO = "en_curso"          #: el envío progresa; nada acreditado todavía
+RECEPCION = "recepcion"        #: recepción acreditada (art. 17.2, spec §6.2)
+ACCESO = "acceso"              #: acceso al contenido íntegro (art. 10.2)
+SIN_ENTREGA = "sin_entrega"    #: cerrado sin entrega (el 28 con valor afirmativo, §6.3)
+DESCONOCIDO = "desconocido"    #: medido por nadie — se declara, nunca se asume
+
+#: Códigos de la plataforma, por familia. Los nueve del spec §1.3 MÁS los seis
+#: medidos en producción el 2026-09-21 (M-2 del plan de F2): 3, 8, 11, 12, 14 y 31,
+#: que existen, aparecen en envíos reales y el spec no clasificaba.
+_FAMILIA_DE: dict[int, str] = {
+    # en curso — el envío se mueve, pero no hay hecho que acreditar
+    3: EN_CURSO,    # Enviado a imprenta para su impresión (burofax)
+    5: EN_CURSO,    # Procesado — «Procesado» NO es «Entregado» (spec §1.3)
+    8: EN_CURSO,    # Pendiente de recogida (burofax)
+    11: EN_CURSO,   # En tránsito a la ciudad de destino
+    12: EN_CURSO,   # En reparto
+    14: EN_CURSO,   # Recordatorio lectura ENVIADO (el 21 es el entregado)
+    27: EN_CURSO,   # Entregado en el SERVIDOR: llegó al servidor, no al destinatario
+    31: EN_CURSO,   # Incidencia — «se está gestionando»; acaba en 17/19 o en 42
+    # recepción acreditada (spec §6.2: «Estado 17, 20 o 21 con su fecha»)
+    17: RECEPCION,  # Entregado
+    19: RECEPCION,  # Entregado con albarán — terminal del burofax
+    21: RECEPCION,  # Recordatorio lectura entregado, sin acceso al contenido
+    # acceso al contenido íntegro (art. 10.2)
+    20: ACCESO,     # Leído · Documentación accedida
+    # cerrado sin entrega
+    28: SIN_ENTREGA,  # Rechazado — valor afirmativo, art. 7.4 y 395.1 LEC (§6.3)
+    40: SIN_ENTREGA,  # Caducado
+    42: SIN_ENTREGA,  # Fallido
+}
+
+
+def clasificar(codigo: int) -> str:
+    """La familia de un código de estado. Lo no medido se declara DESCONOCIDO.
+
+    No hay `EN_CURSO` por defecto, y esa es la decisión del diseño: un código que
+    la plataforma añada mañana —o uno de los 37 documentados que aquí no están—
+    caería en «aún en camino» y sería indistinguible de un envío que progresa. Si
+    resultara ser un cierre nuevo, la expedición no terminaría nunca y nadie se
+    enteraría. La regla de la casa es que «no lo sé» no es «no hay».
+    """
+    return _FAMILIA_DE.get(codigo, DESCONOCIDO)
+
+
+@dataclass(frozen=True)
+class EstadoCertificado:
+    """Una entrada del histórico de `GET /envios/{id}/estados`.
+
+    Forma medida el 2026-09-21: `{codigo, titulo, fecha, detalle}`, en orden
+    cronológico ascendente. El `detalle` del 20 identifica a quien leyó y desde qué
+    IP, lo que matiza el hallazgo API-01 de la R1 del spec («campos_verificacion
+    vacío: Leído no identifica a nadie»): por esta vía sí identifica.
+    """
+
+    codigo: int
+    titulo: str
+    fecha: datetime
+    detalle: str | None = None
+
+    @property
+    def familia(self) -> str:
+        return clasificar(self.codigo)
+
+
+def estado_de(crudo: dict) -> EstadoCertificado:
+    """`EstadoCertificado` desde el JSON de la API, validando la forma.
+
+    Exige zona horaria en la fecha. Un instante sin offset no se puede comparar con
+    otro que sí lo tiene —Python lanza `TypeError` al restarlos— y asumir UTC sobre
+    un servidor que responde en `+02:00` desplazaría dos horas todas las fechas de
+    entrega. Con plazos de procedibilidad de por medio, se para.
+    """
+    codigo = crudo.get("codigo")
+    if not isinstance(codigo, int) or isinstance(codigo, bool):
+        raise ExpedicionError(
+            f"estado sin `codigo` entero: {crudo.get('codigo')!r}. No se convierte "
+            "en silencio: el codigo decide si un envío está entregado.")
+    bruto = crudo.get("fecha")
+    try:
+        fecha = datetime.fromisoformat(str(bruto))
+    except (TypeError, ValueError) as exc:
+        raise ExpedicionError(f"estado {codigo}: fecha ilegible {bruto!r}") from exc
+    if fecha.tzinfo is None:
+        raise ExpedicionError(
+            f"estado {codigo}: la fecha {bruto!r} no trae zona horaria (offset). No "
+            "se asume UTC: el servidor responde en +02:00 y dos horas de desvío "
+            "mueven un plazo de procedibilidad.")
+    return EstadoCertificado(codigo=codigo, titulo=str(crudo.get("titulo") or ""),
+                             fecha=fecha, detalle=crudo.get("detalle"))
+
+
 @dataclass(frozen=True)
 class EntornoExpedicion:
     """Puerto único de inyección: transporte, CRM, reloj, raíz de escritura y entorno.
