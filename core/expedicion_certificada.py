@@ -850,6 +850,107 @@ class RegistroIntencion:
                   "reintentar: un censo negativo del listado no autoriza a gastar.")
 
 
+class RegistroCosecha:
+    """Rastro append-only de qué certificados se han subido ya al CRM.
+
+    **Es el instrumento que autoriza a NO subir**, y existe por el mismo motivo que
+    `RegistroIntencion` existe para los envíos: un censo del gestor documental no
+    puede sostener una ausencia. El listado filtrado del CRM tiene latencia medida y
+    ya duplicó un certificado el 2026-09-09 (`INTEGRACION_SUDESPACHO.md` §17.4); este
+    fichero es nuestro, se escribe antes de la llamada y no tiene latencia ninguna.
+
+    **La clave es el `IdEnvio`, no el `sha256` del certificado.** El PDF es estable
+    entre dos descargas seguidas (medido el 2026-09-21), pero se regenera cuando el
+    estado avanza, así que su huella no identifica «el certificado de este envío»:
+    identifica «el certificado de este envío en este estado». Como clave de
+    idempotencia sería inestable justo cuando importa.
+
+    Lleva `entorno` y `usuario` por la misma razón que `RegistroIntencion` (hallazgo
+    H-04 de su R2): todas las cuentas comparten fichero bajo el directorio de
+    trabajo, y sin ellos un cierre de sandbox explicaría uno de producción.
+    """
+
+    def __init__(self, ruta: Path, *, entorno: str | None = None,
+                 usuario: str | None = None,
+                 ahora: Callable[[], datetime] = _reloj_utc) -> None:
+        self.ruta = Path(ruta)
+        self.ruta.parent.mkdir(parents=True, exist_ok=True)
+        self.entorno, self.usuario, self._ahora = entorno, usuario, ahora
+
+    def _lineas(self) -> list[dict]:
+        """Cada línea no vacía, parseada. Una línea rota para la lectura entera."""
+        if not self.ruta.is_file():
+            return []
+        filas: list[dict] = []
+        for numero, linea in enumerate(
+                self.ruta.read_text(encoding="utf-8").splitlines(), start=1):
+            if not linea.strip():
+                continue
+            try:
+                filas.append(json.loads(linea))
+            except json.JSONDecodeError as exc:
+                raise ExpedicionError(
+                    f"{self.ruta}: la línea {numero} del registro de cosecha no es "
+                    f"JSON válido ({exc}). No se ignora: puede ser el rastro de un "
+                    "documento ya creado en el CRM. Revísala a mano."
+                ) from exc
+        return filas
+
+    def _mias(self) -> list[dict]:
+        """Las filas de ESTE entorno y ESTA cuenta, por igualdad exacta."""
+        return [f for f in self._lineas()
+                if f.get("entorno") == self.entorno and f.get("usuario") == self.usuario]
+
+    def _escribir(self, fila: dict) -> None:
+        with self.ruta.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(fila, ensure_ascii=False) + "\n")
+
+    def reservar(self, id_envio: str, origen_id: str) -> None:
+        """Anota, ANTES del `POST` que crea, que vamos a subir este certificado.
+
+        Es el gancho que `sudespacho_documentos.subir_documento` llama por
+        `al_reservar`. Si el `POST` sale y su respuesta se pierde, esta línea es lo
+        único que permite reencontrar el documento por `origen_id`.
+        """
+        self._escribir({"clave": id_envio, "estado": "reservado",
+                        "origen_id": origen_id, "entorno": self.entorno,
+                        "usuario": self.usuario,
+                        "timestamp": self._ahora().isoformat()})
+
+    def cerrar(self, id_envio: str, *, doc_id: str, sha256: str) -> None:
+        """Cierra la reserva con el `doc_id` y la huella de lo verificado."""
+        if not any(f.get("clave") == id_envio and f.get("estado") == "reservado"
+                   for f in self._mias()):
+            raise ExpedicionError(
+                f"cierre huérfano: se intenta cerrar la cosecha de {id_envio!r} sin "
+                "reserva previa de este entorno y cuenta. El registro se escribe "
+                "SIEMPRE antes de la llamada; un cierre sin reserva significa que "
+                "algo escribió fuera de este camino.")
+        self._escribir({"clave": id_envio, "estado": "hecho", "doc_id": doc_id,
+                        "sha256": sha256, "entorno": self.entorno,
+                        "usuario": self.usuario,
+                        "timestamp": self._ahora().isoformat()})
+
+    def hecho(self, id_envio: str) -> dict | None:
+        """La fila de cierre de este envío, o `None`. Solo cuenta lo CERRADO."""
+        for fila in reversed(self._mias()):
+            if fila.get("clave") == id_envio and fila.get("estado") == "hecho":
+                return fila
+        return None
+
+    def abiertas(self) -> list[dict]:
+        """Reservas sin cerrar: hubo un intento y no se sabe cómo acabó.
+
+        No se reintentan solas. `cosechar` las resuelve buscando por `origen_id` —que
+        es inmediato— y, si tampoco así, para y lo declara: el mismo criterio que
+        `RegistroIntencion.exigir_sin_pendientes` aplica a los envíos. Un desenlace
+        desconocido pide humano, no reintento.
+        """
+        cerradas = {f["clave"] for f in self._mias() if f.get("estado") == "hecho"}
+        return [f for f in self._mias()
+                if f.get("estado") == "reservado" and f.get("clave") not in cerradas]
+
+
 def ya_expedido(listado: list[dict], id_personalizado: str) -> set[str]:
     """`IdEnvio` que la plataforma ya tiene con ese identificador exacto."""
     return {e["id"] for e in listado if e.get("id_personalizado") == id_personalizado}
