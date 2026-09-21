@@ -15,7 +15,7 @@ import uuid
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -738,6 +738,31 @@ class RegistroIntencion:
         return [info["apertura"] for info in self._estados_por_clave().values()
                if info["apertura"].get("id_personalizado") == id_personalizado]
 
+    def primera_anotacion_de(self, id_personalizado: str) -> datetime | None:
+        """El `timestamp` más antiguo anotado para esta expedición, o `None`.
+
+        Lo usa `refrescar` para abrir la ventana de `GET /envios` por el sitio
+        correcto: el registro es nuestro y sabe CUÁNDO se expidió, mientras que la
+        ventana por defecto solo adivina.
+
+        Traga las fechas ilegibles en vez de parar, al revés que `_fecha_exigida`:
+        esta fecha solo ABRE una ventana de consulta, y una anotación con el
+        `timestamp` roto no debe impedir releer la expedición. El peor efecto de
+        ignorarla es consultar una ventana más corta, y para eso está el suelo de
+        `ventana_dias`. Público —y no `_privado`— porque `refrescar` lo consume
+        desde fuera de la clase: un módulo que hurga en los privados de otro es
+        exactamente cómo se pierde el contrato.
+        """
+        fechas: list[datetime] = []
+        for fila in self._anotaciones_de(id_personalizado):
+            try:
+                f = datetime.fromisoformat(str(fila.get("timestamp")))
+            except (TypeError, ValueError):
+                continue
+            if f.tzinfo is not None:
+                fechas.append(f)
+        return min(fechas) if fechas else None
+
     def _exigir_formato_reconocido(self, id_personalizado: str) -> None:
         """Para y declara si `id_personalizado` tiene anotaciones en FORMATO ANTIGUO.
 
@@ -1049,6 +1074,161 @@ class Expedicion:
         prohíbe — «no encuentro envíos» no es «la expedición terminó».
         """
         return bool(self.envios) and not self.pendientes
+
+    def por_requerido(self, partes: list[dict]) -> tuple[Requerido, ...]:
+        """Agrupa los envíos por requerido, casando `destinatarios` con las partes.
+
+        Es el nivel que manda para los plazos (§6.1): dos requeridos que reciben en
+        fechas distintas tienen DOS relojes, y agregarlos en uno puede llevar a
+        demandar a quien aún tiene vivo su mes del art. 17.4.
+
+        **Lo que no casa va al cajón `SIN_CASAR` y se declara.** Atribuirlo a la
+        primera parte inventaría un reloj sobre alguien a quien quizá no se le
+        entregó nada; dejarlo fuera del resultado lo escondería. Pasa de verdad: el
+        burofax lleva en `destinatarios` la razón social, que no tiene por qué
+        coincidir con el nombre compuesto de la ficha del CRM.
+        """
+        grupos: dict[str, list[EnvioObservado]] = {}
+        etiquetas: dict[str, str] = {}
+        indice: dict[str, str] = {}
+        for i, parte in enumerate(partes):
+            clave = f"parte:{i}"
+            etiquetas[clave] = nombre_completo_de(parte)
+            grupos[clave] = []
+            for contacto in _claves_de_contacto(parte):
+                indice.setdefault(contacto, clave)
+        for envio in self.envios:
+            clave = indice.get(envio.destinatario.strip().lower(), SIN_CASAR)
+            grupos.setdefault(clave, []).append(envio)
+        etiquetas[SIN_CASAR] = "(sin casar)"
+        return tuple(Requerido(clave=c, etiqueta=etiquetas.get(c, c), envios=tuple(v))
+                     for c, v in grupos.items())
+
+
+#: Clave del cajón de los envíos que no casan con ninguna parte del CRM.
+SIN_CASAR = "__sin_casar__"
+
+#: Días hacia atrás que se consultan cuando el registro local no sabe cuándo se
+#: expidió. No es un número mágico con pretensiones: es holgura para que una
+#: expedición vieja siga apareciendo, y `GET /envios` acotado por fecha cuesta una
+#: o dos páginas (spec, hueco 6: 1.954 envíos históricos en la plaza más activa).
+VENTANA_DIAS = 180
+
+
+@dataclass(frozen=True)
+class Requerido:
+    """Un requerido con sus canales y sus dos fechas. El nivel que manda (§6.1)."""
+
+    clave: str
+    etiqueta: str
+    envios: tuple[EnvioObservado, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "envios", tuple(self.envios))
+
+    @property
+    def recibido_en(self) -> datetime | None:
+        """La más temprana entre sus canales: al requerido le basta cualquiera.
+
+        Simétrico de la regla del spec §6.1: «un canal fallido no resta si otro del
+        mismo requerido acreditó recepción».
+        """
+        fechas = [e.recibido_en for e in self.envios if e.recibido_en]
+        return min(fechas) if fechas else None
+
+    @property
+    def accedido_en(self) -> datetime | None:
+        fechas = [e.accedido_en for e in self.envios if e.accedido_en]
+        return min(fechas) if fechas else None
+
+
+def _claves_de_contacto(parte: dict) -> set[str]:
+    """Con qué cadenas puede aparecer esta parte en `destinatarios` del listado.
+
+    El listado devuelve `destinatarios` como UN STRING (M-7): el email en la entrega
+    electrónica, el móvil en el SMS, la razón social en el burofax. Se normaliza todo
+    a minúsculas; el móvil, además, con y sin el prefijo `34`, porque el destinatario
+    SMS real de producción es `34645508869` (spec §1.1).
+    """
+    claves: set[str] = set()
+    email = (parte.get("email") or "").strip().lower()
+    if email:
+        claves.add(email)
+    movil = movil_normalizado(parte.get("movil"))
+    if movil:
+        desnudo = movil.removeprefix("34")
+        claves.update({movil, desnudo, f"34{desnudo}"})
+    nombre = nombre_completo_de(parte).strip().lower()
+    if nombre:
+        claves.add(nombre)
+    return claves
+
+
+def _fecha_exigida(bruto: Any, *, que: str) -> datetime:
+    """Una fecha con zona, o `ExpedicionError`. Mismo criterio que `estado_de`."""
+    try:
+        f = datetime.fromisoformat(str(bruto))
+    except (TypeError, ValueError) as exc:
+        raise ExpedicionError(f"{que}: fecha ilegible {bruto!r}") from exc
+    if f.tzinfo is None:
+        raise ExpedicionError(f"{que}: la fecha {bruto!r} no trae zona horaria")
+    return f
+
+
+def refrescar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
+              ordinal: int = 1, ventana_dias: int = VENTANA_DIAS) -> Expedicion:
+    """Relee en Codicert el estado de una expedición. No escribe nada.
+
+    Dos decisiones que el spec fija y conviene no perder de vista al leer el código:
+
+    1. **La consulta se acota siempre por fecha** (§4.3). Quien pagina `GET /envios`
+       no ve los envíos del jurídico: ve los de la cuenta compartida de la plaza, por
+       la que sale todo el bad debt. La ventana arranca en la anotación más antigua
+       del registro de intención —que es nuestra y sabe cuándo se expidió— y solo
+       cuando no hay registro cae en `ventana_dias`.
+    2. **El filtro por `id_personalizado` es igualdad exacta.** La API no filtra por
+       ese campo (spec §1.2), así que se filtra en casa; y no se intenta reconocer los
+       identificadores que alguien tecleó a mano en el portal, que existen y no siguen
+       la gramática del §3 (medido: `W-04A8PU`, `W-02XE7E/W-046HM4`). Adivinarlos
+       mezclaría expediciones distintas, que es justo lo que el §3 existe para evitar.
+
+    El histórico se pide envío a envío: el estado del listado es el último evento y no
+    sirve ni para la fecha más temprana ni para el hecho más fuerte (medido, M-1 del
+    plan de F2 — tres días de diferencia en un burofax real).
+    """
+    id_personalizado = componer_id(w_code, tipo, ordinal)
+    registro = RegistroIntencion(entorno_exp.raiz / "_codicert_intencion.jsonl",
+                                 entorno=entorno_exp.entorno,
+                                 usuario=entorno_exp.usuario, ahora=entorno_exp.ahora)
+    ahora = entorno_exp.ahora()
+    candidatas = [ahora - timedelta(days=ventana_dias)]
+    primera = registro.primera_anotacion_de(id_personalizado)
+    if primera is not None:
+        candidatas.append(primera)
+    desde = min(candidatas)
+
+    crudos = entorno_exp.codicert.listar(
+        fecha_inicio=desde.date().isoformat(), fecha_fin=ahora.date().isoformat())
+    envios: list[EnvioObservado] = []
+    for crudo in crudos:
+        if crudo.get("id_personalizado") != id_personalizado:
+            continue
+        id_envio = str(crudo.get("id") or "")
+        if not id_envio:
+            raise ExpedicionError(
+                f"{id_personalizado}: el listado trae un envío sin `id` — {crudo!r}. "
+                "Sin identificador no se puede leer su histórico ni cosechar su "
+                "certificado: se para en vez de saltárselo en silencio.")
+        envios.append(EnvioObservado(
+            id_envio=id_envio, tipo=str(crudo.get("tipo") or ""),
+            asunto=str(crudo.get("asunto") or ""),
+            destinatario=str(crudo.get("destinatarios") or ""),
+            id_personalizado=id_personalizado,
+            fecha_envio=_fecha_exigida(crudo.get("fecha"), que=f"envío {id_envio}"),
+            historico=tuple(estado_de(e)
+                            for e in entorno_exp.codicert.estados(id_envio))))
+    return Expedicion(id_personalizado=id_personalizado, entorno=entorno_exp.entorno,
+                      envios=tuple(envios))
 
 
 @dataclass(frozen=True)
