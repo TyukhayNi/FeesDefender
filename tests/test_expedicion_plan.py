@@ -61,6 +61,20 @@ def test_un_requerido_SIN_NINGUN_canal_detiene_el_plan():
     assert "NADIE" in str(e.value)
 
 
+def test_H16_ningun_requerido_en_absoluto_detiene_el_plan():
+    """Hallazgo H-16 (revisión adversarial r2): se rechazaba un requerido SIN
+    canales, pero no la AUSENCIA de requeridos. `get_relaciones` puede devolver
+    legítimamente ninguna relación -- un expediente sin contrarios vinculados en el
+    CRM --, y `partes_de` lo convierte en `[]`. Antes, `destinatarios_de([])`
+    devolvía `([], [])` sin avisar: coste cero y cero envíos se aceptaban como un
+    plan ejecutable, y ejecutarlo salía con éxito y "ENVIADO: " vacío."""
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.destinatarios_de([])
+    mensaje = str(e.value).lower()
+    assert "requerido" in mensaje or "contrario" in mensaje
+    assert "crm" in mensaje
+
+
 def test_el_coste_suma_la_tarifa_por_canal():
     envios, _ = exp.destinatarios_de([ANA, LUIS])
     assert exp.coste_de(envios) == (exp.TARIFA["burofax"]
@@ -113,11 +127,34 @@ def test_un_w_code_que_contiene_ovc_por_azar_no_bloquea_el_texto():
 def test_la_guarda_de_prohibidos_sigue_saltando_sobre_el_texto_compuesto():
     """La guarda no se desactiva al aplicarse solo a la plantilla: sigue vetando
     "calendario" (ausente antes) y "plazo" a secas (antes acotado a la frase exacta
-    "plazo de aceptacion") (hallazgo 3)."""
+    "plazo de aceptacion") (hallazgo 3).
+
+    Este test comprueba la LÓGICA del helper (`_asegurar_sin_prohibidos`), pero lo
+    llama DIRECTAMENTE -- no prueba que `texto_de` de verdad lo invoque. Ver
+    `test_H14_texto_de_recorre_la_guarda_de_verdad_no_solo_el_helper` más abajo para
+    esa conexión (hallazgo H-14, revisión adversarial r2)."""
     with pytest.raises(exp.ExpedicionError):
         exp._asegurar_sin_prohibidos("un texto que fija un plazo de pago")
     with pytest.raises(exp.ExpedicionError):
         exp._asegurar_sin_prohibidos("un texto con un calendario de cobro")
+
+
+def test_H14_texto_de_recorre_la_guarda_de_verdad_no_solo_el_helper(monkeypatch):
+    """Hallazgo H-14 (medio, acotado; revisión adversarial r2): el test de arriba
+    acredita la lógica de `_asegurar_sin_prohibidos`, pero llamándolo DIRECTO --
+    nunca recorre la conexión desde `texto_de`, que es la función pública que
+    compone el texto real. Reproducido por el revisor: sustituir SOLO la línea
+    `_asegurar_sin_prohibidos(...)` dentro de `texto_de` por `pass` deja la guarda
+    desconectada de cualquier texto generado, y las 128 pruebas del ámbito -- test de
+    arriba incluido -- seguían en verde.
+
+    Aquí se inyecta un término prohibido en la PLANTILLA que `texto_de` usa de
+    verdad (monkeypatch del módulo, no una plantilla nueva inventada a mano) y se
+    llama a la función PÚBLICA: si se desconecta esa llamada, este test -- y solo
+    este -- se pone en rojo."""
+    monkeypatch.setattr(exp, "_CUERPO_TPL", "<p>Esto fija un plazo de pago para {w_code}</p>")
+    with pytest.raises(exp.ExpedicionError):
+        exp.texto_de("W-04AKM2")
 
 
 def test_el_sms_lleva_correo_solo_si_la_parte_tiene_email():

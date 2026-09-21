@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import re
 import threading
@@ -70,16 +71,50 @@ def provincia_codicert(nombre: str) -> str:
     return PROVINCIA_CODICERT.get(nombre, nombre)
 
 
+def _movil_match(bruto: str | None):
+    """El `Match` de `_MOVIL` sobre `bruto` limpio de espacios/puntos/guiones, o
+    `None` si no es un móvil español. Compartido por `movil_normalizado` (forma
+    internacional, "34"+nueve dígitos) y `movil_postal` (nueve dígitos a secas,
+    hallazgo H-10, revisión adversarial r2) para que las dos formas salgan SIEMPRE
+    del mismo match y no puedan desincronizarse entre sí.
+    """
+    if not bruto:
+        return None
+    return _MOVIL.match(re.sub(r"[\s.\-()]", "", str(bruto)))
+
+
 def movil_normalizado(bruto: str | None) -> str | None:
     """`34` + nueve dígitos, o `None` si no es un móvil español.
 
     El prefijo se pega porque es lo que la plataforma registra: el destinatario SMS de
     producción es `34645508869`. Un fijo devuelve `None` y el canal se declara ausente.
+
+    Es la forma para el destinatario ELECTRÓNICO (`DestinatarioVerificable`, que usa
+    `destinatarios_de` para correo/SMS): ese campo no tiene patrón y sí admite el
+    prefijo (spec §1.1, líneas 154-161). Para el destinatario POSTAL del burofax, que
+    SÍ tiene patrón (`^[67]\\d{8}$`, sin prefijo), usa `movil_postal`.
     """
-    if not bruto:
-        return None
-    m = _MOVIL.match(re.sub(r"[\s.\-()]", "", str(bruto)))
+    m = _movil_match(bruto)
     return f"34{m.group(1)}" if m else None
+
+
+def movil_postal(bruto: str | None) -> str | None:
+    """Nueve dígitos SIN prefijo, para el `telefono` del destinatario POSTAL
+    (hallazgo H-10, revisión adversarial r2).
+
+    El contrato aporta el patrón `^[67]\\d{8}$` para `DestinatarioPostal.telefono` --
+    el teléfono de incidencia del burofax -- DISTINTO del destinatario electrónico
+    (`DestinatarioVerificable`), que no tiene patrón y sí admite el prefijo
+    internacional (spec §1.1, líneas 154-161). `ficha_postal` reutilizaba antes
+    `movil_normalizado` tal cual para los dos canales: "600000001" salía como
+    "34600000001" en el campo postal -- once dígitos, que incumple el patrón
+    documentado para ESE campo. El comportamiento real del servidor ante un
+    teléfono con prefijo en este campo NO se ha verificado contra Codicert: lo que
+    se corrige aquí es el incumplimiento del contrato aportado, no una medición
+    nueva.
+    """
+    m = _movil_match(bruto)
+    return m.group(1) if m else None
 
 
 _CAMPOS_NOMBRE_COMPLETO = ("nombre", "1apellido", "2apellido")
@@ -108,6 +143,36 @@ def nombre_completo_de(parte: dict) -> str:
 
 _OBLIGATORIOS_POSTAL = ("nombre", "direccion", "poblacion", "provincia", "cp")
 
+# Formas en que puede llegar "España" en el dato de entrada (el CRM, cuando lo trae).
+# `clientes_contrarios` no declara hoy un campo `pais` propio (docs/CRM_SUDESPACHO_
+# ATLAS.md § clientes_contrarios): la ausencia se resuelve como España -- es el caso
+# de todos los contrarios reales de hoy --, y un valor explícito que no case con
+# ninguna de estas formas se rechaza (hallazgo H-10, revisión adversarial r2).
+_PAIS_ESPANA_VALIDOS = frozenset({"ESPAÑA", "ESPANA", "SPAIN", "ES"})
+
+
+def _pais_postal_de(parte: dict) -> str:
+    """`pais` del destinatario POSTAL: Codicert solo admite `"España"` en el burofax
+    (hallazgo H-10, revisión adversarial r2; contrato: `pais` solo "España", spec
+    §1.1, y regla 5 del §5).
+
+    Antes se escribía siempre "España" sin mirar el dato de entrada: una ficha con
+    país Francia, población y provincia extranjeras y CP francés se convertía en un
+    envío dirigido a España, sin ningún aviso. Aquí se resuelve explícitamente: sin
+    `pais` (el caso de hoy, porque el CRM no lo declara) se sigue asumiendo España;
+    con un `pais` que NO lo sea, se para en el plan en vez de fabricar el envío
+    erróneo.
+    """
+    bruto = str(parte.get("pais") or "").strip()
+    if not bruto or bruto.upper() in _PAIS_ESPANA_VALIDOS:
+        return "España"
+    raise ExpedicionError(
+        f"la ficha postal de {(parte.get('nombre') or '').strip() or '(sin nombre)'} "
+        f"tiene país {bruto!r}: el burofax de Codicert solo admite España (spec §1.1). "
+        "No se puede resolver un domicilio extranjero -- corrígelo en el CRM o "
+        "exclúyelo del canal postal antes de planificar."
+    )
+
 
 def ficha_postal(parte: dict) -> dict:
     """Destinatario del burofax, validado **antes** de gastar.
@@ -120,11 +185,12 @@ def ficha_postal(parte: dict) -> dict:
         raise ExpedicionError(
             f"la ficha postal de {(parte.get('nombre') or '').strip() or '(sin nombre)'} no tiene: "
             + ", ".join(faltan))
+    pais = _pais_postal_de(parte)
     nombre = nombre_completo_de(parte)
     return {"nombre": nombre, "a_atencion": parte.get("a_atencion") or nombre,
-            "pais": "España", "direccion": parte["direccion"], "poblacion": parte["poblacion"],
+            "pais": pais, "direccion": parte["direccion"], "poblacion": parte["poblacion"],
             "provincia": provincia_codicert(parte["provincia"]), "cp": parte["cp"],
-            **({"telefono": m} if (m := movil_normalizado(parte.get("movil"))) else {})}
+            **({"telefono": m} if (m := movil_postal(parte.get("movil"))) else {})}
 
 
 # Tarifa «80», leída del portal de producción el 2026-09-17. Cada línea incluye la
@@ -134,6 +200,23 @@ TARIFA: dict[str, Decimal] = {
     "correo": Decimal("0.3867") + Decimal("0.4064"),
     "sms": Decimal("0.3867") + Decimal("0.0834"),
 }
+
+# Límites de preflight (hallazgo H-09, revisión adversarial r2), medidos en el spec
+# §1.4 y §7: el motor se ciñe al SUELO SEGURO donde la UI y el contrato discrepan
+# (p. ej. la EEC declara 1..10 en el contrato pero la UI -- y el motor -- se paran en
+# 6). "MB" se cuenta en mebibytes (1 MiB = 1_048_576 bytes): el spec no fija la base y
+# el modo de fallo medido usa "MiB"; ningún tamaño de este módulo se ha verificado
+# contra el servidor real.
+_BYTES_POR_MB = 1_048_576
+MAX_FICHEROS_BUROFAX = 10
+MAX_PAGINAS_BUROFAX = 200
+MAX_FICHEROS_EEC = 6
+MAX_BYTES_EEC = 60 * _BYTES_POR_MB
+# 1 MB incluido en sandbox, 6 en producción (spec §1.4): el sobrecoste por MB se paga
+# por envío EEC, no una sola vez por expedición -- cada envío lleva el mismo juego de
+# adjuntos completo.
+_MB_INCLUIDOS_EEC: dict[str, int] = {"sandbox": 1, "produccion": 6}
+PRECIO_MB_ADICIONAL = Decimal("0.0288")
 
 
 @dataclass(frozen=True)
@@ -172,7 +255,22 @@ def destinatarios_de(partes: list[dict]) -> tuple[list[EnvioPrevisto], list[str]
     Correo y SMS van **uno por requerido**: agrupar no ahorra —la plataforma cobra un
     envío por destinatario— y cada uno necesita su propio acuse, del que cuelgan sus
     plazos. El burofax va **uno por domicilio distinto**.
+
+    Se rechaza un requerido SIN canales (más abajo), pero eso no cubre la AUSENCIA de
+    requeridos (hallazgo H-16, revisión adversarial r2): `get_relaciones` puede
+    devolver legítimamente ninguna relación —un expediente sin contrarios vinculados
+    en el CRM—, y `partes_de` lo convierte en `[]`. Sin este control, `destinatarios_de
+    ([])` devolvía `([], [])` sin avisar: coste cero y cero envíos se aceptaban como un
+    plan ejecutable, y ejecutarlo salía con éxito imprimiendo "ENVIADO: " vacío -- no
+    hay ningún envío previo que lo explique, es que nunca hubo a quién mandarlo.
     """
+    if not partes:
+        raise ExpedicionError(
+            "no hay ningún requerido: el expediente no tiene contrarios vinculados en "
+            "el CRM (get_relaciones devolvió una lista vacía de 'clientes_contrarios'). "
+            "No se puede planificar una comunicación sin destinatarios -- vincula al "
+            "contrario en el CRM antes de expedir."
+        )
     envios: list[EnvioPrevisto] = []
     ausencias: list[str] = []
     for p in partes:
@@ -229,9 +327,23 @@ def destinatarios_de(partes: list[dict]) -> tuple[list[EnvioPrevisto], list[str]
     return envios, ausencias
 
 
-def coste_de(envios: list[EnvioPrevisto]) -> Decimal:
-    """Suma la tarifa por canal de cada envío previsto."""
-    return sum((TARIFA[e.canal] for e in envios), Decimal("0"))
+def coste_de(envios: list[EnvioPrevisto], *,
+             sobrecoste_eec_por_envio: Decimal = Decimal("0")) -> Decimal:
+    """Suma la tarifa por canal de cada envío previsto, más el sobrecoste por volumen
+    documental de los envíos EEC (correo/SMS) (hallazgo H-09, revisión adversarial
+    r2). Antes ignoraba los bytes: un documento de pocos bytes y otro de más de 7
+    MiB costaban EXACTAMENTE lo mismo. `sobrecoste_eec_por_envio` lo calcula
+    `_preflight_documentos` -- el mismo para cada envío EEC, porque todos llevan el
+    mismo juego de adjuntos completo -- y por defecto es cero: quien no lo pase (los
+    tests que ejercitan solo la tarifa base, y el coste residual de `ejecutar`)
+    sigue viendo la suma de siempre.
+    """
+    base = sum((TARIFA[e.canal] for e in envios), Decimal("0"))
+    if not sobrecoste_eec_por_envio:
+        return base
+    return base + sum(
+        (sobrecoste_eec_por_envio for e in envios if e.canal in ("correo", "sms")),
+        Decimal("0"))
 
 
 # El asunto y el cuerpo son LITERAL CERRADO y viajan en el Plan, para que la puerta
@@ -262,7 +374,15 @@ def _asegurar_sin_prohibidos(texto: str) -> None:
 
 
 def texto_de(w_code: str) -> tuple[str, str]:
-    """Asunto y cuerpo de la comunicación. Nunca nombran los términos de la oferta."""
+    """Asunto y cuerpo de la comunicación. Nunca nombran los términos de la oferta.
+
+    `_asegurar_sin_prohibidos` se aplica aquí, dentro de la función pública que
+    compone el texto real -- no solo se acredita como lógica aislada (hallazgo H-14,
+    revisión adversarial r2): `test_H14_texto_de_recorre_la_guarda_de_verdad_no_solo_
+    el_helper` (tests/test_expedicion_plan.py) recorre esta conexión de verdad, y la
+    mutación que sustituye la línea de abajo por `pass` se acreditó en rojo -- y se
+    deshizo -- durante el remedio de ese hallazgo.
+    """
     _asegurar_sin_prohibidos(f"{_ASUNTO_TPL} {_CUERPO_TPL}")
     return _ASUNTO_TPL.format(w_code=w_code), _CUERPO_TPL.format(w_code=w_code)
 
@@ -848,27 +968,6 @@ def _digest_de(*, id_personalizado: str, plaza: str, entorno: str, usuario: str 
     return hashlib.sha256(crudo.encode("utf-8")).hexdigest()
 
 
-def planificar(w_code: str, tipo: str, documentos: list[Path], *,
-              entorno_exp: EntornoExpedicion, plaza: str, entorno: str = "sandbox",
-              ordinal: int = 1) -> Plan:
-    """Construye el plan de la expedición. **No envía nada.**"""
-    envios, ausencias = destinatarios_de(entorno_exp.partes_de(w_code))
-    shas = [hashlib.sha256(Path(d).read_bytes()).hexdigest() for d in documentos]
-    coste = coste_de(envios)
-    asunto, cuerpo = texto_de(w_code)
-    id_personalizado = componer_id(w_code, tipo, ordinal)
-    return Plan(w_code=w_code, tipo=tipo,
-                id_personalizado=id_personalizado,
-                plaza=plaza, entorno=entorno, envios=envios, ausencias=ausencias,
-                coste=coste, credito=entorno_exp.codicert.credito(),
-                documentos=[Path(d) for d in documentos], documentos_sha256=shas,
-                asunto=asunto, cuerpo=cuerpo, usuario=entorno_exp.usuario,
-                digest=_digest_de(id_personalizado=id_personalizado, plaza=plaza,
-                                  entorno=entorno, usuario=entorno_exp.usuario,
-                                  asunto=asunto, cuerpo=cuerpo, coste=coste,
-                                  envios=envios, shas=shas))
-
-
 def _leer_documentos(documentos: list[Path] | tuple[Path, ...]) -> list[bytes]:
     """Lee cada documento del plan AHORA, desde disco, UNA SOLA VEZ.
 
@@ -882,6 +981,10 @@ def _leer_documentos(documentos: list[Path] | tuple[Path, ...]) -> list[bytes]:
     Un documento que ya no existe se declara aquí con un mensaje claro, no con el
     `FileNotFoundError` crudo de leerlo al construir los adjuntos, varias líneas
     más abajo.
+
+    `planificar` reutiliza esta misma función (antes leía por su cuenta, solo para
+    hashear) para que el preflight de H-09 valide EXACTAMENTE los bytes que se
+    hashean, sin una segunda lectura del disco.
     """
     contenidos: list[bytes] = []
     for d in documentos:
@@ -894,6 +997,124 @@ def _leer_documentos(documentos: list[Path] | tuple[Path, ...]) -> list[bytes]:
                 "es el mismo que aprobó el humano. Vuelve a planificar."
             ) from exc
     return contenidos
+
+
+def _paginas_pdf(datos: bytes, *, nombre: str) -> int:
+    """Páginas de un PDF ya leído en memoria (hallazgo H-09, revisión adversarial
+    r2). Lanza `ExpedicionError` si `datos` no es un PDF de verdad -- ni de
+    cabecera (magic bytes) ni de contenido (`pypdf` no lo puede abrir) --, en vez de
+    dejarlo pasar sin comprobar como hacía `planificar` antes de este hallazgo.
+
+    La comprobación de cabecera es barata y da un mensaje claro para el caso más
+    común (un `.txt` con la extensión cambiada, sin ninguna estructura de PDF). Un
+    documento que SÍ empieza por `%PDF-` pero que `pypdf` no puede abrir -- corrupto,
+    truncado -- tampoco dice de cuántas páginas o de qué tamaño real se trata: el
+    presupuesto no puede estimarlo, así que se bloquea en vez de fingir que cabe
+    ("declarar que no puede estimarlo", que pide el remedio del hallazgo).
+    """
+    if not datos.startswith(b"%PDF-"):
+        raise ExpedicionError(
+            f"{nombre} no es un PDF: no empieza por la cabecera %PDF- que exige "
+            "Codicert (adjuntos solo PDF, spec §1.1). Se para en el plan, no en el "
+            "422 del servidor."
+        )
+    try:
+        from pypdf import PdfReader
+        return len(PdfReader(io.BytesIO(datos)).pages)
+    except Exception as exc:
+        raise ExpedicionError(
+            f"{nombre}: no se puede abrir como PDF para contar sus páginas ni "
+            f"validar su tamaño ({type(exc).__name__}: {exc}). El presupuesto no "
+            "puede estimar un documento que no se puede leer; corrígelo antes de "
+            "planificar."
+        ) from exc
+
+
+def _preflight_documentos(documentos: list[Path] | tuple[Path, ...], contenidos: list[bytes], *,
+                          envios: list[EnvioPrevisto] | tuple[EnvioPrevisto, ...],
+                          entorno: str) -> Decimal:
+    """Valida los documentos contra los canales PREVISTOS y devuelve el sobrecoste
+    por volumen que corresponde a CADA envío EEC (hallazgo H-09, revisión
+    adversarial r2).
+
+    Antes, `planificar` solo leía los ficheros para hashearlos: todos se
+    etiquetaban como PDF sin comprobarlo, y no se validaba número, formato, tamaño
+    ni páginas. Reproducido: once `.txt` con contenido "no es PDF" generaban un
+    plan ejecutable y llegaban a los tres métodos de envío del doble; un fichero
+    pequeño y otro de más de 7 MiB costaban exactamente lo mismo.
+
+    Se acota a los canales que este plan de verdad usa -- un burofax-only no debe
+    rechazarse por el límite de ficheros de la EEC, y viceversa --, pero el FORMATO
+    (¿es un PDF de verdad?) se exige siempre, use el canal que use: un documento que
+    no se puede leer no se puede mandar por ningún canal.
+    """
+    nombres = [Path(d).name for d in documentos]
+    paginas = [_paginas_pdf(c, nombre=n) for c, n in zip(contenidos, nombres)]
+    bytes_totales = sum(len(c) for c in contenidos)
+
+    usa_burofax = any(e.canal == "burofax" for e in envios)
+    usa_eec = any(e.canal in ("correo", "sms") for e in envios)
+
+    if usa_burofax:
+        if len(documentos) > MAX_FICHEROS_BUROFAX:
+            raise ExpedicionError(
+                f"el burofax admite como máximo {MAX_FICHEROS_BUROFAX} ficheros y "
+                f"el plan lleva {len(documentos)}. Reduce los adjuntos antes de "
+                "planificar.")
+        total_paginas = sum(paginas)
+        if total_paginas > MAX_PAGINAS_BUROFAX:
+            raise ExpedicionError(
+                f"el burofax admite como máximo {MAX_PAGINAS_BUROFAX} páginas en "
+                f"total y los documentos suman {total_paginas}. Recorta o divide el "
+                "envío antes de planificar.")
+
+    sobrecoste_eec = Decimal("0")
+    if usa_eec:
+        if len(documentos) > MAX_FICHEROS_EEC:
+            raise ExpedicionError(
+                "la entrega electrónica certificada admite como máximo "
+                f"{MAX_FICHEROS_EEC} ficheros (suelo seguro: la UI la limita a "
+                f"{MAX_FICHEROS_EEC} aunque el contrato declare hasta 10) y el plan "
+                f"lleva {len(documentos)}. Reduce los adjuntos antes de planificar.")
+        if bytes_totales > MAX_BYTES_EEC:
+            raise ExpedicionError(
+                "la entrega electrónica certificada admite como máximo "
+                f"{MAX_BYTES_EEC // _BYTES_POR_MB} MB en total y los documentos "
+                f"suman {bytes_totales / _BYTES_POR_MB:.2f} MB. Reduce el tamaño "
+                "antes de planificar.")
+        incluidos_mb = _MB_INCLUIDOS_EEC.get(entorno, min(_MB_INCLUIDOS_EEC.values()))
+        exceso = bytes_totales - incluidos_mb * _BYTES_POR_MB
+        if exceso > 0:
+            mb_extra = -(-exceso // _BYTES_POR_MB)  # división entera hacia arriba
+            sobrecoste_eec = PRECIO_MB_ADICIONAL * mb_extra
+    return sobrecoste_eec
+
+
+def planificar(w_code: str, tipo: str, documentos: list[Path], *,
+              entorno_exp: EntornoExpedicion, plaza: str, entorno: str = "sandbox",
+              ordinal: int = 1) -> Plan:
+    """Construye el plan de la expedición. **No envía nada.**"""
+    envios, ausencias = destinatarios_de(entorno_exp.partes_de(w_code))
+    contenidos = _leer_documentos(documentos)
+    shas = [hashlib.sha256(c).hexdigest() for c in contenidos]
+    # H-09 (medio, acotado; revisión adversarial r2): preflight de formato, límites
+    # y presupuesto de bytes ANTES de que el plan se declare ejecutable -- un
+    # rechazo descubierto aquí no cuesta nada; descubierto en el envío, deja la
+    # expedición a medias.
+    sobrecoste_eec = _preflight_documentos(documentos, contenidos, envios=envios, entorno=entorno)
+    coste = coste_de(envios, sobrecoste_eec_por_envio=sobrecoste_eec)
+    asunto, cuerpo = texto_de(w_code)
+    id_personalizado = componer_id(w_code, tipo, ordinal)
+    return Plan(w_code=w_code, tipo=tipo,
+                id_personalizado=id_personalizado,
+                plaza=plaza, entorno=entorno, envios=envios, ausencias=ausencias,
+                coste=coste, credito=entorno_exp.codicert.credito(),
+                documentos=[Path(d) for d in documentos], documentos_sha256=shas,
+                asunto=asunto, cuerpo=cuerpo, usuario=entorno_exp.usuario,
+                digest=_digest_de(id_personalizado=id_personalizado, plaza=plaza,
+                                  entorno=entorno, usuario=entorno_exp.usuario,
+                                  asunto=asunto, cuerpo=cuerpo, coste=coste,
+                                  envios=envios, shas=shas))
 
 
 #: Un `threading.Lock` por expedición (clave = `clave_mutex_expedicion`). Ver
@@ -1126,6 +1347,16 @@ def _ejecutar_bajo_candado(plan: Plan, confirmacion: Confirmacion, *,
             "-- cuentan aunque el listado remoto no los muestre. No hay nada "
             "pendiente que mandar.")
 
+    # H-09 (medio, acotado; revisión adversarial r2): se revalida el preflight de
+    # documentos AQUÍ también -- "antes del primer POST", que es lo que pide el
+    # remedio del hallazgo --, no solo en `planificar`. `planificar` ya lo exige
+    # para producir un Plan, así que en el camino normal esto es una repetición
+    # sobre los MISMOS bytes (el digest de arriba ya certificó que no cambiaron) y
+    # no rechaza nada nuevo; es la red que evita que un Plan construido por otra vía
+    # -- sin pasar por `planificar` -- llegue a un envío real sin haberse validado.
+    sobrecoste_eec = _preflight_documentos(
+        plan.documentos, contenidos, envios=envios_ahora, entorno=entorno_exp.entorno)
+
     # H-08 (medio, acotado; revisión adversarial r2): el crédito se compara contra
     # el COSTE RESIDUAL -- lo que falta por mandar, `pendientes` -- nunca contra
     # `plan.coste`, que es el coste del plan ENTERO e incluye los envíos que ya se
@@ -1135,7 +1366,7 @@ def _ejecutar_bajo_candado(plan: Plan, confirmacion: Confirmacion, *,
     # explicados -- un saldo vivo de exactamente 16,9716 € (lo que cuesta un
     # burofax suelto) se rechazaba porque el motor pedía 18,2348 € (los tres
     # canales), y volver a planificar no ayudaba: vuelve a presupuestar el total.
-    coste_residual = coste_de(pendientes)
+    coste_residual = coste_de(pendientes, sobrecoste_eec_por_envio=sobrecoste_eec)
     credito_ahora = entorno_exp.codicert.credito()
     if credito_ahora < coste_residual:
         coste_hecho = plan.coste - coste_residual

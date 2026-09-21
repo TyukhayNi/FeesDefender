@@ -28,6 +28,14 @@ MAR = {"nombre": "MAR", "1apellido": "GIL", "2apellido": "", "direccion": "Av Su
        "poblacion": "Sevilla", "provincia": "Sevilla", "cp": "41001", "email": "mar@x.es",
        "movil": "688222333"}
 
+# H-09 (medio, acotado; revisión adversarial r2): requeridos con UN SOLO canal activo,
+# para que un test de límites de documentos no se tropiece con el límite del OTRO
+# canal a la vez -- 11 documentos son >10 (burofax) pero también >6 (EEC), así que sin
+# aislar el canal el test no probaría cuál de los dos límites disparó el rechazo.
+_SOLO_BUROFAX = {**ANA, "email": "", "movil": ""}
+_SOLO_EEC = {"nombre": "ANA", "1apellido": "LOPEZ", "2apellido": "", "direccion": "",
+             "poblacion": "", "provincia": "", "cp": "", "email": "ana@x.es", "movil": ""}
+
 
 class _CodicertFalso:
     """Doble del transporte. Cuenta lo que se manda y no toca la red.
@@ -77,8 +85,29 @@ def _entorno(tmp_path, cod=None, partes=(ANA,), plaza="Madrid", entorno="sandbox
         entorno=entorno)
 
 
+def _pdf_bytes(paginas: int = 1, relleno_mb: int = 0) -> bytes:
+    """PDF real, abrible por `pypdf` -- no una cabecera falsa (hallazgo H-09, revisión
+    adversarial r2): el defecto es que `planificar` nunca comprobaba que un documento
+    fuera un PDF de verdad, y la fixture vieja ("%PDF A") tampoco lo era, así que
+    ningún test podía revelarlo. `paginas` sirve para el límite de 200 del burofax;
+    `relleno_mb` añade un adjunto interno de relleno -- sigue siendo un PDF válido de
+    una sola página "visible" -- para alcanzar un tamaño concreto sin fabricar a mano
+    un fichero corrupto.
+    """
+    import io as _io
+    from pypdf import PdfWriter
+    w = PdfWriter()
+    for _ in range(paginas):
+        w.add_blank_page(width=595, height=842)
+    if relleno_mb:
+        w.add_attachment("relleno.bin", b"\x00" * (relleno_mb * 1024 * 1024))
+    buf = _io.BytesIO()
+    w.write(buf)
+    return buf.getvalue()
+
+
 def _doc(tmp_path):
-    d = tmp_path / "A.pdf"; d.write_bytes(b"%PDF A")
+    d = tmp_path / "A.pdf"; d.write_bytes(_pdf_bytes())
     return [d]
 
 
@@ -916,3 +945,128 @@ def test_H08_sin_nada_hecho_todavia_el_saldo_se_compara_contra_el_total(tmp_path
         _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert "crédito" in str(e.value).lower()
     assert cod.enviados == []
+
+
+# ---------------------------------------------------------------------------------
+# H-09 (medio, acotado; revisión adversarial r2). `planificar` solo leía los
+# documentos para hashearlos: TODOS se etiquetaban como PDF sin comprobarlo, y no se
+# validaba número, formato, tamaño ni páginas contra los canales previstos. `coste_de`
+# sumaba solo la tarifa por canal, ignorando el volumen documental -- un fichero
+# pequeño y otro de más de 7 MiB costaban EXACTAMENTE lo mismo. Reproducido: once
+# .txt con contenido "no es PDF" generaban un plan ejecutable y llegaban a los tres
+# métodos de envío del doble. Los límites (burofax: 10 ficheros/200 páginas; EEC: 6
+# ficheros/60 MB, con 1 MB incluido en sandbox y 6 en producción, 0,0288 €/MB extra)
+# son los que el spec ya tiene medidos (§1.4, §7); el motor se ciñe al suelo seguro
+# donde la UI y el contrato discrepan.
+# ---------------------------------------------------------------------------------
+
+def test_H09_un_documento_que_no_es_pdf_de_verdad_se_rechaza_en_el_plan(tmp_path):
+    """El defecto: once .txt con contenido "no es PDF" generaban un plan ejecutable.
+    Aquí basta uno -- ni la cabecera ni el contenido son los de un PDF -- y debe
+    pararse en `planificar`, no en el 422 del servidor."""
+    doc = tmp_path / "A.pdf"
+    doc.write_bytes(b"esto es un .txt con la extension cambiada, no un PDF")
+    ent = _entorno(tmp_path)
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.planificar("W-04AKM2", "OVC", [doc], entorno_exp=ent, plaza="Madrid")
+    assert "pdf" in str(e.value).lower()
+
+
+def test_H09_documento_con_cabecera_pdf_pero_contenido_corrupto_tambien_se_rechaza(tmp_path):
+    """Una cabecera %PDF- no basta: si `pypdf` no puede abrirlo, el presupuesto no
+    puede estimar sus páginas ni su tamaño real -- se bloquea en vez de fingir que
+    cabe."""
+    doc = tmp_path / "A.pdf"
+    doc.write_bytes(b"%PDF-1.4 pero el resto no es una estructura de PDF valida")
+    ent = _entorno(tmp_path)
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.planificar("W-04AKM2", "OVC", [doc], entorno_exp=ent, plaza="Madrid")
+    assert "pdf" in str(e.value).lower()
+
+
+def test_H09_mas_de_diez_documentos_supera_el_limite_del_burofax(tmp_path):
+    docs = [tmp_path / f"{i}.pdf" for i in range(11)]
+    for d in docs:
+        d.write_bytes(_pdf_bytes())
+    ent = _entorno(tmp_path, partes=(_SOLO_BUROFAX,))
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.planificar("W-04AKM2", "OVC", docs, entorno_exp=ent, plaza="Madrid")
+    mensaje = str(e.value).lower()
+    assert "burofax" in mensaje and "10" in mensaje
+
+
+def test_H09_mas_de_seis_documentos_supera_el_limite_de_la_entrega_electronica(tmp_path):
+    docs = [tmp_path / f"{i}.pdf" for i in range(7)]
+    for d in docs:
+        d.write_bytes(_pdf_bytes())
+    ent = _entorno(tmp_path, partes=(_SOLO_EEC,))
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.planificar("W-04AKM2", "OVC", docs, entorno_exp=ent, plaza="Madrid")
+    assert "6" in str(e.value)
+
+
+def test_H09_mas_de_doscientas_paginas_supera_el_limite_del_burofax(tmp_path):
+    doc = tmp_path / "A.pdf"
+    doc.write_bytes(_pdf_bytes(paginas=201))
+    ent = _entorno(tmp_path, partes=(_SOLO_BUROFAX,))
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.planificar("W-04AKM2", "OVC", [doc], entorno_exp=ent, plaza="Madrid")
+    mensaje = str(e.value).lower()
+    assert "página" in mensaje and "200" in mensaje
+
+
+def test_H09_mas_de_sesenta_mb_supera_el_limite_de_bytes_de_la_entrega_electronica(tmp_path):
+    doc = tmp_path / "A.pdf"
+    doc.write_bytes(_pdf_bytes(relleno_mb=61))
+    ent = _entorno(tmp_path, partes=(_SOLO_EEC,))
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.planificar("W-04AKM2", "OVC", [doc], entorno_exp=ent, plaza="Madrid")
+    assert "60" in str(e.value)
+
+
+def test_H09_el_coste_incorpora_el_sobrepeso_de_bytes_del_correo(tmp_path):
+    """El modo de fallo medido por el revisor: un fichero pequeño y otro de más de
+    7 MiB costaban EXACTAMENTE lo mismo -- `coste_de` ignoraba el volumen. Con el
+    mismo requerido (un solo canal EEC) y un solo documento cada vez, el plan con el
+    adjunto grande debe costar más que el del adjunto pequeño."""
+    pequeno = tmp_path / "chico.pdf"; pequeno.write_bytes(_pdf_bytes())
+    grande = tmp_path / "grande.pdf"; grande.write_bytes(_pdf_bytes(relleno_mb=7))
+    ent = _entorno(tmp_path, partes=(_SOLO_EEC,))
+
+    plan_chico = exp.planificar("W-04AKM2", "OVC", [pequeno], entorno_exp=ent, plaza="Madrid")
+    plan_grande = exp.planificar("W-04AKM2", "OVC", [grande], entorno_exp=ent, plaza="Madrid")
+
+    assert plan_chico.coste == exp.TARIFA["correo"]  # bytes bajo el 1 MB incluido en sandbox
+    assert plan_grande.coste > plan_chico.coste
+
+
+def test_H09_sin_ningun_canal_afectado_el_limite_no_se_comprueba_de_mas(tmp_path):
+    """Que la validación esté acotada a los canales PREVISTOS: un solo requerido con
+    burofax y EEC a la vez, con dos documentos pequeños, no debe rechazarse por
+    ningún límite -- ninguno de los dos se supera."""
+    docs = [tmp_path / "A.pdf", tmp_path / "B.pdf"]
+    for d in docs:
+        d.write_bytes(_pdf_bytes())
+    ent = _entorno(tmp_path)  # ANA por defecto: burofax + correo + sms
+    plan = exp.planificar("W-04AKM2", "OVC", docs, entorno_exp=ent, plaza="Madrid")
+    assert plan.ejecutable is True
+
+
+# ---------------------------------------------------------------------------------
+# H-16 (medio, acotado; revisión adversarial r2). Se rechazaba un requerido SIN
+# canales, pero no la AUSENCIA de requeridos: `get_relaciones` puede devolver
+# legítimamente ninguna relación, `partes_de` lo convierte en `[]`, y coste cero más
+# cero envíos se aceptaban como un plan ejecutable. Reproducido: un expediente
+# extrajudicial sin contrarios vinculados producía un plan aprobable; ejecutarlo no
+# mandaba nada y el CLI (ver tests/test_codicert_cli.py) imprimía "ENVIADO: " vacío.
+# ---------------------------------------------------------------------------------
+
+def test_H16_planificar_sin_ningun_requerido_se_rechaza(tmp_path):
+    """`get_relaciones` devolvió cero contrarios: `partes_de` es `[]`. `planificar`
+    no debe producir un plan de coste cero y cero envíos -- debe decir QUÉ falta."""
+    ent = _entorno(tmp_path, partes=())
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+    mensaje = str(e.value).lower()
+    assert "requerido" in mensaje or "contrario" in mensaje
+    assert "crm" in mensaje

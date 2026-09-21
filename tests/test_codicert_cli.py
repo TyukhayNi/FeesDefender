@@ -15,6 +15,28 @@ from core.sudespacho_relations import SudespachoRelationsError
 from scripts import codicert as cli
 
 
+def _pdf_bytes() -> bytes:
+    """PDF real, abrible por `pypdf` -- no una cabecera falsa (hallazgo H-09,
+    revisión adversarial r2): desde ese hallazgo, `planificar` valida que cada
+    documento sea un PDF de verdad, así que un doble de este fichero necesita uno
+    real para seguir probando lo que dice probar (mutex, credenciales, errores del
+    CRM), no el preflight de formato."""
+    import io as _io
+    from pypdf import PdfWriter
+    w = PdfWriter()
+    w.add_blank_page(width=595, height=842)
+    buf = _io.BytesIO()
+    w.write(buf)
+    return buf.getvalue()
+
+
+# H-06: campos separados, como los devuelve `clientes_contrarios` de verdad (docs/
+# CRM_SUDESPACHO_ATLAS.md § clientes_contrarios).
+_ANA = {"nombre": "ANA", "1apellido": "LOPEZ", "2apellido": "", "direccion": "C Mayor 1",
+        "poblacion": "Madrid", "provincia": "Madrid", "cp": "28001", "email": "ana@x.es",
+        "movil": "665130883"}
+
+
 def _plan(tmp_path):
     envios = [exp.EnvioPrevisto("burofax", {"nombre": "ANA LOPEZ Y LUIS PEREZ"},
                                 "ANA LOPEZ Y LUIS PEREZ · C Mayor 1, Madrid  "
@@ -191,7 +213,7 @@ def _cli_main_hermetico(monkeypatch, *, entorno_real_falso, argv):
 
 def test_un_fallo_de_relaciones_del_crm_sale_legible(tmp_path, monkeypatch, capsys):
     doc = tmp_path / "A.pdf"
-    doc.write_bytes(b"%PDF-1.4 falso")
+    doc.write_bytes(_pdf_bytes())
     codigo = _cli_main_hermetico(
         monkeypatch,
         entorno_real_falso=_entorno_falso_que_revienta(
@@ -205,7 +227,7 @@ def test_un_fallo_de_relaciones_del_crm_sale_legible(tmp_path, monkeypatch, caps
 
 def test_un_fallo_de_api_key_ausente_sale_legible(tmp_path, monkeypatch, capsys):
     doc = tmp_path / "A.pdf"
-    doc.write_bytes(b"%PDF-1.4 falso")
+    doc.write_bytes(_pdf_bytes())
     codigo = _cli_main_hermetico(
         monkeypatch,
         entorno_real_falso=_entorno_falso_que_revienta(
@@ -232,13 +254,16 @@ def test_main_no_vuelve_a_resolver_credenciales_usa_el_usuario_de_entorno_real(
 
     def _entorno_real_falso(*, plaza, entorno):
         return exp.EntornoExpedicion(
-            codicert=_CodTransporteFalso(), partes_de=lambda _w: [],
+            # H-16: `planificar` rechaza una expedición sin requeridos -- este
+            # test no es sobre destinatarios, así que necesita al menos uno real
+            # para seguir probando lo que dice probar (credenciales).
+            codicert=_CodTransporteFalso(), partes_de=lambda _w: [_ANA],
             ahora=lambda: dt.datetime(2026, 9, 17, 12, 0, tzinfo=dt.timezone.utc),
             raiz=tmp_path, plaza=plaza, entorno=entorno, usuario="BD-YA-RESUELTO")
     monkeypatch.setattr(cli.exp, "entorno_real", _entorno_real_falso)
 
     doc = tmp_path / "A.pdf"
-    doc.write_bytes(b"%PDF-1.4 falso")
+    doc.write_bytes(_pdf_bytes())
     codigo = cli.main(["plan", "W-04AKM2", "--tipo", "OVC", "--plaza", "Madrid",
                        "--doc", str(doc)])
 
@@ -287,7 +312,10 @@ def test_enviar_con_el_mutex_ya_ocupado_aborta_sin_llegar_a_ejecutar(
 
     def _entorno_real_falso(*, plaza, entorno):
         return exp.EntornoExpedicion(
-            codicert=_CodTransporteQueRevienta(), partes_de=lambda _w: [],
+            # H-16: `planificar` rechaza una expedición sin requeridos -- este
+            # test es sobre el mutex ocupado, así que necesita al menos un
+            # requerido real para llegar a construir el plan.
+            codicert=_CodTransporteQueRevienta(), partes_de=lambda _w: [_ANA],
             ahora=lambda: dt.datetime(2026, 9, 17, 12, 0, tzinfo=dt.timezone.utc),
             raiz=tmp_path, plaza=plaza, entorno=entorno, usuario="BD-OCUPADO")
 
@@ -295,7 +323,7 @@ def test_enviar_con_el_mutex_ya_ocupado_aborta_sin_llegar_a_ejecutar(
     monkeypatch.setattr(cli.exp, "entorno_real", _entorno_real_falso)
 
     doc = tmp_path / "A.pdf"
-    doc.write_bytes(b"%PDF-1.4 falso")
+    doc.write_bytes(_pdf_bytes())
     plan = exp.planificar("W-04AKM2", "OVC", [doc],
                           entorno_exp=_entorno_real_falso(plaza="Madrid", entorno="sandbox"),
                           plaza="Madrid")
@@ -308,3 +336,56 @@ def test_enviar_con_el_mutex_ya_ocupado_aborta_sin_llegar_a_ejecutar(
     assert codigo == 2
     err = capsys.readouterr().err
     assert "ERROR" in err
+
+
+# ---------------------------------------------------------------------------------
+# H-16 (medio, acotado; revisión adversarial r2). Se rechazaba un requerido SIN
+# canales, pero no la AUSENCIA de requeridos: `get_relaciones` puede devolver
+# legítimamente ninguna relación (un expediente extrajudicial sin contrarios
+# vinculados en el CRM), `partes_de` lo convierte en `[]`, y coste cero más cero
+# envíos se aceptaban como un plan ejecutable. Reproducido: `enviar` no mandaba
+# nada, devolvía código 0 e imprimía "ENVIADO: " vacío -- no es la detección de una
+# expedición ya completa (no hay ningún envío previo ni ningún destinatario).
+# ---------------------------------------------------------------------------------
+
+def test_H16_enviar_sin_ningun_requerido_no_imprime_ENVIADO_y_falla(
+        tmp_path, monkeypatch, capsys):
+    """`partes_de` reproduce exactamente lo que devuelve `get_relaciones` para un
+    expediente sin contrarios vinculados: una lista vacía, sin ninguna excepción --
+    el mismo dato de entrada que `test_H16_ningun_requerido_en_absoluto_detiene_el_
+    plan` (tests/test_expedicion_plan.py) prueba a nivel de `destinatarios_de`. Este
+    test prueba el frontal entero: ni éxito, ni "ENVIADO", ni ningún envío real."""
+
+    class _CodTransporteQueRevienta(_CodTransporteFalso):
+        """Si `enviar`/`listar` se llegaran a invocar, el defecto seguiría vivo:
+        un plan sin destinatarios no debe llegar ni siquiera a consultarlos."""
+
+        def listar(self, **kw):
+            raise AssertionError("no debía alcanzar listar(): no hay destinatarios")
+
+        def enviar_burofax(self, **kw):
+            raise AssertionError("no debía alcanzar enviar_burofax(): no hay destinatarios")
+
+        def enviar_eec(self, **kw):
+            raise AssertionError("no debía alcanzar enviar_eec(): no hay destinatarios")
+
+    def _entorno_real_falso(*, plaza, entorno):
+        return exp.EntornoExpedicion(
+            codicert=_CodTransporteQueRevienta(), partes_de=lambda _w: [],
+            ahora=lambda: dt.datetime(2026, 9, 17, 12, 0, tzinfo=dt.timezone.utc),
+            raiz=tmp_path, plaza=plaza, entorno=entorno, usuario="BD-SIN-CONTRARIOS")
+
+    monkeypatch.setattr(cli._cod, "credenciales", lambda *a, **kw: ("BD-FALSO", "clave"))
+    monkeypatch.setattr(cli.exp, "entorno_real", _entorno_real_falso)
+
+    doc = tmp_path / "A.pdf"
+    doc.write_bytes(_pdf_bytes())
+    codigo = cli.main(["enviar", "W-04AKM2", "--tipo", "OVC", "--plaza", "Madrid",
+                       "--doc", str(doc), "--confirmar", "lo-que-sea"])
+
+    assert codigo == 1  # nunca 0: el defecto imprimía "ENVIADO: " vacío con código 0
+    salida = capsys.readouterr()
+    assert "ENVIADO" not in salida.out
+    err = salida.err.lower()
+    assert "error" in err
+    assert "requerido" in err or "contrario" in err
