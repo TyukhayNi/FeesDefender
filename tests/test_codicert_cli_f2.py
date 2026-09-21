@@ -119,6 +119,100 @@ def test_estado_SIGUE_dando_los_envios_aunque_el_caso_no_este_en_LOCAL():
     assert "REQUERIDO" in texto.upper()
 
 
+def _entorno_doble(tmp_path, gestor=None):
+    """Un `EntornoExpedicion` completo, como el que monta `entorno_real`."""
+    from datetime import timezone
+
+    cert = b"%PDF-1.4 certificado"
+
+    class _T:
+        def listar(self, **kw):
+            return [{"id": "006a", "tipo": "c", "asunto": "SONDA",
+                     "destinatarios": "x@y.es", "id_personalizado": "W-04AKM2 - OVC",
+                     "fecha": "2026-09-10T18:26:08+02:00"}]
+
+        def estados(self, i):
+            return [{"codigo": 20, "titulo": "Leído",
+                     "fecha": "2026-09-12T23:03:43+02:00", "detalle": None}]
+
+        def certificado(self, i):
+            return cert
+
+    class _G:
+        def __init__(self):
+            self.subidos = []
+
+        def subir(self, contenido, *, nombrefinal, mime, related, al_reservar=None):
+            if al_reservar:
+                al_reservar("uuid-0")
+            self.subidos.append(nombrefinal)
+            return exp.DocumentoEnCrm(doc_id="doc1", origen_id="uuid-0",
+                                      nombrefinal=nombrefinal, sha256="ab" * 32)
+
+        def buscar_por_origen_id(self, oid, *, element, exp_id):
+            return None
+
+        def buscar_por_nombre(self, n, *, element, exp_id):
+            return None
+
+        def descargar(self, doc_id):
+            return cert
+
+    return exp.EntornoExpedicion(
+        codicert=_T(), partes_de=lambda w: [],
+        ahora=lambda: datetime(2026, 9, 21, tzinfo=timezone.utc),
+        raiz=tmp_path, plaza="Madrid", entorno="produccion", usuario="madrid.bd",
+        carpeta_certificados=lambda w: tmp_path / "caso" / "Certificados",
+        gestor=gestor if gestor is not None else _G(),
+        exp_crm=lambda w: ("extrajudiciales", "123"),
+        leer_emisor=lambda pdf: exp.EmisorLeido(
+            razon_social="EV MMC SPAIN, S.L.U.", usuario="madrid.bd"))
+
+
+def test_main_ESTADO_cablea_el_frontal_con_el_entorno_real(monkeypatch, capsys,
+                                                           tmp_path):
+    """El cableado CLI → entorno → transporte, que es donde vivía H-01.
+
+    Los tests de `render_estado` prueban el formato con datos armados a mano; este
+    prueba que la orden **llega** hasta el transporte y vuelve. El hallazgo H-01 —
+    el transporte real sin `estados`— pasó inadvertido precisamente porque nada
+    ejercitaba este tramo.
+    """
+    monkeypatch.setattr(exp, "entorno_real",
+                        lambda **kw: _entorno_doble(tmp_path))
+    assert cli.main(["estado", "W-04AKM2", "--tipo", "OVC", "--plaza", "Madrid",
+                     "--entorno", "produccion"]) == 0
+    salida = capsys.readouterr().out
+    assert "006a" in salida and "PRODUCCION" in salida
+
+
+def test_main_COSECHAR_cablea_y_archiva(monkeypatch, capsys, tmp_path):
+    """Lo mismo para `cosechar`, que además escribe y sube."""
+    monkeypatch.setattr(exp, "entorno_real",
+                        lambda **kw: _entorno_doble(tmp_path))
+    assert cli.main(["cosechar", "W-04AKM2", "--tipo", "OVC", "--plaza", "Madrid",
+                     "--entorno", "produccion"]) == 0
+    salida = capsys.readouterr().out
+    assert "doc1" in salida and "nuevo" in salida
+    assert (tmp_path / "caso" / "Certificados").is_dir()
+
+
+def test_main_COSECHAR_con_incluir_pendientes_llega_al_core(monkeypatch, capsys,
+                                                            tmp_path):
+    """El flag tiene que viajar: un argparse que no lo pase es un flag inerte."""
+    visto = {}
+
+    def espia(w, t, *, entorno_exp, ordinal=1, **kw):
+        visto.update(kw)
+        return []
+
+    monkeypatch.setattr(exp, "entorno_real", lambda **kw: _entorno_doble(tmp_path))
+    monkeypatch.setattr(exp, "cosechar", espia)
+    cli.main(["cosechar", "W-04AKM2", "--tipo", "OVC", "--plaza", "Madrid",
+              "--incluir-pendientes"])
+    assert visto.get("incluir_pendientes") is True
+
+
 def test_estado_traduce_un_fallo_del_CRM_a_un_mensaje_legible(monkeypatch, capsys):
     """El operador es un abogado: una traza de Python no es lo que debe leer."""
     def revienta(**kw):
