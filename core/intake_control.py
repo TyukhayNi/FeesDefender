@@ -44,14 +44,24 @@ RAIZ: frozenset[str] = frozenset({
     # cliente** (R2/H-05). Es protocolo: lo escribe `scripts/abrir_caso.etapa_actuacion`
     # y solo lo lee ella para no crear una segunda actuación al relanzar.
     "_recibo_actuacion.json",
+    # JSON de la 1a pasada de viabilidad (`core/viabilidad_json.escribir`, MEJORAS #262).
+    # Sin declararlo aquí, una relanzada de `etapa_viabilidad` (que corre en 7a posición,
+    # DESPUÉS de `sala_maquina`) hashea el JSON de la corrida anterior y lo inventaría
+    # como documento probatorio del cliente: baja a la sala de máquina igual que un PDF
+    # del expediente (C2 de la revisión de conjunto, 2026-09-15).
+    "_viabilidad.json",
 })
 
 #: Temporales de escritura atómica en la raíz, por su prefijo REAL (R1/H-05): un huérfano
 #: de `mkstemp`/`os.replace` tampoco es documento. `.apertura_v1.` (`apertura_v1_estado`),
 #: `._caso.` (`case_manager`), `._intake_hashes.` (`intake_manifest` y el temporal de
-#: `migrar_layout_intake`), `._ocurrencias_crm.json.` (`ocurrencias_crm`).
+#: `migrar_layout_intake`), `._ocurrencias_crm.json.` (`ocurrencias_crm`),
+#: `_viabilidad.json.` (`viabilidad_json.escribir`: `tempfile.mkstemp(prefix=f"{destino.name}.")`
+#: sobre `_viabilidad.json` — un huérfano si el proceso muere entre el `os.link` y el
+#: `unlink` del temporal, mismo hueco que los otros tres, cubierto aquí igual).
 RAIZ_PREFIJOS: tuple[str, ...] = (
     ".apertura_v1.", "._caso.", "._intake_hashes.", "._ocurrencias_crm.json.",
+    "_viabilidad.json.",
 )
 
 #: Protocolo a profundidad 2, SOLO en el directorio que su escritor usa (R1/H-04): un

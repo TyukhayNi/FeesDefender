@@ -12036,8 +12036,10 @@ y dos más). O sea: el flujo se usa y su entrada se pierde.
    alguien tiene que producir ese JSON y **dejarlo escrito**. Hoy ni siquiera hay un ejemplo del
    que partir para conocer su forma.
 
-**El contrato del JSON, derivado POR EJECUCIÓN el 2026-09-14** — no leyéndolo, porque leerlo no
-bastó: tres intentos hasta que corrió. Se deja aquí porque **no está escrito en ningún sitio**:
+**El contrato del JSON — corregido el 2026-09-15, y la corrección enseña más que el
+contrato.** Lo que esta ficha publicó el 2026-09-14 como «derivado POR EJECUCIÓN» tenía
+**cuatro campos mal**. La forma canónica vive ahora en `core/viabilidad_json.py`, que es
+código y tiene tests contra el consumidor real; esto es su reflejo:
 
 ```json
 {
@@ -12045,18 +12047,43 @@ bastó: tres intentos hasta que corrió. Se deja aquí porque **no está escrito
   "equipo": {"director_captador": "APELLIDO, Nombre", "asesor_captador": "...",
              "director_buscador": "...", "asesor_buscador": "..."},
   "observaciones": "...",
-  "importes": {"principal": 0, "costas": 0, "intereses": 0},
+  "importes": {"precio": 0, "pct_honorarios": 5, "pagos_parciales": 0,
+               "propuesta_pago": 0},
   "hitos": {"<id de la plantilla>": {"score": 0, "fecha": "AAAA-MM-DD"}},
   "preguntas": {"<id de la plantilla>": {"respuesta": "...", "cita": "...", "confianza": "..."}},
-  "actividades": [], "motivos_impago": [],
+  "actividades": {"exposes_propiedad": 0, "visitas_propiedad": 0,
+                  "exposes_buscador": 0, "visitas_buscador": 0},
+  "motivos_impago": "cadena, NO lista",
   "avisos": [{"n": 1, "tipo": "...", "aviso": "...", "impacto": "...", "fuente": "...",
               "severidad": "alta|media|baja", "accion": "...", "sube": "no", "estado": "abierto"}],
-  "bitacora_inicial": "..."
+  "bitacora_inicial": true,
+  "_residuo": {"campos": ["..."], "por_que": {"...": "..."}, "lo_remata": "..."}
 }
 ```
 
-**Los dos errores que cuesta descubrir:** `equipo` es un **objeto** de cuatro claves (un texto
-revienta con `AttributeError`), y `avisos` es una lista de **objetos**, no de cadenas.
+**Los cuatro que estaban mal, medidos corriendo el consumidor el 2026-09-15:**
+
+| Campo | Decía | Es | Qué pasaba |
+|---|---|---|---|
+| `importes` | `{principal, costas, intereses}` | `{precio, pct_honorarios, pagos_parciales, propuesta_pago}` | los tres se ignoran: con `principal: 12000` la celda `H13` queda vacía y el script imprime `OK` |
+| `motivos_impago` | lista | **cadena** | `AttributeError: 'list' object has no attribute 'strip'` |
+| `actividades` | lista | **objeto** de 4 claves | `AttributeError: 'list' object has no attribute 'get'` |
+| `bitacora_inicial` | texto | **booleano**; su texto se descarta | se escribe un texto fijo |
+| `avisos` | lista de objetos ✅ | — | **fila de control**: acertó, junto con `equipo` — acredita que la medición no era ciega |
+
+**Por qué su ejecución no pudo verlo, que es lo que hay que no repetir.** Aquella corrida
+pasó `[]` en los dos campos de lista y claves desconocidas en `importes`. Una lista vacía
+es *falsy*, así que `d.get(...) or ""` y `or {}` la sustituyen y **nunca revientan**; y
+`.get()` sobre una clave inexistente devuelve el default **sin avisar**. **El instrumento
+no podía dar el otro valor**: esa corrida era incapaz de distinguir «campo correcto» de
+«campo ignorado», y salió `OK` en los dos casos. Correr algo no acredita nada si la
+corrida no puede fallar por lo que se quiere medir.
+
+**Remediado en la frontera, no en el ejemplo** (PR de `MEJORAS #264`): `render_informe.py`
+ya avisaba de los hitos y las preguntas que no reconocía y **callaba** en los campos de
+primer nivel y dentro de `importes`/`actividades`. Esa asimetría era el defecto. Ahora
+avisa de toda clave que no lee, y `core/viabilidad_json.validar` lo comprueba del lado
+del productor.
 
 **Tres cosas más que la corrida enseñó y conviene no volver a descubrir:**
 
@@ -12072,9 +12099,30 @@ o que se decida cablear la viabilidad dentro de la corrida de apertura. **Depend
 decisión que la sala de lectura**: qué hace la corrida cuando necesita que alguien *lea* el
 expediente.
 
-**Dónde debería vivir, para cuando se decida:** junto al informe, dentro del expediente, y
-declarado como protocolo si no debe inventariarse como documento del cliente — la misma frontera
-que `MEJORAS #261` plantea para el recibo de la actuación.
+**Parcialmente atendida el 2026-09-15** (`MEJORAS #264`, salida 3): el JSON deja de ser
+efímero para las corridas de apertura —`core/viabilidad_json.py` lo escribe en
+`00_Input/_viabilidad.json` con lo derivable y el residuo marcado—. **Lo que sigue
+abierto:** los informes ya entregados no tienen JSON y no se pueden reproducir; esto solo
+cubre de aquí en adelante.
+
+**Dónde debería vivir, para cuando se decida** —lo que planteaba esta ficha antes de la salida 3,
+y que se conserva porque el razonamiento sigue siendo válido como alternativa que se descartó, no
+como error—: junto al informe, dentro del expediente, y declarado como protocolo si no debe
+inventariarse como documento del cliente — la misma frontera que `MEJORAS #261` plantea para el
+recibo de la actuación.
+
+**Lo que de verdad se decidió, y por qué se apartó de esa sugerencia** (comentario junto a
+`NOMBRE_FICHERO` en `core/viabilidad_json.py`): vive en `00_Input/`, no junto al informe. Tres
+razones: hay precedente exacto (`_recibo_actuacion.json` de `MEJORAS #261`, en el mismo sitio);
+`core/intake_control.py` ya mantiene ahí la lista de ficheros de protocolo que no se inventarían
+como documento del cliente, así que no hacía falta inventar un sitio nuevo; y este JSON es la
+ENTRADA del informe, no una versión suya — vive donde vive la entrada, no donde vive la salida.
+
+**Despliegue pendiente, fuera del repo.** El consumidor (`render_informe.py`, skill
+`viabilidad-prerelleno`) corre en el SERVIDOR (Cowork), no en el PC, y `plugin update` compara por
+versión: sin re-empaquetar el `.skill` y re-importarlo a mano en Cowork, el aviso de claves
+desconocidas que trae esta salida 3 no llega a producción aunque el repo ya lo tenga. Detalle del
+paso en el plan, Step 5 de la PR 2 (`docs/superpowers/plans/2026-09-15-corrida-prepara-sesion-remata.md`).
 
 ## 263. El clasificador por LLM acierta el 13% — y se equivoca CONVENCIDO
 
@@ -12135,7 +12183,7 @@ python -m scripts.medir_clasificador_llm --por-caso 15 --limite 75
 **Mientras tanto la decisión es no automatizarla**: la corrida deja el residuo marcado como
 pendiente y la lectura la sigue haciendo una sesión, que es lo que hace hoy y funciona.
 
-## 264. Sala de lectura y viabilidad no son dos cableados: son UNA decisión
+## 264. Sala de lectura y viabilidad no son dos cableados: son UNA decisión  [PROMOVIDO → PLAN.md]
 
 **Anotado 2026-09-14**, al cerrar la tanda P1/P8 y preguntarse qué falta para que la corrida de
 apertura llegue hasta el informe. Las tres piezas de este hueco ya estaban fichadas por separado
@@ -12189,6 +12237,15 @@ dice la entrada #48 de este mismo fichero—.
 **Disparador.** Que Nikolai elija cuál de las tres salidas quiere. Mientras no la elija, **no se
 cablea ninguna de las dos etapas**: montar el lazo sin haber decidido el lector produce una etapa
 que siempre sale `saltada`, que es el hueco de hoy con más código encima.
+
+**Elegida la salida 3 el 2026-09-14** (decisión de Nikolai): *la corrida prepara y una sesión
+remata*. Con ella entran también sus dos decisiones hermanas: el **correo entra** en la corrida, y
+el **clasificador por LLM queda cerrado** —`MEJORAS #263` no se reabre: no se prueba prompt ni
+modelo, y `scripts/medir_clasificador_llm.py` se queda quieto—.
+
+**Se cabla solo la mitad de viabilidad.** La etapa `sala_lectura` sigue esperando: depende del mismo
+lector, y montarla hoy produciría una etapa que siempre sale `saltada`.
+Diseño: [`2026-09-15-corrida-prepara-sesion-remata-design.md`](superpowers/specs/2026-09-15-corrida-prepara-sesion-remata-design.md).
 
 ## 265. El autofiltro de `AVISOS LLM` llega a la fila 10, y los avisos que importan están debajo
 
@@ -12410,3 +12467,90 @@ solo título, así que tampoco dice **qué** fila hay que revisar.
 
 **No promovido a `PLAN.md`:** falta disparador propio. Se promoverá cuando el aviso llegue a
 ocultar un desfase real o cuando se toque `session_close` por otra causa.
+## 273. Cuatro mutantes del arnés no pueden morir — y nadie los vigila
+
+**Lo medido** (2026-09-15, durante la tanda de `MEJORAS #264`): cuatro mutantes de
+`tests/_mutantes_plan5.py` —`F23`, `F25`, `F32-costura-hasta` y `F34-control-registro`— **no
+pueden morir**, porque el texto que usan como ancla ya no existe en el código que mutan. Se
+verificó que los cuatro ya estaban rotos **antes** de esa tanda, comparando contra el commit
+`f9c11d8`: ninguno lo causó ese trabajo.
+
+**La causa raíz, que es lo que hay que fichar y no el síntoma.** `tests/_mutantes_plan5.py` es
+un **script suelto** —guion bajo inicial, `main()` propio, **cero importadores**—, así que
+ningún test de la suite vigila sus anclas. Cuando el código que mutan cambia de redacción, el
+mutante deja de aplicarse **en silencio** y el arnés sigue reportando verde. Un arnés de
+mutación que no puede distinguir «el mutante murió por la propiedad» de «el mutante no llegó a
+aplicarse» no acredita lo que dice acreditar.
+
+**Cómo se detectó.** Un revisor adversarial lo señaló además como límite de su propia
+cobertura: no ejecutó el arnés completo, así que su ronda **no da por cubierto** lo que el
+arnés debía cubrir.
+
+**Disparador.** Que haya que apoyarse en el arnés para acreditar una propiedad, o la próxima
+tanda que toque `core/apertura_v1.py` o el secuenciador.
+
+## 274. Los rótulos de los fixtures de apertura pueden llevar datos de un caso real
+
+**Lo medido** (2026-09-15): una revisión adversarial externa levantó la sospecha de que los
+literales descriptivos que usan los fixtures de `tests/test_abrir_caso_cli.py` —un rótulo de
+carpeta de Drive y una dirección— parecen proceder de un expediente real y no de datos
+sintéticos. El revisor **no pudo certificar su origen**: la blocklist privada no está
+disponible en su entorno y su test se salta.
+
+**Comprobado al adjudicar.** Esos literales **existen en `origin/main` desde antes**, en
+varios ficheros —`core/intake_drive.py`, `tests/test_intake_drive.py`, la bitácora y varios
+planes, además del propio fichero de test—. El trabajo de `MEJORAS #264` los **reutiliza**, no
+los introduce. Por eso es deuda preexistente y no un defecto de aquella rama.
+
+**Por qué importa igual.** La regla de la casa es que el dato real vive fuera del repo y que
+en código y docs se referencia por `W-XXXXX`, no por nombre de tercero. Si esos literales son
+reales, llevan tiempo versionados y el saneado los pasó por alto; si son sintéticos, **nadie
+puede saberlo mirándolos**, que es casi tan malo, porque obliga a repetir esta misma duda cada
+vez que alguien los lea.
+
+**Qué no lleva esta ficha, a propósito.** No se reproducen los literales sospechosos —ni el
+rótulo, ni la dirección, ni ningún nombre—: fichar una posible fuga copiándola la empeora.
+Quien la atienda los localiza en los ficheros ya señalados: `tests/test_abrir_caso_cli.py`
+(los fixtures), `core/intake_drive.py`, `tests/test_intake_drive.py`, y la bitácora y los
+planes que los mencionan.
+
+**Disparador.** El próximo saneado de PII, o que alguien tenga que tocar esos fixtures.
+
+## 275. `scripts/recalc.py` de la skill `xlsx` no corre en Windows
+
+**Lo medido** (2026-09-17): al recalcular un libro generado con `openpyxl`, el script muere
+antes de abrir nada:
+
+```
+File "…/.claude/skills/xlsx/scripts/office/soffice.py", line 46, in _needs_shim
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+AttributeError: module 'socket' has no attribute 'AF_UNIX'
+```
+
+El script detecta si necesita un shim para sockets Unix, y esa comprobación se ejecuta
+**siempre**, también donde `AF_UNIX` no existe. En Windows el atributo no está en el módulo
+`socket`, así que revienta en el arranque y **ningún libro se recalcula**. No es una
+incompatibilidad de LibreOffice: LibreOffice está instalado y funciona.
+
+**Por qué importa.** La skill `xlsx` declara la recalculación como paso **obligatorio** cuando
+el libro lleva fórmulas, y ese paso es el que acredita cero errores (`#REF!`, `#DIV/0!`…). En
+Windows ese control no está disponible por la vía que la propia skill manda, así que su
+obligatoriedad queda incumplida por construcción y en silencio.
+
+**Remedio usado, y verificado.** Invocar LibreOffice directamente y comprobar después por
+lectura, no por código de salida:
+
+```powershell
+& "C:\Program Files\LibreOffice\program\soffice.exe" --headless --norestore `
+    --convert-to xlsx:"Calc MS Excel 2007 XML" --outdir <dir> <fichero>
+```
+
+y releer el resultado con `openpyxl(data_only=True)` barriendo todas las celdas en busca de
+literales de error y cuadrando los totales contra un control conocido. Comprobado además que
+la conversión **conserva** anchos, fuentes, rellenos, autofiltro, paneles inmovilizados y
+formato de número.
+
+**Disparador.** La próxima vez que haya que entregar un `.xlsx` con fórmulas desde este PC.
+Arreglo natural: guardar la comprobación del shim tras un `hasattr(socket, "AF_UNIX")`, o
+envolverla en `try/except AttributeError`. Es un parche de una línea en una skill de
+Anthropic, así que conviene decidir si se parchea en local o se reporta aguas arriba.
