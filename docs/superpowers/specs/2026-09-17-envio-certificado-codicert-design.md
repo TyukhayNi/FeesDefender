@@ -1019,6 +1019,23 @@ defecto aquí no se arregla con un `git revert`.
 La R2 la ejecutará **Codex** si tiene cupo a partir del 2026-09-19; si no, Claude Code en sesión
 independiente con el mismo registro sin maquillar.
 
+### 12.3 La cobertura de F2 (2026-09-21)
+
+**F2 tuvo UNA ronda, y es lectura de la tabla de `CLAUDE.md`, no decisión.** El fundamento
+que amplió F1 a dos —gasta dinero y manda comunicaciones irreversibles a terceros— **no se
+traslada**: `refrescar` solo lee y las dos escrituras de `cosechar` (un PDF en el expediente,
+un documento en el CRM) son reversibles. Ampliar aquí «porque la pieza es importante» sería
+leer la tabla para arriba cuando conviene, que es justo el movimiento que el §11 me anotó.
+
+- **R1 de Codex sobre el diff** (commit `8dd3952`): **NO-SHIP**, 10 hallazgos — 3 `alta`,
+  7 `media`—, **los diez confirmados contra la fuente y remediados**.
+- Acta literal: [`2026-09-21-codicert-f2-r1-adversarial-review.md`](../plans/2026-09-21-codicert-f2-r1-adversarial-review.md).
+  Adjudicación y remedio: §§11 y 12 de [`2026-09-21-codicert-f2.md`](../plans/2026-09-21-codicert-f2.md).
+- **Sobre los diez remedios, la cobertura independiente es AUSENTE**, igual que en el §12.2:
+  cada uno se escribió con su control visto en rojo antes y la suite va verde con las dos
+  semillas, lo que prueba que cada remedio hace lo que dice — **no** que ninguno haya abierto
+  algo que nadie fue a buscar.
+
 ### 12.2 La R2 se hizo; la R3 queda dispensada — y eso se declara, no se disimula
 
 **La R2 la ejecutó Codex el 2026-09-21** sobre el diff (commit `52c2c0e`, 8.102 líneas): veredicto
