@@ -5,6 +5,7 @@ El transporte vive en `core/codicert.py` y no sabe qué es un expediente.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
@@ -136,7 +137,17 @@ TARIFA: dict[str, Decimal] = {
 
 @dataclass(frozen=True)
 class EnvioPrevisto:
-    """Un envío del plan: un canal y un destinatario ya resuelto."""
+    """Un envío del plan: un canal y un destinatario ya resuelto.
+
+    `destinatario` sigue siendo un `dict` corriente, mutable, a propósito
+    (hallazgo H-01, revisión adversarial r2): `frozen=True` congela la
+    instancia, no lo que cuelga de ella, así que congelarlo aquí sería
+    cosmético -- `ejecutar` nunca vuelve a leer `plan.envios` para decidir a
+    quién manda. Lee `envios_ahora`, la instantánea que acaba de resolver y
+    sellar contra el CRM dentro de la propia llamada, así que mutar este
+    `dict` después de aprobar el plan ya no tiene ningún efecto sobre el
+    envío real.
+    """
 
     canal: str            # "burofax" | "correo" | "sms"
     destinatario: dict    # ficha postal, o {"correo": ...} / {"telefono": ...}
@@ -467,22 +478,53 @@ class Confirmacion:
 
 @dataclass(frozen=True)
 class Plan:
-    """El plan de una expedición: lo que un humano lee y aprueba antes de gastar."""
+    """El plan de una expedición: lo que un humano lee y aprueba antes de gastar.
+
+    `usuario` es la cuenta emisora YA resuelta (hallazgo H-01, revisión
+    adversarial r2): antes `Plan` ni siquiera la guardaba, así que cambiar el
+    emisor resuelto entre planificar y ejecutar -- manteniendo plaza y entorno
+    -- no invalidaba nada. `None` por defecto porque los tests de este módulo
+    nunca construyen `entorno_real` y no tienen un emisor real que exponer
+    (mismo criterio que `EntornoExpedicion.usuario`).
+    """
 
     w_code: str
     tipo: str
     id_personalizado: str
     plaza: str
     entorno: str
-    envios: list[EnvioPrevisto]
-    ausencias: list[str]
+    envios: tuple[EnvioPrevisto, ...]
+    ausencias: tuple[str, ...]
     coste: Decimal
     credito: Decimal
-    documentos: list[Path]
-    documentos_sha256: list[str]
+    documentos: tuple[Path, ...]
+    documentos_sha256: tuple[str, ...]
     asunto: str
     cuerpo: str
+    usuario: str | None = None
     digest: str = field(default="", compare=False)
+
+    def __post_init__(self) -> None:
+        """Congela las cuatro listas del plan en tuplas (hallazgo H-01).
+
+        `frozen=True` impide `plan.envios = otra_cosa`, pero NO impide
+        `plan.envios.append(...)` ni `plan.envios[0] = otra_cosa`: una lista
+        sigue siendo mutable por dentro aunque el atributo que la referencia
+        esté congelado. Una tupla no admite ninguna de las dos operaciones, así
+        que esto es lo que de verdad inmoviliza `envios`, `ausencias`,
+        `documentos` y `documentos_sha256` tras construir el plan. Se coacciona
+        aquí -- con `object.__setattr__`, el único modo de asignar un atributo
+        en un dataclass `frozen` -- para que `planificar()` y los tests puedan
+        seguir pasando listas corrientes sin cambiar ninguna llamada.
+
+        No congela `EnvioPrevisto.destinatario` (ver su propio docstring): ese
+        mutable queda inerte porque `ejecutar` ya no lo consulta para mandar,
+        no porque esté protegido estructuralmente.
+        """
+        object.__setattr__(self, "envios", tuple(self.envios))
+        object.__setattr__(self, "ausencias", tuple(self.ausencias))
+        object.__setattr__(self, "documentos", tuple(Path(d) for d in self.documentos))
+        object.__setattr__(self, "documentos_sha256", tuple(self.documentos_sha256))
 
     @property
     def ejecutable(self) -> bool:
@@ -490,20 +532,44 @@ class Plan:
         return self.credito >= self.coste
 
 
-def _digest_de(w_code: str, tipo: str, plaza: str, entorno: str,
-              envios: list[EnvioPrevisto], shas: list[str]) -> str:
-    """Huella del plan: expediente, tipo, plaza, entorno, documentos y destinatarios.
+def _digest_de(*, id_personalizado: str, plaza: str, entorno: str, usuario: str | None,
+              asunto: str, cuerpo: str, coste: Decimal,
+              envios: list[EnvioPrevisto] | tuple[EnvioPrevisto, ...],
+              shas: list[str] | tuple[str, ...]) -> str:
+    """Huella de TODO lo que autoriza el gasto (hallazgo H-01, revisión adversarial r2).
 
-    `ejecutar` la recalcula para comparar contra el plan aprobado (spec §5.1): si
-    difiere, algo cambió en el CRM o en el documento entre el `planificar` y el
-    `ejecutar`, y no se manda a ciegas.
+    Antes cubría expediente, tipo, plaza, entorno, documentos y destinatarios, y
+    dejaba fuera el ORDINAL del identificador, el asunto, el cuerpo, el coste y la
+    cuenta emisora. Cuatro vías de fallo medidas con esa huella incompleta:
 
-    `plaza` y `entorno` entran en la huella para que dos planes idénticos salvo por el
-    entorno ("sandbox" frente a "produccion") nunca compartan digest: si lo hicieran,
-    una confirmación leída para uno autorizaría, sin que nadie lo notara, el otro.
+    1. Dos planes iguales salvo el ordinal ("W-04AKM2 - REQ" y "W-04AKM2 - REQ 2")
+       compartían digest: la confirmación de uno autorizaba el otro, vía pública
+       `--ordinal`. `id_personalizado` los distingue porque ya los compone
+       (`componer_id`) junto con w_code y tipo — cubrirlo cubre a los tres a la vez.
+    2. Sustituir asunto/cuerpo con `dataclasses.replace` no invalidaba nada: no
+       entraban en la huella.
+    3. Poner el coste a un céntimo con `dataclasses.replace` permitía ejecutar con
+       saldo insuficiente para el coste real: `ejecutar` comprobaba el crédito
+       contra `plan.coste`, pero nada sellaba que ESE coste fuera el aprobado.
+    4. Cambiar la cuenta emisora resuelta, manteniendo plaza y entorno, tampoco
+       invalidaba la confirmación: nada la sellaba ni se comprobaba en ejecución.
+
+    `ejecutar` recalcula esta huella con los valores propios del plan (que pudo
+    mutarse con `dataclasses.replace` entre aprobar y ejecutar) MÁS los destinatarios
+    y documentos leídos DE NUEVO — nunca los de `plan.envios`/`plan.documentos_sha256`
+    — y la compara contra la `Confirmacion` que trae el humano, nunca contra
+    `plan.digest`: ese campo también viaja en el `Plan` y `dataclasses.replace` lo
+    copia tal cual si no se toca, así que confiar en él sería el mismo agujero con
+    otro nombre.
+
+    Ninguna contraseña entra aquí: `usuario` es el nombre de la cuenta emisora
+    (el `.bd` del Market Center) que resuelve `entorno_real`, nunca la clave.
     """
-    crudo = "|".join([w_code, tipo, plaza, entorno, *shas,
-                      *sorted(f"{e.canal}:{sorted(e.destinatario.items())}" for e in envios)])
+    crudo = "|".join([
+        id_personalizado, plaza, entorno, usuario or "", asunto, cuerpo, str(coste),
+        *shas,
+        *sorted(f"{e.canal}:{sorted(e.destinatario.items())}" for e in envios),
+    ])
     return hashlib.sha256(crudo.encode("utf-8")).hexdigest()
 
 
@@ -515,70 +581,97 @@ def planificar(w_code: str, tipo: str, documentos: list[Path], *,
     shas = [hashlib.sha256(Path(d).read_bytes()).hexdigest() for d in documentos]
     coste = coste_de(envios)
     asunto, cuerpo = texto_de(w_code)
+    id_personalizado = componer_id(w_code, tipo, ordinal)
     return Plan(w_code=w_code, tipo=tipo,
-                id_personalizado=componer_id(w_code, tipo, ordinal),
+                id_personalizado=id_personalizado,
                 plaza=plaza, entorno=entorno, envios=envios, ausencias=ausencias,
                 coste=coste, credito=entorno_exp.codicert.credito(),
                 documentos=[Path(d) for d in documentos], documentos_sha256=shas,
-                asunto=asunto, cuerpo=cuerpo,
-                digest=_digest_de(w_code, tipo, plaza, entorno, envios, shas))
+                asunto=asunto, cuerpo=cuerpo, usuario=entorno_exp.usuario,
+                digest=_digest_de(id_personalizado=id_personalizado, plaza=plaza,
+                                  entorno=entorno, usuario=entorno_exp.usuario,
+                                  asunto=asunto, cuerpo=cuerpo, coste=coste,
+                                  envios=envios, shas=shas))
 
 
-def _rehash_documentos(documentos: list[Path]) -> list[str]:
-    """Vuelve a leer cada documento del plan AHORA, desde disco.
+def _leer_documentos(documentos: list[Path] | tuple[Path, ...]) -> list[bytes]:
+    """Lee cada documento del plan AHORA, desde disco, UNA SOLA VEZ.
 
-    `ejecutar` compara esto contra el digest aprobado para replanificar (spec §5.1):
-    comparar `plan.documentos_sha256` —el valor ya guardado en el plan— contra sí mismo
-    nunca detecta un documento sobrescrito en su misma ruta entre que el humano aprueba
-    el plan y se ejecuta. Un documento que ya no existe se declara aquí con un mensaje
-    claro, no con el `FileNotFoundError` crudo de leerlo más abajo al construir los
-    adjuntos.
+    `ejecutar` calcula la huella (`shas_ahora`) y construye los adjuntos a partir de
+    ESTOS MISMOS bytes (hallazgo H-02, revisión adversarial r2): antes se leía aquí
+    solo para hashear y, mucho más abajo —después de paginar el listado remoto, una
+    ventana larga—, se releía la MISMA ruta para construir el adjunto. Un documento
+    sobrescrito en esa ventana pasaba el hash validado contra el contenido viejo y
+    salía con el nuevo. Ninguna ruta se vuelve a abrir después de esta función.
+
+    Un documento que ya no existe se declara aquí con un mensaje claro, no con el
+    `FileNotFoundError` crudo de leerlo al construir los adjuntos, varias líneas
+    más abajo.
     """
-    shas = []
+    contenidos: list[bytes] = []
     for d in documentos:
         ruta = Path(d)
         try:
-            shas.append(hashlib.sha256(ruta.read_bytes()).hexdigest())
+            contenidos.append(ruta.read_bytes())
         except FileNotFoundError as exc:
             raise ExpedicionError(
                 f"el documento {ruta} ya no existe en su ruta: no se puede comprobar que "
                 "es el mismo que aprobó el humano. Vuelve a planificar."
             ) from exc
-    return shas
+    return contenidos
 
 
 def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
             entorno_exp: EntornoExpedicion) -> list[str]:
     """Ejecuta el plan aprobado.
 
-    Antes de gastar: comprueba que el entorno de llamada es el que produjo el plan, que
-    la confirmación corresponde a este plan, que el crédito EN VIVO cubre el coste, que
-    el expediente no ha cambiado (destinatarios, domicilios o documento —rehasheado
-    desde disco—) y que lo que la plataforma ya tenga lo explica el registro local.
-    Reanuda completando lo que falte; nunca repite lo hecho (spec §5.1, §5.2).
+    Antes de gastar: comprueba que el entorno de llamada —plaza, entorno y cuenta
+    emisora— es el que produjo el plan; lee los documentos UNA sola vez y resuelve
+    los destinatarios DE NUEVO contra el CRM; recalcula con eso el sello completo
+    (identificador con su ordinal, textos, coste, cuenta emisora, destinatarios y
+    huellas de documento — hallazgo H-01) y lo compara contra la `Confirmacion` que
+    trae el humano; solo entonces comprueba que el crédito EN VIVO cubre el coste y
+    que lo que la plataforma ya tenga lo explica el registro local. Reanuda
+    completando lo que falte; nunca repite lo hecho (spec §5.1, §5.2).
+
+    Lo que se manda es SIEMPRE la instantánea que acaba de revalidar dentro de ESTA
+    llamada —`envios_ahora`, resuelto fresco contra el CRM, y los bytes que acaba de
+    leer de cada documento—, nunca `plan.envios` ni una segunda lectura de disco: un
+    `Plan` es `frozen`, pero eso no inmoviliza lo que cuelga de sus listas (H-01), y
+    una ruta reabierta más tarde puede haber cambiado de contenido mientras dura
+    `listar()` (H-02). Mandar solo lo que el sello acaba de certificar en esta misma
+    llamada hace que mutar `plan.envios` después de aprobarlo, o sobrescribir un
+    documento durante la consulta remota, no tengan ningún efecto sobre lo que sale.
     """
-    if entorno_exp.plaza != plan.plaza or entorno_exp.entorno != plan.entorno:
+    if (entorno_exp.plaza != plan.plaza or entorno_exp.entorno != plan.entorno
+            or entorno_exp.usuario != plan.usuario):
         raise ExpedicionError(
             f"el entorno de ejecución (plaza={entorno_exp.plaza!r}, "
-            f"entorno={entorno_exp.entorno!r}) no coincide con el que produjo el plan "
-            f"(plaza={plan.plaza!r}, entorno={plan.entorno!r}): no se manda nada. Vuelve "
-            "a planificar en el entorno correcto.")
-    if confirmacion.digest != plan.digest:
-        raise ExpedicionError("la confirmación no corresponde a este plan: no se envía nada.")
+            f"entorno={entorno_exp.entorno!r}, usuario={entorno_exp.usuario!r}) no "
+            f"coincide con el que produjo el plan (plaza={plan.plaza!r}, "
+            f"entorno={plan.entorno!r}, usuario={plan.usuario!r}): no se manda nada. "
+            "Vuelve a planificar en el entorno correcto.")
+
+    envios_ahora, _ = destinatarios_de(entorno_exp.partes_de(plan.w_code))
+    contenidos = _leer_documentos(plan.documentos)
+    shas_ahora = [hashlib.sha256(c).hexdigest() for c in contenidos]
+    digest_ahora = _digest_de(
+        id_personalizado=plan.id_personalizado, plaza=plan.plaza, entorno=plan.entorno,
+        usuario=plan.usuario, asunto=plan.asunto, cuerpo=plan.cuerpo, coste=plan.coste,
+        envios=envios_ahora, shas=shas_ahora)
+    if digest_ahora != confirmacion.digest:
+        raise ExpedicionError(
+            "la confirmación no corresponde a lo que se va a mandar ahora mismo: el "
+            "expediente ha cambiado desde que se aprobó el plan (destinatarios, "
+            "domicilios, documento, identificador, cuenta emisora, texto o coste), o "
+            "la confirmación es de otro plan. No se manda nada. Vuelve a planificar y "
+            "revísalo.")
 
     credito_ahora = entorno_exp.codicert.credito()
     if credito_ahora < plan.coste:
         raise ExpedicionError(
             f"crédito insuficiente para ejecutar: {credito_ahora} € ahora para un coste "
             f"de {plan.coste} € (al planificar había {plan.credito} €). No se manda nada.")
-
-    envios_ahora, _ = destinatarios_de(entorno_exp.partes_de(plan.w_code))
-    shas_ahora = _rehash_documentos(plan.documentos)
-    if (_digest_de(plan.w_code, plan.tipo, plan.plaza, plan.entorno, envios_ahora, shas_ahora)
-            != plan.digest):
-        raise ExpedicionError(
-            "el expediente ha cambiado desde que se aprobó el plan (destinatarios, "
-            "domicilios o documento). Vuelve a planificar y revísalo.")
 
     registro = RegistroIntencion(entorno_exp.raiz / "_codicert_intencion.jsonl",
                                  ahora=entorno_exp.ahora)
@@ -603,17 +696,24 @@ def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
                 "qué falta: no se manda nada. Compruébalo en el portal antes de "
                 "continuar.")
         pares_hechos = registro.pares_cerrados(plan.id_personalizado)
-        pendientes = [e for e in plan.envios if (e.canal, _huella(e.etiqueta)) not in pares_hechos]
+        pendientes = [e for e in envios_ahora if (e.canal, _huella(e.etiqueta)) not in pares_hechos]
         if not pendientes:
             raise ExpedicionError(
                 f"la expedición {plan.id_personalizado!r} ya está completa: sus "
                 f"{len(ids_en_plataforma)} envío(s) ya constan hechos y explicados en "
                 "el registro local. No hay nada pendiente que mandar.")
     else:
-        pendientes = list(plan.envios)
+        pendientes = list(envios_ahora)
 
-    adjuntos = [_cod.adjunto(d) for d in plan.documentos]
-    asunto, cuerpo = plan.asunto, plan.cuerpo   # los mismos que el humano leyó
+    # Los adjuntos salen de los MISMOS bytes que se acaban de leer y hashear arriba
+    # (hallazgo H-02): ninguna ruta se reabre aquí, así que la ventana larga de
+    # `listar()` -- justo encima -- no puede colar una sustitución entre "se
+    # comprobó" y "se mandó". Misma forma que `core.codicert.adjunto`, que sí
+    # releería del disco.
+    adjuntos = [{"nombre": Path(d).name, "datos": base64.b64encode(c).decode("ascii"),
+                "mime": "application/pdf"}
+               for d, c in zip(plan.documentos, contenidos)]
+    asunto, cuerpo = plan.asunto, plan.cuerpo   # ya sellados en el digest de arriba
 
     ids: list[str] = []
     for e in pendientes:

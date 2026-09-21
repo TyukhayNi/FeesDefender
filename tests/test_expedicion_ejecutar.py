@@ -1,6 +1,8 @@
 """La puerta humana: sin confirmación válida no sale nada, y un plan rancio se rechaza."""
 from __future__ import annotations
 
+import base64
+import dataclasses
 import datetime as dt
 import json
 from decimal import Decimal
@@ -23,12 +25,23 @@ MAR = {"nombre": "MAR", "1apellido": "GIL", "2apellido": "", "direccion": "Av Su
 
 
 class _CodicertFalso:
-    """Doble del transporte. Cuenta lo que se manda y no toca la red."""
+    """Doble del transporte. Cuenta lo que se manda y no toca la red.
+
+    `destinatarios` y `adjuntos` (hallazgos H-01/H-02, revisión adversarial r2):
+    antes el doble solo contaba canal e id_personalizado -- suficiente para los
+    tests de reanudación, pero ciego a QUIÉN recibió de verdad o QUÉ adjunto
+    viajó de verdad. Sin eso no se puede probar que un destinatario mutado tras
+    aprobar el plan no se manda, ni que el PDF que sale es el que se hasheó y
+    no uno sustituido durante `listar()`. Es aditivo: no cambia la forma de
+    `enviados`, que los tests de reanudación ya usan.
+    """
 
     def __init__(self, credito=Decimal("100"), listado=()):
         self.credito_ = credito
         self.listado = list(listado)
         self.enviados: list[tuple[str, str]] = []
+        self.destinatarios: list[dict] = []   # el destinatario real de cada envío, en orden
+        self.adjuntos: list[list[dict]] = []  # los adjuntos reales de cada envío, en orden
         self._contador = 0  # cada envío real tiene su propio IdEnvio, nunca repetido
 
     def credito(self): return self.credito_
@@ -36,11 +49,17 @@ class _CodicertFalso:
 
     def enviar_burofax(self, **kw):
         self._contador += 1
-        self.enviados.append(("burofax", kw["id_personalizado"])); return f"B{self._contador}"
+        self.enviados.append(("burofax", kw["id_personalizado"]))
+        self.destinatarios.append(kw["destinatario"])
+        self.adjuntos.append(kw["adjuntos"])
+        return f"B{self._contador}"
 
     def enviar_eec(self, **kw):
         self._contador += 1
-        self.enviados.append((kw["tipo_entrega"], kw["id_personalizado"])); return f"E{self._contador}"
+        self.enviados.append((kw["tipo_entrega"], kw["id_personalizado"]))
+        self.destinatarios.append(kw["destinatarios"][0])
+        self.adjuntos.append(kw["adjuntos"])
+        return f"E{self._contador}"
 
 
 def _entorno(tmp_path, cod=None, partes=(ANA,), plaza="Madrid", entorno="sandbox"):
@@ -348,3 +367,143 @@ def test_ejecutar_relee_el_credito_en_vivo_antes_de_gastar(tmp_path):
         exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert "crédito" in str(e.value).lower()
     assert cod.enviados == []
+
+
+# ---------------------------------------------------------------------------------
+# H-01 (alto, estructural; revisión adversarial r2). `_digest_de` sellaba expediente,
+# tipo, plaza, entorno, documentos y destinatarios, pero dejaba fuera el ORDINAL del
+# identificador, el asunto, el cuerpo, el coste y la cuenta emisora. Y `frozen=True`
+# en `Plan` no inmoviliza las listas ni los diccionarios que contiene: mutar
+# `plan.envios[i].destinatario` después de aprobar seguía surtiendo efecto porque
+# `ejecutar` recalculaba el digest con los destinatarios frescos del CRM pero mandaba
+# los de `plan.envios`, sin comprobar que fueran los mismos.
+# ---------------------------------------------------------------------------------
+
+def test_H01_confirmar_un_ordinal_no_autoriza_ejecutar_otro_ordinal(tmp_path):
+    """Modo de fallo 1: dos planes que solo difieren en el ORDINAL (mismo w_code,
+    tipo, plaza, entorno, destinatarios y documento) no deben compartir digest. Antes
+    lo compartían: la confirmación que un humano leyó y aprobó para "W-04AKM2 - REQ"
+    (ordinal 1, sin sufijo) autorizaba, sin que nadie lo notara, ejecutar
+    "W-04AKM2 - REQ 2" (ordinal 2) -- un segundo envío real con identificador
+    distinto, nunca leído ni aprobado. La vía es pública: --ordinal, sin tocar nada
+    por dentro del plan."""
+    cod = _CodicertFalso()
+    ent = _entorno(tmp_path, cod)
+    doc = _doc(tmp_path)
+    plan_1 = exp.planificar("W-04AKM2", "REQ", doc, entorno_exp=ent, plaza="Madrid", ordinal=1)
+    plan_2 = exp.planificar("W-04AKM2", "REQ", doc, entorno_exp=ent, plaza="Madrid", ordinal=2)
+
+    assert plan_1.id_personalizado != plan_2.id_personalizado  # por construcción
+    assert plan_1.digest != plan_2.digest, (
+        "dos planes con distinto ordinal comparten digest: la confirmación de uno "
+        "autorizaría ejecutar el otro")
+
+    with pytest.raises(exp.ExpedicionError):
+        exp.ejecutar(plan_2, exp.Confirmacion(digest=plan_1.digest), entorno_exp=ent)
+    assert cod.enviados == []
+
+
+def test_H01_mutar_el_destinatario_tras_aprobar_no_desvia_el_envio(tmp_path):
+    """Modo de fallo 2: `EnvioPrevisto` es `frozen`, pero su `destinatario` es un
+    `dict` corriente -- `frozen=True` no impide mutarlo por dentro. Modificar
+    `plan.envios[i].destinatario['correo']` DESPUÉS de aprobar el plan no debe desviar
+    el envío: el CRM sigue teniendo el correo original, y es a ESE al que hay que ser
+    fiel, no al plan que alguien pudo tocar entre medias."""
+    cod = _CodicertFalso()
+    ent = _entorno(tmp_path, cod)
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+    confirmacion = exp.Confirmacion(digest=plan.digest)
+
+    envio_correo = next(e for e in plan.envios if e.canal == "correo")
+    correo_original = envio_correo.destinatario["correo"]
+    envio_correo.destinatario["correo"] = "atacante@evil.example"
+
+    exp.ejecutar(plan, confirmacion, entorno_exp=ent)
+
+    correos_mandados = [dest.get("correo") for (canal, _), dest
+                        in zip(cod.enviados, cod.destinatarios) if canal == "correo"]
+    assert "atacante@evil.example" not in correos_mandados
+    assert correos_mandados == [correo_original]
+
+
+def test_H01_sustituir_asunto_cuerpo_y_coste_no_burla_la_confirmacion(tmp_path):
+    """Modo de fallo 3: `dataclasses.replace` produce un `Plan` NUEVO que conserva el
+    `digest` del original -- `frozen=True` protege la instancia, no impide construir
+    una copia modificada con el mismo sello, porque `replace` copia los campos no
+    tocados tal cual. Sustituir asunto y cuerpo, y poner el coste a un céntimo, no
+    debe poder ejecutarse con la confirmación leída para el plan ORIGINAL cuando el
+    crédito real solo alcanza para ese céntimo."""
+    cod = _CodicertFalso(credito=Decimal("0.01"))  # no alcanza para el coste real (~17,76 €)
+    ent = _entorno(tmp_path, cod)
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+    confirmacion = exp.Confirmacion(digest=plan.digest)
+
+    plan_manipulado = dataclasses.replace(
+        plan, asunto="Asunto que el humano nunca leyó",
+        cuerpo="<p>Cuerpo que el humano nunca leyó</p>", coste=Decimal("0.01"))
+    assert plan_manipulado.digest == plan.digest  # el campo se copia tal cual, sin recalcular
+
+    with pytest.raises(exp.ExpedicionError):
+        exp.ejecutar(plan_manipulado, confirmacion, entorno_exp=ent)
+    assert cod.enviados == []
+
+
+def test_H01_cambiar_la_cuenta_emisora_no_burla_la_confirmacion(tmp_path):
+    """Modo de fallo 4: cambiar la cuenta emisora resuelta, manteniendo plaza y
+    entorno, tampoco debe poder ejecutar una confirmación pensada para OTRO emisor --
+    el sello y la comprobación de entorno tienen que cubrir también QUIÉN manda, no
+    solo desde dónde y contra qué."""
+    cod = _CodicertFalso()
+    ent_planificacion = exp.EntornoExpedicion(
+        codicert=cod, partes_de=lambda _w: [ANA],
+        ahora=lambda: dt.datetime(2026, 9, 17, 12, 0, tzinfo=dt.timezone.utc),
+        raiz=tmp_path, plaza="Madrid", entorno="sandbox", usuario="BD-MADRID-1")
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent_planificacion,
+                          plaza="Madrid")
+    confirmacion = exp.Confirmacion(digest=plan.digest)
+
+    ent_otro_emisor = exp.EntornoExpedicion(
+        codicert=cod, partes_de=lambda _w: [ANA], ahora=ent_planificacion.ahora,
+        raiz=tmp_path, plaza="Madrid", entorno="sandbox", usuario="BD-OTRO-EMISOR")
+
+    with pytest.raises(exp.ExpedicionError) as e:
+        exp.ejecutar(plan, confirmacion, entorno_exp=ent_otro_emisor)
+    assert "entorno" in str(e.value).lower()
+    assert cod.enviados == []
+
+
+# ---------------------------------------------------------------------------------
+# H-02 (alto, acotado; revisión adversarial r2). El PDF se rehasheaba para comprobar
+# su huella y, más abajo -- después de paginar el listado remoto, una ventana larga
+# --, se releía la MISMA ruta para construir el adjunto. Un documento sobrescrito
+# durante esa ventana pasaba el hash validado contra el contenido viejo y salía con
+# el nuevo.
+# ---------------------------------------------------------------------------------
+
+def test_H02_el_documento_no_se_relee_tras_validar_su_huella(tmp_path):
+    """Se aprueba el PDF A. El doble de `listar()` -- la consulta remota que pagina
+    entre la validación y el envío -- sobrescribe la ruta con el PDF B en cuanto se le
+    llama, simulando exactamente la ventana que describe el hallazgo. El adjunto que
+    de verdad viaja en la llamada de envío debe seguir siendo A: leído una sola vez,
+    con esos mismos bytes hasheados y adjuntados, sin volver a abrir la ruta."""
+    doc = _doc(tmp_path)
+    original = doc[0].read_bytes()
+    sustituto = b"%PDF SUSTITUIDO DURANTE LA VENTANA DE listar()"
+
+    class _CodicertQueSustituyeDuranteElListado(_CodicertFalso):
+        def listar(self, **_):
+            doc[0].write_bytes(sustituto)
+            return list(self.listado)
+
+    cod = _CodicertQueSustituyeDuranteElListado()
+    ent = _entorno(tmp_path, cod)
+    plan = exp.planificar("W-04AKM2", "OVC", doc, entorno_exp=ent, plaza="Madrid")
+    confirmacion = exp.Confirmacion(digest=plan.digest)
+
+    exp.ejecutar(plan, confirmacion, entorno_exp=ent)
+
+    assert doc[0].read_bytes() == sustituto  # la sustitución sí ocurrió
+    primer_adjunto = cod.adjuntos[0][0]
+    bytes_mandados = base64.b64decode(primer_adjunto["datos"])
+    assert bytes_mandados == original
+    assert bytes_mandados != sustituto
