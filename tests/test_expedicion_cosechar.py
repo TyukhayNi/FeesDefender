@@ -33,6 +33,7 @@ class FakeGestor:
 
     def __init__(self, ya=None):
         self.subidos: list[dict] = []
+        self.descargas: list[str] = []
         self.ya = ya or {}
 
     def subir(self, contenido, *, nombrefinal, mime, related, al_reservar=None):
@@ -47,6 +48,12 @@ class FakeGestor:
 
     def buscar_por_origen_id(self, origen_id, *, element, exp_id):
         return self.ya.get(origen_id)
+
+    def descargar(self, doc_id):
+        """Los bytes que «el CRM tiene». Por defecto, los correctos: este doble
+        representa el caso feliz y los casos torcidos tienen su propio doble."""
+        self.descargas.append(doc_id)
+        return CERT
 
 
 def _entorno(tmp_path, transporte, gestor, emisor="EV MMC SPAIN, S.L.U."):
@@ -271,6 +278,77 @@ def test_MUTANTE_una_idempotencia_por_el_LISTADO_no_sirve(tmp_path):
     (tmp_path / "_codicert_cosecha.jsonl").unlink()
     exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
     assert len(g.subidos) == 2
+
+
+def test_H02_recuperar_una_reserva_NO_da_por_bueno_un_binario_sin_comprobarlo(tmp_path):
+    """R1/H-02 (alta): la recuperación anulaba una detección de bytes incorrectos.
+
+    La primera cosecha aborta porque el CRM devuelve bytes distintos de los subidos.
+    Queda el documento creado y la reserva abierta. La segunda encontraba el
+    `origen_id`, cerraba con `sha256=""` y devolvía éxito **sin descargar nada**:
+    la detección de la primera quedaba anulada y ninguna corrida posterior la
+    repetía. «Verificar por resultado, nunca por status», justo donde más importa.
+    """
+    class GestorQueCorrompe:
+        def __init__(self):
+            self.subidos, self.descargas = [], []
+
+        def subir(self, contenido, *, nombrefinal, mime, related, al_reservar=None):
+            if al_reservar:
+                al_reservar("uuid-malo")
+            self.subidos.append(nombrefinal)
+            raise exp.ExpedicionError(
+                "el documento doc9 se creó pero sus bytes NO coinciden")
+
+        def buscar_por_origen_id(self, origen_id, *, element, exp_id):
+            return "doc9" if origen_id == "uuid-malo" else None
+
+        def descargar(self, doc_id):
+            self.descargas.append(doc_id)
+            return b"%PDF-1.4 BINARIO INCORRECTO"
+
+    t = FakeTransporte([_ev("006a")], {"006a": _h20()}, {"006a": CERT})
+    g = GestorQueCorrompe()
+    entorno = _entorno(tmp_path, t, g)
+
+    with pytest.raises(exp.ExpedicionError, match="NO coinciden"):
+        exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
+
+    # la segunda NO puede decir «ya estaba»: los bytes del CRM siguen siendo malos
+    with pytest.raises(exp.ExpedicionError, match="SIN VERIFICAR|no coinciden"):
+        exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
+    assert g.descargas, "la recuperación ni siquiera bajó el documento para compararlo"
+
+
+def test_H02_la_recuperacion_SI_cierra_cuando_los_bytes_del_CRM_son_los_buenos(tmp_path):
+    """El control positivo: la guarda tiene que dejar pasar el caso legítimo."""
+    class GestorQuePierdeLaRespuesta:
+        def __init__(self):
+            self.subidos, self.descargas = [], []
+
+        def subir(self, contenido, *, nombrefinal, mime, related, al_reservar=None):
+            if al_reservar:
+                al_reservar("uuid-ok")
+            self.subidos.append(nombrefinal)
+            raise exp.ExpedicionError("timeout: la respuesta del POST se perdió")
+
+        def buscar_por_origen_id(self, origen_id, *, element, exp_id):
+            return "doc7" if origen_id == "uuid-ok" else None
+
+        def descargar(self, doc_id):
+            self.descargas.append(doc_id)
+            return CERT                      # los bytes SÍ son los correctos
+
+    t = FakeTransporte([_ev("006a")], {"006a": _h20()}, {"006a": CERT})
+    g = GestorQuePierdeLaRespuesta()
+    entorno = _entorno(tmp_path, t, g)
+    with pytest.raises(exp.ExpedicionError, match="timeout"):
+        exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
+
+    r = exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
+    assert r[0].doc_id == "doc7" and r[0].ya_estaba
+    assert r[0].sha256 == SHA, "el cierre tiene que guardar el hash VERIFICADO"
+    assert g.descargas == ["doc7"] and len(g.subidos) == 1
 
 
 def test_una_reserva_ABIERTA_para_la_cosecha_de_ESE_envio(tmp_path):

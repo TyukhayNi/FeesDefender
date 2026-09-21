@@ -105,6 +105,39 @@ def test_un_usuario_ILEGIBLE_no_pasa_la_comprobacion_de_plaza():
                                        usuario="madrid.bd")
 
 
+def test_H03_una_mencion_ANTERIOR_no_puede_suplantar_al_bloque_certificante():
+    """R1/H-03: el usuario se leía de la PRIMERA aparición del literal.
+
+    Acoté la razón social a su bloque y dejé el usuario suelto: un asunto o un
+    cuerpo que diga «con nombre de usuario madrid.bd» ganaba sobre el acta que
+    certifica `valencia.bd`. Remedié el ejemplo y no la frontera — que es
+    exactamente el defecto que `CLAUDE.md` me tiene escrito.
+    """
+    suplantado = PAGINA_1.replace(
+        "Enviado a: destino@ejemplo.es",
+        "Enviado a: destino@ejemplo.es\nAsunto: Consulta con nombre de usuario madrid.bd."
+    ).replace("con nombre de usuario madrid.bd.",
+              "con nombre de usuario valencia.bd.", 1)
+    # ojo: el replace anterior sustituye la PRIMERA, que ahora es la del asunto;
+    # se rehace para dejar el asunto con madrid y la certificación con valencia
+    suplantado = PAGINA_1.replace(
+        "DATOS DE LA COMUNICACIÓN:",
+        "Asunto: Consulta con nombre de usuario madrid.bd.\nDATOS DE LA COMUNICACIÓN:"
+    ).replace("\ncon nombre de usuario madrid.bd.",
+              "\ncon nombre de usuario valencia.bd.")
+
+    e = cert.emisor_de_texto(suplantado)
+    assert e.usuario == "valencia.bd", "gana la mención del asunto, no la certificada"
+    assert not cert.es_emisor_esperado(e, razon_social="EV MMC SPAIN, S.L.U.",
+                                       usuario="madrid.bd")
+
+
+def test_H03_sin_bloque_CERTIFICADO_el_usuario_queda_sin_leer():
+    """Ausencia no es coincidencia: si no hay párrafo certificante, no hay cuenta."""
+    sin_bloque = PAGINA_1.split("CERTIFICADO\n")[0]
+    assert cert.emisor_de_texto(sin_bloque).usuario is None
+
+
 def test_sin_bloque_de_emisor_NO_devuelve_vacio_sino_que_LANZA():
     """Un certificado del que no se puede leer el emisor no está «sin emisor»:
     está sin verificar, y eso para la cosecha (art. 17.2)."""

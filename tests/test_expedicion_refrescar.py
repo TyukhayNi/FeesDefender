@@ -115,6 +115,58 @@ def test_un_destinatario_que_no_casa_NO_se_atribuye_a_nadie(tmp_path):
     assert all(r.recibido_en is None for r in reqs if r.etiqueta == "ANA LÓPEZ")
 
 
+def test_H04_un_contacto_COMPARTIDO_no_se_atribuye_al_primero_de_la_lista(tmp_path):
+    """R1/H-04 (alta): el orden del CRM decidía quién constaba como receptor.
+
+    Dos fichas con el mismo email no son ambiguas para `setdefault`: gana la
+    primera. Invertir el orden invertía la atribución de la MISMA prueba, sin un
+    solo aviso. Y no es un caso de laboratorio: este CRM tiene fichas que comparten
+    email — su dedup las funde por eso.
+
+    Lo correcto es declarar la ambigüedad: a ninguno de los dos se le puede
+    atribuir la recepción personal, y eso es lo que el cajón `SIN_CASAR` dice.
+    """
+    a = {"nombre": "ANA", "1apellido": "LÓPEZ", "email": "comun@y.es"}
+    b = {"nombre": "LUIS", "1apellido": "GIL", "email": "comun@y.es"}
+    t = FakeTransporte([_ev("006a", "c", "comun@y.es")],
+                       {"006a": _h((20, "2026-09-12T23:03:43+02:00"))})
+
+    for partes in ([a, b], [b, a]):
+        e = exp.refrescar("W-04AKM2", "OVC",
+                          entorno_exp=_entorno(tmp_path, t, partes))
+        req = {r.etiqueta: r for r in e.por_requerido(partes)}
+        assert req["ANA LÓPEZ"].recibido_en is None, partes
+        assert req["LUIS GIL"].recibido_en is None, partes
+        assert req["(sin casar)"].recibido_en is not None, partes
+
+
+def test_H04_un_contacto_UNIVOCO_sigue_casando(tmp_path):
+    """El control positivo: la ambigüedad no puede romper el caso normal."""
+    partes = [{"nombre": "ANA", "1apellido": "LÓPEZ", "email": "ana@y.es"},
+              {"nombre": "LUIS", "1apellido": "GIL", "email": "luis@y.es"}]
+    t = FakeTransporte([_ev("006a", "c", "ana@y.es")],
+                       {"006a": _h((20, "2026-09-12T23:03:43+02:00"))})
+    e = exp.refrescar("W-04AKM2", "OVC", entorno_exp=_entorno(tmp_path, t, partes))
+    req = {r.etiqueta: r for r in e.por_requerido(partes)}
+    assert req["ANA LÓPEZ"].recibido_en is not None
+    assert req["LUIS GIL"].recibido_en is None
+
+
+def test_H04_una_parte_con_DOS_canales_propios_no_se_vuelve_ambigua(tmp_path):
+    """Email y móvil de la MISMA ficha no compiten entre sí: son la misma persona."""
+    partes = [{"nombre": "ANA", "1apellido": "LÓPEZ", "email": "ana@y.es",
+               "movil": "600111222"}]
+    t = FakeTransporte([_ev("006a", "c", "ana@y.es"), _ev("006s", "c", "34600111222")],
+                       {"006a": _h((20, "2026-09-12T23:03:43+02:00")),
+                        "006s": _h((21, "2026-09-11T19:00:23+02:00"))})
+    e = exp.refrescar("W-04AKM2", "OVC", entorno_exp=_entorno(tmp_path, t, partes))
+    req = {r.etiqueta: r for r in e.por_requerido(partes)}
+    assert len(req["ANA LÓPEZ"].envios) == 2
+    # la más temprana de sus dos canales, que es la regla del §6.1
+    assert req["ANA LÓPEZ"].recibido_en == datetime.fromisoformat(
+        "2026-09-11T19:00:23+02:00")
+
+
 def test_el_movil_casa_con_prefijo_y_sin_el(tmp_path):
     """§1.1: el destinatario SMS real de producción lleva `34` delante."""
     partes = [{"nombre": "ANA", "1apellido": "LÓPEZ", "movil": "600111222"}]

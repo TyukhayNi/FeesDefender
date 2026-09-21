@@ -1188,16 +1188,27 @@ class Expedicion:
         entregó nada; dejarlo fuera del resultado lo escondería. Pasa de verdad: el
         burofax lleva en `destinatarios` la razón social, que no tiene por qué
         coincidir con el nombre compuesto de la ficha del CRM.
+
+        **Y lo AMBIGUO va al mismo cajón** (hallazgo H-04 de la R1). Un contacto que
+        aparece en dos fichas —dos partes con el mismo email, que este CRM tiene y su
+        dedup funde por eso— no identifica a nadie: la versión anterior se lo daba a
+        la primera de la lista con `setdefault`, así que **invertir el orden del CRM
+        invertía quién constaba como receptor de la misma prueba**, y sin un solo
+        aviso. Un contacto vale solo si es unívoco; si no, la recepción no se atribuye
+        a ninguno de los dos y el cajón lo dice.
         """
         grupos: dict[str, list[EnvioObservado]] = {}
         etiquetas: dict[str, str] = {}
-        indice: dict[str, str] = {}
+        # contacto -> conjunto de partes que lo declaran. Con más de una, el contacto
+        # no identifica: no se resuelve por orden de lista.
+        candidatas: dict[str, set[str]] = {}
         for i, parte in enumerate(partes):
             clave = f"parte:{i}"
             etiquetas[clave] = nombre_completo_de(parte)
             grupos[clave] = []
             for contacto in _claves_de_contacto(parte):
-                indice.setdefault(contacto, clave)
+                candidatas.setdefault(contacto, set()).add(clave)
+        indice = {c: next(iter(p)) for c, p in candidatas.items() if len(p) == 1}
         for envio in self.envios:
             clave = indice.get(envio.destinatario.strip().lower(), SIN_CASAR)
             grupos.setdefault(clave, []).append(envio)
@@ -2246,7 +2257,26 @@ def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
                         "documento tampoco aparece en el CRM por ese origen_id. "
                         "Queda SIN VERIFICAR si la subida salió: compruébalo a mano "
                         "antes de reintentar. No se sube nada.")
-                registro.cerrar(clave, doc_id=doc_id, sha256="")
+                # **Encontrarlo no es verificarlo** (hallazgo H-02 de la R1). Aquí se
+                # cerraba con `sha256=""` sin mirar los bytes, y eso ANULABA la
+                # detección de la corrida anterior: si `subir_documento` había
+                # abortado porque el CRM devolvía un binario distinto del subido, la
+                # siguiente cosecha encontraba el `origen_id`, daba «ya estaba» y
+                # ninguna corrida posterior volvía a comprobarlo. Se termina la
+                # verificación que quedó a medias: se baja lo que el CRM tiene y se
+                # compara con el certificado que la plataforma da ahora.
+                bajado = entorno_exp.gestor.descargar(doc_id)
+                sha_crm = hashlib.sha256(bajado).hexdigest()
+                sha_esperado = hashlib.sha256(
+                    entorno_exp.codicert.certificado(envio.id_envio)).hexdigest()
+                if sha_crm != sha_esperado:
+                    raise ExpedicionError(
+                        f"{envio.id_envio}: el documento {doc_id} existe en el CRM "
+                        f"pero sus bytes NO coinciden con el certificado "
+                        f"(CRM {sha_crm[:16]}… contra Codicert {sha_esperado[:16]}…). "
+                        "Queda SIN VERIFICAR: NO se da por cosechado y NO se sube "
+                        "otro encima. Revisa ese documento a mano.")
+                registro.cerrar(clave, doc_id=doc_id, sha256=sha_crm)
                 hecho = registro.hecho(clave)
 
         if hecho is not None:
@@ -2332,6 +2362,14 @@ class _GestorDocumental:
         from core import sudespacho_documentos
 
         return sudespacho_documentos.buscar_por_origen_id(origen_id, **kw)
+
+    def descargar(self, doc_id: str) -> bytes:
+        """Los bytes que el CRM tiene. Lo usa la recuperación de una reserva (H-02):
+        encontrar el documento por `origen_id` acredita que existe, no que sea el
+        correcto — y la corrida que lo detectó incorrecto ya no está para decirlo."""
+        from core import sudespacho_documentos
+
+        return sudespacho_documentos.descargar_documento(doc_id)
 
 
 def _leer_emisor_de(pdf: bytes) -> Any:

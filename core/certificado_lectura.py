@@ -31,9 +31,27 @@ _MARCA_ACTA = "sello temporal"
 _RE_RAZON = re.compile(
     r"1\.\s*Datos del emisor\.(?P<bloque>.*?)2\.\s*Datos del receptor\.", re.S)
 _RE_NOMBRE = re.compile(r"Raz[óo]n social:\s*(?P<valor>.+)")
-#: `[\w-]+(?:\.[\w-]+)*` captura `madrid.bd` entero y deja fuera el punto de la
-#: frase, que en el literal va pegado al login: «...con nombre de usuario madrid.bd.»
-_RE_USUARIO = re.compile(r"con nombre de usuario\s+(?P<valor>[\w-]+(?:\.[\w-]+)*)")
+#: La cuenta se lee **solo dentro del párrafo certificante**, igual que la razón
+#: social se lee solo dentro del bloque del emisor (hallazgo H-03 de la R1). Antes
+#: bastaba `con nombre de usuario …` en cualquier punto del documento, y la PRIMERA
+#: aparición ganaba: un asunto o un cuerpo que dijera «con nombre de usuario
+#: madrid.bd» —y el acta reproduce el asunto— suplantaba al acta que certificaba
+#: `valencia.bd`. Acotar la razón social y dejar el usuario suelto era remediar el
+#: ejemplo y no la frontera.
+#:
+#: El párrafo empieza en el rótulo `CERTIFICADO` en su propia línea y lo cierra la
+#: frase que sigue a la cuenta. `[\w-]+(?:\.[\w-]+)*` captura `madrid.bd` entero y
+#: deja fuera el punto de la frase, pegado al login: «…usuario madrid.bd.»
+_RE_BLOQUE_CERT = re.compile(r"^CERTIFICADO\s*$(?P<bloque>.*)", re.S | re.M)
+#: El ancla evita a propósito cualquier palabra con la ligadura «fi»
+#: («certifica», «identificador»): un extractor que no resuelva U+FB01 la devuelve
+#: como un cuadro y el cerco dejaría de casar — medido al fabricar un PDF con
+#: reportlab, cuya fuente por defecto no tiene el glifo y escribe «certi?ca». El
+#: fallo sería seguro (sin cuenta leída, la comprobación de plaza no pasa y
+#: `cosechar` para), pero pararía sobre certificados buenos.
+_RE_USUARIO = re.compile(
+    r"que todos los datos.*?con nombre de usuario\s+"
+    r"(?P<valor>[\w-]+(?:\.[\w-]+)*)", re.S | re.I)
 
 
 class CertificadoIlegibleError(RuntimeError):
@@ -80,6 +98,21 @@ def _normalizar(texto: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", plano).lower().split())
 
 
+def _usuario_certificado(plano: str) -> str | None:
+    """La cuenta emisora, leída SOLO del párrafo certificante (hallazgo H-03).
+
+    Dos cercos, no uno: el texto tiene que estar bajo el rótulo `CERTIFICADO` **y**
+    dentro de la frase que empieza por «certifica que todos los datos…». Con un solo
+    cerco, una mención en el asunto —que el acta reproduce— seguiría colándose si
+    cayera después del rótulo.
+    """
+    bloque = _RE_BLOQUE_CERT.search(plano)
+    if not bloque:
+        return None
+    hallazgo = _RE_USUARIO.search(bloque.group("bloque"))
+    return hallazgo.group("valor") if hallazgo else None
+
+
 def emisor_de_texto(texto: str) -> EmisorCertificado:
     """El emisor, leído SOLO del bloque acotado del acta.
 
@@ -102,9 +135,8 @@ def emisor_de_texto(texto: str) -> EmisorCertificado:
     if not nombre:
         raise CertificadoIlegibleError(
             "el bloque «Datos del emisor» no trae «Razón social:»")
-    usuario = _RE_USUARIO.search(plano)
     return EmisorCertificado(razon_social=nombre.group("valor").strip(),
-                             usuario=usuario.group("valor") if usuario else None)
+                             usuario=_usuario_certificado(plano))
 
 
 def leer_emisor(pdf: bytes) -> EmisorCertificado:
@@ -129,9 +161,11 @@ def leer_emisor(pdf: bytes) -> EmisorCertificado:
             f"({type(exc).__name__}: {exc})") from exc
     emisor = emisor_de_texto(primera)
     if emisor.usuario is None:
-        usuario = _RE_USUARIO.search(_sin_ligaduras(todo))
+        # El párrafo certificante puede caer más abajo del acta según cuántas
+        # incidencias traiga el histórico (M-6), pero se busca con el MISMO cerco:
+        # ampliar el alcance del texto no puede ampliar el de la regla.
         emisor = EmisorCertificado(emisor.razon_social,
-                                   usuario.group("valor") if usuario else None)
+                                   _usuario_certificado(_sin_ligaduras(todo)))
     return emisor
 
 
