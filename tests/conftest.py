@@ -162,6 +162,24 @@ def _barrera_frontal(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _barrera_codicert(monkeypatch):
+    """Barrera de ejecución de Codicert, `autouse` en TODA la suite: ver
+    `tests/_barrera_codicert.py`.
+
+    Hallazgo H-13 (revisión adversarial r2): `tests/test_guard_codicert_sin_red.py` es un
+    barrido de TEXTO y no ve la forma ordinaria de llegar a la red -- llamar a la API
+    pública sin inyectar `cliente=`. Esta fixture cierra el paso en la EJECUCIÓN, antes de
+    que cualquier test pueda abrir la conexión, con el mismo patrón que `_barrera_frontal`
+    (arriba): scope función porque una fixture de sesión se monta después de la colección
+    y no protegería un test que llame en su propio cuerpo; `autouse` porque un helper
+    opt-in que el autor olvide invocar no es una barrera.
+    """
+    from tests import _barrera_codicert
+
+    _barrera_codicert.instalar(monkeypatch)
+
+
+@pytest.fixture(autouse=True)
 def _registro_y_locks_aislados(tmp_path, monkeypatch):
     """Ningún test escribe en el registro REAL del usuario.
 
