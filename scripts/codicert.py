@@ -175,7 +175,8 @@ def render_cosecha(cosechados, pendientes) -> str:
         lineas.append(f"  {c.id_envio}  [{marca}]  gdocu {c.doc_id}")
         lineas.append(f"      emisor ... {c.razon_social_emisor} "
                       f"({c.usuario_emisor or 'usuario no releído en esta corrida'})")
-        lineas.append(f"      local .... {c.ruta_local}")
+        falta = "" if c.local_presente else "   ⚠️ NO ESTÁ (solo en el CRM)"
+        lineas.append(f"      local .... {c.ruta_local}{falta}")
         lineas.append(f"      sha256 ... {c.sha256 or '(de una cosecha anterior)'}")
     if pendientes:
         lineas += ["", "  NO COSECHADOS (el hecho aún puede mejorar):"]

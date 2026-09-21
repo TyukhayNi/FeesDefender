@@ -228,6 +228,25 @@ def test_es_IDEMPOTENTE_por_el_registro_local(tmp_path):
     assert segunda[0].ya_estaba is True
 
 
+def test_si_el_PDF_local_desaparecio_se_DICE_en_vez_de_devolver_una_ruta_muerta(tmp_path):
+    """El registro acredita el CRM, no el disco: son dos sitios y se desincronizan.
+
+    Si alguien borra el PDF del expediente, la segunda cosecha veía «hecho» en el
+    registro y devolvía la ruta tal cual — una ruta a un fichero que no existe, sin
+    una palabra. El operador creería tener el certificado en el expediente cuando
+    solo está en el CRM.
+    """
+    t = FakeTransporte([_ev("006a")], {"006a": _h20()}, {"006a": CERT})
+    entorno = _entorno(tmp_path, t, FakeGestor())
+    primera = exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
+    assert primera[0].local_presente is True
+
+    primera[0].ruta_local.unlink()
+    segunda = exp.cosechar("W-04AKM2", "OVC", entorno_exp=entorno)
+    assert segunda[0].ya_estaba is True
+    assert segunda[0].local_presente is False
+
+
 def test_la_segunda_cosecha_NI_SIQUIERA_baja_el_certificado(tmp_path):
     """La guarda muerde antes del GET: no se gasta una descarga en lo ya hecho."""
     t = FakeTransporte([_ev("006a")], {"006a": _h20()}, {"006a": CERT})

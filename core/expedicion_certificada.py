@@ -2066,7 +2066,17 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
     ficha = _cod.acceso(usuario, clave, entorno=entorno)
 
     class _Transporte:
-        """Superficie mínima que `ejecutar` consume. No expone la `Ficha`."""
+        """Superficie mínima que el core consume. No expone la `Ficha`.
+
+        **Tiene que ofrecer TODO lo que el core le pide**, y eso no lo detecta ningún
+        test de comportamiento: los tests inyectan dobles, y un doble completo hace
+        pasar un transporte real incompleto. Pasó con F2 —`estados` y `certificado`
+        faltaban aquí mientras `refrescar` y `cosechar` los llamaban, con los 92 tests
+        de la fase en verde— y el camino real habría muerto con `AttributeError` en la
+        primera invocación de `codicert estado`. Lo vigila
+        `tests/test_guard_transporte_real_completo.py`, que **deriva** la lista de lo
+        que el core consume en vez de escribirla, para que no se desincronice otra vez.
+        """
 
         def credito(self) -> Decimal:
             return _cod.credito(ficha, entorno=entorno)
@@ -2079,6 +2089,13 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
 
         def enviar_eec(self, **kw: Any) -> str:
             return _cod.enviar_eec(ficha, entorno=entorno, **kw)
+
+        # --- las dos de F2 -------------------------------------------------
+        def estados(self, id_envio: str) -> list[dict]:
+            return _cod.estados(ficha, id_envio, entorno=entorno)
+
+        def certificado(self, id_envio: str) -> bytes:
+            return _cod.certificado(ficha, id_envio, entorno=entorno)
 
     return EntornoExpedicion(
         codicert=_Transporte(),
@@ -2141,6 +2158,10 @@ class CertificadoCosechado:
     #: `True` si se bajó con el envío aún sin culminar: acredita menos de lo que
     #: acabará acreditando, y su nombre lleva el estado para no pisar al definitivo.
     provisional: bool = False
+    #: ¿El PDF está de verdad en el expediente? El registro acredita la subida al
+    #: CRM, que es otro sitio: si alguien borra el fichero local, «ya estaba» sería
+    #: una ruta muerta devuelta sin una palabra. Se comprueba y se dice.
+    local_presente: bool = True
 
 
 def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
@@ -2233,7 +2254,8 @@ def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
                 id_envio=envio.id_envio, ruta_local=destino,
                 sha256=hecho.get("sha256") or "", doc_id=str(hecho.get("doc_id") or ""),
                 razon_social_emisor=esperado, usuario_emisor=None,
-                ya_estaba=True, provisional=provisional))
+                ya_estaba=True, provisional=provisional,
+                local_presente=destino.is_file()))
             continue
 
         pdf = entorno_exp.codicert.certificado(envio.id_envio)
