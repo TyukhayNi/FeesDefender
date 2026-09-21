@@ -10,6 +10,7 @@ from decimal import Decimal
 
 import pytest
 
+from core import codicert as _cod
 from core import expedicion_certificada as exp
 from core.casos import mutex_sesion
 from core.casos.workspace_model import CaseRef
@@ -773,4 +774,145 @@ def test_ejecutar_sin_el_mutex_sostenido_se_rechaza(tmp_path):
     with pytest.raises(exp.ExpedicionError) as e:
         exp.ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
     assert "exige el mutex" in str(e.value).lower()
+    assert cod.enviados == []
+
+
+# ---------------------------------------------------------------------------------
+# H-07 (medio, estructural; revisión adversarial r2). Un rechazo DEFINITIVO (422,
+# `CodicertDatosInvalidosError`) dejaba la anotación `en_vuelo` PARA SIEMPRE: el
+# registro solo sabía cerrar con un IdEnvio real, así que un rechazo -- del que
+# SABEMOS que no salió -- bloqueaba `exigir_sin_pendientes` en cualquier
+# reanudación futura, aunque el humano hubiera comprobado en el portal que ese
+# envío concreto no existe. De seis envíos, los dos primeros terminaban y el
+# tercero recibía un 422: quedaban dos hechos y uno en vuelo sin ninguna
+# transición auditada para resolverlo -- ni borrar la línea, ni inventar un id,
+# ni cambiar de ordinal son una reanudación trazable.
+# ---------------------------------------------------------------------------------
+
+class _CodicertQueRechazaElTercerIntento(_CodicertFalso):
+    """Como `_CodicertFalso`, pero el TERCER envío real (cualquiera de los dos
+    endpoints, en el orden en que `ejecutar` los intenta) recibe un 422 sintetizado
+    -- el mismo modo de fallo que reprodujo el revisor con seis envíos reales."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self._intentos = 0
+
+    def _quizas_rechazar(self):
+        self._intentos += 1
+        if self._intentos == 3:
+            raise _cod.CodicertDatosInvalidosError(
+                "Revise los datos e intente nuevamente", {"cp": "el CP no existe"})
+
+    def enviar_burofax(self, **kw):
+        self._quizas_rechazar()
+        return super().enviar_burofax(**kw)
+
+    def enviar_eec(self, **kw):
+        self._quizas_rechazar()
+        return super().enviar_eec(**kw)
+
+
+def test_H07_un_rechazo_422_no_bloquea_la_reanudacion_para_siempre(tmp_path):
+    """Dos requeridos en domicilios distintos: seis envíos previstos. El tercer
+    intento real recibe un 422. Esta llamada debe pararse -- no intenta los tres
+    restantes -- y dejar el registro en un estado del que SÍ se puede reanudar: el
+    rechazo se cierra con su propia transición persistida (ni "hecho" -- no se
+    inventa un IdEnvio que no existe -- ni "en_vuelo" para siempre). Una segunda
+    llamada, con el problema ya corregido, no encuentra ningún pendiente bloqueado
+    y manda los cuatro que faltan: el rechazado más los tres nunca intentados."""
+    cod = _CodicertQueRechazaElTercerIntento()
+    ent = _entorno(tmp_path, cod, partes=(ANA, MAR))
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+    assert len(plan.envios) == 6
+
+    with pytest.raises(exp.ExpedicionError) as e:
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    assert "rechaz" in str(e.value).lower()
+    assert len(cod.enviados) == 2  # los dos primeros SÍ salieron; el resto ni se intentó
+
+    reg = exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl",
+                                entorno=ent.entorno, usuario=ent.usuario, ahora=ent.ahora)
+    # El rechazo NO deja nada en vuelo: una reanudación no debe encontrarse bloqueada
+    # por un envío del que ya sabemos, con certeza, que no salió.
+    assert reg.en_vuelo(plan.id_personalizado) == []
+    lineas = [json.loads(l) for l in
+             (tmp_path / "_codicert_intencion.jsonl").read_text(encoding="utf-8").splitlines()]
+    rechazos = [l for l in lineas if l.get("estado") == "rechazado"]
+    assert len(rechazos) == 1
+
+    ids = _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    assert len(ids) == 4  # el rechazado (ya corregido) + los tres nunca intentados
+    assert len(cod.enviados) == 6
+
+
+def test_H07_el_timeout_SI_sigue_bloqueado_hasta_reconciliar(tmp_path):
+    """Un desenlace DESCONOCIDO -- aquí, cualquier error que no sea el rechazo
+    definitivo de Codicert -- no se resuelve solo: pudo salir. La anotación se
+    queda `en_vuelo` y una reanudación debe seguir encontrándose bloqueada hasta
+    que un humano reconcilie mirando el portal. No se propone reintentar solo."""
+
+    class _CodicertQueRompeElTransporte(_CodicertFalso):
+        def enviar_eec(self, **kw):
+            raise TimeoutError("la conexión con Codicert expiró")
+
+    cod = _CodicertQueRompeElTransporte()
+    ent = _entorno(tmp_path, cod)
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+
+    with pytest.raises(TimeoutError):
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+
+    reg = exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl",
+                                entorno=ent.entorno, usuario=ent.usuario, ahora=ent.ahora)
+    assert len(reg.en_vuelo(plan.id_personalizado)) == 1  # sigue en vuelo: SIN VERIFICAR
+
+    with pytest.raises(exp.ExpedicionError) as e:
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    assert "sin verificar" in str(e.value).lower()
+
+
+# ---------------------------------------------------------------------------------
+# H-08 (medio, acotado; revisión adversarial r2). El control de crédito comparaba
+# el saldo vivo contra `plan.coste` -- el coste del plan ENTERO, que incluye los
+# envíos ya cerrados -- y lo hacía ANTES de determinar los pendientes. Reanudar
+# cuando solo falta el canal más barato podía exigir saldo para pagar OTRA VEZ lo
+# que ya se pagó y se mandó.
+# ---------------------------------------------------------------------------------
+
+def test_H08_reanudar_compara_el_saldo_contra_el_coste_RESIDUAL(tmp_path):
+    """Correo y SMS ya se mandaron y están cerrados en el registro local; falta
+    solo el burofax. El saldo vivo es EXACTAMENTE lo que cuesta ese pendiente
+    (16,9716 €) -- ni un céntimo más. Antes, el control de crédito comparaba
+    contra `plan.coste` (los tres canales, 18,2348 €) y rechazaba una reanudación
+    que sí se puede pagar sin volver a planificar."""
+    cod = _CodicertFalso(credito=exp.TARIFA["burofax"])  # justo el residual, ni un céntimo más
+    ent = _entorno(tmp_path, cod)
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+    assert plan.coste == exp.TARIFA["burofax"] + exp.TARIFA["correo"] + exp.TARIFA["sms"]
+
+    reg = exp.RegistroIntencion(tmp_path / "_codicert_intencion.jsonl",
+                                entorno=ent.entorno, usuario=ent.usuario, ahora=ent.ahora)
+    for e in plan.envios:
+        if e.canal == "burofax":
+            continue
+        clave = reg.anotar(plan.id_personalizado, e.canal, e.destinatario)
+        reg.cerrar(clave, f"ID-{e.canal}")
+
+    ids = _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+
+    assert len(ids) == 1
+    assert cod.enviados == [("burofax", plan.id_personalizado)]
+
+
+def test_H08_sin_nada_hecho_todavia_el_saldo_se_compara_contra_el_total(tmp_path):
+    """Regresión: sin ningún cierre previo, el coste residual ES el coste total, así
+    que un saldo que solo cubra un tercio del plan debe seguir rechazándose --
+    H-08 no debe abrir la mano más allá de lo ya pagado."""
+    cod = _CodicertFalso(credito=exp.TARIFA["burofax"])  # no cubre correo+sms además
+    ent = _entorno(tmp_path, cod)
+    plan = exp.planificar("W-04AKM2", "OVC", _doc(tmp_path), entorno_exp=ent, plaza="Madrid")
+    with pytest.raises(exp.ExpedicionError) as e:
+        _ejecutar(plan, exp.Confirmacion(digest=plan.digest), entorno_exp=ent)
+    assert "crédito" in str(e.value).lower()
     assert cod.enviados == []

@@ -300,6 +300,28 @@ def _reloj_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+#: Los tres estados que reconoce el registro. "en_vuelo" es el único ABIERTO; los
+#: otros dos son cierres -- distintos entre sí porque significan cosas distintas
+#: para quien reanuda (hallazgo H-07, revisión adversarial r2): "hecho" es un envío
+#: real con `IdEnvio`, "rechazado" es la certeza de que NO salió (un 422 del
+#: servidor), sin inventar un identificador que no existe.
+_ESTADO_EN_VUELO = "en_vuelo"
+_ESTADO_HECHO = "hecho"
+_ESTADO_RECHAZADO = "rechazado"
+_ESTADOS_RECONOCIDOS = (_ESTADO_EN_VUELO, _ESTADO_HECHO, _ESTADO_RECHAZADO)
+
+#: Campos que exige cada tipo de fila, más allá de `clave` y `estado` (comunes a las
+#: tres). `entorno`/`usuario` NO están aquí a propósito: una fila sin ellos es
+#: "formato antiguo" (hallazgo H-04), un problema distinto de un esquema inválido, y
+#: `_exigir_formato_reconocido` ya lo declara por separado -- exigirlos aquí
+#: convertiría cualquier registro anterior a H-04 en corrupción semántica.
+_CAMPOS_APERTURA = ("id_personalizado", "canal", "destinatario_huella", "timestamp")
+_CAMPOS_CIERRE: dict[str, tuple[str, ...]] = {
+    _ESTADO_HECHO: ("id_envio",),
+    _ESTADO_RECHAZADO: ("motivo",),
+}
+
+
 class RegistroIntencion:
     """Rastro append-only de que *nosotros* llamamos, antes de que el servidor responda.
 
@@ -347,22 +369,25 @@ class RegistroIntencion:
         """
         return fila.get("entorno") == self.entorno and fila.get("usuario") == self.usuario
 
-    def _lineas(self) -> list[dict]:
-        """Cada línea no vacía, parseada. Una línea ilegible se declara, no se oculta.
+    def _lineas_numeradas(self) -> list[tuple[int, dict]]:
+        """Cada línea no vacía, parseada, con su número (base 1, como en el fichero).
 
         Un corte a mitad de `write` puede dejar la última línea truncada. Tragarla en
         silencio perdería el rastro de un envío que ya se pagó, así que se declara con
-        fichero y número de línea para que un humano la revise.
+        fichero y número de línea para que un humano la revise -- igual que hace
+        `_estados_por_clave` con la corrupción SEMÁNTICA (hallazgo H-15): esto cubre
+        solo que cada línea, aislada, sea JSON legible; no dice nada de si su
+        `estado` se reconoce ni de si la transición que propone es válida.
         """
         if not self.ruta.is_file():
             return []
-        filas: list[dict] = []
+        filas: list[tuple[int, dict]] = []
         for numero, l in enumerate(
                 self.ruta.read_text(encoding="utf-8").splitlines(), start=1):
             if not l.strip():
                 continue
             try:
-                filas.append(json.loads(l))
+                filas.append((numero, json.loads(l)))
             except json.JSONDecodeError as exc:
                 raise ExpedicionError(
                     f"{self.ruta}: la línea {numero} del registro de intención no es "
@@ -370,6 +395,103 @@ class RegistroIntencion:
                     "envío ya pagado. Revísala a mano antes de continuar."
                 ) from exc
         return filas
+
+    def _lineas(self) -> list[dict]:
+        return [fila for _, fila in self._lineas_numeradas()]
+
+    def _error_linea(self, numero: int, mensaje: str) -> ExpedicionError:
+        return ExpedicionError(
+            f"{self.ruta}: la línea {numero} del registro de intención {mensaje}")
+
+    def _estados_por_clave(self) -> dict[str, dict]:
+        """Reconstruye el estado de CADA clave, validando esquema, estado y la
+        secuencia de transiciones (hallazgo H-15, revisión adversarial r2).
+
+        Antes se aceptaba cualquier JSON sintácticamente válido sin mirar su
+        CONTENIDO: en `en_vuelo()`, cualquier `estado` distinto de `"en_vuelo"` se
+        interpretaba como un cierre -- así que un typo (`"hehco"`) hacía
+        desaparecer el pendiente de `en_vuelo()` SIN que apareciera en `hechos()`
+        (que exige la cadena exacta `"hecho"`): el rastro del envío se esfumaba de
+        los dos controles a la vez, sin ningún aviso. Y los cierres duplicados solo
+        se impedían llamando a `cerrar()`/`rechazar()` -- si el fichero ya traía
+        dos líneas de cierre para la misma clave (reparado a mano, o importado),
+        `_cerrados_de` las devolvía las dos como envíos explicados.
+
+        Se para, con fichero y línea -- igual que ya hace el JSON ilegible --, ante
+        cualquiera de estos, en el orden en que aparecen en el fichero:
+
+        - un `estado` que no es ninguno de los tres reconocidos (`en_vuelo`,
+          `hecho`, `rechazado`): un estado que no se entiende NO puede consumirse
+          como si cerrara una intención;
+        - una fila a la que le falta un campo que su propio estado exige (esquema
+          inválido) -- `entorno`/`usuario` quedan fuera de esta lista a propósito,
+          ver `_CAMPOS_APERTURA`;
+        - un cierre (`hecho` o `rechazado`) para una clave sin apertura `en_vuelo`
+          previa en el fichero (cierre huérfano);
+        - un cierre para una clave que ya estaba cerrada (cierre duplicado);
+        - una apertura `en_vuelo` para una clave que el fichero ya conocía (una
+          clave es un `uuid4`, irrepetible: no debe volver a abrirse).
+
+        Devuelve, por clave, `{"estado", "apertura", "linea_apertura"}` y, si ya
+        cerró, además `{"cierre", "linea_cierre"}`. `en_vuelo`, `hechos`,
+        `_anotaciones_de` y `_cerrados_de` leen todas de aquí: es la validación
+        COMPARTIDA que pide el hallazgo, la misma que usa `cerrar`/`rechazar` para
+        comprobar que una clave sigue abierta antes de escribir su cierre.
+        """
+        estados: dict[str, dict] = {}
+        for numero, fila in self._lineas_numeradas():
+            clave = fila.get("clave")
+            if not clave or not isinstance(clave, str):
+                raise self._error_linea(numero, "no tiene una 'clave' válida (esquema inválido).")
+            estado = fila.get("estado")
+            if estado is None:
+                raise self._error_linea(
+                    numero, f"no tiene 'estado' para la clave {clave!r} (esquema inválido).")
+            if estado not in _ESTADOS_RECONOCIDOS:
+                raise self._error_linea(
+                    numero,
+                    f"tiene estado {estado!r} desconocido para la clave {clave!r}; los "
+                    f"reconocidos son {_ESTADOS_RECONOCIDOS}. Un estado que no se "
+                    "entiende no se puede tratar como si cerrara la intención.")
+
+            if estado == _ESTADO_EN_VUELO:
+                faltan = [c for c in _CAMPOS_APERTURA if not fila.get(c)]
+                if faltan:
+                    raise self._error_linea(
+                        numero,
+                        f"abre la clave {clave!r} sin {', '.join(faltan)} (esquema "
+                        "inválido).")
+                if clave in estados:
+                    raise self._error_linea(
+                        numero,
+                        f"reabre la clave {clave!r}, que ya tenía una fila previa en "
+                        f"el registro (estado {estados[clave]['estado']!r}): una "
+                        "clave -- uuid4, irrepetible -- no debe volver a abrirse.")
+                estados[clave] = {"estado": _ESTADO_EN_VUELO, "apertura": fila,
+                                  "linea_apertura": numero}
+            else:  # "hecho" | "rechazado": un cierre
+                faltan = [c for c in _CAMPOS_CIERRE[estado] if not fila.get(c)]
+                if faltan:
+                    raise self._error_linea(
+                        numero,
+                        f"cierra la clave {clave!r} como {estado!r} sin "
+                        f"{', '.join(faltan)} (esquema inválido).")
+                previo = estados.get(clave)
+                if previo is None:
+                    raise self._error_linea(
+                        numero,
+                        f"cierra como {estado!r} la clave {clave!r}, que no tiene "
+                        "ninguna apertura 'en_vuelo' previa en el registro (cierre "
+                        "huérfano).")
+                if previo["estado"] != _ESTADO_EN_VUELO:
+                    raise self._error_linea(
+                        numero,
+                        f"cierra OTRA VEZ, como {estado!r}, la clave {clave!r}: ya "
+                        f"estaba cerrada como {previo['estado']!r} (cierre "
+                        "duplicado).")
+                estados[clave] = {**previo, "estado": estado, "cierre": fila,
+                                  "linea_cierre": numero}
+        return estados
 
     def _escribir(self, fila: dict) -> None:
         with self.ruta.open("a", encoding="utf-8", newline="\n") as f:
@@ -402,45 +524,99 @@ class RegistroIntencion:
                         "usuario": self.usuario, "timestamp": marca, "estado": "en_vuelo"})
         return clave
 
-    def cerrar(self, clave: str, id_envio: str) -> None:
-        """Cierra una anotación en vuelo.
+    def _exigir_clave_en_vuelo(self, clave: str, *, gerundio: str) -> None:
+        """Comparte el candado de `cerrar` y `rechazar`: la clave debe seguir abierta.
 
-        Cerrar una `clave` que no está en vuelo —porque ya se cerró antes, o porque
-        nunca se abrió— dejaría `hechos()` con dos ids como si fueran dos envíos
-        legítimos: exactamente lo que este registro existe para detectar. Se para
-        aquí, en el propio punto de cierre, en vez de en una lectura posterior.
+        Cerrar o rechazar una `clave` que no está en vuelo —porque ya se resolvió
+        antes, o porque nunca se abrió— dejaría dos transiciones para el mismo
+        envío, como si fueran dos hechos legítimos: exactamente lo que este
+        registro existe para detectar. Se para aquí, en el propio punto de
+        escritura, en vez de en una lectura posterior -- `_estados_por_clave`
+        (hallazgo H-15) es la red que atrapa esa misma corrupción si, en vez de
+        pasar por aquí, ya viene escrita en el fichero.
         """
         if clave not in {f["clave"] for f in self.en_vuelo()}:
             raise ExpedicionError(
-                f"la clave {clave!r} no tiene una anotación en vuelo: ya se cerró, o "
-                "nunca se abrió. Cerrarla ahora simularía un segundo envío que no "
-                "existió.")
+                f"la clave {clave!r} no tiene una anotación en vuelo: ya se resolvió "
+                f"(cerrada o rechazada), o nunca se abrió. {gerundio} ahora simularía "
+                "un segundo desenlace para un envío que no lo tuvo.")
+
+    def cerrar(self, clave: str, id_envio: str) -> None:
+        """Cierra una anotación en vuelo con un envío REAL: la plataforma lo aceptó
+        y le dio un `IdEnvio`. Ver `rechazar` para el otro cierre posible."""
+        self._exigir_clave_en_vuelo(clave, gerundio="Cerrarla")
         self._escribir({"clave": clave, "estado": "hecho", "id_envio": id_envio})
+
+    def rechazar(self, clave: str, motivo: str) -> None:
+        """Cierra una anotación en vuelo con un RECHAZO DEFINITIVO (hallazgo H-07,
+        revisión adversarial r2): la plataforma respondió, y respondió que NO.
+
+        Antes, el registro solo sabía resolver una intención con un `IdEnvio` real
+        (`cerrar`): cualquier excepción posterior a `anotar` -- incluido un 422,
+        `CodicertDatosInvalidosError`, del que sabemos con CERTEZA que el envío no
+        salió -- dejaba la anotación `en_vuelo` para siempre. El registro solo
+        permite cerrar con un identificador de envío, así que no había forma
+        auditada de dejar constancia de "esto no salió": borrar la línea, inventar
+        un `IdEnvio` o cambiar de ordinal no son una reanudación trazable, y
+        `exigir_sin_pendientes` bloqueaba cualquier intento futuro de esa
+        expedición, incluso después de corregir el dato que Codicert rechazó.
+
+        Esta transición resuelve la intención SIN inventar un identificador: dado
+        que nunca hubo un envío real, no hay `IdEnvio` que guardar. Al cerrar,
+        `en_vuelo()` deja de contarla -- ya no bloquea una reanudación -- pero
+        `hechos()`/`pares_cerrados()` tampoco la cuentan como enviada (ambas exigen
+        `estado == "hecho"`): el par (canal, huella) vuelve a aparecer como
+        pendiente en la siguiente llamada a `ejecutar`, y se reintenta -- una vez
+        corregido el dato, no en bucle -- igual que un envío que nunca se llegó a
+        intentar.
+
+        Un DESENLACE DESCONOCIDO -- un timeout, un error de transporte -- es
+        justo lo contrario: pudo salir. Esos NUNCA llegan aquí (`ejecutar` solo
+        llama a `rechazar` ante `CodicertDatosInvalidosError`); se quedan
+        `en_vuelo`, bloqueados hasta que un humano reconcilie mirando el portal --
+        no se propone reintentarlos solos.
+
+        `motivo` es diagnóstico para el humano que lee este cierre, NUNCA texto
+        libre del servidor ni del destinatario: `ejecutar` pasa una cadena fija
+        derivada del TIPO de excepción, nunca el cuerpo de la respuesta de
+        Codicert, que podría (aunque no se ha observado) traer de vuelta un dato
+        del payload rechazado. El registro sigue sin poder contener datos
+        personales del destinatario (`docs/SEGURIDAD_DATOS.md` §7): ese límite no
+        distingue de qué transición viene la fila.
+        """
+        self._exigir_clave_en_vuelo(clave, gerundio="Rechazarla")
+        self._escribir({"clave": clave, "estado": "rechazado", "motivo": motivo})
 
     def en_vuelo(self, id_personalizado: str | None = None) -> list[dict]:
         """Anotaciones sin cerrar de ESTE entorno/cuenta. Con `id_personalizado`, solo
         las de esa expedición (hallazgo H-04: una anotación de otro entorno u otra
-        cuenta no pertenece a esta instancia, así que no cuenta ni bloquea aquí)."""
-        abiertas: dict[str, dict] = {}
-        for fila in self._lineas():
-            if fila.get("estado") == "en_vuelo":
-                abiertas[fila["clave"]] = fila
-            else:
-                abiertas.pop(fila["clave"], None)
-        filas = [f for f in abiertas.values() if self._coincide_entorno(f)]
+        cuenta no pertenece a esta instancia, así que no cuenta ni bloquea aquí).
+
+        Lee de `_estados_por_clave` (hallazgo H-15): una clave cuenta como en vuelo
+        solo si su ÚLTIMA transición validada sigue siendo `"en_vuelo"` -- un
+        estado que no se reconoce, o un cierre huérfano/duplicado, para la lectura
+        entera antes de llegar aquí, nunca se cuela como si cerrara la intención.
+        """
+        filas = [info["apertura"] for info in self._estados_por_clave().values()
+                if info["estado"] == _ESTADO_EN_VUELO]
+        filas = [f for f in filas if self._coincide_entorno(f)]
         if id_personalizado is None:
             return filas
         return [f for f in filas if f.get("id_personalizado") == id_personalizado]
 
     def hechos(self) -> set[str]:
-        return {f["id_envio"] for f in self._lineas() if f.get("estado") == "hecho"}
+        """`IdEnvio` de las claves cerradas como `"hecho"` -- nunca `"rechazado"`,
+        que por definición nunca tuvo un envío real (hallazgo H-07)."""
+        return {info["cierre"]["id_envio"] for info in self._estados_por_clave().values()
+               if info["estado"] == _ESTADO_HECHO}
 
     def _anotaciones_de(self, id_personalizado: str) -> list[dict]:
-        """Filas 'en_vuelo' -- origen, sigan abiertas o ya cerradas -- de esta
-        expedición, SIN filtrar por entorno/cuenta: es la base para detectar formato
-        antiguo (hallazgo H-04) antes de decidir si una anotación cuenta o no."""
-        return [f for f in self._lineas()
-               if f.get("estado") == "en_vuelo" and f.get("id_personalizado") == id_personalizado]
+        """Filas 'en_vuelo' -- origen, sigan abiertas o ya cerradas (con cualquiera
+        de los dos cierres) -- de esta expedición, SIN filtrar por entorno/cuenta:
+        es la base para detectar formato antiguo (hallazgo H-04) antes de decidir
+        si una anotación cuenta o no."""
+        return [info["apertura"] for info in self._estados_por_clave().values()
+               if info["apertura"].get("id_personalizado") == id_personalizado]
 
     def _exigir_formato_reconocido(self, id_personalizado: str) -> None:
         """Para y declara si `id_personalizado` tiene anotaciones en FORMATO ANTIGUO.
@@ -465,27 +641,30 @@ class RegistroIntencion:
 
     def _cerrados_de(self, id_personalizado: str) -> list[dict]:
         """Anotaciones de `id_personalizado`, DE ESTE ENTORNO/CUENTA, que ya se
-        cerraron, con su `id_envio` añadido.
+        cerraron con un envío REAL (`"hecho"`, nunca `"rechazado"` -- hallazgo
+        H-07: un rechazo no explica ni completa nada, porque no salió), con su
+        `id_envio` añadido.
 
         La línea "hecho" solo lleva `clave` e `id_envio` (spec §4.3): no dice de qué
         expedición era, por qué canal, ni de qué entorno/cuenta. Se cruza con la
-        anotación "en_vuelo" que la abrió —única por `clave`, la genera `uuid4()`—
+        anotación "en_vuelo" que la abrió —única por `clave`, la genera `uuid4()`,
+        y `_estados_por_clave` (hallazgo H-15) ya garantiza que sea EXACTAMENTE una—
         para recuperar `id_personalizado`, `canal`, `destinatario_huella`, `entorno`
         y `usuario`. El cruce exige además que esa anotación de origen sea de ESTE
         entorno/cuenta (hallazgo H-04): un cierre de sandbox no debe explicar ni
         completar una expedición de producción, aunque compartan `id_personalizado`
         -- el mismo w_code puede expedirse en los dos.
         """
-        filas = self._lineas()
-        anotaciones = {f["clave"]: f for f in filas
-                       if f.get("estado") == "en_vuelo" and self._coincide_entorno(f)}
         salida: list[dict] = []
-        for f in filas:
-            if f.get("estado") != "hecho":
+        for info in self._estados_por_clave().values():
+            if info["estado"] != _ESTADO_HECHO:
                 continue
-            origen = anotaciones.get(f["clave"])
-            if origen is not None and origen.get("id_personalizado") == id_personalizado:
-                salida.append({**origen, "id_envio": f["id_envio"]})
+            apertura = info["apertura"]
+            if not self._coincide_entorno(apertura):
+                continue
+            if apertura.get("id_personalizado") != id_personalizado:
+                continue
+            salida.append({**apertura, "id_envio": info["cierre"]["id_envio"]})
         return salida
 
     def pares_cerrados(self, id_personalizado: str) -> set[tuple[str, str]]:
@@ -814,8 +993,10 @@ def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
     los destinatarios DE NUEVO contra el CRM; recalcula con eso el sello completo
     (identificador con su ordinal, textos, coste, cuenta emisora, destinatarios y
     huellas de documento — hallazgo H-01) y lo compara contra la `Confirmacion` que
-    trae el humano; solo entonces comprueba que el crédito EN VIVO cubre el coste y
-    que lo que la plataforma ya tenga lo explica el registro local. Reanuda
+    trae el humano; determina qué falta por mandar y solo entonces comprueba que
+    el crédito EN VIVO cubre el coste RESIDUAL de lo pendiente -- nunca el coste
+    del plan entero, que incluiría pagar otra vez lo ya cerrado (hallazgo H-08) --
+    y que lo que la plataforma ya tenga lo explica el registro local. Reanuda
     completando lo que falte; nunca repite lo hecho (spec §5.1, §5.2).
 
     Lo que se manda es SIEMPRE la instantánea que acaba de revalidar dentro de ESTA
@@ -847,6 +1028,22 @@ def ejecutar(plan: Plan, confirmacion: Confirmacion, *,
     este proceso) y exige `_exigir_mutex_de_expedicion` (exclusión ENTRE procesos,
     comprobada, nunca adquirida aquí): el estado se vuelve a comprobar DENTRO de esa
     doble exclusión, no fuera de ella.
+
+    **H-07 (medio, estructural; revisión adversarial r2):** un rechazo DEFINITIVO
+    del servidor (422, `CodicertDatosInvalidosError`) durante el envío se cierra con
+    `registro.rechazar` -- nunca deja la anotación `en_vuelo` para siempre, que
+    bloquearía cualquier reanudación futura sin que hubiera forma auditada de
+    resolverla. Un desenlace DESCONOCIDO (timeout, error de transporte) no se
+    captura: sigue `en_vuelo`, bloqueado hasta que un humano reconcilie mirando el
+    portal. Ver el docstring de `RegistroIntencion.rechazar`.
+
+    **H-15 (medio, acotado; revisión adversarial r2):** `RegistroIntencion` valida
+    ahora, al leer, el esquema, el `estado` y la secuencia de transiciones de CADA
+    clave (`_estados_por_clave`) -- comparte esa validación `en_vuelo`, `hechos`,
+    `pares_cerrados`/`ids_hechos_de` (esta función, vía ellas) y la recuperación de
+    H-07. Un estado que no se reconoce, o un cierre huérfano o duplicado, para la
+    lectura entera con fichero y línea: nunca se consume como si cerrara una
+    intención.
     """
     clave = clave_mutex_expedicion(plan)
     with _candado_de(clave):
@@ -885,12 +1082,6 @@ def _ejecutar_bajo_candado(plan: Plan, confirmacion: Confirmacion, *,
             "domicilios, documento, identificador, cuenta emisora, texto o coste), o "
             "la confirmación es de otro plan. No se manda nada. Vuelve a planificar y "
             "revísalo.")
-
-    credito_ahora = entorno_exp.codicert.credito()
-    if credito_ahora < plan.coste:
-        raise ExpedicionError(
-            f"crédito insuficiente para ejecutar: {credito_ahora} € ahora para un coste "
-            f"de {plan.coste} € (al planificar había {plan.credito} €). No se manda nada.")
 
     registro = RegistroIntencion(entorno_exp.raiz / "_codicert_intencion.jsonl",
                                  entorno=entorno_exp.entorno, usuario=entorno_exp.usuario,
@@ -935,6 +1126,26 @@ def _ejecutar_bajo_candado(plan: Plan, confirmacion: Confirmacion, *,
             "-- cuentan aunque el listado remoto no los muestre. No hay nada "
             "pendiente que mandar.")
 
+    # H-08 (medio, acotado; revisión adversarial r2): el crédito se compara contra
+    # el COSTE RESIDUAL -- lo que falta por mandar, `pendientes` -- nunca contra
+    # `plan.coste`, que es el coste del plan ENTERO e incluye los envíos que ya se
+    # cerraron y no se van a volver a pagar. Antes se comprobaba el crédito ANTES
+    # de determinar los pendientes: reanudar cuando solo faltaba el canal más
+    # barato exigía saldo para pagar OTRA VEZ el correo y el SMS ya enviados y
+    # explicados -- un saldo vivo de exactamente 16,9716 € (lo que cuesta un
+    # burofax suelto) se rechazaba porque el motor pedía 18,2348 € (los tres
+    # canales), y volver a planificar no ayudaba: vuelve a presupuestar el total.
+    coste_residual = coste_de(pendientes)
+    credito_ahora = entorno_exp.codicert.credito()
+    if credito_ahora < coste_residual:
+        coste_hecho = plan.coste - coste_residual
+        raise ExpedicionError(
+            f"crédito insuficiente para ejecutar: quedan {len(pendientes)} envío(s) "
+            f"por mandar, que cuestan {coste_residual} € en total, y hay "
+            f"{credito_ahora} € disponibles ahora (plan completo {plan.coste} €; ya "
+            f"gastado {coste_hecho} €; al planificar había {plan.credito} €). No se "
+            "manda nada.")
+
     # Los adjuntos salen de los MISMOS bytes que se acaban de leer y hashear arriba
     # (hallazgo H-02): ninguna ruta se reabre aquí, así que la ventana larga de
     # `listar()` -- justo encima -- no puede colar una sustitución entre "se
@@ -951,15 +1162,43 @@ def _ejecutar_bajo_candado(plan: Plan, confirmacion: Confirmacion, *,
         # ligarse al contenido aprobado -- lo que de verdad viaja en el envío --,
         # no a una etiqueta pensada solo para que la lea un humano en el plan.
         clave = registro.anotar(plan.id_personalizado, e.canal, e.destinatario)
-        if e.canal == "burofax":
-            i = entorno_exp.codicert.enviar_burofax(
-                destinatario=e.destinatario, adjuntos=adjuntos, asunto=asunto, cuerpo=cuerpo,
-                id_personalizado=plan.id_personalizado)
-        else:
-            i = entorno_exp.codicert.enviar_eec(
-                destinatarios=[e.destinatario], adjuntos=adjuntos, asunto=asunto, cuerpo=cuerpo,
-                tipo_entrega="correo" if e.canal == "correo" else "sms",
-                id_personalizado=plan.id_personalizado)
+        try:
+            if e.canal == "burofax":
+                i = entorno_exp.codicert.enviar_burofax(
+                    destinatario=e.destinatario, adjuntos=adjuntos, asunto=asunto, cuerpo=cuerpo,
+                    id_personalizado=plan.id_personalizado)
+            else:
+                i = entorno_exp.codicert.enviar_eec(
+                    destinatarios=[e.destinatario], adjuntos=adjuntos, asunto=asunto, cuerpo=cuerpo,
+                    tipo_entrega="correo" if e.canal == "correo" else "sms",
+                    id_personalizado=plan.id_personalizado)
+        except _cod.CodicertDatosInvalidosError as exc:
+            # H-07 (medio, estructural; revisión adversarial r2): un 422 es un
+            # RECHAZO DEFINITIVO -- sabemos, con certeza, que ESTE envío concreto
+            # no salió --, a diferencia de un timeout o cualquier otro error de
+            # transporte, donde pudo salir. Se cierra con su propia transición
+            # (`rechazar`, nunca `cerrar`): no se inventa un `IdEnvio` que no
+            # existe, y no se deja `en_vuelo` -- eso bloquearía CUALQUIER
+            # reanudación futura de esta expedición para siempre, aunque el humano
+            # comprobara en el portal que este envío concreto no existe. `motivo`
+            # es diagnóstico fijo, derivado del TIPO de excepción -- nunca el texto
+            # del servidor, que podría (aunque no se ha observado) reflejar un dato
+            # del payload rechazado y violar la prohibición de PII en el registro.
+            #
+            # El resto de `pendientes` de ESTA llamada NO se intenta: se para
+            # aquí, igual que antes de este arreglo -- lo único que cambia es que
+            # la reanudación deja de estar bloqueada para siempre. Un desenlace
+            # DESCONOCIDO (timeout, error de transporte) no se captura aquí a
+            # propósito: sigue `en_vuelo`, bloqueado hasta que un humano
+            # reconcilie mirando el portal; no se propone reintentarlo solo.
+            registro.rechazar(clave, motivo=f"{type(exc).__name__} (422): rechazo del servidor")
+            raise ExpedicionError(
+                f"Codicert rechazó el envío por {e.canal} de {plan.id_personalizado!r} "
+                f"(422, rechazo definitivo): {exc}. Este envío concreto queda marcado "
+                "como rechazado en el registro local, así que NO bloqueará una "
+                "reanudación futura: corrige el dato que Codicert rechazó y vuelve a "
+                "planificar y ejecutar. No se manda nada más en esta llamada."
+            ) from exc
         registro.cerrar(clave, i)
         ids.append(i)
     return ids

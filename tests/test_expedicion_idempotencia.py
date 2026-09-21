@@ -156,3 +156,102 @@ def test_exigir_sin_pendientes_mensaje_incluye_clave_y_timestamp(tmp_path):
     mensaje = str(e.value)
     assert clave in mensaje
     assert fila["timestamp"] in mensaje
+
+
+# ---------------------------------------------------------------------------------
+# H-07 (medio, estructural; revisión adversarial r2). `cerrar()` solo sabe resolver
+# una intención con un IdEnvio real. Un rechazo DEFINITIVO -- del que sabemos con
+# certeza que no salió -- necesita su PROPIA transición persistida, que la deje
+# fuera de `en_vuelo()` sin inventar un identificador ni contarla como `hecho()`.
+# ---------------------------------------------------------------------------------
+
+def test_rechazar_cierra_la_intencion_sin_inventar_un_id_de_envio(tmp_path):
+    reg = exp.RegistroIntencion(tmp_path / "i.jsonl")
+    clave = reg.anotar("W-1 - REQ", "burofax", "ANA")
+    reg.rechazar(clave, motivo="422: datos inválidos")
+    assert reg.en_vuelo() == []       # ya no bloquea una reanudación
+    assert reg.hechos() == set()      # tampoco se cuenta como un envío real
+
+
+def test_rechazar_una_clave_que_no_esta_en_vuelo_lanza_error(tmp_path):
+    reg = exp.RegistroIntencion(tmp_path / "i.jsonl")
+    with pytest.raises(exp.ExpedicionError):
+        reg.rechazar("clave-que-nunca-se-anoto", motivo="422")
+
+
+def test_rechazar_dos_veces_la_misma_clave_lanza_error(tmp_path):
+    reg = exp.RegistroIntencion(tmp_path / "i.jsonl")
+    clave = reg.anotar("W-1 - REQ", "burofax", "ANA")
+    reg.rechazar(clave, motivo="422")
+    with pytest.raises(exp.ExpedicionError):
+        reg.rechazar(clave, motivo="422 otra vez")
+
+
+# ---------------------------------------------------------------------------------
+# H-15 (medio, acotado; revisión adversarial r2). Se detectaba JSON sintácticamente
+# inválido, pero no se validaba ni el esquema ni la secuencia de transiciones: en
+# `en_vuelo()`, CUALQUIER estado distinto de "en_vuelo" se interpretaba como un
+# cierre legítimo, y los cierres duplicados solo se impedían llamando a `cerrar()`
+# -- no si ya venían escritos en el fichero.
+# ---------------------------------------------------------------------------------
+
+def test_H15_un_estado_desconocido_para_declarando_fichero_y_linea(tmp_path):
+    """Tras una intención legítima, una línea JSON VÁLIDA con la MISMA clave y un
+    estado mal escrito ("hehco", un typo real) no debe hacer que el pendiente
+    desaparezca en silencio de los dos controles a la vez -- antes, `en_vuelo()`
+    lo daba por cerrado (cualquier estado que no fuera "en_vuelo" cerraba) y
+    `hechos()` no lo reconocía (exige la cadena exacta "hecho"): el rastro del
+    envío se esfumaba sin aviso. Un estado que no se entiende no puede consumirse
+    como si cerrara la intención: debe pararse, igual que ya hace el JSON
+    ilegible."""
+    ruta = tmp_path / "i.jsonl"
+    reg = exp.RegistroIntencion(ruta)
+    clave = reg.anotar("W-1 - REQ", "burofax", "ANA")
+    with ruta.open("a", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps({"clave": clave, "estado": "hehco", "id_envio": "x"}) + "\n")
+
+    with pytest.raises(exp.ExpedicionError) as e:
+        reg.en_vuelo()
+    mensaje = str(e.value)
+    assert str(ruta) in mensaje
+    assert "línea 2" in mensaje
+
+    with pytest.raises(exp.ExpedicionError):
+        reg.hechos()  # tampoco se cuela como "hecho": ningún control lo da por bueno
+
+
+def test_H15_dos_cierres_para_la_misma_clave_paran_en_vez_de_explicar_los_dos(tmp_path):
+    """Dos líneas de cierre "hecho" para la MISMA clave, con IdEnvio distintos --
+    corrupción que la API en vivo no permite (`cerrar()` comprueba que la clave
+    siga en vuelo antes de escribir), pero que un fichero reparado a mano o
+    importado sí puede traer ya escrita. Antes, `ids_hechos_de()` devolvía LAS DOS
+    como envíos explicados: un cierre duplicado se contaba dos veces como si
+    fueran dos envíos legítimos -- justo lo que este registro existe para
+    detectar."""
+    ruta = tmp_path / "i.jsonl"
+    reg = exp.RegistroIntencion(ruta)
+    clave = reg.anotar("W-1 - REQ", "burofax", "ANA")
+    reg.cerrar(clave, "id-legitimo")
+    with ruta.open("a", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps({"clave": clave, "estado": "hecho", "id_envio": "id-fantasma"}) + "\n")
+
+    with pytest.raises(exp.ExpedicionError) as e:
+        reg.ids_hechos_de("W-1 - REQ")
+    mensaje = str(e.value)
+    assert str(ruta) in mensaje
+    assert "línea 3" in mensaje
+
+
+def test_H15_un_cierre_sin_apertura_previa_es_huerfano_y_para(tmp_path):
+    """Una línea "hecho" para una clave que NUNCA se anotó "en_vuelo" -- un
+    fichero reparado a mano que perdió la línea de apertura, por ejemplo -- no
+    debe aceptarse como un envío explicado: no hay con qué contrastarla."""
+    ruta = tmp_path / "i.jsonl"
+    ruta.write_text(
+        json.dumps({"clave": "nunca-anotada", "estado": "hecho", "id_envio": "x"}) + "\n",
+        encoding="utf-8", newline="\n")
+    reg = exp.RegistroIntencion(ruta)
+    with pytest.raises(exp.ExpedicionError) as e:
+        reg.hechos()
+    assert str(ruta) in str(e.value)
+    assert "línea 1" in str(e.value)
