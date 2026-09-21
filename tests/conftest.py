@@ -180,6 +180,22 @@ def _barrera_codicert(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _barrera_sudespacho_documentos(monkeypatch):
+    """Barrera de ejecución del gestor documental del CRM, `autouse` en TODA la suite.
+
+    Misma lección que la de arriba (H-13), aplicada al módulo que F2 estrena: un
+    barrido de texto no ve «llamar sin inyectar `cliente=`». Y aquí importa más,
+    porque `core/sudespacho_documentos.py` **escribe**: el descuido no sería un GET
+    de más contra un servicio de lectura, sino un documento creado en el gestor
+    documental de un expediente real. Detalle en
+    `tests/_barrera_sudespacho_documentos.py`.
+    """
+    from tests import _barrera_sudespacho_documentos as barrera
+
+    barrera.instalar(monkeypatch)
+
+
+@pytest.fixture(autouse=True)
 def _registro_y_locks_aislados(tmp_path, monkeypatch):
     """Ningún test escribe en el registro REAL del usuario.
 

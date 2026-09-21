@@ -215,7 +215,7 @@ def test_escribe_solo_bajo_la_carpeta_que_le_dan(tmp_path):
 def test_un_entorno_SIN_los_puertos_de_escritura_para_antes_de_nada(tmp_path):
     """Un `EntornoExpedicion` de F1 no puede cosechar por accidente contra el árbol real."""
     t = FakeTransporte([_ev("006a")], {"006a": _h20()}, {"006a": CERT})
-    de_f1 = exp.EntornoExpedicion(
+    de_f1 = exp.EntornoExpedicion(  # entorno-sin-cosecha: ESE es el caso bajo prueba
         codicert=t, partes_de=lambda w: [],
         ahora=lambda: datetime(2026, 9, 21, tzinfo=timezone.utc),
         raiz=tmp_path, plaza="Madrid", entorno="produccion", usuario="madrid.bd")
