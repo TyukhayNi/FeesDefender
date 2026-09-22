@@ -3461,3 +3461,13 @@ fichero contra el registro judicial):
   sigue **sin verificar** — no «vigente», sino sin mirar. Y el enum `Apoderado` no tiene valor para
   **graduado social**: en `#89` y `#90` va `Abogado` con la salvedad escrita en `Notas`, por decisión
   de Nikolai el 2026-09-09.
+- **Un tercer caso del mismo patrón** (2026-09-22, alta a mano del apud-acta `7373420` a favor de
+  Ester Garcia Clavel, ICP Manresa): `procuradores_propios/40` también tiene **`nif_cif` vacío**: el
+  cruce por NIF volvió a fallar y se resolvió igual, por nombre completo exacto (único) + plaza
+  (Manresa) coincidente con el colegio del certificado. **Van tres de tres intentos de enganche por
+  NIF fallando por dato ausente en la ficha**, no por error de búsqueda — la medición pendiente
+  («cuántas de las fichas tienen `nif_cif` poblado») sigue sin hacerse y cada vez pesa más como
+  bloqueante del paso 2. No se tocó la ficha `40` (rellenar el NIF es la misma decisión pendiente de
+  Nikolai, no un efecto colateral de esta alta). El fichero de poderes pasa a **92**
+  (`poderes/92`, poderdante `clientes_propios/2` verificado, certificado en `gdocu/43227`,
+  sha256 verificado tras la subida).
