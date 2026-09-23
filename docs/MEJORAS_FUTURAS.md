@@ -12718,3 +12718,48 @@ guard lo que **no** prueba: que la ronda corriera con lo que el acta declara.
 **Disparador para promoverlo:** la segunda acta que llegue sin los tres campos, o el cierre de
 la calibración de la fila #38 —lo que pase antes—. Con menos de dos actas afectadas el guard
 cuesta más que el olvido que evita.
+
+## 282. La política de modelo del revisor vive DOS veces, y ya dice cosas distintas
+
+**De dónde sale:** encargo de Nikolai del 2026-09-23, al cerrar la sesión que la escribió aquí.
+El mismo día, **dos sesiones en paralelo** adoptaron la misma decisión en los dos repos sin
+verse: PR [#395](https://github.com/TyukhayNi/FeesDefender/pull/395) en FeesDefender y
+PR [#312](https://github.com/TyukhayNi/ElContable/pull/312) en El Contable.
+
+**Lo medido, con el diff de las dos delante:**
+
+| | FeesDefender (#395) | El Contable (#312) |
+|---|---|---|
+| Tabla de modelo | `CLAUDE.md` §«Con qué modelo se revisa», 6 filas | `CLAUDE.md` § propia, con marcadores `POLITICA-MODELO:INICIO` |
+| **El propio contrato de revisión** | **`gpt-6-sol`·`high`** (bajado por Nikolai desde Astra) | **`gpt-6-astra`·`medium`** |
+| Lanzador | ninguno; los flags los exige la prosa (`MEJORAS #279`) | `scripts/lanzar_revision_codex.ps1` (422 líneas) |
+| Guard del lanzador | ninguno | `tests/test_guard_lanzador_revision.py` (351 líneas) |
+| Ledger de calibración | fila #38 de `PLAN.md` | `docs/CALIBRACION_MODELO_REVISION.md` |
+
+**Por qué esto NO es «dos variantes» sino un bug, y lo dicen los propios ficheros:** el
+`CLAUDE.md` de El Contable se declara **«puntero a la documentación viva; no duplica contenido»**,
+y su `AGENTS.md` dice literalmente que **si los dos dicen cosas distintas sobre el mismo hecho
+«es un bug»**. El `AGENTS.md` de FeesDefender lleva la misma leccion escrita desde que dejó de ser
+una copia de `CLAUDE.md`: **mantener dos copias del mismo texto garantiza que divergan**, y la
+celda del contrato de revisión ya divergió el primer día.
+
+**La forma que propongo, sin decidirla:**
+
+1. **La tabla vive UNA vez**, en `CLAUDE.md` de FeesDefender, que es donde El Contable ya apunta
+   para el resto del contrato de revisión. El Contable conserva **solo lo suyo**: que su caso
+   frecuente —facturación, envío, nóminas— cae en las filas de Astra más a menudo que aquí.
+2. **Decidir la celda que diverge**, que es una decisión de Nikolai y no una fusión mecánica: el
+   argumento de FeesDefender es que la frontera es el **silencio**, no la importancia.
+3. **El lanzador y su guard se quedan**, y **se mueven a donde los dos repos los usen**. Eso cierra
+   `MEJORAS #279` sin construir nada nuevo: el hueco que #279 declara —los flags los exige la
+   prosa— ya está resuelto ahí, solo que en el repo de al lado.
+4. **Un solo ledger** o dos declarados como distintos; hoy no se sabe cuál cuenta los cinco
+   encargos.
+
+**Disparador para promoverlo:** que el PR #312 mergee. Antes no: reconciliar contra una rama
+abierta es reconciliar contra algo que aún puede cambiar.
+
+**Y el defecto de proceso detrás, que es lo que conviene no repetir:** dos sesiones recibieron el
+mismo informe y ninguna sabía de la otra hasta que Nikolai lo dijo a mitad. No es un fallo de
+ninguna de las dos —ninguna podía verlo— sino del reparto: **una decisión que gobierna los dos
+repos necesita una sesión, no una por repo.**
