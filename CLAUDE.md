@@ -134,22 +134,33 @@ no acredita que Sol encuentre lo mismo.
 | **comprobar correcciones**: hallazgos, diff y pruebas ya delimitados | **`gpt-6-sol` · `medium`** |
 | diseño de **permisos**, escritura sobre **datos de cliente**, borrado, idempotencia, destinatarios o envíos | **`gpt-6-astra` · `medium`** |
 | diff con **concurrencia**, reintentos, estados parciales o garantías entre varios sistemas | **`gpt-6-astra` · `high`** |
-| **el propio contrato de revisión**, o esta misma política | **`gpt-6-astra` · `medium`** |
+| **el propio contrato de revisión**, o esta misma política | **`gpt-6-sol` · `high`** |
+| gobernanza que pueda hacer que la cobertura **parezca presente estando ausente**: un **guard**, qué cuenta como revisado, una exención | **`gpt-6-astra` · `medium`** |
 
-**La última fila la añadió la R1 de este diff** (H-04), y hacía falta: el contrato de revisión no
-está exento **nunca** de ronda, pero no aparecía en ninguna fila de modelo, así que quedaba a
-apreciación tácita si era «acotado» —fila de Sol— o si subía por «incertidumbre». Un cambio de
-gobernanza afecta a **todas** las revisiones sin tocar ninguna frontera técnica: por radio de daño
-es de Astra. Va a `medium` y no a `high` porque el daño es amplio pero no concurrente. **Esta ronda
-corrió con `gpt-6-sol`·`high`**, bajo el texto anterior a esta fila; queda declarado, y la fila
-rige de aquí en adelante.
+**Las dos últimas filas salen de la R1 de este diff** (H-04), y hacían falta: el contrato de
+revisión no está exento **nunca** de ronda, pero no aparecía en ninguna fila de modelo, así que
+quedaba a apreciación tácita si era «acotado» —fila de Sol— o si subía por «incertidumbre».
+
+**Y la frontera entre las dos filas no es la importancia, es el SILENCIO.** La primera versión de
+esta fila mandaba toda la gobernanza a Astra, y Nikolai la bajó el 2026-09-23 con el argumento
+correcto: subirla era *argumentar* que un cambio de gobernanza suena importante, que es el espejo
+exacto de la regla de la exención —*si hay que defender por qué algo es trivial, no lo es*, y al
+revés igual—. Un párrafo de gobernanza mal escrito **se lee**: lo lee Nikolai y lo leo yo cada
+sesión. Un guard mal escrito **no se lee, se cree**, y deja una cobertura que *parece* hecha: eso
+es daño silencioso, y por eso es lo único de aquí que sube a Astra. Lo medido apunta al mismo
+sitio: **esta ronda revisó un cambio del contrato con `gpt-6-sol`·`high` y devolvió diez hallazgos
+confirmados, incluido el estructural que creó estas dos filas.** Una corrida no es una medición —
+pero es más de lo que sostenía Astra aquí.
 
 **Los dos ejes los fija lo mismo: el radio de daño.** Una pieza de la fila de **2 rondas** es, por
 construcción, una pieza de Astra. Al revés no vale: un diff de concurrencia puede merecer Astra y
-una sola ronda. **Subir de fila no se justifica; bajar, sí** — y se declara en el PR, en una frase,
-por el mismo motivo que la exención de rondas: una elección silenciosa es indistinguible de un
-descuido. Si la pieza sube a Astra por «incertidumbre», eso es argumentar que algo es difícil, y
-vale igual que el corolario de la exención: si hay que defenderlo, la fila de arriba era la buena.
+una sola ronda. **Salirse de la fila que toca —hacia Astra o hacia Sol— se declara en el PR, en una
+frase**, por el mismo motivo que la exención de rondas: una elección silenciosa es indistinguible de
+un descuido. Y la asimetría no es la que parece: **subir a Astra tampoco es gratis y también hay que
+defenderlo**, nombrando la frontera concreta —qué se corrompe, qué queda silenciosamente sin
+cubrir—, no la sensación de que el objeto es difícil. «Por si acaso» y «esto es importante» no son
+fronteras: son el mismo argumento que la regla de la exención ya rechaza por el otro lado, y con él
+se puede subir cualquier cosa. Lo que gobierna es el daño, y el daño se nombra.
 
 **Lo que NO cambia. Es la lista que Nikolai enumeró al encargarlo, y NO es un inventario
 exhaustivo del contrato** (lo precisó la R1, H-03): siguen igual, sin estar aquí, el **vigía armado

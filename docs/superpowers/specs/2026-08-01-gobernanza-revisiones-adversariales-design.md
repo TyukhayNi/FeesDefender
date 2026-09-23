@@ -646,7 +646,7 @@ en registro central: nadie está obligado a escribir en él y ningún guard lo m
 | H-01 | «`standard` NO existe» excede el aviso, que dice *para `gpt-6-sol`*; y `default` es «aceptado sin aviso», no Standard acreditado | media · acotado | **confirmado** | `CLAUDE.md`: alcance acotado + la distinción literal-operativo / medición |
 | H-02 | «el binario decide» atribuye causa; las sondas cambian instalación y versión a la vez | baja · trivial | **confirmado** | `CLAUDE.md`: se describe lo observado y se descarta solo la cuenta |
 | H-03 | «lo que NO cambia» se lee como inventario completo del contrato y no lo es | baja · acotado | **confirmado** | `CLAUDE.md`: se declara no exhaustiva y se nombran las que faltaban |
-| H-04 | el propio contrato de revisión no tiene fila de modelo: queda a apreciación tácita | media · estructural | **confirmado** | `CLAUDE.md`: **quinta fila**, contrato de revisión y esta política → `gpt-6-astra`·`medium` |
+| H-04 | el propio contrato de revisión no tiene fila de modelo: queda a apreciación tácita | media · estructural | **confirmado** | `CLAUDE.md`: **dos filas nuevas** — contrato de revisión y esta política → `gpt-6-sol`·`high`; y solo la gobernanza que puede hacer que la cobertura **parezca presente estando ausente** (un guard, qué cuenta como revisado, una exención) → `gpt-6-astra`·`medium`. Ver la nota de abajo sobre el remedio que se corrigió |
 | H-05 | cinco filas no pueden sostener equivalencia de calidad ni validar el enrutamiento | media · estructural | **confirmado** | `PLAN.md` + `CLAUDE.md`: qué NO decide el ledger, y que el quinto abre conversación, no dispara conclusión |
 | H-06 | Δcupo no atribuye consumo **ni** con la concurrencia declarada | baja · acotado | **confirmado** | `PLAN.md`: «cambio observado de cuenta», nunca coste causal |
 | H-07 | «ningún guard» descarta también la comprobación de **presencia**, que sí es posible | baja · acotado | **confirmado** | §4 de este documento: se separa verdad de presencia; la presencia va a `MEJORAS #281` |
@@ -664,10 +664,22 @@ contado como «ronda de revisión» la sesión que produjo el encargo. Es un eje
 de la casa —un hallazgo se confirma **contra la fuente**, no contra el diff ni contra el informe—:
 mirando solo el informe, el remedio habría sido cambiar «seis» por «seis, con matices».
 
+**El remedio del H-04 se corrigió DESPUÉS de escribirlo, y conviene que quede el rastro.** Mi primer
+remedio mandaba toda la gobernanza a `gpt-6-astra`·`medium`. **Nikolai lo bajó a `gpt-6-sol`·`high`
+el 2026-09-23**, y el argumento es el que yo debí aplicar: subirlo era *argumentar* que un cambio de
+gobernanza suena importante, con lo que caía en el espejo de la regla de la exención —*si hay que
+defender por qué algo es trivial, no lo es*—. La frontera buena no es la importancia sino el
+**silencio**: la gobernanza que se lee se queda en Sol, y solo sube a Astra la que puede hacer que
+una cobertura **parezca hecha sin estarlo**. Dos cosas que subraya este episodio: **confirmar un
+hallazgo no obliga a comprar el remedio que propone** —el §5 ya lo decía, «un hallazgo puede ser
+correcto y su remedio pasarse de rosca»—, y el aviso de que la convergencia con otro repo no es un
+argumento de corrección: parte de mi motivo para poner Astra fue que El Contable lo tenía así.
+
 **Y una divergencia declarada, no resuelta aquí:** El Contable adoptó el mismo día su propia versión
-de esta política, escrita por **otra sesión**, con lanzador canónico y guard. Su tabla ya llevaba la
-fila que el H-04 echó en falta aquí. Que los dos repos digan cosas distintas del mismo hecho es un
-bug declarable; queda señalado para Nikolai, y no se arregla unilateralmente desde este lado.
+de esta política, escrita por **otra sesión**, con lanzador canónico y guard. Su tabla ya llevaba
+una fila para el contrato de revisión —en `gpt-6-astra`·`medium`—, así que **tras esta corrección
+los dos repos difieren también en esa celda**. Que digan cosas distintas del mismo hecho es un bug
+declarable; queda señalado para Nikolai, y no se arregla unilateralmente desde este lado.
 
 **Cobertura de la remediación: AUSENTE.** Los diez confirmados se remedian **en este mismo diff** y
 **nadie los ha revisado**: la tabla de rondas da **una** a esta pieza y el techo de dos necesita
