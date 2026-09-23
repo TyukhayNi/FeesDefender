@@ -12641,10 +12641,16 @@ provisional de modelo (`CLAUDE.md` §«Con qué modelo se revisa»).
 **Lo medido, ese mismo día:** los lanzadores en uso (`_lanzar_codex_rama_*.ps1`, fuera del
 repo) llaman a `codex exec` **sin ningún flag de modelo**, de modo que el modelo y el
 esfuerzo salen de `~/.codex/config.toml` —fuera de git, compartido con la app de
-escritorio—, que decía `gpt-6-astra` / `xhigh` / `priority`. Las **seis** rondas lanzadas
-ese día corrieron así, y consta en el `turn_context` de sus `rollout-*.jsonl`. Y el binario
-que usan —`codex.cmd`, npm `0.154.0`— **rechaza `gpt-6-sol` con un `400`**; el de la app
-(`0.155.0-alpha.9.2`) lo corre.
+escritorio—, que decía `gpt-6-astra` / `xhigh` / `priority`. Los **cinco** lanzamientos
+por CLI (`originator: codex_exec`) de ese día corrieron así, y consta en el `turn_context`
+de sus `rollout-*.jsonl`. Son lanzamientos, **no necesariamente cinco rondas distintas**: dos
+arrancan con siete segundos de diferencia. La corrección del recuento la forzó el H-10 de la
+R1 —la ficha decía «seis», y la sexta sesión de ese día era `codex_work_desktop` desde
+`Documents\Codex6-09-23\est`: **la que escribió el informe de consumo**, no una ronda—.
+De paso prueba que **la app hereda el mismo defecto**: también corrió astra/xhigh. Y el
+binario del lanzador —`codex.cmd`, npm `0.154.0`— **rechazó `gpt-6-sol` con un `400`**
+mientras el de la app (`0.155.0-alpha.9.2`) lo corrió; las dos sondas cambian instalación y
+versión a la vez, así que **no aíslan la causa** (sí descartan la cuenta).
 
 **Por qué no basta lo escrito:** el contrato ya exige los tres flags explícitos, pero lo
 exige en prosa que lee **quien redacta el lanzador**. Un lanzador que herede en silencio no
@@ -12681,3 +12687,34 @@ mezclarla con la calibración contaminaría sus cinco primeras filas.
 
 **Disparador para promoverlo:** que la calibración cierre (fila #38), o que Nikolai quiera
 antes decidir si una ronda puede abrirse en paralelo.
+
+## 281. El acta puede omitir `modelo`, `esfuerzo` y `velocidad` y seguir en verde
+
+**De dónde sale:** hallazgo **H-07** de la R1 del diff que creó esos campos
+(`docs/superpowers/specs/2026-09-23-modelo-revisor-politica-provisional-r1-adversarial-review.md`),
+confirmado contra la fuente.
+
+**Lo medido:** `_CLAVES_ACTA` de `tests/test_docs_gobernanza.py` no incluye los tres campos
+que la rev. 11 del contrato añadió al frontmatter del acta, y G9 solo contrasta el
+veredicto. **Un acta nueva sin ninguno de los tres pasa en verde**, exactamente igual que
+una con los tres.
+
+**Por qué el argumento de la rev. 11 no bastaba:** decía que un guard de *presencia*
+«enseñaría a rellenarlo, no a releerlo». Eso confunde dos cosas. La **verdad** del dato —que
+el acta diga el modelo que de verdad corrió— no es comprobable desde el repo, porque el
+rollout vive fuera: ahí un guard no llega, y eso sigue siendo cierto. La **presencia** sí lo
+es, y es justo lo que hace visible un olvido — el mismo criterio con el que G7 exige los seis
+campos de la ficha.
+
+**Por qué no se construyó en el mismo diff:** tocar un guard es tocar `tests/`, que **no está
+exento nunca**, y se llevaría su propia ronda. El diff que lo destapó ya había gastado la
+suya.
+
+**La salida, acotada:** añadir los tres a las claves obligatorias del acta y comprobar su
+vocabulario (`no aplica` es legítimo para el revisor sustituto, §4), **solo para actas
+nuevas** —las anteriores a la rev. 11 no los tienen y no se retrofitan—. Y decir en el propio
+guard lo que **no** prueba: que la ronda corriera con lo que el acta declara.
+
+**Disparador para promoverlo:** la segunda acta que llegue sin los tres campos, o el cierre de
+la calibración de la fila #38 —lo que pase antes—. Con menos de dos actas afectadas el guard
+cuesta más que el olvido que evita.

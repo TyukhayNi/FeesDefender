@@ -119,11 +119,14 @@ Claude contra la fuente, y un revisor que no corre deja **sin verificar**, nunca
 **Habitual: `gpt-6-sol` con esfuerzo `high` y velocidad estándar.** Lo decidió Nikolai el
 2026-09-23 sobre el informe de consumo de catorce días de revisiones
 (`recomendacion-modelos-revision-2026-09-23.md`, fuera del repo). **Es provisional, y el motivo se
-dice entero: nadie ha comparado Sol y Astra sobre el mismo objeto.** Lo que el informe sí midió es
-que las 60 revisiones sustantivas del periodo corrieron **todas** con Astra —el 94,5 % de los
-tokens registrados— y que la ventana semanal de cupo pasó del 0 % al 100 % **en dos días**
-(21/09 12:06 → 23/09 12:08). Eso justifica mover el punto de partida; no acredita que Sol
-encuentre lo mismo.
+dice entero: nadie ha comparado Sol y Astra sobre el mismo objeto.** Lo que el informe sí midió son
+tres cosas **distintas**, que conviene no fundir en una: las **60 revisiones sustantivas** del
+periodo corrieron **todas** con Astra —y esas 60 **incluyen intentos interrumpidos**, no son 60
+revisiones completas—; el **94,5 % de los tokens** de Astra es su cuota sobre **las 88 sesiones**
+del periodo, sondas y subagentes incluidos, **no** la cuota de esas 60; y la ventana semanal de
+cupo pasó del 0 % al 100 % **en dos días** (21/09 12:06 → 23/09 12:08), que son **muestras del
+contador de la cuenta**, no gasto imputable a esas rondas. Eso justifica mover el punto de partida;
+no acredita que Sol encuentre lo mismo.
 
 | El objeto… | Modelo · esfuerzo |
 |---|---|
@@ -131,6 +134,15 @@ encuentre lo mismo.
 | **comprobar correcciones**: hallazgos, diff y pruebas ya delimitados | **`gpt-6-sol` · `medium`** |
 | diseño de **permisos**, escritura sobre **datos de cliente**, borrado, idempotencia, destinatarios o envíos | **`gpt-6-astra` · `medium`** |
 | diff con **concurrencia**, reintentos, estados parciales o garantías entre varios sistemas | **`gpt-6-astra` · `high`** |
+| **el propio contrato de revisión**, o esta misma política | **`gpt-6-astra` · `medium`** |
+
+**La última fila la añadió la R1 de este diff** (H-04), y hacía falta: el contrato de revisión no
+está exento **nunca** de ronda, pero no aparecía en ninguna fila de modelo, así que quedaba a
+apreciación tácita si era «acotado» —fila de Sol— o si subía por «incertidumbre». Un cambio de
+gobernanza afecta a **todas** las revisiones sin tocar ninguna frontera técnica: por radio de daño
+es de Astra. Va a `medium` y no a `high` porque el daño es amplio pero no concurrente. **Esta ronda
+corrió con `gpt-6-sol`·`high`**, bajo el texto anterior a esta fila; queda declarado, y la fila
+rige de aquí en adelante.
 
 **Los dos ejes los fija lo mismo: el radio de daño.** Una pieza de la fila de **2 rondas** es, por
 construcción, una pieza de Astra. Al revés no vale: un diff de concurrencia puede merecer Astra y
@@ -139,7 +151,12 @@ por el mismo motivo que la exención de rondas: una elección silenciosa es indi
 descuido. Si la pieza sube a Astra por «incertidumbre», eso es argumentar que algo es difícil, y
 vale igual que el corolario de la exención: si hay que defenderlo, la fila de arriba era la buena.
 
-**Lo que NO cambia, que es la mitad que importa.** El revisor sigue siendo **independiente**; el
+**Lo que NO cambia. Es la lista que Nikolai enumeró al encargarlo, y NO es un inventario
+exhaustivo del contrato** (lo precisó la R1, H-03): siguen igual, sin estar aquí, el **vigía armado
+antes de lanzar**, el mandato numerado y anclado a commit, los dos ejes de cada hallazgo, el `SHIP`
+como resultado legítimo, la voz literal en acta con nonce y digest, y las condiciones del revisor
+sustituto. Este diff no toca ninguna. Las que Nikolai pidió conservar expresamente: el revisor
+sigue siendo **independiente**; el
 repo sigue siendo **solo lectura** para él y lo que se ejecute va sobre **copias**; el informe sale
 **fuera del repo** con su `sha256` canónico; **Claude adjudica contra la fuente**, nunca contra el
 diff ni contra el aplomo del informe; y una ronda que no termina deja la cobertura **AUSENTE, no
@@ -150,10 +167,14 @@ esas garantías depende de cuál corra.
 **El modelo va EXPLÍCITO en la invocación, nunca heredado — y esto es lo que hace que la tabla de
 arriba signifique algo.** Cambiar solo la documentación no cambia el modelo que corre: lo fija
 `~/.codex/config.toml`, que vive **fuera de git**, lo comparte la app de escritorio y el 2026-09-23
-decía `model = "gpt-6-astra"`, `model_reasoning_effort = "xhigh"`, `service_tier = "priority"`. Los
-lanzadores de ese día (`_lanzar_codex_rama_*.ps1`) **no pasaban ningún flag de modelo**, así que las
-seis rondas que lanzaron corrieron **astra/xhigh sin que nadie lo eligiera** — consta en el
-`turn_context` de sus `rollout-*.jsonl`. Toda ronda se lanza con las tres fijadas a mano:
+decía `model = "gpt-6-astra"`, `model_reasoning_effort = "xhigh"`, `service_tier = "priority"`. El
+lanzador conservado de ese día (`_lanzar_codex_rama_r2.ps1`) **no pasa ningún flag de modelo**, y
+los **cinco** lanzamientos por CLI (`originator: codex_exec`) desde el directorio de revisiones
+corrieron **`gpt-6-astra`/`xhigh` sin que nadie lo eligiera** — consta en el `turn_context` de sus
+`rollout-*.jsonl`. Son cinco **lanzamientos**, no necesariamente cinco rondas distintas: dos
+arrancan con siete segundos de diferencia. **Y la app hereda igual:** la sexta sesión de ese día
+—`originator: codex_work_desktop`, la que escribió el propio informe— también corrió astra/xhigh.
+Toda ronda se lanza con las tres fijadas a mano:
 
 ```
 <binario> exec -m gpt-6-sol -c model_reasoning_effort="high" -c service_tier="default" …
@@ -161,17 +182,22 @@ seis rondas que lanzaron corrieron **astra/xhigh sin que nadie lo eligiera** —
 
 Tres cosas medidas el 2026-09-23, las tres capaces de vaciar la política sin hacer ruido:
 
-- **El binario decide si Sol existe siquiera.** `codex.cmd` (npm, `0.154.0` — el que usaban los
-  lanzadores) devuelve `400 The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT
-  account`. El binario de la app —`AppData\Local\OpenAI\Codex\bin\<hash>\codex.exe`,
-  `0.155.0-alpha.9.2`, el que tiene `codex-code-mode-host.exe` al lado— **sí lo corre** (sonda
-  `VIVO`, 8.316 tokens). El criterio de búsqueda del binario no cambia; lo que se añade es
-  **comprobar que arranca con el modelo de la fila**, no solo que arranca.
-- **`service_tier = "standard"` NO existe, y falla hacia delante.** La CLI avisa
+- **No todos los binarios corren Sol, y la sonda no dice por qué.** `codex.cmd` (npm, `0.154.0` —
+  el del lanzador conservado) devolvió `400 The 'gpt-6-sol' model is not supported when using Codex
+  with a ChatGPT account`; el binario de la app —`AppData\Local\OpenAI\Codex\bin\<hash>\codex.exe`,
+  `0.155.0-alpha.9.2`, el que tiene `codex-code-mode-host.exe` al lado— **sí lo corrió** (sonda
+  `VIVO`, 8.316 tokens). **Las dos sondas cambian instalación y versión a la vez, así que no aíslan
+  la causa** (H-02): no es «la cuenta», porque la misma cuenta corrió Sol dos minutos después. El
+  criterio de búsqueda del binario no cambia; lo que se añade es **sondar el modelo** con el binario
+  elegido antes de montar el objeto, no solo comprobar que el binario arranca.
+- **`service_tier = "standard"` falla hacia delante.** La CLI avisa
   `Configured service tier 'standard' is not advertised as supported for model 'gpt-6-sol' and will
-  be omitted from requests` **y sigue**. El valor que acepta sin avisar es **`"default"`**.
-  `"priority"` también se acepta para Sol, de modo que dejar el config como está compra velocidad
-  que aquí no se quiere.
+  be omitted from requests` **y sigue**. Cuidado con el alcance (H-01): el aviso dice **para
+  `gpt-6-sol` en esta CLI**, no que el valor no exista en ninguna parte. El que se acepta **sin
+  aviso** es `"default"`, y por eso es el que se pone — pero **«aceptado sin aviso» no es lo mismo
+  que «velocidad estándar acreditada»**: ninguna sonda enseña el tier efectivo de la petición. Es el
+  literal operativo observado, no una medición. `"priority"` también se acepta para Sol, de modo que
+  dejar el config como está compra velocidad que aquí no se quiere.
 - **La velocidad no queda registrada en ninguna parte.** `modelo` y `esfuerzo` se releen después en
   el `turn_context` del `rollout-*.jsonl` y en la cabecera del `_stdout.log`; el `service_tier` **no
   aparece en ninguno de los dos**. Su única prueba es el script del lanzador conservado junto al
@@ -191,6 +217,12 @@ cupo **con la actividad concurrente declarada** —el contador es de la cuenta, 
 **hallazgos confirmados** al adjudicar; y **omisiones relevantes**, esto es, defectos que aparecieron
 después (en una ronda posterior, en la suite o en producción). La calibración reutiliza objetos con
 defectos ya confirmados **sin enseñarle el remedio al revisor**, y sobre copias.
+
+**Y lo que el ledger NO podrá sostener aunque se rellene entero** (R1, H-05): que Sol encuentre lo
+mismo que Astra, que su tasa de omisiones sea aceptable, o que el reparto por filas esté bien
+puesto. Para eso harían falta **pares comparables Sol/Astra sobre el mismo objeto**, un denominador
+de defectos conocidos y una ventana de seguimiento, y **nada de eso se construye aquí**. Los cinco
+encargos producen **datos para que Nikolai decida**, no un veredicto que se dispare solo al quinto.
 
 **Lo que esta política NO promete: ni ahorro, ni equivalencia de calidad.** La diferencia de tarifa
 —Sol cuesta una quinta parte de Astra por millón de tokens a igual composición— es de créditos, y de

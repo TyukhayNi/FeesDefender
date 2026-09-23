@@ -5,8 +5,11 @@
 > dice **cuáles se releen del rollout y cuál solo se afirma**. Entran porque desde esa fecha la
 > elección de modelo del revisor dejó de ser una constante y es **política provisional a calibrar**
 > (`CLAUDE.md` §«Con qué modelo se revisa»): sin ellos, la calibración se apoyaría en la memoria de
-> quien la escribe. No se añade guard, y el §4 dice por qué. Todo lo demás sigue como en la rev. 10,
-> cuyo encabezado se conserva íntegro debajo.
+> quien la escribe. No se añade guard, y el §4 dice por qué. **Con la R1 de Codex adjudicada (§15,
+> `REQUIERE-REVISION`, 10 de 11 confirmados):** el §4 gana la regla del **revisor sustituto**, que no
+> tiene rollout que releer, y rehace el argumento de por qué no hay guard —separando la *verdad* del
+> dato, que un guard no alcanza, de su *presencia*, que sí y queda fichada en `MEJORAS #281`—. Todo
+> lo demás sigue como en la rev. 10, cuyo encabezado se conserva íntegro debajo.
 >
 > **Estado anterior:** **rev. 10** (2026-09-14). La rev. 10 **no reabre nada del recorte** ni cambia un artefacto:
 > añade al §4 la condición de lanzamiento que faltaba —**ninguna ronda se lanza sin vigía, y el vigía
@@ -155,11 +158,21 @@ lo que se fija es **el sitio**. Tres precisiones que hay que respetar al rellena
   está dicho aquí: quien la lea mañana no debe confundirlo con los otros dos.
 - **Si el informe no se capturó, el acta no existe y estos campos no tienen hogar.** Entonces —y solo
   entonces— van entre paréntesis en la línea `Revisor:` de la ficha del §5, que es lo que queda.
+- **Y si el revisor fue el sustituto** —una sesión limpia de Claude Code, `AGENTS.md` §«Revisor
+  sustituto»— **no hay rollout de Codex que releer, y no se inventa uno** (R1 de la rev. 11, H-08).
+  Entonces: `modelo:` es el modelo de esa sesión, **afirmado** por ella; `esfuerzo:` y `velocidad:`
+  van a **`no aplica`**, que es un valor legítimo por la misma razón que lo son `commit: no
+  registrado` y `no capturado`: **no se inventa lo que no consta**. El `revisor:` sigue diciendo
+  `Claude Code (sesión independiente)`, nunca «Codex».
 
-Ningún guard los comprueba. Añadirlo es posible y no se hace: G8 recomputa un digest, que es una
-igualdad; «este acta dice el modelo que de verdad corrió» no es comprobable desde el repo, porque el
-rollout vive fuera de él. Un guard que solo exigiera *presencia* del campo enseñaría a rellenarlo, no a
-releerlo.
+Ningún guard los comprueba, y conviene separar las dos cosas que eso mezcla. **La verdad del dato no
+es comprobable desde el repo** —«este acta dice el modelo que de verdad corrió» se apoya en un
+rollout que vive fuera—, y ahí un guard no llega. **Su presencia sí lo es**, y comprobarla sería
+útil: hoy un acta nueva sin ninguno de los tres pasa en verde, exactamente igual que una con los
+tres (R1, H-07). No se construye **en este diff** porque tocar un guard es tocar `tests/`, que no
+está exento nunca y se llevaría su propia ronda; queda fichado en `MEJORAS #281` con su disparador.
+Lo que un guard de presencia **no** daría, y hay que decirlo para que nadie lo lea de más: prueba de
+que la ronda corrió con lo que el acta declara.
 
 **Contenido:** **§0 Mandato** (literal, numerado y en el orden de daño en que se entregó), **§1 Informe
 recibido, sin modificar**, **§2 Evidencia verificada** por mí al adjudicar, con ruta y línea. Lo que el
@@ -618,3 +631,44 @@ retrofit es portante —los ocho heredados habrían puesto G7 en rojo, verificad
 ningún PR ni hash citado es inexistente o está mal atribuido, la suite cuadra al test con la base
 (2714/0/84), ninguna de las siete cosas del §2 vuelve a entrar en sustancia, y el censo no se convierte
 en registro central: nadie está obligado a escribir en él y ningún guard lo mira.
+
+## 15. Adjudicación de la revisión adversarial de la política de modelo (Codex, 2026-09-23) — REQUIERE-REVISION, remediado
+
+- **Objeto revisado:** `diff b3da01d..b07dac6` (este documento rev. 11, `CLAUDE.md`, `AGENTS.md`, `PLAN.md`, `docs/INDICE.md`, `docs/MEJORAS_FUTURAS.md`)
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura) — el sustituto **no** cubre el propio contrato de revisión
+- **Informe recibido:** `2026-09-23-modelo-revisor-politica-provisional-r1-adversarial-review.md`
+- **Hallazgos:** 10 confirmados · 1 rebajado · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** PR #395, mismo diff, antes de mergear
+
+| # | Qué dijo | Sev. · coste | Veredicto | Dónde se remedia |
+|---|---|---|---|---|
+| H-01 | «`standard` NO existe» excede el aviso, que dice *para `gpt-6-sol`*; y `default` es «aceptado sin aviso», no Standard acreditado | media · acotado | **confirmado** | `CLAUDE.md`: alcance acotado + la distinción literal-operativo / medición |
+| H-02 | «el binario decide» atribuye causa; las sondas cambian instalación y versión a la vez | baja · trivial | **confirmado** | `CLAUDE.md`: se describe lo observado y se descarta solo la cuenta |
+| H-03 | «lo que NO cambia» se lee como inventario completo del contrato y no lo es | baja · acotado | **confirmado** | `CLAUDE.md`: se declara no exhaustiva y se nombran las que faltaban |
+| H-04 | el propio contrato de revisión no tiene fila de modelo: queda a apreciación tácita | media · estructural | **confirmado** | `CLAUDE.md`: **quinta fila**, contrato de revisión y esta política → `gpt-6-astra`·`medium` |
+| H-05 | cinco filas no pueden sostener equivalencia de calidad ni validar el enrutamiento | media · estructural | **confirmado** | `PLAN.md` + `CLAUDE.md`: qué NO decide el ledger, y que el quinto abre conversación, no dispara conclusión |
+| H-06 | Δcupo no atribuye consumo **ni** con la concurrencia declarada | baja · acotado | **confirmado** | `PLAN.md`: «cambio observado de cuenta», nunca coste causal |
+| H-07 | «ningún guard» descarta también la comprobación de **presencia**, que sí es posible | baja · acotado | **confirmado** | §4 de este documento: se separa verdad de presencia; la presencia va a `MEJORAS #281` |
+| H-08 | el acta del revisor sustituto no tiene de dónde releer `modelo`/`esfuerzo` | media · estructural | **confirmado** | §4 de este documento: `modelo` afirmado, `esfuerzo` y `velocidad` a `no aplica` |
+| H-09 | ceguera heredada: G8 no exige que `adjudicado_en` apunte a la adjudicación **de esa ronda** | baja · estructural | **rebajado** | cierto y **fuera de alcance**: es justo la regla *fail-closed* que el §2 dejó fuera por decisión expresa de Nikolai. No se reabre el recorte |
+| H-10 | «seis rondas» no acreditadas individualmente; la nota dice «anteriores a 12:15» y una empieza a 12:15:03 | baja · trivial | **confirmado** | `CLAUDE.md` + `MEJORAS #279`: son **cinco** lanzamientos por CLI; el sexto era otra cosa (ver abajo) |
+| H-11 | 60 revisiones y 94,5 % yuxtapuestos cambian el denominador | baja · trivial | **confirmado** | `CLAUDE.md`: las tres métricas separadas con su alcance |
+
+**El hallazgo que más movió el diff fue el que el revisor pudo ver solo a medias.** El H-10 lo
+levantó sobre una inconsistencia de minutos en mi propio fichero de evidencia. Al ir a la fuente
+—los `session_meta` de los rollouts, que **no** le había dado— resultó que de los seis, **cinco** son
+`codex_exec` desde el directorio de revisiones y el sexto es `codex_work_desktop` desde
+`Documents\Codex6-09-23\est`: **la sesión que escribió el informe de consumo**. O sea, había
+contado como «ronda de revisión» la sesión que produjo el encargo. Es un ejemplo exacto de la regla
+de la casa —un hallazgo se confirma **contra la fuente**, no contra el diff ni contra el informe—:
+mirando solo el informe, el remedio habría sido cambiar «seis» por «seis, con matices».
+
+**Y una divergencia declarada, no resuelta aquí:** El Contable adoptó el mismo día su propia versión
+de esta política, escrita por **otra sesión**, con lanzador canónico y guard. Su tabla ya llevaba la
+fila que el H-04 echó en falta aquí. Que los dos repos digan cosas distintas del mismo hecho es un
+bug declarable; queda señalado para Nikolai, y no se arregla unilateralmente desde este lado.
+
+**Cobertura de la remediación: AUSENTE.** Los diez confirmados se remedian **en este mismo diff** y
+**nadie los ha revisado**: la tabla de rondas da **una** a esta pieza y el techo de dos necesita
+autorización expresa de Nikolai. No se declara refutado lo que nadie miró.

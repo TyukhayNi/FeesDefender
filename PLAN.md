@@ -3491,10 +3491,19 @@ fichero contra el registro judicial):
 revisa» y no se repite aquí**: aquí está la cola y el ledger de la medición que la cierra.
 
 **Qué queda por hacer, en una frase:** correr los **cinco primeros encargos ordinarios** con
-`gpt-6-sol`·`high`·velocidad estándar y anotarlos abajo. Con los cinco se decide: confirmar,
-ajustar o volver a Astra. **Nada de eso se decide antes de los cinco, y hasta entonces la política
-se sigue diciendo provisional** — es el remedio a un sesgo ya medido: en el 55º cierre redefiní mi
-propia regla de parada justo cuando me obligaba a parar.
+`gpt-6-sol`·`high`·velocidad estándar y anotarlos abajo. Con los cinco, **Nikolai decide** con los
+datos delante: confirmar, ajustar o volver a Astra. **Hasta entonces la política se sigue diciendo
+provisional** — es el remedio a un sesgo ya medido: en el 55º cierre redefiní mi propia regla de
+parada justo cuando me obligaba a parar.
+
+**Qué NO decide este ledger, dicho antes de empezar a rellenarlo** (R1 del diff que lo creó,
+H-05). Cinco filas completas **no** pueden sostener que Sol encuentre lo mismo que Astra, ni que su
+tasa de omisiones sea aceptable, ni que el reparto por filas esté bien puesto. Para eso harían
+falta **pares comparables sobre el mismo objeto**, un denominador de defectos conocidos, una
+ventana de seguimiento y un umbral fijado **antes**; nada de eso se diseña aquí, y montarlo sería
+otro encargo. Lo que este ledger sí da: **consumo observado, hallazgos que sobrevivieron a la
+adjudicación, y las omisiones que aparezcan**. El quinto encargo no dispara una conclusión: abre
+la conversación con Nikolai.
 
 **Ledger de calibración — 0 de 5.** Una fila por encargo **ordinario**, que es la fila de **una**
 ronda de la tabla de rondas: ni fronteras de escritura, ni datos de cliente, ni concurrencia —esas
@@ -3514,9 +3523,12 @@ van a Astra por política y **no** cuentan para la calibración.
   **velocidad** se declara desde el script del lanzador, porque no consta en el rollout. El
   contrato de los tres campos está en el §4 de
   `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md`.
-- **Δcupo** se lee del contador real de la cuenta, no de tokens brutos, y al lado va la
-  **concurrencia**: el contador es de la cuenta, así que sin decir qué más corría a la vez el
-  número no atribuye nada a este encargo.
+- **Δcupo** es el **cambio observado en el contador de la cuenta** entre el inicio y el fin, con la
+  hora de los dos extremos y la actividad concurrente al lado. **No es el coste del encargo, ni con
+  la concurrencia declarada** (R1, H-06): declararla permite *interpretar* el número, no descontar
+  la parte ajena. Nunca se usa como coste causal por encargo ni para estimar el ahorro de cambiar
+  de modelo — la tarifa «una quinta parte» es una relación condicional de créditos, no una
+  predicción de cupo.
 - **Hallazgos confirmados** son los que sobrevivieron a la adjudicación contra la fuente, no los
   que trae el informe. **El número bruto no mide calidad** y no se usa como si lo midiera.
 - **Omisiones relevantes** es la columna cara, y la que de verdad decide: defectos que apareció
