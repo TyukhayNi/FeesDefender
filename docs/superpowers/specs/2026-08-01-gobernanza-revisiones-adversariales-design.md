@@ -1,6 +1,14 @@
 # Archivo verificable de las revisiones adversariales
 
-> **Estado:** **rev. 10** (2026-09-14). La rev. 10 **no reabre nada del recorte** ni cambia un artefacto:
+> **Estado:** **rev. 11** (2026-09-23). La rev. 11 **no reabre nada del recorte** ni cambia un
+> artefacto: añade al §4 tres campos al frontmatter del acta —`modelo`, `esfuerzo`, `velocidad`— y
+> dice **cuáles se releen del rollout y cuál solo se afirma**. Entran porque desde esa fecha la
+> elección de modelo del revisor dejó de ser una constante y es **política provisional a calibrar**
+> (`CLAUDE.md` §«Con qué modelo se revisa»): sin ellos, la calibración se apoyaría en la memoria de
+> quien la escribe. No se añade guard, y el §4 dice por qué. Todo lo demás sigue como en la rev. 10,
+> cuyo encabezado se conserva íntegro debajo.
+>
+> **Estado anterior:** **rev. 10** (2026-09-14). La rev. 10 **no reabre nada del recorte** ni cambia un artefacto:
 > añade al §4 la condición de lanzamiento que faltaba —**ninguna ronda se lanza sin vigía, y el vigía
 > cubre la muerte además del fin**—, tras una ronda que murió en el arranque y tardó dieciocho minutos
 > en descubrirse. Todo lo demás sigue como en la rev. 9, cuyo encabezado se conserva íntegro debajo.
@@ -114,6 +122,9 @@ objeto_rev: "1"
 commit: abc1234                                  # el commit revisado
 ronda: "1"
 revisor: Codex
+modelo: gpt-6-sol                                # el que corrió, releído del rollout
+esfuerzo: high
+velocidad: default                               # declarada, no acreditada — ver abajo
 veredicto: NO-SHIP
 marcador_nonce: zx7q
 sha256_informe: <digest canónico, 64 hex>
@@ -124,6 +135,31 @@ adjudicado_en: docs/superpowers/specs/<fichero>.md §14
 `veredicto` es el del revisor, normalizado, y **es inmutable**. No hay guard que lo compruebe: el intento
 de la rev. 7 —exigir que apareciera en el bloque literal— resultó inútil porque `SHIP` está contenido en
 `NO-SHIP`. Lo que delata una edición es el diff del commit.
+
+**`modelo`, `esfuerzo` y `velocidad` (rev. 11, 2026-09-23): el acta es su hogar, y no las tres se
+prueban igual.** Entraron porque desde esa fecha la elección de modelo dejó de ser una constante —`CLAUDE.md`
+§«Con qué modelo se revisa» reparte el trabajo entre `gpt-6-sol` y `gpt-6-astra` con dos esfuerzos— y
+porque esa política es **provisional y se calibra con los cinco primeros encargos**: sin estos tres
+campos en el acta, la calibración se apoyaría en la memoria de quien la escribe. La práctica ya existía
+—las actas de septiembre anotan el modelo en prosa, en una tabla o en `revisor:`, cada una a su manera—;
+lo que se fija es **el sitio**. Tres precisiones que hay que respetar al rellenarlos:
+
+- **`modelo` y `esfuerzo` se RELEEN, no se transcriben del mandato.** Su fuente es el `turn_context`
+  del `rollout-*.jsonl` de la ronda y la cabecera del `_stdout.log`. Que el lanzador pidiera un
+  modelo no prueba que corriera ese: el 2026-09-23 seis rondas se lanzaron sin flag y corrieron
+  `gpt-6-astra`/`xhigh` heredado de `~/.codex/config.toml`, y una séptima pidió `gpt-6-sol` a un
+  binario que lo rechaza con `400`.
+- **`velocidad` no se puede releer: no está en el rollout ni en la cabecera.** Se declara a partir del
+  script del lanzador conservado junto al log, y de que **no** aparezca el aviso
+  `service tier … will be omitted from requests`. Es el único campo **afirmado** del acta, y por eso
+  está dicho aquí: quien la lea mañana no debe confundirlo con los otros dos.
+- **Si el informe no se capturó, el acta no existe y estos campos no tienen hogar.** Entonces —y solo
+  entonces— van entre paréntesis en la línea `Revisor:` de la ficha del §5, que es lo que queda.
+
+Ningún guard los comprueba. Añadirlo es posible y no se hace: G8 recomputa un digest, que es una
+igualdad; «este acta dice el modelo que de verdad corrió» no es comprobable desde el repo, porque el
+rollout vive fuera de él. Un guard que solo exigiera *presencia* del campo enseñaría a rellenarlo, no a
+releerlo.
 
 **Contenido:** **§0 Mandato** (literal, numerado y en el orden de daño en que se entregó), **§1 Informe
 recibido, sin modificar**, **§2 Evidencia verificada** por mí al adjudicar, con ruta y línea. Lo que el
@@ -219,6 +255,13 @@ Debajo, **seis líneas**:
 ```
 
 Más una tabla hallazgo → severidad → veredicto → dónde se remedia, y la prosa de las divergencias.
+
+**La ficha NO repite el modelo, y es a propósito** (rev. 11): `modelo`, `esfuerzo` y `velocidad` viven
+en el frontmatter del acta (§4), y la ficha ya apunta al acta en `Informe recibido:`. Escribirlos en
+los dos sitios es fabricar dos hogares del mismo hecho, que es como divergen. **La única excepción es
+`Informe recibido: no capturado`**: sin acta no hay dónde ponerlos, y entonces van entre paréntesis en
+`Revisor:` —`Codex (gpt-6-sol · high · default, solo lectura)`— porque un modelo sin registrar es
+indistinguible de ninguno.
 
 `commit: no registrado` y `no capturado` son valores legítimos: **no se inventa lo que no consta**. Un
 hallazgo aceptado con remedio distinto del exigido cuenta como confirmado, y la divergencia se razona.

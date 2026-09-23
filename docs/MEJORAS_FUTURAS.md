@@ -12632,3 +12632,52 @@ intención es la única prueba de que *nosotros* llamamos.
 distinto del que lo planificó. Hasta entonces es un riesgo conocido y acotado —una sola
 máquina, un solo operador— y **está declarado**, que es lo que lo distingue de un olvido.
 
+
+## 279. El lanzador de una ronda no obliga a fijar el modelo, y hereda uno de fuera de git
+
+**De dónde sale:** la comprobación de lanzadores del 2026-09-23, al adoptar la política
+provisional de modelo (`CLAUDE.md` §«Con qué modelo se revisa»).
+
+**Lo medido, ese mismo día:** los lanzadores en uso (`_lanzar_codex_rama_*.ps1`, fuera del
+repo) llaman a `codex exec` **sin ningún flag de modelo**, de modo que el modelo y el
+esfuerzo salen de `~/.codex/config.toml` —fuera de git, compartido con la app de
+escritorio—, que decía `gpt-6-astra` / `xhigh` / `priority`. Las **seis** rondas lanzadas
+ese día corrieron así, y consta en el `turn_context` de sus `rollout-*.jsonl`. Y el binario
+que usan —`codex.cmd`, npm `0.154.0`— **rechaza `gpt-6-sol` con un `400`**; el de la app
+(`0.155.0-alpha.9.2`) lo corre.
+
+**Por qué no basta lo escrito:** el contrato ya exige los tres flags explícitos, pero lo
+exige en prosa que lee **quien redacta el lanzador**. Un lanzador que herede en silencio no
+falla: corre, produce informe y deja un acta que dice el modelo que alguien **creyó** haber
+pedido. Eso es exactamente la clase de fallo que el acta existe para impedir, movido un
+escalón más arriba.
+
+**La salida, sin decidir:** un lanzador canónico —en `scripts/`— que **rechace arrancar** sin
+`-m`, `-c model_reasoning_effort` y `-c service_tier`, busque el binario por el criterio de
+`codex-code-mode-host.exe` al lado, y al terminar **relea del rollout** el modelo y el
+esfuerzo que de verdad corrieron. No se construye hoy: cada ronda necesita su workdir y su
+encargo, y una pieza así hay que encadenarla o se queda sin llamadores.
+
+**Disparador para promoverlo:** la primera ronda de la calibración (fila #38 de `PLAN.md`)
+en la que el modelo anotado en el acta **no coincida** con el releído del rollout. Hasta
+entonces es un riesgo declarado, que es lo que lo distingue de un olvido.
+
+## 280. `AGENTS.md` dice que Codex no puede usar subagentes, y el 2026-09-23 los usaba
+
+**De dónde sale:** lectura de los `rollout-*.jsonl` del 2026-09-23 mientras se comprobaban
+los lanzadores.
+
+**Lo medido:** `AGENTS.md` §«Lo único específico de Codex» afirma que
+`dispatching-parallel-agents` y `subagent-driven-development` **no** se pueden usar porque
+`multi_agent` no está activado (comprobado el 2026-09-14). Hoy los rollouts traen el bloque
+`<multi_agent_role>` —con `spawn_agent`, `followup_task` y `send_message`— y el informe de
+consumo cuenta **10 sesiones de subagente** en la ventana del 9 al 23 de septiembre, un ~9 %
+de los tokens. La capacidad existe; la instrucción dice que no.
+
+**Por qué no se corrige en el mismo diff que la política de modelo:** rectificarla **autoriza**
+a Codex a repartir una ronda entre subagentes, y eso multiplica el consumo —justo el eje que
+la política provisional está intentando medir—. Es una decisión aparte, de Nikolai, y
+mezclarla con la calibración contaminaría sus cinco primeras filas.
+
+**Disparador para promoverlo:** que la calibración cierre (fila #38), o que Nikolai quiera
+antes decidir si una ronda puede abrirse en paralelo.

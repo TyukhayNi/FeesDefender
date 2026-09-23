@@ -52,6 +52,15 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 | 36 | La reclamación extrajudicial en un solo envío: refundir requerimiento + OVC y reducir los formularios | **spec rev. 2 con su R1 adjudicada; la 281 VIVA en el CRM y una segunda plantilla hecha sin subir** **Estado al 126º cierre:** la plantilla **281** del CRM ya genera con las alternancias en forma `[a / b]` y la macro `ResolverNumero` las resuelve en un clic (probado en vivo); la refundida de **full price** está hecha y verificada en el Escritorio, **sin subir**. Quedan **cinco correcciones de fondo** en la 281 (tres comentarios de Word dentro del RTF, el fundamento del segundo concepto reclamado, el importe en las condiciones, la constancia del art. 17.2 y dos marcadores con espacio). **El motor del CRM no tiene condicional** —medido sobre 45 plantillas—. **Estado al 127º cierre:** la escritura por API **sí alcanza el contenido**, y esta fila decía lo contrario: el `200` mudo era el de `right.gdocu.id`, y la vía buena es `idFile` — el `500` la nombraba. Contrato **completo y verificado** de las tres cosas (`INTEGRACION_SUDESPACHO.md` §10.13, §10.13.1 y §10.14): plantillas de documento, **de email** (dos ficheros: config del editor + HTML) y **de factura** (que no son familia aparte: son `rtf` con `elemento='facturas'`), más **carpetas** con su movimiento (`PUT {label, color, parentId}`). Y el lote del CRM **no da ZIP** —devuelve un id de trabajo cuyo resultado solo llega empujado al navegador—, así que el lote se monta en local renderizando uno a uno. : [spec](docs/superpowers/specs/2026-09-15-reclamacion-extrajudicial-envio-unico-design.md) · [acta R1](docs/superpowers/specs/2026-09-15-reclamacion-extrajudicial-envio-unico-r1-adversarial-review.md). **R1 REQUIERE-REVISION, 12 hallazgos, 12 confirmados y un extremo refutado.** El que paga la ronda es un **error de derecho**: el art. 17.4 LO 1/2025 dice «un mes» y el spec —copiando la plantilla del CRM— decía «treinta días naturales», que se quedan cortos en los meses de 31; la oferta habría decaído antes del mínimo legal, y ya estaba en un documento del expediente listo para firmar. Otros dos que también cambiaban el texto: qué pasa si aceptan pasado el quinto día, y que el art. 17.2 exige acreditar **recepción**, no solo envío, también de la aceptación. Los tres están aplicados en los documentos de `W-02SRFU`, regenerados. El extremo refutado: el revisor declaró SIN VERIFICAR el incidente de `BaRS10` mirando la entrada equivocada del mismo día; consta en `docs/bitacora/2026.md:2402-2403`. **La remediación no ha pasado ronda, y se declara.** **El prototipo ya existe y se hizo primero**: el requerimiento refundido de `W-02SRFU` (ES + EN, cinco páginas, dos secciones de Word con pie distinto), en su `04_Output predemanda`. **Auditoría medida el 2026-09-15**: 392 plantillas en el catálogo `rtf`, 29 en la carpeta 375, de las que 10 son burofaxes ofensivos y 2 son OVC. Los `[XX]` están en **20 de 21** plantillas, el pie con `121-11.c) CCCat` en **14 de 22 ficheros RTF**, y del CRM solo se autorrellenan `Referencia_Cliente` y `cuantia` — el resto **no puede** autorrellenarse porque el elemento `extrajudiciales` no tiene esos campos. **Lo que corrige la intuición**: entre los 10 ofensivos hay 48 grupos de párrafo distintos y solo 4 compartidos por cinco o más; no son diez copias, son diez teorías del devengo, y la duplicación real está en el motor MASC y en el recitativo que la OVC repite | decisión de Nikolai del 2026-09-15: **un documento único mixto, con el riesgo del art. 9.3 LO 1/2025 asumido y escrito** — se le ofrecieron las tres formas (dos documentos en un envío, solo la OVC, o el mixto) con el hallazgo delante: la oferta vinculante es confidencial *en todo caso* (art. 17.3) y lo confidencial **se inadmite** (art. 9.3), así que fundir los textos contagia esa confidencialidad al requerimiento y lo vuelve inaportable. Mitigación: bloque de deslinde expreso apoyado en el art. 9.1, que exceptúa *el objeto de la controversia* | alto |
 | 37 | El envío certificado por Codicert: burofax postal + correo + SMS a todos los requeridos, desde el CRM | **F1 ✅ CERRADA el 2026-09-21 (PR [#388](https://github.com/TyukhayNi/FeesDefender/pull/388), `6d60187`); F2 CONSTRUIDA (PR [#393](https://github.com/TyukhayNi/FeesDefender/pull/393), sin mergear); F3 sin construir.** Tres piezas en tres capas: `core/codicert.py` (transporte puro, no sabe qué es un expediente), `core/expedicion_certificada.py` (el criterio: planificar, ejecutar, refrescar, cosechar) y `scripts/codicert.py` (la única puerta humana, con plan que se lee antes de gastar). **Los tres canales son DOS endpoints**: `/envios/burofax` (exactamente un destinatario, 16,97 €) y `/envios/entrega-electronica-certificada` con `tipo_entrega` `correo`|`sms`. **Primera expedición real en sandbox** (1,06 € de los 20). **Dos rondas adversariales:** [R1](docs/superpowers/specs/2026-09-17-envio-certificado-codicert-r1-adversarial-review.md) sobre el diseño (REQUIERE-REVISION, 34 hallazgos) y [R2](docs/superpowers/plans/2026-09-17-codicert-f1-r2-adversarial-review.md) de **Codex** sobre el diff (**NO-SHIP, 16 hallazgos — 7 `alta`, 9 `media`, los dieciséis remediados**). Esa ronda **corrió** en vez de leer: sondas ejecutables por defecto y un mutante que sobrevivía a las 128 pruebas del ámbito. Seis de los siete altos eran **cobertura de mis propios tests**, no lógica que se me escapara — el más caro, `1apellido`/`2apellido` sin leer, habría impreso en el burofax **solo el nombre de pila del requerido, sin apellidos**. **La remediación de los dieciséis NO ha pasado ronda: la R3 quedó dispensada por decisión expresa de Nikolai el 2026-09-21, y su cobertura se declara AUSENTE —no refutada— en el §12.2 del spec.** **F2 (2026-09-21)** cierra la prueba del envío: `refrescar` (relee estados y agrupa **por requerido**, el nivel que manda para los plazos), `cosechar` (baja el certificado, **verifica que el remitente sea el emisor esperado** ex art. 17.2, lo archiva en `04_Output predemanda/Certificados` y lo cuelga del CRM), `core/certificado_lectura.py`, `core/sudespacho_documentos.py` (la subida del §17 con su verificación por resultado) y los subcomandos `estado` y `cosechar`. **Diez mediciones nuevas de producción, en solo lectura y 0,00 € gastados**, que llevaron el spec a rev. 12: el listado da un solo estado y el histórico da la fecha que cuenta —tres días de diferencia en un burofax real—, hay **seis códigos de estado vivos** que el §1.3 no clasificaba, y la razón social del emisor aparece **nueve veces en el certificado y una sola en el bloque bueno**, así que una verificación por búsqueda global habría aprobado el certificado de un tercero que nos mencione. **Una ronda adversarial** —la que la tabla de `CLAUDE.md` asigna a esta pieza—: [R1 de Codex sobre el diff](docs/superpowers/plans/2026-09-21-codicert-f2-r1-adversarial-review.md) (**NO-SHIP, 10 hallazgos — 3 `alta`, 7 `media`, los diez confirmados y remediados**). Dos de ellos los encontré yo antes de recibir el informe; el más caro de los otros ocho: **la recuperación de una subida fallida daba por bueno un binario que la corrida anterior había detectado incorrecto**. [plan de F2](docs/superpowers/plans/2026-09-21-codicert-f2.md). | encargo de Nikolai del 2026-09-17. Predecesora: la fila **#36**, que produce el PDF refundido que esto expide. Gates duros medidos: el `id_personalizado` compuesto solo con el W-code hace que **la OVC posterior encuentre los envíos del requerimiento, se declare completa y no salga** (fallo silencioso y positivo), y los plazos de los arts. 7.3, 10.4 y 17.4 LO 1/2025 corren **por requerido**, no por expedición. [spec](docs/superpowers/specs/2026-09-17-envio-certificado-codicert-design.md) · [plan](docs/superpowers/plans/2026-09-17-codicert-f1.md) | alto |
 
+| 38 | [Con qué modelo corre la revisión adversarial: política provisional y su calibración](#siguiente-modelo-revisor-con-qué-modelo-corre-la-revisión-adversarial) | **política ESCRITA el 2026-09-23; calibración 0 de 5** | encargo de Nikolai del 2026-09-23 sobre el informe de consumo de catorce días. **Disparador de cierre:** cinco encargos **ordinarios** corridos con `gpt-6-sol`·`high`, con su ficha en el ledger de abajo. Mientras no estén los cinco, la política es **provisional** y así se declara en `CLAUDE.md` | bajo |
+
+> **Fila 38 añadida el 2026-09-23, al final y sin reordenar, por el mismo criterio que todas las
+> anteriores.** No es una mejora de producto ni un ítem de código: es el eje de coste de la
+> revisión adversarial, que hasta ahora era una constante no escrita (`gpt-6-astra`/`xhigh`
+> heredado de un fichero fuera de git) y pasa a ser una elección por radio de daño. Va a la cola
+> —y no solo a `CLAUDE.md`— porque **la parte que falta es una medición**, y una medición sin
+> hogar en la cola es una que nadie hace.
+
 > **Fila 23 añadida el 2026-09-07, al final y sin reordenar, igual que las anteriores.** Es la mitad
 > de test de `MEJORAS #145`, no una promoción de la entrada: la de producción se queda donde está
 > con su precio. Lo que la hizo urgente es la regla de las **dos semillas** — un rojo que no
@@ -3471,3 +3480,50 @@ fichero contra el registro judicial):
   Nikolai, no un efecto colateral de esta alta). El fichero de poderes pasa a **92**
   (`poderes/92`, poderdante `clientes_propios/2` verificado, certificado en `gdocu/43227`,
   sha256 verificado tras la subida).
+
+---
+
+## [SIGUIENTE-MODELO-REVISOR] Con qué modelo corre la revisión adversarial
+
+**Decidido por Nikolai el 2026-09-23**, sobre el informe de consumo de catorce días
+`recomendacion-modelos-revision-2026-09-23.md` (fuera del repo, en
+`Documents\codex\2026-09-23\est\outputs\`). **La política vive en `CLAUDE.md` §«Con qué modelo se
+revisa» y no se repite aquí**: aquí está la cola y el ledger de la medición que la cierra.
+
+**Qué queda por hacer, en una frase:** correr los **cinco primeros encargos ordinarios** con
+`gpt-6-sol`·`high`·velocidad estándar y anotarlos abajo. Con los cinco se decide: confirmar,
+ajustar o volver a Astra. **Nada de eso se decide antes de los cinco, y hasta entonces la política
+se sigue diciendo provisional** — es el remedio a un sesgo ya medido: en el 55º cierre redefiní mi
+propia regla de parada justo cuando me obligaba a parar.
+
+**Ledger de calibración — 0 de 5.** Una fila por encargo **ordinario**, que es la fila de **una**
+ronda de la tabla de rondas: ni fronteras de escritura, ni datos de cliente, ni concurrencia —esas
+van a Astra por política y **no** cuentan para la calibración.
+
+| # | Fecha | Objeto (spec/plan/diff) | Modelo · esfuerzo · velocidad | Tokens · Δcupo | Concurrencia declarada | Hallazgos confirmados | Omisiones relevantes |
+|---|---|---|---|---|---|---|---|
+| 1 | | | | | | | |
+| 2 | | | | | | | |
+| 3 | | | | | | | |
+| 4 | | | | | | | |
+| 5 | | | | | | | |
+
+**Cómo se rellena cada columna, porque de eso depende que sirva para algo:**
+
+- **Modelo · esfuerzo** se **releen** del `turn_context` del `rollout-*.jsonl` de la ronda; la
+  **velocidad** se declara desde el script del lanzador, porque no consta en el rollout. El
+  contrato de los tres campos está en el §4 de
+  `docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md`.
+- **Δcupo** se lee del contador real de la cuenta, no de tokens brutos, y al lado va la
+  **concurrencia**: el contador es de la cuenta, así que sin decir qué más corría a la vez el
+  número no atribuye nada a este encargo.
+- **Hallazgos confirmados** son los que sobrevivieron a la adjudicación contra la fuente, no los
+  que trae el informe. **El número bruto no mide calidad** y no se usa como si lo midiera.
+- **Omisiones relevantes** es la columna cara, y la que de verdad decide: defectos que apareció
+  **después** otra ronda, la suite o producción sobre el mismo objeto. Una casilla vacía aquí
+  significa «todavía no ha pasado tiempo», **no** «no hubo».
+
+**Y la pregunta que se hace antes de culpar al modelo:** si Sol omite algo importante, se mira
+primero si faltó **contexto, paquete o prueba** en el mandato, y solo después si faltó capacidad.
+Subir el esfuerzo es la última explicación, no la primera — si no, la calibración se convierte en
+una escalera por la que solo se sube.
