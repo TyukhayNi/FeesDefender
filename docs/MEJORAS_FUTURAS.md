@@ -12632,3 +12632,134 @@ intención es la única prueba de que *nosotros* llamamos.
 distinto del que lo planificó. Hasta entonces es un riesgo conocido y acotado —una sola
 máquina, un solo operador— y **está declarado**, que es lo que lo distingue de un olvido.
 
+
+## 279. El lanzador de una ronda no obliga a fijar el modelo, y hereda uno de fuera de git
+
+**De dónde sale:** la comprobación de lanzadores del 2026-09-23, al adoptar la política
+provisional de modelo (`CLAUDE.md` §«Con qué modelo se revisa»).
+
+**Lo medido, ese mismo día:** los lanzadores en uso (`_lanzar_codex_rama_*.ps1`, fuera del
+repo) llaman a `codex exec` **sin ningún flag de modelo**, de modo que el modelo y el
+esfuerzo salen de `~/.codex/config.toml` —fuera de git, compartido con la app de
+escritorio—, que decía `gpt-6-astra` / `xhigh` / `priority`. Los **cinco** lanzamientos
+por CLI (`originator: codex_exec`) de ese día corrieron así, y consta en el `turn_context`
+de sus `rollout-*.jsonl`. Son lanzamientos, **no necesariamente cinco rondas distintas**: dos
+arrancan con siete segundos de diferencia. La corrección del recuento la forzó el H-10 de la
+R1 —la ficha decía «seis», y la sexta sesión de ese día era `codex_work_desktop` desde
+`Documents\Codex6-09-23\est`: **la que escribió el informe de consumo**, no una ronda—.
+De paso prueba que **la app hereda el mismo defecto**: también corrió astra/xhigh. Y el
+binario del lanzador —`codex.cmd`, npm `0.154.0`— **rechazó `gpt-6-sol` con un `400`**
+mientras el de la app (`0.155.0-alpha.9.2`) lo corrió; las dos sondas cambian instalación y
+versión a la vez, así que **no aíslan la causa** (sí descartan la cuenta).
+
+**Por qué no basta lo escrito:** el contrato ya exige los tres flags explícitos, pero lo
+exige en prosa que lee **quien redacta el lanzador**. Un lanzador que herede en silencio no
+falla: corre, produce informe y deja un acta que dice el modelo que alguien **creyó** haber
+pedido. Eso es exactamente la clase de fallo que el acta existe para impedir, movido un
+escalón más arriba.
+
+**La salida, sin decidir:** un lanzador canónico —en `scripts/`— que **rechace arrancar** sin
+`-m`, `-c model_reasoning_effort` y `-c service_tier`, busque el binario por el criterio de
+`codex-code-mode-host.exe` al lado, y al terminar **relea del rollout** el modelo y el
+esfuerzo que de verdad corrieron. No se construye hoy: cada ronda necesita su workdir y su
+encargo, y una pieza así hay que encadenarla o se queda sin llamadores.
+
+**Disparador para promoverlo:** la primera ronda de la calibración (fila #38 de `PLAN.md`)
+en la que el modelo anotado en el acta **no coincida** con el releído del rollout. Hasta
+entonces es un riesgo declarado, que es lo que lo distingue de un olvido.
+
+## 280. `AGENTS.md` dice que Codex no puede usar subagentes, y el 2026-09-23 los usaba
+
+**De dónde sale:** lectura de los `rollout-*.jsonl` del 2026-09-23 mientras se comprobaban
+los lanzadores.
+
+**Lo medido:** `AGENTS.md` §«Lo único específico de Codex» afirma que
+`dispatching-parallel-agents` y `subagent-driven-development` **no** se pueden usar porque
+`multi_agent` no está activado (comprobado el 2026-09-14). Hoy los rollouts traen el bloque
+`<multi_agent_role>` —con `spawn_agent`, `followup_task` y `send_message`— y el informe de
+consumo cuenta **10 sesiones de subagente** en la ventana del 9 al 23 de septiembre, un ~9 %
+de los tokens. La capacidad existe; la instrucción dice que no.
+
+**Por qué no se corrige en el mismo diff que la política de modelo:** rectificarla **autoriza**
+a Codex a repartir una ronda entre subagentes, y eso multiplica el consumo —justo el eje que
+la política provisional está intentando medir—. Es una decisión aparte, de Nikolai, y
+mezclarla con la calibración contaminaría sus cinco primeras filas.
+
+**Disparador para promoverlo:** que la calibración cierre (fila #38), o que Nikolai quiera
+antes decidir si una ronda puede abrirse en paralelo.
+
+## 281. El acta puede omitir `modelo`, `esfuerzo` y `velocidad` y seguir en verde
+
+**De dónde sale:** hallazgo **H-07** de la R1 del diff que creó esos campos
+(`docs/superpowers/specs/2026-09-23-modelo-revisor-politica-provisional-r1-adversarial-review.md`),
+confirmado contra la fuente.
+
+**Lo medido:** `_CLAVES_ACTA` de `tests/test_docs_gobernanza.py` no incluye los tres campos
+que la rev. 11 del contrato añadió al frontmatter del acta, y G9 solo contrasta el
+veredicto. **Un acta nueva sin ninguno de los tres pasa en verde**, exactamente igual que
+una con los tres.
+
+**Por qué el argumento de la rev. 11 no bastaba:** decía que un guard de *presencia*
+«enseñaría a rellenarlo, no a releerlo». Eso confunde dos cosas. La **verdad** del dato —que
+el acta diga el modelo que de verdad corrió— no es comprobable desde el repo, porque el
+rollout vive fuera: ahí un guard no llega, y eso sigue siendo cierto. La **presencia** sí lo
+es, y es justo lo que hace visible un olvido — el mismo criterio con el que G7 exige los seis
+campos de la ficha.
+
+**Por qué no se construyó en el mismo diff:** tocar un guard es tocar `tests/`, que **no está
+exento nunca**, y se llevaría su propia ronda. El diff que lo destapó ya había gastado la
+suya.
+
+**La salida, acotada:** añadir los tres a las claves obligatorias del acta y comprobar su
+vocabulario (`no aplica` es legítimo para el revisor sustituto, §4), **solo para actas
+nuevas** —las anteriores a la rev. 11 no los tienen y no se retrofitan—. Y decir en el propio
+guard lo que **no** prueba: que la ronda corriera con lo que el acta declara.
+
+**Disparador para promoverlo:** la segunda acta que llegue sin los tres campos, o el cierre de
+la calibración de la fila #38 —lo que pase antes—. Con menos de dos actas afectadas el guard
+cuesta más que el olvido que evita.
+
+## 282. La política de modelo del revisor vive DOS veces, y ya dice cosas distintas
+
+**De dónde sale:** encargo de Nikolai del 2026-09-23, al cerrar la sesión que la escribió aquí.
+El mismo día, **dos sesiones en paralelo** adoptaron la misma decisión en los dos repos sin
+verse: PR [#395](https://github.com/TyukhayNi/FeesDefender/pull/395) en FeesDefender y
+PR [#312](https://github.com/TyukhayNi/ElContable/pull/312) en El Contable.
+
+**Lo medido, con el diff de las dos delante:**
+
+| | FeesDefender (#395) | El Contable (#312) |
+|---|---|---|
+| Tabla de modelo | `CLAUDE.md` §«Con qué modelo se revisa», 6 filas | `CLAUDE.md` § propia, con marcadores `POLITICA-MODELO:INICIO` |
+| **El propio contrato de revisión** | **`gpt-6-sol`·`high`** (bajado por Nikolai desde Astra) | **`gpt-6-astra`·`medium`** |
+| Lanzador | ninguno; los flags los exige la prosa (`MEJORAS #279`) | `scripts/lanzar_revision_codex.ps1` (422 líneas) |
+| Guard del lanzador | ninguno | `tests/test_guard_lanzador_revision.py` (351 líneas) |
+| Ledger de calibración | fila #38 de `PLAN.md` | `docs/CALIBRACION_MODELO_REVISION.md` |
+
+**Por qué esto NO es «dos variantes» sino un bug, y lo dicen los propios ficheros:** el
+`CLAUDE.md` de El Contable se declara **«puntero a la documentación viva; no duplica contenido»**,
+y su `AGENTS.md` dice literalmente que **si los dos dicen cosas distintas sobre el mismo hecho
+«es un bug»**. El `AGENTS.md` de FeesDefender lleva la misma leccion escrita desde que dejó de ser
+una copia de `CLAUDE.md`: **mantener dos copias del mismo texto garantiza que divergan**, y la
+celda del contrato de revisión ya divergió el primer día.
+
+**La forma que propongo, sin decidirla:**
+
+1. **La tabla vive UNA vez**, en `CLAUDE.md` de FeesDefender, que es donde El Contable ya apunta
+   para el resto del contrato de revisión. El Contable conserva **solo lo suyo**: que su caso
+   frecuente —facturación, envío, nóminas— cae en las filas de Astra más a menudo que aquí.
+2. **Decidir la celda que diverge**, que es una decisión de Nikolai y no una fusión mecánica: el
+   argumento de FeesDefender es que la frontera es el **silencio**, no la importancia.
+3. **El lanzador y su guard se quedan**, y **se mueven a donde los dos repos los usen**. Eso cierra
+   `MEJORAS #279` sin construir nada nuevo: el hueco que #279 declara —los flags los exige la
+   prosa— ya está resuelto ahí, solo que en el repo de al lado.
+4. **Un solo ledger** o dos declarados como distintos; hoy no se sabe cuál cuenta los cinco
+   encargos.
+
+**Disparador para promoverlo:** que el PR #312 mergee. Antes no: reconciliar contra una rama
+abierta es reconciliar contra algo que aún puede cambiar.
+
+**Y el defecto de proceso detrás, que es lo que conviene no repetir:** dos sesiones recibieron el
+mismo informe y ninguna sabía de la otra hasta que Nikolai lo dijo a mitad. No es un fallo de
+ninguna de las dos —ninguna podía verlo— sino del reparto: **una decisión que gobierna los dos
+repos necesita una sesión, no una por repo.**
