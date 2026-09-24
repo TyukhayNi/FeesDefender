@@ -9313,6 +9313,28 @@ demanda está sin presentar. Lo urgente del caso se cubre fuera del pipeline (tr
 scratchpad, fuera del repo, que es donde debe estar el dato real); lo que esta entrada pide es
 que la **próxima** apertura no repita el trabajo a mano.
 
+**Dato del 2026-09-24 (W-0462E1): cuarta vez a mano, y Nikolai creía que el pipeline ya lo hacía.**
+18 `.opus` en `sin_soporte` (2 del chat consultor–propietario, 16 del chat consultora–buscador),
+transcritos con el CLI en la sesión (`large-v3-turbo`, 18/18 `ok`, cada `.md` contrastado con el
+`sha256` del audio). Antes, W-02V48N (4), W-02VEKE (15) y W-02USSI, todos a mano. El runbook de
+apertura **no menciona el audio en ningún paso**: mientras esta entrada no se construya, el paso
+solo existe en la memoria de quien lo hizo la última vez.
+
+- **No hay sitio canónico declarado: tres casos, tres sitios.** `05_Procedimiento/Transcripciones/`
+  (W-02VEKE), `01_Procesado/03_Transcripciones/` (W-02USSI) y `01_Procesado/02_Sala de máquina/03_MD/`
+  (W-02V48N). En W-0462E1 se siguió el último (`03_MD/<audio>.transcripcion.md` +
+  `_transcripciones.json`) **sin tocar `_cobertura.json`**: `apply` reintenta lo `sin_soporte` y
+  es autoritativo sobre lo que reprocesa, así que una fila marcada `ok` a mano volvería a
+  `sin_soporte` en la corrida siguiente. Consecuencia: `texto_espejo_md` de la sala de lectura **no
+  ve** esas transcripciones, porque busca `03_MD/<slug>.md` con fila `ok`/`low`. El diseño de
+  arriba —el MD `<slug>.md` y la fila de cobertura propios de la ruta— es la respuesta.
+- **El CLI no aísla el fallo de ESCRITURA por fichero.** A 15 de 18, un `FileNotFoundError` al
+  escribir en `G:` —carpeta presente antes y después: corte momentáneo de Drive para escritorio—
+  tumbó la tanda entera y `_transcripciones.json` no se escribió. Relanzado, la idempotencia por
+  `sha256` rehízo las 3 restantes y el índice quedó con 15 filas `cacheado`, sin idioma. Es la
+  regla de `#207` por el lado de la escritura: capturar el fallo por fichero, como ya se hace con
+  la decodificación, y escribir el índice aunque alguno falle.
+
 ---
 ## 206. `emparejar_exports_whatsapp` solo conoce el nombrado de UN canal: 0 de 5 exports apartados
 
@@ -10842,6 +10864,13 @@ deje de ser barata, o cuando el aviso de C2 salga en aperturas seguidas.
 - **(d) Truncar a la longitud declarada tras el pull.** Repara el síntoma sin entender la causa y
   destruye evidencia si alguna vez el relleno no fuera relleno. **Descartada salvo medición.**
 
+**Dato del 2026-09-23 (W-0462E1), en la sala de lectura.** En una pasada incremental, el mismo
+documento llegado por correo (bytes exactos) y por el pull del Drive (rellenado a múltiplo de 512)
+tenía `sha256` distinto: **13 duplicados** que `dedup_por_sha` de `organizar-sala-lectura` habría
+copiado dos veces (9 contra documentos ya en la sala, 4 entre nuevos). Se cazaron comparando
+`sha256(bytes.rstrip(b"\x00"))`. La skill no lo hace: mientras esta entrada siga viva, todo caso
+con correo + Drive duplica en la sala.
+
 ## 226. `poblar` pisa en silencio el documento anterior cuando dos entradas comparten nombre canónico — 4 de 21 documentos ausentes de la sala
 
 > **✅ RESUELTO por el PR [#328](https://github.com/TyukhayNi/FeesDefender/pull/328) (`a2e6676`,
@@ -11350,6 +11379,13 @@ test sobre un `_chat.txt` que traiga la marca — hoy ningún test la lleva, y p
 lleva vivo desde que existe el parser.
 
 **Disparador de promoción.** Inmediato: cualquier apertura con export de WhatsApp lo activa.
+
+**Dato del 2026-09-23 (W-0462E1): también en el dialecto Android, y también en el intake.** En un
+export Android en español —la línea es `PTT-….opus (archivo adjunto)`, sin `<adjunto: …>`— la
+marca va igualmente delante del nombre, y `_RE_ADJ_ANDROID` la captura con él. El síntoma sale
+además en el intake: `whatsapp_intake` calcula `adjuntos_faltantes` con `referencias_adjuntos`, y el
+evento `upload_whatsapp` del lote `2026-09-23_whatsapp_02` listó **30 faltantes con los 30 en el
+lote**. El remedio tiene que cubrir los dos dialectos, no solo `_RE_ADJ_IOS`.
 
 ---
 
@@ -12763,3 +12799,79 @@ abierta es reconciliar contra algo que aún puede cambiar.
 mismo informe y ninguna sabía de la otra hasta que Nikolai lo dijo a mitad. No es un fallo de
 ninguna de las dos —ninguna podía verlo— sino del reparto: **una decisión que gobierna los dos
 repos necesita una sesión, no una por repo.**
+
+---
+
+## 283. `_ficha_crm.yaml`: una clave que el loader no conoce se descarta en silencio, y el dato no llega al CRM
+
+> **Medido el 2026-09-23 por GET** sobre el extrajudicial 653 (W-030A13), desde la sesión de
+> W-0462E1.
+
+`core/crm_ficha.py::_contrario_de` lee `apellido1` y `apellido2` con `d.get(...)` y no mira las
+claves que sobran. El `_ficha_crm.yaml` de W-030A13 (preparado el 2026-09-16) escribió el primer
+apellido como `apellido:`, y la corrida de `crm_ficha` terminó sin error. En las fichas
+`clientes_contrarios` 1128 y 1129, `1apellido` está **vacío** y `2apellido` sí se escribió. Afecta
+a las dos personas del YAML y nada lo avisa: `nombre` lleva el nombre completo y el listado de la
+UI se ve bien.
+
+**La frontera, no el ejemplo:** cualquier clave del YAML que no esté en la lista del loader —de
+contrario **y** de colaborador— se pierde sin aviso. El YAML se escribe a mano en cada apertura, así
+que el error de tecleo es el caso normal, no el raro.
+
+**Remedio probable.** Rechazar las claves desconocidas antes de escribir nada, o como mínimo
+listarlas en el preview que el humano autoriza. Test: un YAML con `apellido:` debe fallar o avisar,
+y no dejar `1apellido` vacío en silencio.
+
+**Pendiente del caso, no de esta entrada:** reparar las fichas 1128 y 1129, que es trabajo de
+W-030A13.
+
+**Disparador de promoción.** La próxima ficha preparada a mano.
+
+---
+
+## 284. El pre-relleno de viabilidad contesta «¿está firmado?» desde la capa de texto, y toma un nombre impreso bajo la línea por una firma
+
+> **Medido el 2026-09-23 sobre W-0462E1** (skill `viabilidad-prerelleno`).
+
+El informe pre-rellenado respondía en `arr_13` que el reconocimiento de honorarios estaba firmado
+por el propietario, y el aviso 2 —con «sube al recuadro CFO: sí»— afirmaba que los propietarios lo
+firmaron el 29/04/2026 y lo revocaron siete días después. Renderizando las páginas con
+`pypdfium2`: los dos reconocimientos del expediente son **plantillas iTextSharp sin firmar**, con
+el nombre impreso bajo una línea vacía y el pie «DEVOLVER EL ORIGINAL FIRMADO A LA AGENCIA»; la
+única imagen de cada PDF es el logo (17.147 bytes, idéntica en los dos). Era el hallazgo que
+decidía la viabilidad, y el 132º cierre lo registró como hecho.
+
+**La frontera:** la capa de texto no distingue un nombre impreso de una rúbrica. Toda pregunta de
+firma —encargo, oferta, arras, reconocimiento, modificación de precio— contestada desde el MD tiene
+este modo de fallo. En el mismo caso, el encargo y la modificación de precio llevan **una sola**
+rúbrica donde el texto nombra a dos cotitulares, y eso tampoco se ve en el texto.
+
+**Remedio probable.** En la skill: una pregunta de firma no se contesta sin mirar la imagen de la
+página de firmas; si no se puede, confianza `baja` y aviso explícito, **nunca** `alta`. En un PDF
+nativo, el indicio barato es contar las imágenes de la página de firma.
+
+**Disparador de promoción.** Cualquier pre-relleno: toda reclamación de honorarios pregunta por
+firmas.
+
+---
+
+## 285. El atomizador de WhatsApp solo descubre `_chat.txt`, y el intake deposita el chat con cualquier nombre de `.txt`
+
+> **Medido el 2026-09-23 sobre W-0462E1.**
+
+`core/whatsapp_intake._find_chat_txt` acepta el `.txt` del export aunque no se llame `_chat.txt`
+—el export Android en español trae `Chat de WhatsApp con <contacto>.txt`— y lo deposita con su
+nombre. `core/whatsapp_atomize/pipeline.descubrir_chats` hace `rglob("_chat.txt")`. Con tres lotes
+de WhatsApp depositados, `python -m scripts.atomize_whatsapp atomize` devolvió `chats: 2,
+mensajes: 87`: los **173 mensajes** del tercer chat —el de la consultora con el representante del
+buscador, el que documenta la negociación de las arras— quedaron fuera. El `_manifiesto.yaml` de
+ese lote lo registra además como `tipo_contenido: txt`, y los otros dos como `whatsapp`.
+
+**La frontera:** las piezas del canal no comparten la definición de «fichero de chat». La
+divergencia con `_find_chat_txt` ya está anotada en `#55` para los `.zip`, donde es deliberada;
+aquí no lo es, y pierde el chat.
+
+**Remedio probable.** Una sola función de descubrimiento para intake, manifiesto y atomizador, en
+vez de tres criterios.
+
+**Disparador de promoción.** Cualquier export Android con `.txt` propio.
