@@ -246,7 +246,9 @@ def test_PARADA_2_una_pagina_que_se_conserva_con_el_rotulo_para():
     duplicada = "CONFIDENCIAL - CONDICIONES\nuna hoja que nadie mandó así"
     cert = s.certificado([r, f], reproduccion=[s.REQUERIMIENTO, s.OVC, s.CONDICIONES,
                                                duplicada, s.FACTURA])
-    with pytest.raises(apo.AportableError, match="lleva el rótulo"):
+    # El mensaje de ESTA parada —antes de escribir nada—, no el de la relectura, que
+    # también diría «lleva el rótulo» y taparía que la red se hubiera caído.
+    with pytest.raises(apo.AportableError, match="se conserva y lleva el rótulo"):
         apo.recortar(cert, _condiciones(r, f))
 
 
@@ -478,7 +480,8 @@ def test_PARADA_3_se_verifica_el_resultado_no_la_aritmetica(monkeypatch):
     r, f = s.refundido(), s.factura()
     cert = s.certificado([r, f])
     monkeypatch.setattr(apo, "_sin_paginas", lambda lector, conservadas: cert)
-    with pytest.raises(apo.AportableError, match="aportable"):
+    # La cuenta de páginas de la relectura, no la del grafo, que también pararía esto.
+    with pytest.raises(apo.AportableError, match="páginas y debían ser"):
         apo.recortar(cert, _condiciones(r, f))
 
 
