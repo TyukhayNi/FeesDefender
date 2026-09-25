@@ -54,6 +54,12 @@ Historial de commits: `git log`. Acceso móvil: app de GitHub (lectura).
 
 | 38 | [Con qué modelo corre la revisión adversarial: política provisional y su calibración](#siguiente-modelo-revisor-con-qué-modelo-corre-la-revisión-adversarial) | **política ✅ ESCRITA (PR [#395](https://github.com/TyukhayNi/FeesDefender/pull/395)), con la R1 de Codex adjudicada —`REQUIERE-REVISION`, 10 de 11 confirmados y remediados— y la fila de la gobernanza corregida por Nikolai a Sol·alto; ⏳ calibración 0 de 5** | encargo de Nikolai del 2026-09-23 sobre el informe de consumo de catorce días. **Disparador de cierre:** cinco encargos **ordinarios** corridos con `gpt-6-sol`·`high`, con su ficha en el ledger de abajo. Mientras no estén los cinco, la política es **provisional** y así se declara en `CLAUDE.md` | bajo |
 
+| 39 | Mejoras de las aperturas de la semana (2026-09-15 → 25): WhatsApp (`MEJORAS #236`, `#285`), `verificar_apertura` C2/C3/C9 (`#268`, `#269`, `#218`) y `_viabilidad.json` sobre `G:` (`#276`) | ✅ **CONSTRUIDA, en PR [#397](https://github.com/TyukhayNi/FeesDefender/pull/397)** — [plan y adjudicaciones](docs/superpowers/plans/2026-09-25-mejoras-aperturas-semana.md). **Dos piezas, dos rondas.** Bloque 1 con `gpt-6-sol`·`high`: `NO-SHIP`, **6 hallazgos, 6 confirmados, 0 refutados**, tres fronteras (qué identifica al chat de un export; limpiar un identificador no puede ligarlo a otros bytes; lo que el verificador declara tiene que ser lo que mira), remediados en `94522ce` y `61523e8`, y es la **primera fila de la calibración de la #38**. `#276` con `gpt-6-astra`·`high`: `SHIP`, 0 hallazgos, sus dos mutantes supervivientes muertos en `2b2653c`. El remedio de `#276` cambió al medir: `os.rename` en `G:` **no pisa** (`WinError 183`), así que en Windows se conservan las dos promesas y no hizo falta la ventana a medias de `O_EXCL`. **Backlog:** `#287` y `#288` rescatadas del PR #387 (cerrado: sus cinco números los ocupaban otras entradas y la nota de W-030A13 figuraba `fichado`), `#237` con su diagnóstico disputado, PARTICULAR-659 como `#289`-`#291`, y `[APER-74]` en el runbook (los audios no se transcriben solos). **Las dos remediaciones NO han pasado ronda, declarado** | encargo de Nikolai del 2026-09-25 sobre las aperturas de dos semanas. Decidido por él ese día: `#276` antes que `crm_ficha`; cerrar el #387, fichar PARTICULAR-659 y anotar la nota de W-02UIQU; trabajar en paralelo a Codicert F3 sin tocar lo suyo. **Siguiente, con su precio:** `crm_ficha` (`#283` + `#288`, pieza de dos rondas Astra: decide qué partes quedan vinculadas y da acceso), `#237` (medir `threads().modify` en un hilo real, con permiso), `#190`, el cableado de `#205` y `#284`/`#265`/`#267` como una tanda de skills (re-importación en Cowork) | medio |
+
+> **Fila 39 añadida el 2026-09-25, al final y sin reordenar**, por el mismo criterio que todas las
+> anteriores. No es una promoción por completitud: cada entrada tiene su disparador medido en una
+> apertura de las dos últimas semanas, y la sesión fue un encargo expreso de Nikolai.
+
 > **Fila 38 añadida el 2026-09-23, al final y sin reordenar, por el mismo criterio que todas las
 > anteriores.** No es una mejora de producto ni un ítem de código: es el eje de coste de la
 > revisión adversarial, que hasta ahora era una constante no escrita (`gpt-6-astra`/`xhigh`
@@ -3505,13 +3511,13 @@ otro encargo. Lo que este ledger sí da: **consumo observado, hallazgos que sobr
 adjudicación, y las omisiones que aparezcan**. El quinto encargo no dispara una conclusión: abre
 la conversación con Nikolai.
 
-**Ledger de calibración — 0 de 5.** Una fila por encargo **ordinario**, que es la fila de **una**
+**Ledger de calibración — 1 de 5.** Una fila por encargo **ordinario**, que es la fila de **una**
 ronda de la tabla de rondas: ni fronteras de escritura, ni datos de cliente, ni concurrencia —esas
 van a Astra por política y **no** cuentan para la calibración.
 
 | # | Fecha | Objeto (spec/plan/diff) | Modelo · esfuerzo · velocidad | Tokens · Δcupo | Concurrencia declarada | Hallazgos confirmados | Omisiones relevantes |
 |---|---|---|---|---|---|---|---|
-| 1 | | | | | | | |
+| 1 | 2026-09-25 | diff `9880165..7c70b70`, bloque 1 de la fila #39 (`#236`, `#285`, C2/C3/C9 de `verificar_apertura`; 12 ficheros, +1.072 / −40) — [acta](docs/superpowers/plans/2026-09-25-mejoras-aperturas-semana-bloque1-r1-adversarial-review.md) | `gpt-6-sol` · `high` **releídos** del rollout · `default` **afirmada** desde el lanzador | 124.144 tokens · Δcupo **sin medir** (no se leyó el contador al lanzar) | en paralelo, la ronda de `#276` (`gpt-6-astra`·`high`, 98.038 tokens) y la sesión de Codicert F3 | **6** (1 `alta`, 5 `media`), 0 refutados; el `alta` y tres `media` (H-01, H-03, H-05) eran regresiones del propio diff | ninguna conocida a esta fecha |
 | 2 | | | | | | | |
 | 3 | | | | | | | |
 | 4 | | | | | | | |

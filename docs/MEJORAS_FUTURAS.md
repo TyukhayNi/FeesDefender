@@ -9335,6 +9335,13 @@ solo existe en la memoria de quien lo hizo la última vez.
   regla de `#207` por el lado de la escritura: capturar el fallo por fichero, como ya se hace con
   la decodificación, y escribir el índice aunque alguno falle.
 
+**2026-09-25: el paso mínimo ya está escrito, y el cableado sigue abierto.** El runbook dice ahora
+en la sala de máquina, como `[APER-74]`, que los audios no se transcriben solos, con qué se
+transcriben, dónde va la salida (la forma de W-0462E1) y que no se toca `_cobertura.json` (PR
+#397). Lo que **no** cambia: la sala de máquina sigue sin ruta de audio y la sala de lectura sigue
+sin ver las transcripciones. Esta entrada sigue sin promover a `PLAN.md`: su disparador está
+disparado desde el 2026-09-09 y la decisión de priorizarla es de Nikolai.
+
 ---
 ## 206. `emparejar_exports_whatsapp` solo conoce el nombrado de UN canal: 0 de 5 exports apartados
 
@@ -10314,6 +10321,13 @@ todos terminan en `.00`. Allí se desbloqueó **bajando `meta.cuantia` al entero
 apaño es el que no conviene repetir: pone la pérdida también en el índice local, cuando la
 medición de arriba dice que la property REST **sí** admite céntimos. Lo que hay que corregir es el
 CRM, no `_caso.md`.
+
+**La mitad de C9, cerrada el 2026-09-25 (PR #397); la entrada SIGUE ABIERTA.** C9 enseña ya los
+dos importes en el `detalle` y la cuantía del CRM en la evidencia, y cuando el CRM tiene
+exactamente `int(round(local))` lo dice («es el truncado del alta») sin dejar de ser `fallo`. Lo
+que **no** se ha tocado es la causa: el alta sigue mandando `int(round(...))`. Antes de cambiarla
+hay que ver cómo pinta la plantilla del requerimiento una cuantía con decimales, porque de ahí sale
+el importe del burofax.
 ## 219. `_tiempos.jsonl` mide el reparto del OCR pero no registra las PÁGINAS, que es lo que decide si paralelizar
 
 **Medido el 2026-09-10 en la apertura de W-030TZY** (68 documentos por la ruta `ocr`,
@@ -11355,7 +11369,7 @@ sobre 65 documentos, 3 detectados, 1 correctamente descartado como mención).
 
 ---
 
-## 236. `_adjunto_ref` devuelve el nombre del adjunto con el `U+200E` del export, y por eso NO casa nunca con el fichero en disco
+## 236. `_adjunto_ref` devuelve el nombre del adjunto con el `U+200E` del export, y por eso NO casa nunca con el fichero en disco  [CERRADA 2026-09-25]  [PROMOVIDO → PLAN.md 2026-09-25]
 
 **Medido el 2026-09-10 en W-02V48N: 0 de 39 adjuntos casaban.** Con la marca normalizada,
 **31 de 39** cogen su fecha de envío (los 8 restantes son ficheros ya purgados del expediente).
@@ -11396,6 +11410,15 @@ marca va igualmente delante del nombre, y `_RE_ADJ_ANDROID` la captura con él. 
 además en el intake: `whatsapp_intake` calcula `adjuntos_faltantes` con `referencias_adjuntos`, y el
 evento `upload_whatsapp` del lote `2026-09-23_whatsapp_02` listó **30 faltantes con los 30 en el
 lote**. El remedio tiene que cubrir los dos dialectos, no solo `_RE_ADJ_IOS`.
+
+**CERRADA el 2026-09-25 (PR #397, fila #39 de `PLAN.md`).** `_limpiar_ref` quita la marca (y su
+familia: RLM, embeddings, isolates, BOM) de los **bordes**, hasta punto fijo, en los dos
+dialectos. La R1 de Codex (`NO-SHIP`) encontró que limpiar al parsear podía ligar la referencia a
+**otros bytes** —H-04, alta— y se remedió en la frontera, no en el ejemplo: `parse_chat` guarda
+también la referencia cruda y `resolver_adjunto` resuelve el nombre en disco tal como lo citó el
+chat, después limpio, y por nombre limpio solo si identifica un único fichero. Lo usan el intake
+(`adjuntos_faltantes`) y `construir_adjuntos`. **Fuera, declarado:** `zips._como_whatsapp` sigue
+comparando la referencia limpia sin resolver (solo informa de faltantes, no liga bytes).
 
 ---
 
@@ -11450,6 +11473,15 @@ instrumento de la otra no se puede decir cuál de los dos días describe el comp
 **El remedio (2) de arriba sirve para las dos lecturas**, y es el que hay que construir: la
 respuesta se arma desde el estado releído —en un hilo, la unión de `messages[].labelIds`— y, si la
 etiqueta pedida no está, es un error y no un campo decorativo.
+
+**Por qué no se construyó el 2026-09-25, y qué hace falta antes.** Dos cosas, las dos medidas en
+el código: los tests de `tests/test_gmail_mcp_server.py` afirman que la **última** llamada al
+servicio es `modify`, así que releer el hilo obliga a cambiar tests existentes; y el doble de
+`threads().modify` devuelve `labelIds` en la raíz, que es justo la forma que la medición de hoy
+desmiente. Construir sobre la forma real exige **medirla**: etiquetar un hilo real y leer la
+respuesta de `threads().modify` y la de `threads().get` —con permiso de Nikolai, porque es
+escritura en su correo—, y de paso repetir la búsqueda del 2026-09-10 para cerrar la discrepancia
+de instrumento.
 
 ---
 
@@ -12389,7 +12421,7 @@ en la skill, que respete numeración, formato y protección — y que de paso re
 autofiltro (`#265`), que es el otro extremo del mismo problema. Con un test que escriba dos tandas
 seguidas y compruebe que la primera sobrevive.
 
-## 268. `verificar_apertura` C2 confirma el relleno de ceros y no lo dice: el fallo sale pelado
+## 268. `verificar_apertura` C2 confirma el relleno de ceros y no lo dice: el fallo sale pelado  [CERRADA 2026-09-25]  [PROMOVIDO → PLAN.md 2026-09-25]
 
 **Medido el 2026-09-15 en la apertura de W-02SRFU.**
 
@@ -12419,7 +12451,13 @@ por `MEJORAS #225`, **algunas**, **ninguna**— y que los **conteos** (`len(rell
 `len(discrepan)`) vayan en la evidencia **sin truncar**, aunque las listas sí se trunquen. Con
 un test por cada uno de los tres casos.
 
-## 269. `verificar_apertura` C3 busca el catálogo solo donde lo deja el motor, y C4 ya acepta los dos sitios
+**CERRADA el 2026-09-25 (PR #397).** El `detalle` distingue los tres casos —TODOS son el relleno,
+algunos (y nombra los que no), ninguno— y la evidencia lleva `n_discrepan`, `n_relleno_225` y
+`sin_explicar` sin depender del truncado de las listas. **El veredicto sigue siendo `fallo`**: el
+`sha256` local no es el del original, y eso es custodia aunque el contenido esté íntegro. La R1
+de Codex lo atacó y no encontró promoción a `ok` ni ocultación del caso mixto.
+
+## 269. `verificar_apertura` C3 busca el catálogo solo donde lo deja el motor, y C4 ya acepta los dos sitios  [CERRADA 2026-09-25]  [PROMOVIDO → PLAN.md 2026-09-25]
 
 **Medido el 2026-09-15 en W-02SRFU**, con la sala de lectura montada por la **skill**: en la
 misma corrida, C4 (`artefactos_sala`) da `ok` —«los 4 presentes y con contenido»,
@@ -12442,6 +12480,12 @@ no tolere las dos, **toda** sala montada por la skill se declara inexistente y e
 **sin ejecutar, en silencio y con apariencia de estado normal**.
 
 **Remedio:** que C3 use el mismo resolvedor de dos ubicaciones que C4 y reporte en cuál apareció.
+
+**CERRADA el 2026-09-25 (PR #397).** C3 resuelve con `ubicaciones_del_catalogo`, y la evidencia
+dice `catalogo_en` y los conteos de cada catálogo. La R1 de Codex encontró que, con los dos
+presentes, la primera versión cogía el de la sala sin leer el otro (H-05: un catálogo discordante
+salía `ok`); ahora se leen los dos y, si no cuadran entre sí, es `fallo` con las dos ubicaciones.
+**No cierra `#287`** (C3 con bundles partidos), que es otra condición de la misma comprobación.
 
 ## 270. El lote de correo trae basenames repetidos y `layout_bundle_hilo` no puede montar el bundle por hilo
 
@@ -12620,7 +12664,7 @@ Arreglo natural: guardar la comprobación del shim tras un `hasattr(socket, "AF_
 envolverla en `try/except AttributeError`. Es un parche de una línea en una skill de
 Anthropic, así que conviene decidir si se parchea en local o se reporta aguas arriba.
 
-## 276. `viabilidad_json.escribir` falla con `WinError 1` sobre el mount de Drive for Desktop
+## 276. `viabilidad_json.escribir` falla con `WinError 1` sobre el mount de Drive for Desktop  [CERRADA 2026-09-25]  [PROMOVIDO → PLAN.md 2026-09-25]
 
 **Lo medido** (2026-09-17, apertura de W-0462E1): la etapa `viabilidad` de la secuencia V1
 terminó en `fallo` con `OSError: [WinError 1] Función incorrecta` al publicar
@@ -12657,6 +12701,16 @@ caso roto de uno sano. Para desbloquearla se escribió el fichero con `open(dest
 exclusiva. No prueba que `O_EXCL` **rechace un destino que ya existe** en ese filesystem, que es la
 única garantía por la que la función existe —no pisar lo que remató una sesión—. Esa segunda
 mitad se mide antes de escribir el remedio (plan `2026-09-25-mejoras-aperturas-semana.md`, Task 4).
+
+**CERRADA el 2026-09-25 (PR #397).** Medido en `G:\Mi unidad\`, en una carpeta de sondeo propia y
+borrada: `os.link` → `WinError 1`; `O_EXCL` sobre un existente → `FileExistsError`; y **`os.rename`
+sobre un existente → `FileExistsError` (`WinError 183`) con el destino intacto**, que es lo que
+decidió el remedio: en Windows, cuando el `os.link` falla por «sin hard links» (`winerror` 1 o
+50), se publica con `os.rename`, que conserva las dos promesas —no pisa, nunca a medias— sin la
+ventana de fichero a medias que habría tenido `O_EXCL`. Fuera de Windows `os.rename` pisa, así que
+ahí el error se propaga como antes. Corrido de verdad contra `G:` con el módulo nuevo. Ronda de
+Codex con `gpt-6-astra`·`high`: `SHIP`, y sus dos huecos de cobertura cerrados. **Lo que no
+promete, dicho ya en el docstring:** sobrevivir a un corte de luz (no hay `fsync`).
 
 ## 277. Censo remoto de Drive: colisión de forma Unicode y más de un checksum para el mismo nombre
 
@@ -12896,7 +12950,7 @@ firmas.
 
 ---
 
-## 285. El atomizador de WhatsApp solo descubre `_chat.txt`, y el intake deposita el chat con cualquier nombre de `.txt`
+## 285. El atomizador de WhatsApp solo descubre `_chat.txt`, y el intake deposita el chat con cualquier nombre de `.txt`  [CERRADA 2026-09-25]  [PROMOVIDO → PLAN.md 2026-09-25]
 
 > **Medido el 2026-09-23 sobre W-0462E1.**
 
@@ -12916,6 +12970,18 @@ aquí no lo es, y pierde el chat.
 vez de tres criterios.
 
 **Disparador de promoción.** Cualquier export Android con `.txt` propio.
+
+**CERRADA el 2026-09-25 (PR #397, fila #39 de `PLAN.md`).** Una sola regla,
+`whatsapp_export.elegir_chat`, para el intake, el `tipo_contenido` del manifiesto y el
+atomizador (incluida la propuesta de identidades). La R1 de Codex encontró que la primera versión
+identificaba el chat con señales débiles y se rehízo sobre **pruebas**: `_chat.txt`; si no, la
+conversación que otra no cita como adjunto y que cita más ficheros del export; la regla de
+custodia (el primer `.txt` aunque no se interprete) queda **solo para el intake**, y el atomizador
+mira únicamente `<base>/<rol>/<chat>/`. **Residuo declarado** en el docstring: un export sin
+ficheros con un adjunto no citado más largo que el chat. **Fuera, declarado:** el
+`preclasificar` de la skill `organizar-sala-lectura` sigue reconociendo solo `_chat.txt` (su
+copia de la regla necesita edición de skill y re-importación en Cowork), y `zips._como_whatsapp`
+(`#55`).
 
 ---
 
