@@ -309,6 +309,41 @@ def test_el_recorte_es_DETERMINISTA():
     assert a.pdf == b.pdf and a.sha256 == b.sha256 == hashlib.sha256(a.pdf).hexdigest()
 
 
+# --- R1, sobre M-4: el certificado reproduce lo que se bajó, o no se recorta ------
+
+def test_la_reproduccion_EXACTA_de_los_documentos_pasa_en_los_dos_canales():
+    """M-3 y M-4: en los reales, la reproducción es la concatenación exacta, en orden."""
+    r, f = s.refundido(), s.factura()
+    apo.comprobar_reproduccion(s.certificado([r, f]), [_doc(r), _doc(f)])
+    apo.comprobar_reproduccion(s.certificado([r, f], burofax=True), [_doc(r), _doc(f)])
+
+
+def test_un_burofax_con_OTRO_segundo_documento_para():
+    """La sonda del revisor sobre M-4: cambia el segundo adjunto del burofax y conserva
+    las condiciones, y F3 producía el aportable. La premisa estaba protegida por cómo
+    construye F1, no comprobada por resultado."""
+    r, f = s.refundido(), s.factura()
+    otro = s.Adjunto("OTRA FACTURA.pdf",
+                     ("Factura distinta, de otro expediente, con otros importes y conceptos",))
+    cert = s.certificado([r, otro], burofax=True)
+    with pytest.raises(apo.AportableError, match="no reproduce"):
+        apo.comprobar_reproduccion(cert, [_doc(r), _doc(f)])
+
+
+def test_una_pagina_de_MAS_en_la_reproduccion_para():
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f], reproduccion=[s.REQUERIMIENTO, s.OVC, s.CONDICIONES,
+                                               s.FACTURA, "una hoja que no salió en ningún documento"])
+    with pytest.raises(apo.AportableError, match="páginas"):
+        apo.comprobar_reproduccion(cert, [_doc(r), _doc(f)])
+
+
+def test_una_pagina_SIN_texto_solo_la_acredita_la_cuenta():
+    """Un escaneo no se casa por texto (spec §7.3): cuenta en el total, no se compara."""
+    r, escaneo = s.refundido(), s.Adjunto("ESCANEO.pdf", ("",))
+    apo.comprobar_reproduccion(s.certificado([r, escaneo]), [_doc(r), _doc(escaneo)])
+
+
 # --- R1/H-01: lo que viaja DENTRO del PDF, no solo lo que se ve ------------------
 
 def _objetos_pagina(pdf) -> int:

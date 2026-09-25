@@ -2702,6 +2702,7 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
                         "(art. 17.2).")))
             continue
         try:
+            apo.comprobar_reproduccion(datos, documentos)
             recorte = apo.recortar(datos, condiciones)
             ficheros_acta = apo.ficheros_listados(datos)
         except apo.AportableError as err:

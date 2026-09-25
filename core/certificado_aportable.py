@@ -276,6 +276,38 @@ def _ratio(a: str, b: str) -> float:
     return cota if cota < UMBRAL_COPIA else m.ratio()
 
 
+def comprobar_reproduccion(certificado: bytes,
+                           documentos: Sequence[DocumentoEnviado]) -> None:
+    """El certificado reproduce EXACTAMENTE los documentos enviados, en orden (M-3, M-4).
+
+    Sin esto, recortar un burofax con los documentos del correo descansaba en una
+    PREMISA —que los dos canales llevaron lo mismo, como hace F1— y no en una
+    comprobación (R1, sobre M-4): un burofax con otro segundo documento se recortaba
+    igual, y lo que ese documento llevara salía entero. Se exige la misma cuenta de
+    páginas y, página a página, la copia de cada una que tenga texto; una página sin
+    texto (un escaneo) no se puede casar y solo la acredita la cuenta.
+    """
+    textos = _textos_pdf(certificado, que="el certificado")
+    acta = set(paginas_de_acta_de_textos(textos))
+    reproduccion = [t for n, t in enumerate(textos, 1) if n not in acta]
+    paginas = [(d.nombre, k, t) for d in documentos
+               for k, t in enumerate(_textos_pdf(d.contenido, que=d.nombre), 1)]
+    if len(reproduccion) != len(paginas):
+        raise AportableError(
+            f"la reproducción del certificado tiene {len(reproduccion)} páginas y los "
+            f"documentos enviados suman {len(paginas)}: el certificado no reproduce lo que "
+            "se bajó, y no se recorta contra ello.")
+    for k, (copia, (nombre, pagina, original)) in enumerate(zip(reproduccion, paginas), 1):
+        objetivo = normalizar_pagina(original)
+        if len(objetivo) < MIN_CARACTERES:
+            continue
+        if _ratio(objetivo, normalizar_pagina(copia)) < UMBRAL_COPIA:
+            raise AportableError(
+                f"la página {k} de la reproducción no es la página {pagina} de "
+                f"{nombre!r}: el certificado no reproduce, en orden, los documentos "
+                "enviados, y no se recorta contra ellos.")
+
+
 def _mas_parecida(objetivo: str, candidatas: dict[int, str]) -> tuple[int | None, float]:
     """La página más parecida y su similitud EXACTA, para decir por qué no casó."""
     mejor, valor = None, 0.0

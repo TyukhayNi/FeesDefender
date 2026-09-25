@@ -219,7 +219,23 @@ def test_una_parada_del_recorte_es_de_ESE_envio_no_de_todos(tmp_path):
     carpeta = entorno.carpeta_certificados(W)
     (carpeta / exp.nombre_canonico("OFERTA VINCULANTE", W, "006b")).write_bytes(t._c["006b"])
     r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
-    assert r["006b"].estado == exp.PARADO and "no aparece" in r["006b"].motivo
+    # Desde la R1 este certificado —sin la página de condiciones— lo para ANTES la
+    # comprobación de que reproduce lo enviado (M-4); el «no aparece» de `recortar` sigue
+    # siendo la última red y lo prueba `test_PARADA_1_…` en el módulo puro. Lo que este
+    # test protege no cambia: la parada de UN envío no para a los demás.
+    assert r["006b"].estado == exp.PARADO and "no reproduce" in r["006b"].motivo
+    assert r["006c"].estado == exp.PRODUCIDO
+
+
+def test_un_certificado_que_NO_reproduce_lo_enviado_para_ESE_envio(tmp_path):
+    """R1, sobre M-4: el burofax lleva otro segundo documento que el correo."""
+    entorno, t, carpeta = _escenario(tmp_path)
+    otro = s.Adjunto("OTRA FACTURA.pdf",
+                     ("Factura distinta, de otro expediente, con otros importes y conceptos",))
+    t._c["006b"] = s.certificado([s.refundido(), otro], id_envio="006b", burofax=True)
+    (carpeta / exp.nombre_canonico("OFERTA VINCULANTE", W, "006b")).write_bytes(t._c["006b"])
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    assert r["006b"].estado == exp.PARADO and "no reproduce" in r["006b"].motivo
     assert r["006c"].estado == exp.PRODUCIDO
 
 
