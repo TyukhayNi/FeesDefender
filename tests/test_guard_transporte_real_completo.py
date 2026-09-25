@@ -135,3 +135,15 @@ def test_las_lecturas_del_transporte_real_llegan_al_modulo_de_transporte(monkeyp
     transporte = _transporte_real(monkeypatch)
     getattr(transporte, metodo)(*(["006a"] if metodo in ("estados", "certificado") else []))
     assert llamadas == [metodo]
+
+
+def test_descargar_adjunto_del_transporte_real_llega_al_modulo_de_transporte(monkeypatch):
+    """La lectura que estrena F3. Mismo contrato que las cuatro de arriba: no basta con
+    que exista; tiene que llamar a `core.codicert` con el envío y el nombre."""
+    llamadas: list[tuple] = []
+    monkeypatch.setattr(_cod, "descargar_adjunto",
+                        lambda ficha, id_envio, nombre, *, entorno, cliente=None:
+                        llamadas.append((id_envio, nombre, entorno)) or b"%PDF")
+    transporte = _transporte_real(monkeypatch)
+    assert transporte.descargar_adjunto("006a", "OVC.pdf") == b"%PDF"
+    assert llamadas == [("006a", "OVC.pdf", "sandbox")]

@@ -2108,6 +2108,10 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
         def certificado(self, id_envio: str) -> bytes:
             return _cod.certificado(ficha, id_envio, entorno=entorno)
 
+        # --- la de F3 --------------------------------------------------------
+        def descargar_adjunto(self, id_envio: str, nombre: str) -> bytes:
+            return _cod.descargar_adjunto(ficha, id_envio, nombre, entorno=entorno)
+
     return EntornoExpedicion(
         codicert=_Transporte(),
         partes_de=partes_de,
