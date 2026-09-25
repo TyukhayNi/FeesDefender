@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "14"
+rev: "15"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,15 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 15 (2026-09-25).** La R3 de Codex sobre F3 (§12.4): el aportable **lo compone el
+> motor** —el OCR solo devuelve líneas— y la relectura lo **recompone** y exige los mismos bytes;
+> cada página tiene que dibujar su imagen y parecerse más a la suya que a cualquier otra del
+> íntegro; el título de las condiciones no admite minúsculas detrás, y una mención antes de él
+> para (§7.4).
+>
+> **Rev. 14 (2026-09-25).** La R2 de Codex sobre F3 (§12.4): el aportable pasa a ser la **imagen**
+> de las páginas que se conservan, con una capa de texto de OCR (§7.4).
+>
 > **Rev. 13 (2026-09-25).** Actualizada al construir **F3**, con diez mediciones sobre tres
 > certificados reales y los adjuntos de dos envíos (plan
 > [`2026-09-25-codicert-f3.md`](../plans/2026-09-25-codicert-f3.md), M-1 a M-10; lectura de
@@ -917,6 +926,26 @@ recorta. Si salta, nombra qué encontró y dónde.
 > aportable escrito contra la imagen de hoy, sin pasar el OCR otra vez; un manifiesto sin su
 > aportable **para**, porque un aportable repuesto no casaría con él. Y lo que el CRM dijo del
 > destinatario va en su propia clave del manifiesto, fuera de su identidad (R2/H-04).
+>
+> ⚠️ **Rev. 15 (R3): el fichero lo COMPONE el motor, y la relectura lo recompone.** Sustituye tres
+> cosas de la rev. 14: OCRmyPDF, el perfil de la relectura y la parada del manifiesto huérfano. La
+> R3 enseñó que un fichero escrito por otro tiene más sitios de los que un perfil enumera
+> —revisiones anteriores, objetos de otra generación, datos colgados de una fuente, una segunda
+> capa que nadie invoca— y que una página puede guardar su imagen sin dibujarla. Ahora el OCR
+> (**Tesseract directo**, `spa`) solo devuelve **líneas** —texto y caja— de la imagen de cada
+> página, y el aportable se escribe aquí en una **forma fija**: por página, su imagen a página
+> completa y un renglón de texto invisible por línea leída, en Helvetica y WinAnsi; sin
+> metadatos, revisiones ni objetos sin uso. **La relectura lee los renglones, recompone el fichero
+> con la imagen del recorte y exige los mismos bytes**; después exige que ninguna página lleve el
+> rótulo, que cada página **dibuje** su imagen tal cual —se dibuja el fichero con PDFium— y que
+> esa imagen se parezca más a la página que tocaba que a **cualquier** otra del íntegro, y que
+> cada página con texto traiga el suyo (un parecido de 0,30 como poco). **No acredita que cada
+> palabra salga de los píxeles**: eso descansa en que el OCR solo los recibe a ellos. Un **aviso
+> nuevo** dice cuándo la imagen de una página muestra frases de las condiciones que su texto no
+> lleva —un escaneo—. El **título** de las condiciones exige, además, que no le siga nada en
+> minúscula en su línea, y una mención antes del título **para** (R3/H-05). El fichero es
+> determinista —el mismo OCR sobre la misma imagen da las mismas líneas—, así que un manifiesto
+> huérfano **se repone** si el aportable sale con su huella, y si no, para. Manifiesto, versión 3.
 
 ## 8. Credenciales y entornos
 
@@ -971,6 +1000,11 @@ pruebas, «así no se cobrará nada».
 > sobre los REALES encontró lo que el sintético no enseñaba: por encima de 1 MB OCRmyPDF linealiza
 > —objetos que no cuelgan de nada, que la relectura para— y deja `sys.stderr` cambiado por un
 > `StringIO` que se tragaba las trazas. Los dos, arreglados en el adaptador y con su test.
+>
+> **Rev. 15:** con el aportable compuesto por el motor, **re-verificado sin red sobre los mismos
+> dos certificados**: ni un stream del íntegro dentro, lo que dibuja cada página es la suya, el OCR
+> se parece a cada original y no lee el rótulo, y **un segundo OCR da el mismo fichero**. OCRmyPDF
+> sale del camino del aportable, y con él los dos defectos de la rev. 14.
 
 **Lo que se prueba con doble y lo que no.** Con el puerto del §4.2, el criterio del jurídico se
 prueba entera contra dobles. Lo que **no se puede probar sin enviar de verdad** se nombra aquí para
@@ -1201,3 +1235,14 @@ aparece cuando la otra parte lo lee en el juzgado.
 - **La remediación de la R2 NO ha pasado ronda: su cobertura independiente es AUSENTE**, y pesa
   más que la anterior porque la imagen, el perfil y el puerto de OCR son código nuevo. Una R3
   supera el techo de dos rondas: solo la autoriza Nikolai.
+- **R3 de Codex sobre esa remediación, autorizada expresamente por Nikolai el 2026-09-25**
+  (`3ae4cbe` → `6d950b1`, mismo modelo y por la misma frontera): **NO-SHIP**, 5 hallazgos —2
+  `alta`, 3 `media`—, **los cinco confirmados contra la fuente y remediados**. Acta literal:
+  [`2026-09-25-codicert-f3-r3-adversarial-review.md`](../plans/2026-09-25-codicert-f3-r3-adversarial-review.md);
+  adjudicación en el §14 del plan. **Los cuatro primeros eran la propiedad de la R2 otra vez**:
+  la relectura admitía un fichero que no había escrito el motor y trataba de enumerar lo que ese
+  fichero podía llevar. Desde la rev. 15 el aportable **lo compone el motor** y la relectura lo
+  **recompone** y exige los mismos bytes (§7.4).
+- **La remediación de la R3 NO ha pasado ronda: su cobertura independiente es AUSENTE.** La
+  composición y la recomposición vuelven a ser una pieza nueva. Una cuarta ronda solo la autoriza
+  Nikolai.

@@ -12894,9 +12894,16 @@ fichero contra la que cotejarlo.
 **Disparador de promoción.** El primer expediente real cuyos requeridos no tengan ni correo ni
 móvil y necesite aportar el certificado del burofax.
 
-## 292. El test del OCR real del aportable no lo corre ninguna verja
+## 292. El test del OCR real del aportable no lo corre ninguna verja  [PROMOVIDO → PLAN.md 2026-09-25]
 
 > **Declarado en la R2 de F3, el 2026-09-25** (plan `docs/superpowers/plans/2026-09-25-codicert-f3.md` §13).
+>
+> **[PROMOVIDO → PLAN.md, fila 41] 2026-09-25.** Disparador cumplido: la remediación de la R3 cambió
+> `core/certificado_aportable.py` y el adaptador. Desde la R3 son **dos** tests lentos —
+> `test_R3_el_OCR_REAL_deja_un_aportable_que_la_relectura_admite` y
+> `test_R3_el_OCR_REAL_lee_un_ESCANEO_con_las_condiciones_y_AVISA`— y el adaptador es
+> `_ocr_tesseract` (Tesseract directo); OCRmyPDF ya no está en el camino del aportable. Corridos a
+> mano con `--runslow`: 2 verdes, unos 52 s.
 
 `test_R2_el_OCR_REAL_deja_un_aportable_que_la_relectura_admite` es el único que ejerce el adaptador
 de verdad (`core/expedicion_certificada._ocr_aportable`: OCRmyPDF + Tesseract) y lleva `slow`, así
@@ -12945,3 +12952,23 @@ menos aún, a cambio de perder el color de membretes y logotipos.
 declarándolo en el manifiesto; o partir el aportable.
 
 **Disparador de promoción.** El primer aportable que no se pueda presentar por su tamaño.
+
+## 303. El recorte dibuja dos veces cada página que se conserva
+
+> **Medido en la R3 de F3, el 2026-09-25**, sobre los dos certificados reales: el recorte tarda
+> **12 s** con 8 páginas y **35 s** con 10, a 200 ppp, antes de pasar el OCR.
+
+Desde la R3, `recortar` dibuja cada página conservada **dos veces**: una para su imagen
+(`_rasterizar`) y otra, con todas las del íntegro, para las miniaturas contra las que la relectura
+casa lo que el aportable dibuja (`_miniaturas`). Es a propósito: las miniaturas son el instrumento
+independiente de la imagen, y si salieran del mismo dibujo un error de índices en `_rasterizar` se
+llevaría las dos a la vez. El coste es lineal: un burofax de 200 páginas (spec §1.4) serían del
+orden de diez minutos de dibujo, además del OCR (de 1,4 a 10,9 s por página, M-13).
+
+**Remedio probable.** Dibujar cada página una sola vez y sacar de ese dibujo la miniatura de TODAS
+y la imagen de las conservadas, con el índice resuelto en un solo sitio y un test que fuerce el
+error de índices en ese sitio; o bajar la resolución de las miniaturas midiendo antes que siguen
+separando (la propia a ≤ 0,52 y la más cercana a ≥ 4,22 a 200 ppp).
+
+**Disparador de promoción.** El primer envío real de más de 50 páginas, o una queja por el tiempo
+de `codicert aportable`.
