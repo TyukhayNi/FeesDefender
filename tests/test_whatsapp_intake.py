@@ -67,6 +67,59 @@ def test_analyze_cuenta_audios():
     assert prev.audios == ["nota.opus"]
 
 
+def test_analyze_no_da_por_faltante_un_adjunto_referenciado_con_marca_invisible():
+    """MEJORAS #236, síntoma del intake: en W-0462E1 el evento `upload_whatsapp` listó 30
+    adjuntos faltantes y estaban los 30 en el lote, porque cada referencia llevaba delante
+    la marca U+200E del export."""
+    from core import whatsapp_intake
+
+    importlib.reload(whatsapp_intake)
+
+    chat = "8/1/24, 10:32 - Pablo: \u200ePTT-20260409-WA0001.opus (archivo adjunto)\n"
+    content = _make_zip({"Chat de WhatsApp con Pablo.txt": chat.encode("utf-8"),
+                         "PTT-20260409-WA0001.opus": b"OggS"})
+    prev = whatsapp_intake.analyze(content, zip_name="Chat de WhatsApp con Pablo.zip")
+    assert prev.adjuntos_referenciados == ["PTT-20260409-WA0001.opus"]
+    assert prev.adjuntos_faltantes == []
+
+
+def test_analyze_sigue_dando_por_faltante_el_que_de_verdad_falta():
+    """Control positivo del anterior: limpiar la marca no puede convertir en «presente» un
+    adjunto que no viene en el export."""
+    from core import whatsapp_intake
+
+    importlib.reload(whatsapp_intake)
+
+    chat = "8/1/24, 10:32 - Pablo: \u200ePTT-20260409-WA0009.opus (archivo adjunto)\n"
+    content = _make_zip({"Chat de WhatsApp con Pablo.txt": chat.encode("utf-8")})
+    prev = whatsapp_intake.analyze(content, zip_name="x.zip")
+    assert prev.adjuntos_faltantes == ["PTT-20260409-WA0009.opus"]
+
+
+def test_R1_H01_un_export_cuyo_chat_empieza_por_guion_bajo_se_acepta():
+    """R1/H-01: custodia antes que parser. El filtro de «derivados» rechazaba el export
+    entero —sin escribir ni el zip original— por el nombre de su chat."""
+    from core import whatsapp_intake
+
+    importlib.reload(whatsapp_intake)
+
+    content = _make_zip({"_conversacion.txt": "8/1/24, 10:32 - Ana: hola\n".encode("utf-8")})
+    prev = whatsapp_intake.analyze(content, zip_name="c.zip")
+    assert prev.n_mensajes == 1
+
+
+def test_R1_H04_un_adjunto_cuyo_nombre_en_disco_lleva_la_marca_no_es_faltante():
+    from core import whatsapp_intake
+
+    importlib.reload(whatsapp_intake)
+
+    chat = "8/1/24, 10:32 - Pablo: \u200efoto.jpg (archivo adjunto)\n"
+    content = _make_zip({"Chat de WhatsApp con Pablo.txt": chat.encode("utf-8"),
+                         "\u200efoto.jpg": b"ORIGINAL"})
+    prev = whatsapp_intake.analyze(content, zip_name="x.zip")
+    assert prev.adjuntos_faltantes == []
+
+
 def test_analyze_sin_chat_txt_falla():
     from core import whatsapp_intake
 
@@ -206,6 +259,25 @@ def test_deposit_crea_lote_con_manifiesto(tmp_casos_root):
     rels = {i["relpath"] for i in man["items"]}
     assert "03_Otros/chat/_chat.txt" in rels
     assert "03_Otros/chat/_export_original.zip" in rels   # sí entra (spec §5)
+
+
+def test_deposit_elige_el_chat_android_y_lo_registra_como_whatsapp(tmp_casos_root):
+    """MEJORAS #285, las dos mitades del intake. El chat se elige por CONTENIDO —un `.txt`
+    que se envió como adjunto va antes por orden y no es el chat—, y el manifiesto lo
+    registra como `whatsapp` aunque no se llame `_chat.txt` (W-0462E1: `tipo_contenido: txt`)."""
+    from core import intake_lotes, whatsapp_intake
+    case_id = "EV-WA-ANDROID"
+    case_manager.ensure_case(case_id, titulo="wa")
+    chat = "8/1/24, 10:32 - Pablo: hola\n".encode("utf-8")
+    content = _make_zip({"Acta.txt": b"texto libre: no es una conversacion",
+                         "Chat de WhatsApp con Pablo.txt": chat})
+    res = whatsapp_intake.deposit_export(case_id, "03_Otros", content,
+                                         zip_name="Chat de WhatsApp con Pablo.zip")
+    assert res.preview.n_mensajes == 1
+    man = intake_lotes.leer_manifiesto(res.chat_dir.parent.parent)
+    tipos = {i["relpath"].rsplit("/", 1)[-1]: i["tipo_contenido"] for i in man["items"]}
+    assert tipos["Chat de WhatsApp con Pablo.txt"] == "whatsapp"
+    assert tipos["Acta.txt"] == "txt"      # control positivo: el adjunto sigue siendo txt
 
 
 def test_duplicado_cross_lote_se_copia_y_anota(tmp_casos_root):

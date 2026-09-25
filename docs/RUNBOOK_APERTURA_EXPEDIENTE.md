@@ -651,6 +651,19 @@ python -m scripts.sala_maquina apply "<case_id>"   # background
   headless → PDF buscable en `01_OCR/` → camino PDF, `MEJORAS #61`). Si salen `sin_soporte`
   con la nota «sin convertir: LibreOffice (soffice) no encontrado», falta el conversor en
   esa máquina: instalarlo o fijar `FEESDEFENDER_SOFFICE`, y relanzar con `--solo <ruta>`.
+- **`[APER-74]` / W-0462E1 — Los audios NO se transcriben solos (`MEJORAS #205`).** La sala
+  de máquina no tiene ruta de audio: las notas de voz (`.opus`, `.m4a`, `.ogg`…) salen
+  `sin_soporte` en `_cobertura.json` y nada avisa después. En W-0462E1 eran 18, y la creencia
+  de que el pipeline las transcribía venía de tres aperturas en que se hizo **a mano**. Si el
+  caso trae audios: transcribirlos con `scripts/transcribir_audio.py` en el venv ASR
+  (`docs/INSTALACION_ASR.md`) y dejar la salida en `01_Procesado/02_Sala de máquina/03_MD/`
+  —`<audio>.transcripcion.md` más `_transcripciones.json`, la forma que se usó en W-0462E1,
+  18 de 18 verificadas por `sha256`—. **No tocar `_cobertura.json`**: `apply` reintenta lo
+  `sin_soporte` y es autoritativo sobre lo que reprocesa, así que una fila marcada `ok` a mano
+  volvería a `sin_soporte` en la siguiente corrida. Mientras `#205` siga abierta, la sala de
+  lectura **no ve** esas transcripciones. Y el transcriptor no aísla el fallo de escritura por
+  fichero: un corte momentáneo de `G:` tumba la tanda; se relanza y la idempotencia por
+  `sha256` hace solo las que faltan.
 - **`[APER-39]` / W-02VUDR — NUNCA relanzar `apply` sobre el mismo caso sin comprobar que
   la corrida anterior en background terminó de verdad** (leer su `.output`, no asumir por
   el tiempo transcurrido). `core/sala_maquina.py` **no poda huérfanos**: sin `--force`,

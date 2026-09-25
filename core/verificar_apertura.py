@@ -177,14 +177,25 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     desaparecer del catálogo y el verificador bendecirlo.
     """
     cob_path = _ruta_cobertura(case_dir)
-    cat_path = case_dir / _PROCESADO / _CATALOGO
     if cob_path is None or not cob_path.is_file():
         return Resultado("cobertura_vs_catalogo", _T_C3, PENDIENTE,
                          "no hay `_cobertura.json`: la sala de máquina no ha corrido")
-    if not cat_path.is_file():
-        if cat_path.exists():
-            return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
-                             f"`{_CATALOGO}` existe y no es un fichero")
+    # Las dos ubicaciones del catálogo, como C4 (`MEJORAS #269`). Hasta el 2026-09-25 C3
+    # solo miraba la del motor retirado, así que en la misma corrida C4 decía «los 4
+    # presentes» y C3 «no hay catálogo»: toda sala montada por la skill se declaraba
+    # inexistente y este contraste —el que caza lo que nadie catalogó— no corría.
+    proc = case_dir / _PROCESADO
+    candidatas = ubicaciones_del_catalogo(proc, proc / _SALA_LECTURA)
+
+    def _donde(p: Path) -> str:
+        return "sala" if p.parent.name == _SALA_LECTURA else _PROCESADO
+
+    ocupadas = [p for p in candidatas if p.exists() and not p.is_file()]
+    if ocupadas:
+        return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
+                         f"`{_CATALOGO}` existe y no es un fichero ({_donde(ocupadas[0])})")
+    presentes = [p for p in candidatas if p.is_file()]
+    if not presentes:
         return Resultado("cobertura_vs_catalogo", _T_C3, PENDIENTE,
                          "no hay catálogo: la sala de lectura no se ha montado")
 
@@ -192,10 +203,25 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     if err:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
                          f"`{cob_path.name}`: {err}")
-    entradas, err = _leer_lista_de_mapas(cat_path, _yaml_load)
-    if err:
+    # Aceptar las dos ubicaciones es MIRAR las dos (R1/H-05): con las dos presentes, la
+    # primera versión cogía la de la sala y no leía la otra, así que un catálogo que
+    # discrepaba salía `ok` donde antes salía `fallo`. Si no cuadran entre sí, eso es el
+    # hallazgo; si cuadran, se compara una y la evidencia dice que había dos.
+    catalogos: dict[str, list[dict]] = {}
+    for p in presentes:
+        entradas_p, err = _leer_lista_de_mapas(p, _yaml_load)
+        if err:
+            return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
+                             f"`{p.name}` ({_donde(p)}): {err}")
+        catalogos[_donde(p)] = entradas_p
+    conteos = {k: len(v) for k, v in catalogos.items()}
+    if len(set(conteos.values())) > 1:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
-                         f"`{cat_path.name}`: {err}")
+                         "hay dos catálogos y no cuadran entre sí: "
+                         + ", ".join(f"{k} {n}" for k, n in conteos.items()),
+                         {"catalogos": conteos})
+    catalogo_en = _donde(presentes[0])
+    entradas = catalogos[catalogo_en]
 
     slugs = {str(f.get("slug") or "").strip() for f in filas}
     slugs.discard("")
@@ -216,7 +242,7 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
 
     ev = {"filas_cobertura": len(filas), "hijos_de_bundle": len(filas) - len(logicos) - len(huerfanos),
           "documentos_logicos": len(logicos), "entradas_catalogo": len(entradas),
-          "huerfanos": huerfanos[:8]}
+          "huerfanos": huerfanos[:8], "catalogo_en": catalogo_en, "catalogos": conteos}
     if huerfanos:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
                          f"{len(huerfanos)} fila(s) con `parent_slug` que no apunta a "
@@ -842,10 +868,17 @@ def c2_hash_contra_drive(case_dir: Path, ctx: "_Contexto") -> Resultado:
             if _es_el_relleno_de_225(raiz / rel, esperado):
                 relleno_225.append(rel)
     sin_contrastar = len(locales) - contrastados - len(ilegibles)
+    explicados = set(relleno_225)
+    sin_explicar = [rel for rel in discrepan if rel not in explicados]
+    # Las LISTAS se truncan a 8; los CONTEOS no (`MEJORAS #268`). Con 49 discrepancias y 8
+    # confirmaciones listadas era imposible saber desde la salida si estaban explicadas
+    # las 49 o solo ocho, que es la pregunta que separa íntegro de corrupto.
     ev = {"locales": len(locales), "contrastados": contrastados,
           "sin_hash_remoto": sin_contrastar, "discrepan": discrepan[:8],
           "ilegibles": ilegibles[:8], "relleno_225_confirmado": relleno_225[:8],
-          "colisiones_de_clave": ambiguas[:8]}
+          "colisiones_de_clave": ambiguas[:8],
+          "n_discrepan": len(discrepan), "n_relleno_225": len(relleno_225),
+          "sin_explicar": sin_explicar[:8]}
     if ambiguas:
         return Resultado("hash_drive", titulo, FALLO,
                          f"{len(ambiguas)} clave(s) con MÁS DE UN checksum en el remoto: "
@@ -856,9 +889,21 @@ def c2_hash_contra_drive(case_dir: Path, ctx: "_Contexto") -> Resultado:
                          f"{len(ilegibles)} fichero(s) local(es) que no se pueden "
                          f"leer: {ilegibles[0]}", ev)
     if discrepan:
-        return Resultado("hash_drive", titulo, FALLO,
-                         f"{len(discrepan)} fichero(s) cuyo sha256 NO es el que Drive "
-                         f"declara: {', '.join(discrepan[:3])}", ev)
+        # El veredicto no cambia —el sha256 local NO es el del original, y eso es un
+        # fallo de custodia aunque el contenido esté íntegro—; lo que cambia es que el
+        # detalle diga lo que `_es_el_relleno_de_225` ya calculó (`MEJORAS #268`).
+        cabeza = f"{len(discrepan)} fichero(s) cuyo sha256 NO es el que Drive declara"
+        if not sin_explicar:
+            detalle = (f"{cabeza}, y TODOS son el relleno con ceros de `MEJORAS #225` "
+                       "(confirmado re-hasheando sin la cola): el contenido es el del "
+                       "original")
+        elif relleno_225:
+            detalle = (f"{cabeza}: {len(relleno_225)} con el relleno de `MEJORAS #225` y "
+                       f"{len(sin_explicar)} SIN explicar: {', '.join(sin_explicar[:3])}")
+        else:
+            detalle = (f"{cabeza} y ninguno es el relleno de `MEJORAS #225`: "
+                       f"{', '.join(discrepan[:3])}")
+        return Resultado("hash_drive", titulo, FALLO, detalle, ev)
     if contrastados == 0:
         return Resultado("hash_drive", titulo, PENDIENTE,
                          f"ninguno de los {len(locales)} ficheros locales tiene hash "
@@ -1008,8 +1053,10 @@ def c9_cuantia_coherente(case_dir: Path, ctx: "_Contexto") -> Resultado:
     problemas, ev = [], {"local": n_local, "expedientes": {}}
     for exp_id, _el, f in fichas:
         n_crm, err_crm = _a_numero(f.cuantia)
+        # Los DOS números, no solo si existen (`MEJORAS #218`): en W-030A13 la evidencia
+        # decía `crm_declarada: true` y hubo que leer el CRM a mano para saber cuánto.
         ev["expedientes"][exp_id] = {"crm_declarada": f.cuantia not in (None, ""),
-                                     "legible": not err_crm}
+                                     "legible": not err_crm, "crm": n_crm}
         if err_crm:
             problemas.append(f"{exp_id}: la cuantía del CRM no es un número ({err_crm})")
         elif n_local is None and n_crm is None:
@@ -1022,7 +1069,16 @@ def c9_cuantia_coherente(case_dir: Path, ctx: "_Contexto") -> Resultado:
         elif abs(n_local - n_crm) > 0.005:
             # Medio céntimo: el alta mandaba la cuantía como entero y los céntimos se
             # perdían (`MEJORAS #218`); por debajo de eso es el redondeo conocido.
-            problemas.append(f"{exp_id}: la cuantía local y la del CRM no coinciden")
+            nota = ""
+            if n_crm == float(int(round(n_local))):
+                # EXACTAMENTE lo que manda el alta —`int(round(cuantia))`, con el redondeo
+                # bancario de Python— y nada más (R1/H-06: «entero a menos de un euro»
+                # etiquetaba también un 48702 frente a un local de 48702.90, que el alta
+                # habría mandado como 48703). El veredicto sigue siendo fallo: la property
+                # REST admite céntimos, así que lo que está mal es el CRM.
+                nota = ": es el truncado del alta (`MEJORAS #218`)"
+            problemas.append(f"{exp_id}: la cuantía local ({n_local:.2f}) y la del CRM "
+                             f"({n_crm:.2f}) no coinciden{nota}")
     if problemas:
         return Resultado("cuantia_coherente", titulo, FALLO, "; ".join(problemas[:3]), ev)
     if n_local is None:
