@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "15"
+rev: "16"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,12 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 16 (2026-09-25).** Los **plazos del servicio**, leídos en la Declaración de Prácticas del
+> prestador (v2.5): la entrega electrónica queda a disposición **30 días naturales desde el envío**
+> y, vencidos sin lectura, pasa a **40 «Caducado»** (§1.3). Y una decisión de Nikolai: el **17 y el
+> 21 acreditan la recepción, no la lectura**, aunque el prestador solo llame «entregada» a la leída
+> (§6.2). El motor ya clasificaba así; no cambia.
+>
 > **Rev. 15 (2026-09-25).** La R3 de Codex sobre F3 (§12.4): el aportable **lo compone el
 > motor** —el OCR solo devuelve líneas— y la relectura lo **recompone** y exige los mismos bytes;
 > cada página tiene que dibujar su imagen y parecerse más a la suya que a cualquier otra del
@@ -260,6 +266,30 @@ los nueve de arriba dejaría envíos reales sin clasificar:
 
 **La regla que el motor codifica, y que importa más que la tabla:** un código que **no** esté
 clasificado no cae en «en curso» por defecto. Se declara **desconocido** y el frontal lo nombra.
+
+**Los plazos del servicio, según el prestador** (rev. 16, leídos el 2026-09-25 en la Declaración
+de Prácticas de Codicert, **v2.5 del 23/01/2026**,
+`https://www.codicert.io/wp-content/uploads/2026/01/dpc_23_01_2026.pdf`). La API no los dice:
+solo devuelve, en la entrega electrónica y el correo certificado, un `fecha_expiracion` de salida,
+y el único plazo configurable (`expiracion`, de 3 a 30 días) es de los contratos y el SEPA.
+
+- **§4.5.5 — 30 días naturales desde el envío.** Es lo que la comunicación queda a disposición del
+  destinatario; el remitente puede cambiarlo, nunca por debajo de 72 horas, y por nuestra API no
+  se puede en la entrega electrónica. **Vencido sin lectura, el estado es el 40, «Caducado».**
+- **§4.5.10 — la correspondencia con la norma ETSI EN 319 522-1**, que es la que da sentido a cada
+  código: 27 = D.1 (el aviso llegó al servidor), **17 = D.3 (el aviso llegó al buzón)**, **20 =
+  E.1 (entrega del contenido: leído)**, 22 = D.4 (recordatorio fallido), 28 = C.4 (rechazo), 40 =
+  C.5 (vence el plazo sin aceptación ni rechazo) y 42 = C.2 (fallido). Cinco de los doce códigos
+  de esa tabla —el 0 «solicitado», el 2 «cancelado», el 16 «identificación errónea», el 22 y el 34
+  «aceptado»— el motor aún no los clasifica: si aparecen, salen como **desconocidos**, que es lo
+  que la regla de arriba quiere.
+- **§4.5.7 — las evidencias se conservan al menos 15 años** desde el envío (las condiciones
+  generales dicen cinco para el resto de documentos).
+- **El burofax no está en esa Declaración**, que es la del servicio electrónico: sus plazos no
+  salen de aquí.
+
+Con eso, F2 ya encaja: una entrega electrónica solo se cosecha en 20 o cerrada (28, 40, 42), así
+que la que nadie lee se cosecha al caducar, a los 30 días.
 Si mañana la plataforma añade un cierre nuevo, con el default benigno la expedición no terminaría
 nunca y nadie se enteraría.
 
@@ -605,6 +635,14 @@ requerido le basta cualquier canal.
 | Recepción **de la aceptación** | art. 17.2 | El precepto exige constancia «tanto de la oferta **como de la aceptación**». Es un evento de entrada que el motor debe poder registrar |
 | Idoneidad del canal | art. 7.1 | **Domicilio o lugar de trabajo que conste**, o el medio electrónico **empleado por las partes en sus relaciones previas** |
 | Definición del objeto | art. 7.1 | La solicitud ha de definir «adecuadamente el objeto de la negociación» |
+
+**El 17 y el 21 son recepción, no lectura — decidido por Nikolai el 2026-09-25 (rev. 16).** La
+Declaración de Prácticas del prestador (v2.5, §4.5.5) solo llama **entregada** a la comunicación
+leída (20), y su tabla hace del 17 el aviso entregado en el buzón (ETSI D.3, §1.3). Se le planteó
+si eso obligaba a dejar de contar el 17 y el 21 como recepción, y decidió que no: **la recepción la
+acreditan el 17, el 20 y el 21; el acceso al contenido del art. 10.2, solo el 20.** Es la
+clasificación que el motor ya tenía (`RECEPCION` y `ACCESO` en `core/expedicion_certificada.py`),
+y no cambia.
 
 **La idoneidad del canal se registra, no se presume** (rev. 2). Un email sacado del CRM que nunca
 se usó entre las partes no es, por sí solo, el «medio de comunicación electrónico empleado por las
