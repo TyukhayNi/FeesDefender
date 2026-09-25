@@ -222,6 +222,123 @@ def con_firma(datos: bytes, *, con_padre: bool = False) -> bytes:
     return buffer.getvalue()
 
 
+def con_formularios(datos: bytes) -> bytes:
+    """El certificado con la anatomía REAL de la reproducción (H-01 de la R1, medido).
+
+    En los certificados reales cada página de la reproducción es un contenido mínimo
+    (`q /TPLn Do Q`) que dibuja un Form XObject, y los formularios de TODAS las páginas
+    viven en UN diccionario `/Resources` que comparten todas. Copiar una página copia ese
+    diccionario entero: con él viajaría el formulario de la página retirada, invisible en
+    el aportable y recuperable de su estructura. Medido sobre `006catetonk`: la página 7
+    dibuja `/TPL2`, y `/TPL2` está en los recursos de las ocho.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject,
+                               FloatObject, NameObject)
+
+    lector = PdfReader(io.BytesIO(datos))
+    escritor = PdfWriter()
+    paginas = [escritor.add_page(p) for p in lector.pages]
+    acta = {n for n, p in enumerate(lector.pages) if "sello temporal" in (p.extract_text() or "")}
+    formularios: dict[int, str] = {}
+    compartido_xo = DictionaryObject()
+    for n, pagina in enumerate(paginas):
+        if n in acta:
+            continue
+        forma = DecodedStreamObject()
+        forma.set_data(pagina.get_contents().get_data())
+        forma.update({
+            NameObject("/Type"): NameObject("/XObject"),
+            NameObject("/Subtype"): NameObject("/Form"),
+            NameObject("/BBox"): ArrayObject([FloatObject(0), FloatObject(0),
+                                              FloatObject(595), FloatObject(842)]),
+            NameObject("/Resources"): pagina["/Resources"],
+        })
+        nombre = f"/TPL{len(formularios)}"
+        compartido_xo[NameObject(nombre)] = escritor._add_object(forma)
+        formularios[n] = nombre
+    base = paginas[0]["/Resources"].get_object()
+    compartido = DictionaryObject({NameObject(k): v for k, v in base.items()})
+    compartido[NameObject("/XObject")] = compartido_xo
+    referencia = escritor._add_object(compartido)
+    for n, pagina in enumerate(paginas):
+        if n in formularios:
+            contenido = DecodedStreamObject()
+            contenido.set_data(f"q {formularios[n]} Do Q".encode())
+            pagina[NameObject("/Contents")] = escritor._add_object(contenido)
+        pagina[NameObject("/Resources")] = referencia
+    buffer = io.BytesIO()
+    escritor.write(buffer)
+    return buffer.getvalue()
+
+
+def con_enlace_a(datos: bytes, *, desde: int, hacia: int) -> bytes:
+    """Un `/Link` con `/Dest` desde la página `desde` a la página `hacia` (base 1).
+
+    Es la sonda del revisor en H-01: la anotación referencia el OBJETO de la página
+    destino, y copiarla arrastra esa página entera dentro del PDF aunque no esté en su
+    árbol de páginas.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import (ArrayObject, DictionaryObject, FloatObject, NameObject,
+                               NullObject)
+
+    escritor = PdfWriter(clone_from=PdfReader(io.BytesIO(datos)))
+    destino = escritor.pages[hacia - 1].indirect_reference
+    enlace = DictionaryObject({
+        NameObject("/Type"): NameObject("/Annot"),
+        NameObject("/Subtype"): NameObject("/Link"),
+        NameObject("/Rect"): ArrayObject([FloatObject(40), FloatObject(40),
+                                          FloatObject(200), FloatObject(60)]),
+        NameObject("/Dest"): ArrayObject([destino, NameObject("/XYZ"), NullObject(),
+                                          NullObject(), NullObject()]),
+    })
+    pagina = escritor.pages[desde - 1]
+    pagina[NameObject("/Annots")] = ArrayObject([escritor._add_object(enlace)])
+    buffer = io.BytesIO()
+    escritor.write(buffer)
+    return buffer.getvalue()
+
+
+def formularios_con_rotulo(datos: bytes) -> list[str]:
+    """Los Form XObjects del PDF que, dibujados aparte, llevan el rótulo de condiciones.
+
+    Recorre TODOS los objetos del fichero, no solo los que cuelgan de las páginas: lo que
+    importa es qué hay dentro del PDF, no qué se ve. Cada formulario se CLONA —con sus
+    propios recursos y fuentes— y se dibuja en una página en blanco, para que su texto se
+    pueda extraer; añadirlo sin clonar deja las fuentes fuera y el texto sale ilegible.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, StreamObject
+
+    from core.certificado_aportable import lleva_rotulo
+
+    lector = PdfReader(io.BytesIO(datos))
+    hallados = []
+    for num in range(1, int(lector.trailer["/Size"])):
+        try:
+            objeto = lector.get_object(num)
+        except Exception:  # noqa: BLE001 — entradas libres del xref
+            continue
+        if not (isinstance(objeto, StreamObject) and objeto.get("/Subtype") == "/Form"):
+            continue
+        escritor = PdfWriter()
+        pagina = escritor.add_blank_page(width=595, height=842)
+        clon = objeto.clone(escritor)
+        referencia = clon.indirect_reference or escritor._add_object(clon)
+        pagina[NameObject("/Resources")] = DictionaryObject({NameObject("/XObject"): DictionaryObject(
+            {NameObject("/X"): referencia})})
+        contenido = DecodedStreamObject()
+        contenido.set_data(b"q /X Do Q")
+        pagina[NameObject("/Contents")] = escritor._add_object(contenido)
+        buffer = io.BytesIO()
+        escritor.write(buffer)
+        texto = PdfReader(io.BytesIO(buffer.getvalue())).pages[0].extract_text() or ""
+        if lleva_rotulo(texto):
+            hallados.append(f"objeto {num}")
+    return hallados
+
+
 def refundido() -> Adjunto:
     """El refundido medido (M-1): requerimiento, OVC y condiciones en un solo PDF."""
     return Adjunto("OVC REFUNDIDA.pdf", (REQUERIMIENTO, OVC, CONDICIONES))

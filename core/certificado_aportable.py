@@ -254,49 +254,169 @@ def _mas_parecida(objetivo: str, candidatas: dict[int, str]) -> tuple[int | None
     return mejor, valor
 
 
-def _es_widget_de_firma(anotacion) -> bool:
-    """¿Es el widget del campo de firma? Fusionado con el campo o colgando de él (M-8)."""
-    if anotacion.get("/Subtype") != "/Widget":
-        return False
-    tipo = anotacion.get("/FT")
-    if tipo is None and anotacion.get("/Parent") is not None:
-        tipo = anotacion["/Parent"].get_object().get("/FT")
-    return tipo == "/Sig"
+#: Lo único que una página conservada se lleva al aportable (R1/H-01). Todo lo demás
+#: —anotaciones, acciones, miniaturas, hilos— puede referenciar OTRA página del
+#: certificado, y copiar la referencia copia el objeto: un `/Link` con `/Dest` a la
+#: página retirada la metía entera dentro del PDF, fuera de su árbol de páginas.
+_CLAVES_PAGINA = frozenset({"/Type", "/Parent", "/MediaBox", "/CropBox", "/BleedBox",
+                            "/TrimBox", "/ArtBox", "/Rotate", "/Contents", "/Resources",
+                            "/Group", "/UserUnit"})
+
+#: Las anotaciones medidas en los certificados reales (M-8): enlaces `/URI` y el widget
+#: de la firma. Se quitan todas; de cualquier OTRA se avisa, porque pudo pintar algo.
+_ANOTACIONES_MEDIDAS = frozenset({"/Link", "/Widget"})
 
 
-def _sin_firma(pagina) -> None:
-    """Quita de la página el widget de la firma, que el aportable ya no tiene (M-8).
+def _nombres_invocados(flujo, lector) -> set[str]:
+    """Los nombres que un content stream dibuja con `Do` (formularios e imágenes)."""
+    from pypdf.generic import ContentStream
 
-    Recortar rompe la firma (spec §7.2) y el `/AcroForm` no viaja; el widget sí, y
-    seguiría pintando un sello de firma sin firma detrás. Presentar como firmado un
-    documento que no lo está es justo lo que el nombre `APORTABLE` y el manifiesto
-    existen para no hacer.
-    """
-    from pypdf.generic import ArrayObject, NameObject
+    if flujo is None:
+        return set()
+    contenido = flujo if isinstance(flujo, ContentStream) else ContentStream(flujo, lector)
+    return {str(operandos[0]) for operandos, operador in contenido.operations
+            if operador == b"Do" and operandos}
 
+
+def _tipos_de_anotacion(pagina) -> set[str]:
     anotaciones = pagina.get("/Annots")
     if anotaciones is None:
-        return
-    quedan = ArrayObject(a for a in anotaciones.get_object()
-                         if not _es_widget_de_firma(a.get_object()))
-    if quedan:
-        pagina[NameObject("/Annots")] = quedan
-    else:
-        del pagina["/Annots"]
+        return set()
+    return {str(a.get_object().get("/Subtype")) for a in anotaciones.get_object()}
+
+
+def _podar(pagina, lector) -> set[str]:
+    """Deja en la página SOLO lo que la dibuja (R1/H-01). Devuelve lo que quitó.
+
+    Dos cosas, y la segunda es la que el revisor no vio porque es la anatomía normal:
+
+    1. Fuera todo lo que no está en `_CLAVES_PAGINA`, anotaciones incluidas —el widget de
+       la firma entre ellas: pintaría un sello sin firma detrás (M-8)—.
+    2. Sus recursos, **podados a lo que su contenido invoca**. En los certificados reales
+       las páginas COMPARTEN un único `/Resources` con el Form XObject de cada página de
+       la reproducción (medido: la 7 dibuja `/TPL2` y `/TPL2` está en los recursos de las
+       ocho). Copiarlo entero metía en el aportable el formulario de las condiciones.
+    """
+    from pypdf.generic import DictionaryObject, NameObject
+
+    quitadas = _tipos_de_anotacion(pagina)
+    for clave in [c for c in pagina.keys() if c not in _CLAVES_PAGINA]:
+        del pagina[clave]
+    recursos = pagina.get("/Resources")
+    if recursos is None:
+        return quitadas
+    recursos = recursos.get_object()
+    xobjetos = recursos.get("/XObject")
+    if xobjetos is None:
+        return quitadas
+    xobjetos = xobjetos.get_object()
+    usados = _nombres_invocados(pagina.get_contents(), lector)
+    nuevos = DictionaryObject({NameObject(k): v for k, v in recursos.items() if k != "/XObject"})
+    podados = DictionaryObject({NameObject(k): xobjetos.raw_get(k) for k in xobjetos
+                                if k in usados})
+    if podados:
+        nuevos[NameObject("/XObject")] = podados
+    pagina[NameObject("/Resources")] = nuevos
+    return quitadas
 
 
 def _sin_paginas(lector, conservadas: Sequence[int]) -> bytes:
-    """Un PDF nuevo con las páginas conservadas, en su orden y sin el widget de firma."""
+    """Un PDF nuevo con las páginas conservadas, en su orden, cada una podada (`_podar`)."""
     from pypdf import PdfWriter
 
     escritor = PdfWriter()
     for numero in conservadas:
         pagina = lector.pages[numero - 1]
-        _sin_firma(pagina)
+        _podar(pagina, lector)
         escritor.add_page(pagina)
     buffer = io.BytesIO()
     escritor.write(buffer)
     return buffer.getvalue()
+
+
+def _huella_flujo(flujo) -> str:
+    try:
+        datos = flujo.get_data()
+    except Exception:  # noqa: BLE001 — un filtro que pypdf no sabe decodificar
+        datos = bytes(getattr(flujo, "_data", b""))
+    return hashlib.sha256(datos).hexdigest()
+
+
+def _flujos_usados(pagina, lector) -> set[int]:
+    """Los streams que la página USA de verdad: su contenido y lo que dibuja con `Do`,
+    recursivamente dentro de cada formulario. No «lo alcanzable»: con un `/Resources`
+    compartido, desde cualquier página se alcanza el formulario de todas."""
+    from pypdf.generic import ArrayObject, IndirectObject
+
+    usados: set[int] = set()
+    contenido = pagina.raw_get("/Contents") if "/Contents" in pagina else None
+    for ref in (contenido if isinstance(contenido, ArrayObject) else [contenido]):
+        if isinstance(ref, IndirectObject):
+            usados.add(ref.idnum)
+
+    def recorrer(flujo, recursos, profundidad: int) -> None:
+        if profundidad > 20:
+            raise AportableError("formularios anidados más de 20 niveles: no se sigue.")
+        xobjetos = recursos.get_object().get("/XObject") if recursos is not None else None
+        xobjetos = xobjetos.get_object() if xobjetos is not None else {}
+        for nombre in _nombres_invocados(flujo, lector):
+            ref = xobjetos.raw_get(nombre) if nombre in xobjetos else None
+            if not isinstance(ref, IndirectObject) or ref.idnum in usados:
+                continue
+            usados.add(ref.idnum)
+            objeto = ref.get_object()
+            if objeto.get("/Subtype") == "/Form":
+                recorrer(objeto, objeto.get("/Resources"), profundidad + 1)
+
+    recorrer(pagina.get_contents(), pagina.get("/Resources"), 0)
+    return usados
+
+
+def _verificar_grafo(lector, pdf: bytes, *, conservadas: Sequence[int],
+                     retiradas: Sequence[int]) -> None:
+    """Se relee el FICHERO entero, no sus páginas visibles (R1/H-01).
+
+    No se fía de la poda —sería comprobar la aritmética con la aritmética—: recalcula en
+    el ORIGINAL qué streams usaban solo las páginas retiradas y exige que ninguno esté,
+    ni colgando del árbol ni suelto, en el PDF producido. Y cuenta los objetos de página
+    del fichero, que un `/Dest` o una miniatura podrían haber arrastrado.
+    """
+    from pypdf import PdfReader
+    from pypdf.generic import DictionaryObject, StreamObject
+
+    fuera: set[int] = set()
+    for numero in retiradas:
+        fuera |= _flujos_usados(lector.pages[numero - 1], lector)
+    dentro: set[int] = set()
+    for numero in conservadas:
+        dentro |= _flujos_usados(lector.pages[numero - 1], lector)
+    prohibidas = ({_huella_flujo(lector.get_object(i)) for i in fuera - dentro}
+                  - {_huella_flujo(lector.get_object(i)) for i in dentro})
+
+    salida = PdfReader(io.BytesIO(pdf))
+    paginas, presentes = 0, set()
+    for num in range(1, int(salida.trailer["/Size"])):
+        try:
+            objeto = salida.get_object(num)
+        except Exception:  # noqa: BLE001 — entradas libres del xref
+            continue
+        if isinstance(objeto, DictionaryObject) and objeto.get("/Type") == "/Page":
+            paginas += 1
+        if isinstance(objeto, StreamObject):
+            presentes.add(_huella_flujo(objeto))
+    if paginas != len(conservadas):
+        raise AportableError(
+            f"el aportable lleva {paginas} objetos de página y debían ser "
+            f"{len(conservadas)}: arrastra una página retirada fuera de su árbol. No se "
+            "entrega.")
+    colados = prohibidas & presentes
+    if colados:
+        raise AportableError(
+            f"el aportable arrastra {len(colados)} objeto(s) que solo usaban las páginas "
+            "retiradas: su contenido viajaría dentro del PDF aunque no se vea. No se "
+            "entrega.")
+    if any(p.get("/Annots") is not None for p in salida.pages):
+        raise AportableError("el aportable conserva anotaciones. No se entrega.")
 
 
 def _verificar(pdf: bytes, *, esperadas: Sequence[str],
@@ -469,11 +589,19 @@ def recortar(certificado: bytes,
                 f"la página {n} del certificado se conserva y lleva el rótulo "
                 f"«{LITERAL_CONDICIONES}» —{donde}—. No se produce aportable.")
 
+    # Antes de podar: qué anotaciones llevaba cada página, para avisar de las no medidas.
+    anotaciones = {n: _tipos_de_anotacion(lector.pages[n - 1]) - _ANOTACIONES_MEDIDAS
+                   for n in conservadas}
     pdf = _sin_paginas(lector, conservadas)
     _verificar(pdf, esperadas=[textos[n - 1] for n in conservadas],
                condiciones=condiciones)
+    _verificar_grafo(lector, pdf, conservadas=conservadas, retiradas=sorted(retiradas))
     avisos = (_avisos_de_fuga({n: textos[n - 1] for n in conservadas}, condiciones)
-              + _avisos_de_arrastre(condiciones))
+              + _avisos_de_arrastre(condiciones)
+              + [f"la página {n} del certificado llevaba anotaciones de tipo "
+                 f"{', '.join(sorted(tipos))}, que el aportable no conserva: comprueba en "
+                 "el íntegro que no pintaban nada que haga falta aportar."
+                 for n, tipos in anotaciones.items() if tipos])
     return Recorte(pdf=pdf, paginas_totales=total, paginas_acta=tuple(acta),
                    paginas_reproduccion=reproduccion,
                    retiradas=tuple(retiradas[n] for n in sorted(retiradas)),

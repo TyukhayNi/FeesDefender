@@ -240,6 +240,80 @@ def test_el_recorte_es_DETERMINISTA():
     assert a.pdf == b.pdf and a.sha256 == b.sha256 == hashlib.sha256(a.pdf).hexdigest()
 
 
+# --- R1/H-01: lo que viaja DENTRO del PDF, no solo lo que se ve ------------------
+
+def _objetos_pagina(pdf) -> int:
+    """Cuántos objetos `/Type /Page` hay en el FICHERO, cuelguen o no del árbol."""
+    import io
+
+    from pypdf import PdfReader
+    from pypdf.generic import DictionaryObject
+
+    lector, cuenta = PdfReader(io.BytesIO(pdf)), 0
+    for num in range(1, int(lector.trailer["/Size"])):
+        try:
+            objeto = lector.get_object(num)
+        except Exception:  # noqa: BLE001 — entradas libres del xref
+            continue
+        cuenta += isinstance(objeto, DictionaryObject) and objeto.get("/Type") == "/Page"
+    return cuenta
+
+
+def test_H01_el_aportable_NO_arrastra_el_formulario_de_las_condiciones():
+    """R1/H-01, y MEDIDO sobre los certificados reales, no solo en la sonda del revisor.
+
+    Cada página de la reproducción dibuja un Form XObject (`q /TPL2 Do Q`) y los
+    formularios de TODAS viven en un `/Resources` compartido. Copiar las páginas
+    conservadas copiaba ese diccionario, y con él el formulario de la página retirada:
+    invisible en el aportable y recuperable de su estructura con el texto entero de las
+    condiciones. Lo llevaban los dos aportables del humo del 2026-09-25.
+    """
+    r, f = s.refundido(), s.factura()
+    cert = s.con_formularios(s.certificado([r, f]))
+    assert s.formularios_con_rotulo(cert), "control: el íntegro SÍ lo lleva"
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    assert s.formularios_con_rotulo(recorte.pdf) == []
+    textos = _textos(recorte.pdf)
+    assert len(textos) == 5 and "Factura A/R" in textos[-1]   # lo conservado se sigue viendo
+
+
+def test_H01_un_enlace_a_la_pagina_retirada_NO_la_mete_dentro():
+    """La sonda del revisor: un `/Link` con `/Dest` a la página retirada arrastraba su objeto."""
+    import io
+
+    from pypdf import PdfReader
+
+    r, f = s.refundido(), s.factura()
+    cert = s.con_enlace_a(s.certificado([r, f]), desde=3, hacia=5)
+    assert _objetos_pagina(cert) == 6
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    assert _objetos_pagina(recorte.pdf) == len(recorte.conservadas) == 5
+    assert all(p.get("/Annots") is None for p in PdfReader(io.BytesIO(recorte.pdf)).pages)
+
+
+def test_H01_la_relectura_del_GRAFO_para_si_algo_se_cuela(monkeypatch):
+    """Control positivo: si la poda no hace su trabajo, la relectura del grafo para.
+
+    La relectura no puede depender de la poda —sería comprobar la aritmética con la
+    aritmética—: recalcula en el original qué objetos USABAN solo las páginas retiradas y
+    exige que ninguno esté en el fichero producido.
+    """
+    r, f = s.refundido(), s.factura()
+    cert = s.con_formularios(s.certificado([r, f]))
+    monkeypatch.setattr(apo, "_podar", lambda pagina, lector: set())
+    with pytest.raises(apo.AportableError, match="arrastra"):
+        apo.recortar(cert, _condiciones(r, f))
+
+
+def test_H01_la_relectura_del_grafo_cuenta_las_PAGINAS_del_fichero(monkeypatch):
+    """El otro lado del control: el enlace sin podar mete un objeto de página de más."""
+    r, f = s.refundido(), s.factura()
+    cert = s.con_enlace_a(s.certificado([r, f]), desde=3, hacia=5)
+    monkeypatch.setattr(apo, "_podar", lambda pagina, lector: set())
+    with pytest.raises(apo.AportableError, match="objetos de página"):
+        apo.recortar(cert, _condiciones(r, f))
+
+
 def test_PARADA_3_se_verifica_el_resultado_no_la_aritmetica(monkeypatch):
     """Si el PDF producido no es el que tocaba, no se entrega (verificar por resultado)."""
     r, f = s.refundido(), s.factura()
