@@ -85,8 +85,10 @@ def test_produce_el_aportable_y_el_manifiesto_junto_a_cada_integro(tmp_path):
         assert r[id_envio].retiradas == (5,)
         m = json.loads(r[id_envio].ruta_manifiesto.read_text(encoding="utf-8"))
         assert m["id_envio"] == id_envio and m["retiradas"][0]["pagina_certificado"] == 5
+        # R1, §5: se dice QUÉ se comprobó del emisor, no un «verificado» genérico.
         assert m["emisor"] == {"razon_social": "EV MMC SPAIN, S.L.U.",
-                               "usuario": "madrid.bd", "verificado": True}
+                               "usuario": "madrid.bd", "razon_social_verificada": True,
+                               "usuario_verificado": True}
 
 
 def test_el_INTEGRO_no_se_toca(tmp_path):
@@ -153,6 +155,61 @@ def test_un_manifiesto_que_falta_se_repone(tmp_path):
     exp.ruta_manifiesto(integro).unlink()
     r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
     assert r["006c"].estado == exp.YA_ESTABA and exp.ruta_manifiesto(integro).is_file()
+
+
+def _integro_006c(carpeta):
+    return carpeta / exp.nombre_canonico("OFERTA VINCULANTE", W, "006c")
+
+
+def test_H04_un_manifiesto_que_NO_corresponde_ni_se_acepta_ni_se_pisa(tmp_path):
+    """R1/H-04: con el aportable ya escrito, un manifiesto adulterado pasaba por
+    `YA_ESTABA` y se quedaba con la huella falsa."""
+    entorno, _, carpeta = _escenario(tmp_path)
+    exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
+    manifiesto = exp.ruta_manifiesto(_integro_006c(carpeta))
+    m = json.loads(manifiesto.read_text(encoding="utf-8"))
+    m["integro"]["sha256"] = "0" * 64
+    adulterado = json.dumps(m, ensure_ascii=False, indent=2) + "\n"
+    manifiesto.write_text(adulterado, encoding="utf-8")
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    assert r["006c"].estado == exp.PARADO and "manifiesto" in r["006c"].motivo
+    assert manifiesto.read_text(encoding="utf-8") == adulterado
+
+
+def test_H04_un_manifiesto_HUERFANO_que_no_corresponde_no_se_pisa(tmp_path):
+    """Sin aportable, el manifiesto que hubiera se sobrescribía sin mirarlo."""
+    entorno, _, carpeta = _escenario(tmp_path)
+    manifiesto = exp.ruta_manifiesto(_integro_006c(carpeta))
+    manifiesto.write_text('{"version": 1, "id_envio": "otro"}\n', encoding="utf-8")
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    assert r["006c"].estado == exp.PARADO and "manifiesto" in r["006c"].motivo
+    assert manifiesto.read_text(encoding="utf-8") == '{"version": 1, "id_envio": "otro"}\n'
+    assert not exp.ruta_aportable(_integro_006c(carpeta)).exists()
+
+
+def test_H04_un_manifiesto_huerfano_que_SI_corresponde_conserva_su_instante(tmp_path):
+    """Si solo falta el aportable, se repone y el manifiesto —con su `generado`— se queda."""
+    entorno, _, carpeta = _escenario(tmp_path)
+    exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
+    integro = _integro_006c(carpeta)
+    manifiesto = exp.ruta_manifiesto(integro)
+    m = json.loads(manifiesto.read_text(encoding="utf-8"))
+    m["generado"] = "2026-01-01T00:00:00+00:00"
+    manifiesto.write_text(json.dumps(m, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    exp.ruta_aportable(integro).unlink()
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    assert r["006c"].estado == exp.PRODUCIDO and exp.ruta_aportable(integro).is_file()
+    assert json.loads(manifiesto.read_text(encoding="utf-8"))["generado"] == "2026-01-01T00:00:00+00:00"
+
+
+def test_el_manifiesto_dice_QUE_se_comprobo_del_emisor(tmp_path):
+    """R1, §5: con `verificar_plaza=False` la cuenta no se compara, y el manifiesto decía
+    igualmente `verificado: true`. Afirmaba más de lo que se comprobó."""
+    entorno, _, carpeta = _escenario(tmp_path)
+    exp.preparar_aportables(W, "OVC", entorno_exp=entorno, verificar_plaza=False)
+    m = json.loads(exp.ruta_manifiesto(_integro_006c(carpeta)).read_text(encoding="utf-8"))
+    assert m["emisor"]["razon_social_verificada"] is True
+    assert m["emisor"]["usuario_verificado"] is False
 
 
 def test_sin_integro_archivado_se_dice_que_hay_que_cosechar(tmp_path):

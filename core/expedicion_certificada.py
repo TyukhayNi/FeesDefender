@@ -2755,37 +2755,61 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
                 if aviso is not None:
                     avisos_extra.append(aviso)
         destino, manifiesto = ruta_aportable(integro), ruta_manifiesto(integro)
-        cuerpo = json.dumps(apo.manifiesto_de(
+        nuevo = apo.manifiesto_de(
             recorte, id_envio=envio.id_envio, canal=envio.canal,
             id_personalizado=expedicion.id_personalizado, generado=generado,
             integro_nombre=integro.name, integro_sha256=hashlib.sha256(datos).hexdigest(),
             aportable_nombre=destino.name,
+            # QUÉ se comprobó del emisor, no un «verificado» genérico (R1, §5): con
+            # `verificar_plaza=False` la cuenta no se compara, y decirlo verificado
+            # afirmaría más de lo que se miró.
             emisor={"razon_social": emisor.razon_social, "usuario": emisor.usuario,
-                    "verificado": True},
+                    "razon_social_verificada": True, "usuario_verificado": plaza is not None},
             ficheros_acta=ficheros_acta, documentos=documentos,
-            avisos_extra=avisos_extra), ensure_ascii=False, indent=2) + "\n"
+            avisos_extra=avisos_extra)
         avisos = (*recorte.avisos, *avisos_extra)
         retiradas = tuple(r.pagina_certificado for r in recorte.retiradas)
 
-        if destino.exists():
-            if destino.read_bytes() != recorte.pdf:
-                resultados.append(AportablePreparado(
-                    envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
-                    motivo=(f"ya hay un {destino.name} con otro contenido: no se pisa. "
-                            "Si sobra, apártalo a mano y vuelve a lanzar.")))
-                continue
-            if not manifiesto.exists():
-                _escribir_atomico(manifiesto, cuerpo.encode("utf-8"))
+        existe_aportable, existe_manifiesto = destino.exists(), manifiesto.exists()
+        if existe_aportable and destino.read_bytes() != recorte.pdf:
             resultados.append(AportablePreparado(
-                envio.id_envio, envio.canal, YA_ESTABA, ruta_aportable=destino,
-                ruta_manifiesto=manifiesto, retiradas=retiradas, avisos=avisos))
+                envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
+                motivo=(f"ya hay un {destino.name} con otro contenido: no se pisa. "
+                        "Si sobra, apártalo a mano y vuelve a lanzar.")))
             continue
-        _escribir_atomico(destino, recorte.pdf)
-        _escribir_atomico(manifiesto, cuerpo.encode("utf-8"))
+        # R1/H-04: un manifiesto que ya está se VALIDA contra lo que se acaba de
+        # comprobar —todo salvo el instante en que se generó—, tenga o no su aportable
+        # al lado. Antes, uno adulterado pasaba por «ya estaba» y uno huérfano se pisaba.
+        if existe_manifiesto and not _manifiesto_corresponde(manifiesto, nuevo):
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
+                ruta_manifiesto=manifiesto,
+                motivo=(f"ya hay un manifiesto ({manifiesto.name}) que no corresponde a "
+                        "este aportable —huellas, páginas o avisos distintos—: no se pisa. "
+                        "Si sobra, apártalo a mano y vuelve a lanzar.")))
+            continue
+        if not existe_aportable:
+            _escribir_atomico(destino, recorte.pdf)
+        if not existe_manifiesto:
+            cuerpo = json.dumps(nuevo, ensure_ascii=False, indent=2) + "\n"
+            _escribir_atomico(manifiesto, cuerpo.encode("utf-8"))
         resultados.append(AportablePreparado(
-            envio.id_envio, envio.canal, PRODUCIDO, ruta_aportable=destino,
-            ruta_manifiesto=manifiesto, retiradas=retiradas, avisos=avisos))
+            envio.id_envio, envio.canal, YA_ESTABA if existe_aportable else PRODUCIDO,
+            ruta_aportable=destino, ruta_manifiesto=manifiesto, retiradas=retiradas,
+            avisos=avisos))
     return resultados
+
+
+def _manifiesto_corresponde(ruta: Path, nuevo: dict) -> bool:
+    """¿El manifiesto en disco dice lo mismo que el recién calculado, salvo `generado`?"""
+    try:
+        existente = json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(existente, dict):
+        return False
+    return ({k: v for k, v in existente.items() if k != "generado"}
+            == {k: v for k, v in nuevo.items() if k != "generado"})
 
 
 #: Reexportados para que quien use `cosechar` no tenga que importar dos módulos más
