@@ -308,6 +308,19 @@ firma de ninguna comprobación ni el vocabulario de estados.
 
 ### Task 4: `#276` — `_viabilidad.json` se puede publicar sobre `G:`
 
+> **Resultado de la medición previa, y la decisión que cambió (2026-09-25).** En `G:\Mi unidad`,
+> carpeta de sondeo propia y borrada al terminar: `os.link` → `OSError errno=22 winerror=1`;
+> `os.open(existente, O_CREAT|O_EXCL)` → `FileExistsError`; `os.open(nuevo, O_EXCL)` crea y
+> escribe; y —lo que no se esperaba— `os.rename(tmp, existente)` → `FileExistsError`
+> (`winerror=183`) con el destino intacto. Con eso, la vía de repuesto **no es `O_EXCL`** como
+> decía el paso 3 de abajo, sino `os.rename`: en Windows conserva las **dos** promesas del
+> docstring (no pisa y publica de una vez un temporal completo), mientras que `O_EXCL` habría
+> obligado a declarar una ventana de fichero a medias. Fuera de Windows `os.rename` pisa, así que
+> ahí no hay vía de repuesto y el error se propaga como antes. Lo de abajo queda como estaba
+> escrito antes de medir; lo construido es lo de este párrafo (commit `d0d1427`), y se corrió de
+> verdad contra `G:` con el módulo del worktree: primera escritura publicada y válida, segunda
+> `FileExistsError` «no se pisa», destino intacto, sin temporales.
+
 **Files:** Modify `core/viabilidad_json.py:247-330`; Test `tests/test_viabilidad_json.py`.
 
 **Medición previa, obligatoria:** en una carpeta de sondeo de `G:\Mi unidad\` (fuera de los
