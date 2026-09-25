@@ -400,8 +400,94 @@ def test_fallo_a_mitad_de_la_escritura_no_deja_el_destino(tmp_path, monkeypatch)
   ejes (severidad y coste del remedio). Vigía armado antes de lanzar (fin **o** muerte).
 - [ ] **R2 — Bloque 2** (Task 4): Codex `gpt-6-astra`·`high`·`default`, por la fila de exclusión y
   estados parciales; se declara en el PR con esa frontera.
-- [ ] Adjudicación de cada ronda contra la fuente, embebida aquí (§A, §B) y acta literal hermana
-  `…-r1-adversarial-review.md` / `…-r2-adversarial-review.md` con su digest.
+- [x] Adjudicación de cada ronda contra la fuente, embebida aquí (§6 y §7), y acta literal hermana
+  por pieza con su digest: `…-bloque1-r1-adversarial-review.md` y `…-276-r1-adversarial-review.md`.
+  En la sesión se llamaron «R1» y «R2» porque corrieron en paralelo; cada una es la **única**
+  ronda de su pieza.
 - [ ] `PLAN.md` fila nueva + `[PROMOVIDO → PLAN.md]` en las entradas; cierres en `MEJORAS`;
   bitácora; `python -m scripts.session_close`; push; PR (sin mergear hasta dar la sesión por
   terminada).
+
+---
+
+## 6. Adjudicación de la revisión adversarial del bloque 1 (Codex, 2026-09-25) — NO-SHIP, remediado
+
+- **Objeto revisado:** diff `9880165..7c70b70` —`MEJORAS #236`, `#285` y `verificar_apertura` C2, C3 y C9—
+- **Ronda:** R1 (única de la pieza; fila de una ronda)
+- **Revisor:** Codex CLI `0.155.0-alpha.16.3`, `gpt-6-sol` · `high` · `default` (modelo y esfuerzo releídos del rollout)
+- **Informe recibido:** `docs/superpowers/plans/2026-09-25-mejoras-aperturas-semana-bloque1-r1-adversarial-review.md`
+- **Hallazgos:** 6 — 1 `alta`, 5 `media`; 6 confirmados contra la fuente, 0 refutados
+- **Remediado en:** `94522ce` (H-05, H-06) y `61523e8` (H-01 a H-04)
+
+**Los seis se reprodujeron contra el código, no contra el informe**: la sonda del revisor, apuntada
+al worktree, da los seis síntomas (acta §2). Y no son seis defectos sueltos: son **tres
+fronteras**, y el remedio es el de la frontera.
+
+**Frontera 1 — qué identifica al chat de un export (H-01, H-02, H-03).** Identifiqué el chat con
+señales débiles —el prefijo `_`, que una línea se interprete, que haya un `.txt`— y apliqué la
+regla de custodia del intake también al atomizador.
+
+- **H-01 (media, trivial) — CONFIRMADO.** Excluir todo nombre con `_` rechazaba entero un export
+  cuyo chat se llamara `_conversacion.txt`: regresión de custodia contra `base/`. Remedio: solo
+  son derivados los que el canal escribe (`DERIVADOS = {"_chat_recortado.txt"}`).
+- **H-02 (media, estructural) — CONFIRMADO, y no es regresión** (`base/` elegía el primer `.txt`
+  sin mirar nada), pero mi docstring afirmaba que un adjunto no le ganaba al chat y era falso.
+  Remedio: el chat es la conversación con **pruebas de serlo**: se descartan las que otra cita
+  como adjunto, gana la que cita más ficheros del export y, a igualdad, la de más mensajes.
+  **Residuo declarado** en el docstring: un export sin ficheros con un adjunto no citado más largo
+  que el chat.
+- **H-03 (media, estructural) — CONFIRMADO, regresión.** Cualquier directorio con un `.txt`
+  pasaba por chat, el de rol incluido. Remedio: el atomizador llama con `custodia=False` y solo
+  mira `<base>/<rol>/<chat>/`, donde el intake deja los chats; `_chat.txt` sigue valiendo a
+  cualquier profundidad.
+
+**Frontera 2 — limpiar un identificador no puede ligarlo a otros bytes (H-04, alta, estructural)
+— CONFIRMADO.** Con la marca quitada al parsear, una referencia podía casar con OTRO fichero o
+dejar de casar con el suyo. Remedio: `parse_chat` guarda la referencia cruda además de la limpia
+y `resolver_adjunto` busca el nombre como lo citó el chat, después el limpio, y por nombre limpio
+solo si identifica un fichero; con dos, ausente. Lo usan el intake y `construir_adjuntos`, que
+nombra el adjunto por el fichero elegido. **La severidad es la del revisor y la mantengo, pero con
+su contexto:** WhatsApp no escribe marcas en los nombres de fichero —en W-02V48N casaron 31 de 39
+con la referencia limpia—, así que el caso exige un fichero renombrado a mano; lo caro no es la
+frecuencia sino que ligaría bytes ajenos en silencio.
+
+**Frontera 3 — lo que el verificador declara tiene que ser lo que mira (H-05, H-06).**
+
+- **H-05 (media, acotado) — CONFIRMADO, regresión.** Con los dos catálogos, C3 cogía el de la sala
+  y no leía el otro: un catálogo discordante salía `ok` donde `base/` daba `fallo`. Remedio: se
+  leen los dos, y si sus conteos no cuadran es `fallo` con las dos ubicaciones en la evidencia.
+- **H-06 (media, trivial) — CONFIRMADO.** «Entero a menos de un euro» etiquetaba como truncado
+  del alta lo que el alta no habría mandado. Remedio: la mención exige `int(round(local))`
+  exacto, con test del `.90` y del redondeo bancario `.50`.
+
+**Lo que el revisor intentó y no pudo, y conviene no perder:** los `msg_id` de un chat ya
+atomizado no cambian por este diff; C2 mantiene `fallo` en los tres casos y no trunca los
+conteos; C3 con una ruta ocupada da `fallo`.
+
+**Los 13 tests nuevos de la remediación se vieron en rojo contra `94522ce`** —el código previo al
+remedio— y pasan con él. **La remediación NO ha pasado ronda, y se declara:** la pieza es de una
+ronda. **Omisiones** para la columna de la calibración: ninguna conocida a esta fecha, lo que
+significa «todavía no ha pasado tiempo», no «no hubo».
+
+## 7. Adjudicación de la revisión adversarial de `MEJORAS #276` (Codex, 2026-09-25) — SHIP, remediado
+
+- **Objeto revisado:** diff `7c70b70..d0d1427` —la vía de repuesto de `viabilidad_json.escribir` sin hard links—
+- **Ronda:** R1 (única de la pieza; en la sesión, «R2»)
+- **Revisor:** Codex CLI `0.155.0-alpha.16.3`, `gpt-6-astra` · `high` · `default` (modelo y esfuerzo releídos del rollout)
+- **Informe recibido:** `docs/superpowers/plans/2026-09-25-mejoras-aperturas-semana-276-r1-adversarial-review.md`
+- **Hallazgos:** 0 `H-NN`; 2 huecos de cobertura y 2 frases del docstring señalados como no defectos, atendidos
+- **Remediado en:** `2b2653c`
+
+**`SHIP` se acepta por el ataque que lo sostiene, no por la palabra**: doce carreras, veinte
+escritores, la muerte del proceso a los dos lados del `rename` y un mutante `os.replace` que
+muere (acta §2). Lo que el revisor señaló sin llamarlo defecto, y se atendió porque era barato:
+
+- **Dos mutantes supervivientes** —quitar la guarda de plataforma; aceptar solo el `winerror`
+  1—: dos tests nuevos, y cada mutante muere ahora por el suyo (comprobado sobre copias).
+- **El docstring prometía sobrevivir a un corte de luz** sin `fsync`. Era anterior al diff; se
+  corrige para que no prometa lo que no hace.
+- **El comentario del `finally`** decía que `missing_ok` era defensivo; con la vía nueva es
+  necesario.
+
+**La remediación NO ha pasado ronda**, y se declara. Esta ronda **no cuenta para la calibración**
+de la fila #38: su fila de modelo es la de Astra.
