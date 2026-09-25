@@ -12897,7 +12897,7 @@ repos necesita una sesión, no una por repo.**
 
 ---
 
-## 283. `_ficha_crm.yaml`: una clave que el loader no conoce se descarta en silencio, y el dato no llega al CRM
+## 283. `_ficha_crm.yaml`: una clave que el loader no conoce se descarta en silencio, y el dato no llega al CRM  [PROMOVIDO → PLAN.md 2026-09-25]
 
 > **Medido el 2026-09-23 por GET** sobre el extrajudicial 653 (W-030A13), desde la sesión de
 > W-0462E1.
@@ -12921,6 +12921,12 @@ y no dejar `1apellido` vacío en silencio.
 W-030A13.
 
 **Disparador de promoción.** La próxima ficha preparada a mano.
+
+**Promovida el 2026-09-25 junto con `#288`** (fila #40 de `PLAN.md`): diseño en
+`docs/superpowers/specs/2026-09-25-crm-ficha-claves-y-conjunto-design.md`. Dato que decidió
+rechazar en vez de avisar: de los 14 `_ficha_crm.yaml` reales, la única clave desconocida es esta
+misma `apellido`, dos veces y las dos en W-030A13. Y el daño llega al burofax: Codicert compone el
+nombre del requerido desde los campos del CRM que esta clave dejó vacíos.
 
 ---
 
@@ -13021,7 +13027,7 @@ el padre existe —es el PDF de `00_Input`—; lo que no existe es su fila en la
 
 ---
 
-## 288. La verificación de `crm_ficha` comprueba INCLUSIÓN, no igualdad: dos colaboradores ajenos pasaron por delante de un «VERIFICADA por lectura»
+## 288. La verificación de `crm_ficha` comprueba INCLUSIÓN, no igualdad: dos colaboradores ajenos pasaron por delante de un «VERIFICADA por lectura»  [PROMOVIDO → PLAN.md 2026-09-25]
 
 > **Rescatada el 2026-09-25 del PR #387** (allí, número 279; apertura de W-030A13, 2026-09-16),
 > por la misma causa que `#287`. El texto es el del PR.
@@ -13073,6 +13079,11 @@ momento del flujo— y es pieza de **dos rondas**: decide qué partes quedan vin
 expediente, y un error suyo da acceso a quien no debe tenerlo.
 
 **Disparador.** La próxima ficha CRM, porque hasta entonces ninguna acredita lo que dice acreditar.
+
+**Promovida el 2026-09-25 junto con `#283`** (fila #40 de `PLAN.md`), con decisión de Nikolai de
+ese día: el `_ficha_crm.yaml` es la lista **completa** de partes, así que un vínculo que no
+declara es un **fallo** de la verificación, no un aviso, y `crm_ficha` no desvincula nunca. Diseño
+en `docs/superpowers/specs/2026-09-25-crm-ficha-claves-y-conjunto-design.md`.
 
 ---
 
