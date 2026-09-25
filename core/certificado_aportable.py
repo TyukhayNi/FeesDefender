@@ -324,6 +324,74 @@ def _verificar(pdf: bytes, *, esperadas: Sequence[str],
                 f"la página {n} del aportable reproduce las condiciones. No se entrega.")
 
 
+#: Palabras por frase al buscar las condiciones en lo que se conserva (M-6). Con 8,
+#: cero coincidencias en los tres certificados reales, acta incluida; con 5 o 6 saltan
+#: el IBAN de la factura y «de la Oferta Vinculante Confidencial».
+PALABRAS_AVISO = 8
+
+_RE_PALABRA = re.compile(r"[a-z0-9]+(?:[.,%][a-z0-9]+)*%?")
+_DESPEDIDA = ("sin", "otro", "particular")
+
+
+def _palabras(texto: str) -> list[str]:
+    sin_cabecera = _CABECERA_REPRODUCCION.sub("", sin_ligaduras(texto or ""))
+    return _RE_PALABRA.findall(_plano(sin_cabecera))
+
+
+def _cuerpo(condiciones: Sequence[PaginaCondiciones]) -> list[str]:
+    """Las palabras propias de las condiciones: tras el rótulo y antes de la despedida.
+
+    Lo de antes del rótulo es membrete, requerido y referencia, y lo de después de «Sin
+    otro particular», la despedida y la firma: las dos cosas las comparte con el
+    requerimiento, y sin cortarlas el aviso saltaría en todo envío (M-6).
+    """
+    palabras: list[str] = []
+    for c in condiciones:
+        lineas = sin_ligaduras(c.texto).splitlines()
+        inicio = next((n + 1 for n, l in enumerate(lineas)
+                       if " ".join(_plano(l).split()) == _ROTULO), 0)
+        palabras += _palabras("\n".join(lineas[inicio:]))
+    for n in range(len(palabras) - len(_DESPEDIDA) + 1):
+        if tuple(palabras[n:n + len(_DESPEDIDA)]) == _DESPEDIDA:
+            return palabras[:n]
+    return palabras
+
+
+def _frases(palabras: list[str]) -> set[tuple[str, ...]]:
+    return {tuple(palabras[n:n + PALABRAS_AVISO])
+            for n in range(len(palabras) - PALABRAS_AVISO + 1)}
+
+
+def _avisos_de_fuga(conservadas: dict[int, str],
+                    condiciones: Sequence[PaginaCondiciones]) -> list[str]:
+    """¿Repite alguna página que se conserva frases de las condiciones? (spec §7.4)
+
+    Es el aviso del §7.4 rehecho sobre lo medido: el spec pedía comprobar que el
+    requerimiento no llevara cifras, y el requerimiento real lleva la deuda en euros
+    (M-2), así que habría saltado siempre. Lo que distingue una fuga es el texto de las
+    propias condiciones. **Aviso, no parada**, como dice el spec: nombra la página y la
+    frase y decide una persona.
+    """
+    frases = _frases(_cuerpo(condiciones))
+    avisos = []
+    for pagina, texto in conservadas.items():
+        comunes = frases & _frases(_palabras(texto))
+        if comunes:
+            avisos.append(
+                f"la página {pagina} del certificado repite {len(comunes)} frase(s) de "
+                f"las condiciones (p. ej. «{' '.join(min(comunes))}»): puede estar "
+                "revelando su contenido. Revísala antes de aportar.")
+    return avisos
+
+
+def _avisos_de_arrastre(condiciones: Sequence[PaginaCondiciones]) -> list[str]:
+    """Las páginas que salen por seguir a la de condiciones sin llevar el rótulo."""
+    return [f"la página {c.pagina} de {c.documento!r} se retira por seguir a la de "
+            "condiciones y no lleva el rótulo: comprueba que no es parte del "
+            "requerimiento ni de la OVC, porque entonces el aportable pierde prueba."
+            for c in condiciones if not lleva_rotulo(c.texto)]
+
+
 def recortar(certificado: bytes,
              condiciones: Sequence[PaginaCondiciones]) -> Recorte:
     """El aportable: el certificado sin las páginas que reproducen las condiciones.
@@ -403,7 +471,9 @@ def recortar(certificado: bytes,
     pdf = _sin_paginas(lector, conservadas)
     _verificar(pdf, esperadas=[textos[n - 1] for n in conservadas],
                condiciones=condiciones)
+    avisos = (_avisos_de_fuga({n: textos[n - 1] for n in conservadas}, condiciones)
+              + _avisos_de_arrastre(condiciones))
     return Recorte(pdf=pdf, paginas_totales=total, paginas_acta=tuple(acta),
                    paginas_reproduccion=reproduccion,
                    retiradas=tuple(retiradas[n] for n in sorted(retiradas)),
-                   conservadas=conservadas)
+                   conservadas=conservadas, avisos=tuple(avisos))

@@ -247,3 +247,48 @@ def test_PARADA_3_se_verifica_el_resultado_no_la_aritmetica(monkeypatch):
     monkeypatch.setattr(apo, "_sin_paginas", lambda lector, conservadas: cert)
     with pytest.raises(apo.AportableError, match="aportable"):
         apo.recortar(cert, _condiciones(r, f))
+
+
+# --- los avisos ------------------------------------------------------------------
+
+def test_sobre_lo_MEDIDO_no_hay_avisos():
+    """M-6: el caso limpio no avisa. Un aviso que salta siempre no avisa de nada."""
+    r, f = s.refundido(), s.factura()
+    assert apo.recortar(s.certificado([r, f]), _condiciones(r, f)).avisos == ()
+
+
+def test_AVISA_si_el_requerimiento_repite_una_frase_de_las_condiciones():
+    """Spec §7.4, rehecho con M-2 y M-6: la fuga se reconoce por el texto de las
+    condiciones, no por las cifras — el requerimiento real lleva la deuda en euros."""
+    fuga = s.REQUERIMIENTO + ("\nLes proponemos que el primer 50% entre los dias 1 y 5 del "
+                              "mes siguiente")
+    r = s.Adjunto("OVC REFUNDIDA.pdf", (fuga, s.OVC, s.CONDICIONES))
+    f = s.factura()
+    avisos = apo.recortar(s.certificado([r, f]), _condiciones(r, f)).avisos
+    assert len(avisos) == 1 and "página 3" in avisos[0] and "frase" in avisos[0]
+
+
+def test_la_deuda_en_euros_del_requerimiento_NO_avisa():
+    """M-2: 1.234,56 EUR en el requerimiento y en la factura son la deuda, no la oferta."""
+    r, f = s.refundido(), s.factura()
+    assert "1.234,56 EUR" in s.REQUERIMIENTO and "1.234,56" in s.FACTURA
+    avisos = apo.recortar(s.certificado([r, f]), _condiciones(r, f)).avisos
+    assert not any("EUR" in a or "€" in a for a in avisos)
+
+
+def test_la_despedida_y_el_membrete_compartidos_NO_avisan():
+    """Lo de antes del rótulo y lo de después de «Sin otro particular» lo comparten el
+    requerimiento y las condiciones; sin cortarlo, el aviso saltaría en todo envío."""
+    r, f = s.refundido(), s.factura()
+    assert "Sin otro particular" in s.OVC and "Sin otro particular" in s.CONDICIONES
+    assert apo.recortar(s.certificado([r, f]), _condiciones(r, f)).avisos == ()
+
+
+def test_AVISA_de_una_pagina_arrastrada_sin_rotulo():
+    """Retirar de más tiene un coste —se pierde prueba— y se dice."""
+    raro = s.Adjunto("RARO.pdf", (s.REQUERIMIENTO, s.CONDICIONES,
+                                  "segunda hoja: detalle de los pagos y de su calendario"))
+    recorte = apo.recortar(s.certificado([raro]), _condiciones(raro))
+    assert [x.pagina_certificado for x in recorte.retiradas] == [4, 5]
+    assert any("página 3 de 'RARO.pdf'" in a and "no lleva el rótulo" in a
+               for a in recorte.avisos)
