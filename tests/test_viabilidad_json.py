@@ -373,9 +373,18 @@ def _sin_enlace(src, dst):
     raise e
 
 
-def test_sin_enlace_duro_el_json_se_publica_igual(tmp_path, monkeypatch):
+@pytest.mark.parametrize("winerror", [1, 50])
+def test_sin_enlace_duro_el_json_se_publica_igual(tmp_path, monkeypatch, winerror):
+    """Con los DOS códigos que la clasificación admite (R2 de Codex: un mutante que solo
+    aceptaba el 1 sobrevivía, porque ningún test integraba el 50 en `escribir`)."""
     (tmp_path / "00_Input").mkdir()
-    monkeypatch.setattr(vj.os, "link", _sin_enlace)
+
+    def _sin_enlace_con(src, dst):
+        e = OSError(22, "no soportado")
+        e.winerror = winerror
+        raise e
+
+    monkeypatch.setattr(vj.os, "link", _sin_enlace_con)
     datos = vj.preparar(_Ident(), hoy="2026-09-15")
 
     if os.name != "nt":
@@ -412,6 +421,33 @@ def test_sin_enlace_duro_sigue_sin_pisar_lo_que_aparece_en_la_carrera(tmp_path, 
         assert "no se pisa" in str(info.value)
     assert destino.read_text(encoding="utf-8") == ajeno, "pisó lo que remató la sesión"
     assert [x.name for x in destino.parent.iterdir()] == [destino.name]
+
+
+class _OsComo:
+    """`os` para el módulo revisado, con lo que se le fije y el resto delegado al real."""
+
+    def __init__(self, **fijos):
+        self.__dict__.update(fijos)
+
+    def __getattr__(self, nombre):
+        return getattr(os, nombre)
+
+
+def test_fuera_de_windows_no_hay_via_de_repuesto_aunque_el_error_la_pida(tmp_path, monkeypatch):
+    """R2 de Codex: el mutante que quitaba `os.name == "nt"` de la guarda sobrevivía en
+    Windows. Fuera de Windows `os.rename` PISA, así que ahí el error del enlace tiene que
+    salir tal cual, sin llamar a `rename`, y sin dejar restos."""
+    (tmp_path / "00_Input").mkdir()
+    renombrados = []
+    monkeypatch.setattr(vj, "os", _OsComo(name="posix", link=_sin_enlace,
+                                          rename=lambda *a: renombrados.append(a)))
+
+    with pytest.raises(OSError) as info:
+        vj.escribir(tmp_path, vj.preparar(_Ident(), hoy="2026-09-15"))
+
+    assert getattr(info.value, "winerror", None) == 1, "el error original, sin disfraz"
+    assert renombrados == []
+    assert list(vj.ruta(tmp_path).parent.iterdir()) == []
 
 
 def test_un_permiso_denegado_no_se_disfraza_de_filesystem_sin_enlaces(tmp_path, monkeypatch):

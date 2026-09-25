@@ -281,8 +281,8 @@ def escribir(case_dir, datos: dict) -> Path:
     comprobacion.
 
     Dos promesas, y hasta donde llega cada una:
-      - GARANTIZADA siempre, incluso si el proceso muere sin avisar (`kill -9`, corte
-        de luz) en cualquier instante: el destino nunca se pisa -si otra sesion ya lo
+      - GARANTIZADA siempre, incluso si el proceso muere sin avisar (`kill -9`) en
+        cualquier instante: el destino nunca se pisa -si otra sesion ya lo
         remato, esta funcion falla con `FileExistsError` en vez de tocarlo- y, si esta
         funcion SI llega a crearlo, nunca queda con contenido parcial -nace de un
         `os.link` a un temporal que ya estaba completo, no de escribirse in situ, asi
@@ -298,6 +298,11 @@ def escribir(case_dir, datos: dict) -> Path:
     Windows, `MEJORAS #276`) el temporal se publica con `os.rename`, que en Windows
     conserva las DOS promesas: no pisa un destino existente y publica de una vez lo que
     ya estaba completo. Fuera de Windows no hay esa vía y el error se propaga.
+
+    **Lo que ninguna de las dos vías promete: sobrevivir a un corte de luz.** No hay
+    `fsync` ni del contenido ni del nombre, así que la persistencia física no está
+    acreditada. Hasta el 2026-09-25 este docstring la daba por garantizada; lo señaló la
+    R2 de Codex sobre `#276`, y es anterior a ese cambio.
     """
     problemas = validar(datos)
     if problemas:
@@ -361,8 +366,8 @@ def escribir(case_dir, datos: dict) -> Path:
         # tras el exito), `os.link` AÑADE un nombre nuevo sin tocar el viejo: tras un
         # `link` de exito, `tmp` sigue existiendo como entrada separada que apunta al
         # mismo contenido. Este `unlink` la retira en TODOS los casos -exito, fallo de
-        # `os.link`, o fallo de la escritura de mas arriba-; `missing_ok=True` es
-        # defensivo (nada en este camino deja a `tmp` ausente por si mismo), no una
-        # segunda comprobacion de fallo.
+        # `os.link`, o fallo de la escritura de mas arriba-. `missing_ok=True` es
+        # NECESARIO, no defensivo: tras el `os.rename` de exito de la via sin hard link
+        # (`MEJORAS #276`) el nombre `tmp` ya no existe.
         tmp.unlink(missing_ok=True)
     return destino
