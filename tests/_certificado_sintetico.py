@@ -40,11 +40,14 @@ iniciar un proceso judicial con el mismo objeto de la Oferta Vinculante Confiden
 
 
 def ovc(**kw) -> str:
+    """La OVC. Acaba con la misma palabra que las condiciones antes de «Sin otro
+    particular» («pago»), así que sin cortar la despedida compartirían una frase de 8."""
     d = {**_POR_DEFECTO, **kw}
     return f"""{_cabecera(**d)}
 OFERTA VINCULANTE CONFIDENCIAL Y PROPUESTA DE NEGOCIACION DIRECTA
 La presente oferta vinculante confidencial podra aceptarse en el plazo de
 UN MES desde su primera recepcion, conforme a la LO 1/2025.
+Las condiciones adjuntas detallan la forma de pago.
 Sin otro particular, atentamente
 NIKOLAI TYUKHAY
 ABOGADO"""
