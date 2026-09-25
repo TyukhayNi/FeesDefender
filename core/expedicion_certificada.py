@@ -9,7 +9,9 @@ import base64
 import hashlib
 import io
 import json
+import os
 import re
+import tempfile
 import threading
 import uuid
 
@@ -2234,7 +2236,8 @@ def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
 
 
 def _exigir_mutex_de_cosecha(clave: str, *, w_code: str, tipo: str,
-                             entorno_exp: EntornoExpedicion) -> None:
+                             entorno_exp: EntornoExpedicion,
+                             quien: str = "cosechar()") -> None:
     """`cosechar` EXIGE el mutex entre procesos; nunca lo adquiere.
 
     Misma regla dura que `_exigir_mutex_de_expedicion`: `core/` comprueba y
@@ -2253,7 +2256,7 @@ def _exigir_mutex_de_cosecha(clave: str, *, w_code: str, tipo: str,
 
     if mutex_sesion.vigente(CaseRef(w_code=clave)) is None and _hay_mutex_vivo():
         raise ExpedicionError(
-            f"cosechar() exige el mutex de la cosecha de {componer_id(w_code, tipo)!r} "
+            f"{quien} exige el mutex de la cosecha de {componer_id(w_code, tipo)!r} "
             f"(entorno={entorno_exp.entorno!r}, usuario={entorno_exp.usuario!r}) "
             "sostenido ANTES de llamar: core/ nunca lo adquiere por su cuenta. En la "
             "CLI ya lo hace `scripts/codicert.py`.")
@@ -2495,6 +2498,258 @@ def _leer_emisor_de(pdf: bytes) -> Any:
     from core import certificado_lectura
 
     return certificado_lectura.leer_emisor(pdf)
+
+
+# ---------------------------------------------------------------------------
+# F3 — el aportable: lo que va al juzgado, sin las condiciones
+# ---------------------------------------------------------------------------
+
+#: El mismo aviso que el plan de F1 pone en la etiqueta de un sobre conjunto
+#: (`destinatarios_de`): que el plan y el manifiesto digan lo mismo (spec §5 regla 3).
+AVISO_SOBRE_CONJUNTO = "⚠ sobre conjunto: acredita entrega EN EL DOMICILIO, no a cada uno"
+
+PRODUCIDO = "producido"
+YA_ESTABA = "ya_estaba"
+SIN_COSECHAR = "sin_cosechar"
+PENDIENTE = "pendiente"
+PARADO = "parado"
+
+
+@dataclass(frozen=True)
+class AportablePreparado:
+    """Qué pasó con el aportable de UN envío. Ningún envío se queda sin decir."""
+
+    id_envio: str
+    canal: str
+    estado: str
+    motivo: str = ""
+    ruta_aportable: Path | None = None
+    ruta_manifiesto: Path | None = None
+    retiradas: tuple[int, ...] = ()
+    avisos: tuple[str, ...] = ()
+
+
+def ruta_aportable(integro: Path) -> Path:
+    """`<íntegro> - APORTABLE.pdf`, al lado: el nombre que lo distingue (spec §7.4)."""
+    return integro.with_name(f"{integro.stem} - APORTABLE.pdf")
+
+
+def ruta_manifiesto(integro: Path) -> Path:
+    return integro.with_name(f"{integro.stem} - MANIFIESTO.json")
+
+
+def documentos_enviados(expedicion: Expedicion, *,
+                        entorno_exp: EntornoExpedicion) -> tuple[Any, ...]:
+    """Los documentos que salieron, bajados de Codicert y verificados contra el acta.
+
+    Salen de las entregas ELECTRÓNICAS: son las únicas cuyo acta lista los adjuntos uno
+    a uno con su huella (spec §7). El burofax los funde en un PDF de nombre UUID y no
+    dice dónde acaba cada documento; y los mismos documentos le sirven, porque F1 manda
+    los mismos adjuntos por los tres canales y el fundido medido es la concatenación
+    exacta de los del correo (M-4 del plan de F3).
+
+    Todas las entregas electrónicas de la expedición tienen que listar LOS MISMOS
+    adjuntos: si no, no hay un solo juego de documentos y no se adivina cuál es.
+    """
+    from core import certificado_aportable as apo
+
+    electronicas = [e for e in expedicion.envios if e.canal == "electronico"]
+    if not electronicas:
+        raise ExpedicionError(
+            f"{expedicion.id_personalizado}: ninguna entrega electrónica en esta "
+            "expedición. Solo su acta lista los adjuntos uno a uno con su huella; el "
+            "burofax los funde y no dice dónde acaba cada documento (M-4), así que F3 no "
+            "puede localizar las condiciones. No se adivina.")
+    try:
+        listas = {e.id_envio: apo.ficheros_listados(entorno_exp.codicert.certificado(e.id_envio))
+                  for e in electronicas}
+    except apo.AportableError as err:
+        raise ExpedicionError(f"{expedicion.id_personalizado}: {err}") from err
+    if len(set(listas.values())) != 1:
+        raise ExpedicionError(
+            f"{expedicion.id_personalizado}: sus entregas electrónicas no listan los "
+            f"mismos adjuntos ({sorted(listas)}): no hay un solo juego de documentos y no "
+            "se adivina cuál vale para cada envío.")
+    origen = electronicas[0].id_envio
+    documentos = []
+    for fichero in listas[origen]:
+        datos = entorno_exp.codicert.descargar_adjunto(origen, fichero.nombre)
+        huella = hashlib.sha256(datos).hexdigest()
+        if huella != fichero.sha256:
+            raise ExpedicionError(
+                f"el adjunto {fichero.nombre!r} de {origen} no tiene la huella que lista "
+                f"su acta ({huella[:16]}… contra {fichero.sha256[:16]}…): no es lo que "
+                "salió. No se recorta contra él.")
+        documentos.append(apo.DocumentoEnviado(nombre=fichero.nombre, contenido=datos))
+    return tuple(documentos)
+
+
+def _es_sobre_conjunto(envio: EnvioObservado, partes: list[dict]) -> bool:
+    """¿El burofax fue a más de un requerido en el mismo sobre? (spec §5 regla 3)
+
+    F1 compone el nombre de un sobre conjunto uniendo los nombres con « Y »
+    (`destinatarios_de`), y el listado lo devuelve en `destinatarios` (M-7 de F2). Se
+    parte por « Y » y se cuentan los trozos que son, enteros, el nombre de una parte:
+    una razón social con « Y » dentro no casa con ninguna y no dispara el aviso.
+    """
+    if envio.canal != "burofax":
+        return False
+    nombres = {nombre_completo_de(p).strip().lower() for p in partes} - {""}
+    trozos = [t.strip().lower() for t in envio.destinatario.split(" Y ")]
+    return sum(1 for t in trozos if t in nombres) >= 2
+
+
+def _escribir_atomico(destino: Path, datos: bytes) -> None:
+    """Temporal en el MISMO directorio + `os.replace`: nunca un fichero a medias."""
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(destino.parent), prefix=".aportable.",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(datos)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, destino)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def preparar_aportables(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
+                        ordinal: int = 1, emisor_esperado: str | None = None,
+                        verificar_plaza: bool = True) -> list[AportablePreparado]:
+    """El aportable y su manifiesto, junto a cada íntegro archivado (spec §7.4, F3).
+
+    Escribe en la carpeta de certificados que dejó F2 —lee el íntegro que `cosechar`
+    escribe ahí—, así que corre bajo **la misma exclusión que la cosecha**: el mismo
+    candado intraproceso y el mismo mutex entre procesos, que `core/` exige y nunca
+    adquiere. No sube nada al CRM: el spec pide los tres artefactos archivados, y el
+    íntegro, que es la prueba, ya lo subió F2.
+    """
+    for nombre, valor in (("carpeta_certificados", entorno_exp.carpeta_certificados),
+                          ("leer_emisor", entorno_exp.leer_emisor)):
+        if valor is None:
+            raise ExpedicionError(
+                f"el entorno no trae `{nombre}`: `preparar_aportables` escribe en el "
+                "expediente y sin ese puerto no hay dónde. Usa `entorno_real`.")
+    clave_mutex = clave_mutex_cosecha(w_code, tipo, entorno_exp, ordinal)
+    with _candado_de(clave_mutex):
+        _exigir_mutex_de_cosecha(clave_mutex, w_code=w_code, tipo=tipo,
+                                 entorno_exp=entorno_exp, quien="preparar_aportables()")
+        return _preparar_bajo_candado(
+            w_code, tipo, entorno_exp=entorno_exp, ordinal=ordinal,
+            emisor_esperado=emisor_esperado, verificar_plaza=verificar_plaza)
+
+
+def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
+                           ordinal: int, emisor_esperado: str | None,
+                           verificar_plaza: bool) -> list[AportablePreparado]:
+    """El cuerpo de `preparar_aportables`, YA dentro de la doble exclusión."""
+    from core import certificado_aportable as apo
+
+    esperado = emisor_esperado or EMISOR_ESPERADO
+    expedicion = refrescar(w_code, tipo, entorno_exp=entorno_exp, ordinal=ordinal)
+    if not expedicion.envios:
+        raise ExpedicionError(
+            f"{expedicion.id_personalizado}: sin envíos en la ventana consultada. Un "
+            "censo vacío no es una ausencia (spec §5.2): comprueba el identificador.")
+    documentos = documentos_enviados(expedicion, entorno_exp=entorno_exp)
+    condiciones = apo.paginas_de_condiciones(documentos)
+    if not condiciones:
+        raise ExpedicionError(
+            f"ninguno de los {len(documentos)} documentos enviados lleva el rótulo "
+            f"«{apo.LITERAL_CONDICIONES}» en una línea propia. O el envío no llevaba "
+            "condiciones —y entonces lo que se aporta es el íntegro, con su firma— o las "
+            "llevaba con otro rótulo —y entonces NO—. Eso lo decide una persona mirando "
+            "el documento: F3 no certifica que no haya nada que retirar.")
+    try:
+        partes, error_partes = entorno_exp.partes_de(w_code), None
+    except Exception as err:  # noqa: BLE001 — el CRM o el catálogo local, indistintos
+        partes, error_partes = [], str(err)
+    carpeta = Path(entorno_exp.carpeta_certificados(w_code))
+    plaza = entorno_exp.usuario if verificar_plaza else None
+    generado = entorno_exp.ahora().isoformat()
+    resultados: list[AportablePreparado] = []
+
+    for envio in expedicion.envios:
+        if not envio.cosechable:
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, PENDIENTE,
+                motivo="el hecho aún puede mejorar: se prepara cuando culmine."))
+            continue
+        integro = carpeta / nombre_canonico(envio.asunto, w_code, envio.id_envio)
+        if not integro.is_file():
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, SIN_COSECHAR,
+                motivo=f"no está {integro.name}: corre `codicert cosechar` primero."))
+            continue
+        datos = integro.read_bytes()
+        try:
+            emisor = entorno_exp.leer_emisor(datos)
+        except Exception as err:  # noqa: BLE001 — `CertificadoIlegibleError` y lo que venga
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, PARADO, motivo=f"íntegro ilegible: {err}"))
+            continue
+        if not _emisor_coincide(emisor, razon_social=esperado, usuario=plaza):
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, PARADO,
+                motivo=(f"el íntegro del expediente declara como emisor "
+                        f"{emisor.razon_social!r} (usuario {emisor.usuario!r}) y se "
+                        f"esperaba {esperado!r} ({plaza!r}): no es nuestra prueba "
+                        "(art. 17.2).")))
+            continue
+        try:
+            recorte = apo.recortar(datos, condiciones)
+            ficheros_acta = apo.ficheros_listados(datos)
+        except apo.AportableError as err:
+            resultados.append(AportablePreparado(envio.id_envio, envio.canal, PARADO,
+                                                 motivo=str(err)))
+            continue
+
+        avisos_extra: list[str] = []
+        if envio.canal == "burofax":
+            if error_partes is not None:
+                avisos_extra.append(
+                    f"no se pudo comprobar si el sobre fue conjunto ({error_partes}): si "
+                    "este burofax fue a varios requeridos, acredita la entrega en el "
+                    "domicilio, no a cada uno.")
+            elif _es_sobre_conjunto(envio, partes):
+                avisos_extra.append(AVISO_SOBRE_CONJUNTO)
+        destino, manifiesto = ruta_aportable(integro), ruta_manifiesto(integro)
+        cuerpo = json.dumps(apo.manifiesto_de(
+            recorte, id_envio=envio.id_envio, canal=envio.canal,
+            id_personalizado=expedicion.id_personalizado, generado=generado,
+            integro_nombre=integro.name, integro_sha256=hashlib.sha256(datos).hexdigest(),
+            aportable_nombre=destino.name,
+            emisor={"razon_social": emisor.razon_social, "usuario": emisor.usuario,
+                    "verificado": True},
+            ficheros_acta=ficheros_acta, documentos=documentos,
+            avisos_extra=avisos_extra), ensure_ascii=False, indent=2) + "\n"
+        avisos = (*recorte.avisos, *avisos_extra)
+        retiradas = tuple(r.pagina_certificado for r in recorte.retiradas)
+
+        if destino.exists():
+            if destino.read_bytes() != recorte.pdf:
+                resultados.append(AportablePreparado(
+                    envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
+                    motivo=(f"ya hay un {destino.name} con otro contenido: no se pisa. "
+                            "Si sobra, apártalo a mano y vuelve a lanzar.")))
+                continue
+            if not manifiesto.exists():
+                _escribir_atomico(manifiesto, cuerpo.encode("utf-8"))
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, YA_ESTABA, ruta_aportable=destino,
+                ruta_manifiesto=manifiesto, retiradas=retiradas, avisos=avisos))
+            continue
+        _escribir_atomico(destino, recorte.pdf)
+        _escribir_atomico(manifiesto, cuerpo.encode("utf-8"))
+        resultados.append(AportablePreparado(
+            envio.id_envio, envio.canal, PRODUCIDO, ruta_aportable=destino,
+            ruta_manifiesto=manifiesto, retiradas=retiradas, avisos=avisos))
+    return resultados
 
 
 #: Reexportados para que quien use `cosechar` no tenga que importar dos módulos más
