@@ -98,6 +98,28 @@ def test_el_chat_con_nombre_propio_no_se_lee_como_media(tmp_path):
     assert set(_leer_media(chat_dir, chat)) == {"foto.jpg"}
 
 
+def test_R1_H03_una_nota_en_el_directorio_de_rol_no_es_un_chat(tmp_path, monkeypatch):
+    """R1/H-03: cualquier directorio con un `.txt` pasaba por chat —el propio directorio de
+    rol con una nota incluido—, y la atomización contaba dos chats donde había uno."""
+    rol = tmp_path / "00_Input" / "2026-09-25_whatsapp_01" / "01_Cliente"
+    chat_dir = rol / "Conversacion"
+    chat_dir.mkdir(parents=True)
+    (rol / "notas.txt").write_text("nota libre", encoding="utf-8")
+    (chat_dir / "_chat.txt").write_text("8/1/24, 10:32 - Ana: hola\n", encoding="utf-8")
+    assert [p.name for p in descubrir_chats(tmp_path)] == ["Conversacion"]
+    import core.whatsapp_atomize.pipeline as pl
+    monkeypatch.setattr(pl, "caso_path", lambda cid: tmp_path)
+    r = atomize_whatsapp_case("CASO-X")
+    assert (r["chats"], r["mensajes"]) == (1, 1)
+
+
+def test_R1_H03_un_directorio_de_chat_con_solo_una_nota_no_es_un_chat(tmp_path):
+    d = tmp_path / "00_Input" / "2026-09-25_whatsapp_01" / "01_Cliente" / "Carpeta"
+    d.mkdir(parents=True)
+    (d / "notas.txt").write_text("nota libre, sin mensajes", encoding="utf-8")
+    assert descubrir_chats(tmp_path) == []
+
+
 def test_un_directorio_sin_txt_no_es_un_chat(tmp_path):
     from core.whatsapp_atomize.pipeline import chat_txt_de
     d = tmp_path / "solo_fotos"

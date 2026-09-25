@@ -12,7 +12,7 @@ from pathlib import Path
 from core.config import caso_path
 from core.email_atomize.model import AdjuntoRef
 from core.intake_lotes import PATRON_LOTE
-from core.whatsapp_export import elegir_chat, parse_chat
+from core.whatsapp_export import CHAT_TXT, elegir_chat, parse_chat
 
 from . import corpus as corpus_mod
 from . import render as render_mod
@@ -30,17 +30,23 @@ def chat_txt_de(chat_dir: Path) -> Path | None:
     """El fichero de chat de un directorio, o `None` si no tiene ninguno.
 
     Misma regla que el intake y su manifiesto (`elegir_chat`): antes el atomizador solo
-    reconocía `_chat.txt`, y un export Android se depositaba y no se atomizaba nunca.
+    reconocía `_chat.txt`, y un export Android se depositaba y no se atomizaba nunca. Sin
+    la regla de custodia (R1/H-03): aquí un `.txt` que no es una conversación no es un chat.
     """
+    ficheros = [p for p in chat_dir.iterdir() if p.is_file()]
     textos = {p.name: p.read_text(encoding="utf-8", errors="replace")
-              for p in chat_dir.iterdir()
-              if p.is_file() and p.suffix.lower() == ".txt"}
-    nombre = elegir_chat(textos)
+              for p in ficheros if p.suffix.lower() == ".txt"}
+    nombre = elegir_chat(textos, [p.name for p in ficheros], custodia=False)
     return chat_dir / nombre if nombre else None
 
 
 def descubrir_chats(case_dir: Path) -> list[Path]:
-    """Carpetas con un chat: cajón legacy 02_Whatsapp + lotes whatsapp (spec §8)."""
+    """Carpetas con un chat: cajón legacy 02_Whatsapp + lotes whatsapp (spec §8).
+
+    Un chat vive donde lo deja el intake, `<base>/<rol>/<chat>/` (R1/H-03: recorrer todo
+    `.txt` convertía en chat el propio directorio de rol con una nota dentro). `_chat.txt`
+    se sigue reconociendo a cualquier profundidad, como hasta ahora.
+    """
     input_dir = case_dir / "00_Input"
     bases: list[Path] = []
     legacy = case_dir.joinpath(*_WHATSAPP_IN)
@@ -49,9 +55,12 @@ def descubrir_chats(case_dir: Path) -> list[Path]:
     if input_dir.is_dir():
         bases += [d for d in input_dir.iterdir() if d.is_dir()
                   and (m := PATRON_LOTE.match(d.name)) and m.group(2) == "whatsapp"]
-    con_txt = {p.parent for base in bases for p in base.rglob("*")
-               if p.is_file() and p.suffix.lower() == ".txt"}
-    dirs = {d for d in con_txt if chat_txt_de(d) is not None}
+    candidatos: set[Path] = set()
+    for base in bases:
+        candidatos |= {p.parent for p in base.rglob(CHAT_TXT)}
+        candidatos |= {chat for rol in base.iterdir() if rol.is_dir()
+                       for chat in rol.iterdir() if chat.is_dir()}
+    dirs = {d for d in candidatos if chat_txt_de(d) is not None}
     return sorted(dirs, key=lambda x: x.name)
 
 
@@ -92,7 +101,8 @@ def atomize_whatsapp_case(case_id: str) -> dict:
         media = _leer_media(chat_dir, chat)
         wmsgs = parse_chat(texto)
         refs = [m.adjunto_ref for m in wmsgs if m.adjunto_ref]
-        unicos_chat, por_ref = construir_adjuntos(refs, media, registro)
+        crudos = {m.adjunto_ref: m.adjunto_ref_crudo for m in wmsgs if m.adjunto_ref}
+        unicos_chat, por_ref = construir_adjuntos(refs, media, registro, crudos=crudos)
         por_ref_global.update(por_ref)
         for u in unicos_chat:
             adjuntos_unicos.setdefault(u.sha256, u)  # primera aparición gana (dedup global)

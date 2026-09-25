@@ -8,7 +8,7 @@ Android (guion), años de 2/4 cifras y horas 12/24h.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import PurePath
@@ -23,6 +23,9 @@ class WhatsAppMessage:
     texto: str
     adjunto_ref: str | None
     es_sistema: bool
+    #: La referencia TAL COMO la escribe el export, con sus marcas invisibles; `adjunto_ref`
+    #: es la limpia. El nombre en disco se resuelve con las dos (`resolver_adjunto`, R1/H-04).
+    adjunto_ref_crudo: str | None = None
 
 
 # Cabecera Android:  d/m/yy, HH:MM[ :SS][ am/pm] - resto
@@ -118,19 +121,25 @@ def _limpiar_ref(nombre: str) -> str:
     return nombre
 
 
-def _adjunto_ref(texto_linea: str) -> str | None:
-    """Extrae el nombre del adjunto referenciado en una línea, si lo hay."""
+def _adjunto(texto_linea: str) -> tuple[str, str] | None:
+    """`(limpia, cruda)` del adjunto referenciado en una línea, si lo hay."""
     m = _RE_ADJ_IOS.search(texto_linea)  # sin anclar: cubre documentos con preámbulo
+    if not m:
+        m = _RE_ADJ_ANDROID.match(texto_linea)
     if m:
-        return _limpiar_ref(m.group(1))
-    m = _RE_ADJ_ANDROID.match(texto_linea)
-    if m:
-        return _limpiar_ref(m.group(1))
+        crudo = m.group(1).strip()
+        return _limpiar_ref(crudo), crudo
     if _RE_ADJ_BARE.match(texto_linea):
-        return "<archivo adjunto>"
+        return "<archivo adjunto>", "<archivo adjunto>"
     if _RE_MEDIA_OMITTED.match(texto_linea):
-        return "<Media omitted>"
+        return "<Media omitted>", "<Media omitted>"
     return None
+
+
+def _adjunto_ref(texto_linea: str) -> str | None:
+    """Extrae el nombre (limpio) del adjunto referenciado en una línea, si lo hay."""
+    par = _adjunto(texto_linea)
+    return par[0] if par else None
 
 
 # ---------------------------------------------------------------------------
@@ -150,12 +159,14 @@ def parse_chat(texto: str) -> list[WhatsAppMessage]:
             continue
         date_str, time_str, rest = header
         autor, texto_msg = _split_author(rest)
+        adj = _adjunto(texto_msg)
         cur = WhatsAppMessage(
             timestamp=_parse_dt(date_str, time_str),
             autor=autor,
             texto=texto_msg,
-            adjunto_ref=_adjunto_ref(texto_msg),
+            adjunto_ref=adj[0] if adj else None,
             es_sistema=autor is None,
+            adjunto_ref_crudo=adj[1] if adj else None,
         )
         msgs.append(cur)
     return msgs
@@ -174,34 +185,78 @@ def referencias_adjuntos(msgs: list[WhatsAppMessage]) -> list[str]:
 #: El nombre del chat en el export de iOS (y en los depósitos legacy).
 CHAT_TXT = "_chat.txt"
 
+#: Lo que el propio canal escribe JUNTO al chat (`whatsapp_intake.deposit_export`). Solo
+#: eso es un derivado nuestro: un nombre que empiece por `_` puede venir en el export
+#: (R1/H-01: excluirlos todos rechazaba el export entero, zip original incluido).
+DERIVADOS = frozenset({"_chat_recortado.txt"})
 
-def elegir_chat(textos: Mapping[str, str]) -> str | None:
+
+def elegir_chat(textos: Mapping[str, str], presentes: Iterable[str] = (), *,
+                custodia: bool = True) -> str | None:
     """El fichero de chat de un export, con UNA regla para todo el canal (MEJORAS #285).
 
     El intake aceptaba cualquier `.txt` y el atomizador solo `_chat.txt`, así que el chat
     de un export Android en español —`Chat de WhatsApp con <contacto>.txt`— se depositaba y
     se quedaba fuera de la atomización (W-0462E1: 173 mensajes). `textos` es
-    `{nombre: texto}`; lo que no sea `.txt` se ignora. En este orden:
+    `{nombre: texto}` —lo que no sea `.txt` se ignora— y `presentes`, los nombres de todos
+    los ficheros del export. En este orden:
 
     1. `_chat.txt` si está, aunque el parser no lo entienda (como hasta ahora);
-    2. si no, el primer `.txt` por orden alfabético que `parse_chat` interpreta: un `.txt`
-       que se envió como ADJUNTO no le gana al chat por ir antes;
-    3. si ninguno se interpreta, el primer `.txt`: custodia antes que parser — el intake
-       no deja de depositar por no entender, y el atomizador lo verá como un chat con cero
-       mensajes, que sale en su índice en vez de desaparecer;
-    4. `None` si no hay ningún `.txt`.
+    2. si no, entre los `.txt` que `parse_chat` interpreta, **el chat es el que tiene
+       pruebas de serlo** (R1/H-02: «el primero que se interprete» dejaba ganar a un
+       `.txt` adjunto con una sola línea con forma de mensaje). Se descartan los que otra
+       conversación del export cita como adjunto —un export reenviado, un acta— y, de los
+       que quedan, gana el que cita más ficheros que vienen en el export; a igualdad, el
+       de más mensajes; a igualdad, el primero por orden alfabético;
+    3. si ninguno se interpreta y `custodia` es cierto, el primer `.txt`: el intake no deja
+       de depositar por no entender. El atomizador llama con `custodia=False` (R1/H-03):
+       para él, un `.txt` que no es una conversación no es un chat;
+    4. `None` si no hay candidato.
 
-    Los derivados nuestros (los que empiezan por `_`, salvo `_chat.txt`, como el
-    `_chat_recortado.txt` del intake) nunca son candidatos.
+    Queda un caso que la regla no puede decidir, y se dice: un export SIN ficheros en el
+    que un `.txt` adjunto no citado tenga más mensajes que el propio chat. El depósito
+    conserva igual todos los bytes; lo que se equivocaría es la etiqueta.
     """
     if CHAT_TXT in textos:
         return CHAT_TXT
     txts = sorted(n for n in textos
-                  if n.lower().endswith(".txt") and not PurePath(n).name.startswith("_"))
-    for n in txts:
-        if parse_chat(textos[n]):
+                  if n.lower().endswith(".txt") and PurePath(n).name not in DERIVADOS)
+    conversaciones = {n: msgs for n in txts if (msgs := parse_chat(textos[n]))}
+    if conversaciones:
+        citados = {_limpiar_ref(r) for msgs in conversaciones.values()
+                   for r in referencias_adjuntos(msgs)}
+        no_citadas = [n for n in conversaciones
+                      if _limpiar_ref(PurePath(n).name) not in citados]
+        en_export = {_limpiar_ref(PurePath(p).name) for p in presentes}
+
+        def _pruebas(n: str) -> tuple[int, int]:
+            refs = {_limpiar_ref(r) for r in referencias_adjuntos(conversaciones[n])}
+            return len(refs & en_export), len(conversaciones[n])
+
+        # `max` devuelve el PRIMER máximo en orden de iteración, y `txts` va ordenado:
+        # a igualdad de pruebas gana el primero por orden alfabético.
+        return max(no_citadas or list(conversaciones), key=_pruebas)
+    if custodia and txts:
+        return txts[0]
+    return None
+
+
+def resolver_adjunto(ref: str, nombres: Iterable[str], crudo: str | None = None) -> str | None:
+    """El nombre EN DISCO del adjunto que un mensaje cita, o `None` si no se puede decir.
+
+    R1/H-04: limpiar la referencia (`MEJORAS #236`) no puede ligarla a otros bytes. Se busca
+    primero el nombre tal como lo citó el chat —con sus marcas—, después el limpio, y solo
+    entonces por nombre limpio a ambos lados, y únicamente si identifica UN fichero: con
+    dos candidatos, el adjunto queda sin resolver en vez de ligarse a uno de ellos.
+    """
+    nombres = list(nombres)
+    exactos = set(nombres)
+    for n in (crudo, ref):
+        if n and n in exactos:
             return n
-    return txts[0] if txts else None
+    limpio = _limpiar_ref(ref)
+    candidatos = [n for n in nombres if _limpiar_ref(n) == limpio]
+    return candidatos[0] if len(candidatos) == 1 else None
 
 
 def filter_by_date_range(

@@ -18,7 +18,7 @@ from .config import PENDIENTE_CHECKIN_SUBDIR, WHATSAPP_SUBDIRS, caso_path, setti
 from .intake_manifest import IntakeManifest, compute_sha256_bytes
 from .intake_utils import safe_zip_members, sanitize_filename
 from .whatsapp_export import (
-    elegir_chat, filter_by_date_range, parse_chat, referencias_adjuntos,
+    elegir_chat, filter_by_date_range, parse_chat, referencias_adjuntos, resolver_adjunto,
 )
 
 _AUDIO_EXTS = frozenset({".opus", ".ogg", ".m4a", ".aac", ".mp3"})
@@ -66,7 +66,7 @@ def _find_chat_txt(members: dict[str, bytes]) -> tuple[str, str]:
     MEJORAS #285) y lo decodifica.  Lanza ValueError si no hay ningún candidato."""
     textos = {n: b.decode("utf-8", errors="replace")
               for n, b in members.items() if n.lower().endswith(".txt")}
-    name = elegir_chat(textos)
+    name = elegir_chat(textos, members)
     if name is None:
         raise ValueError(
             "El export no contiene ningún _chat.txt (.txt) — "
@@ -102,8 +102,10 @@ def analyze(content: bytes, *, zip_name: str) -> ChatPreview:
     refs = referencias_adjuntos(msgs)
 
     presentes = sorted(n for n in members if n != chat_txt_name)
-    presentes_set = set(presentes)
-    faltantes = [r for r in refs if r not in presentes_set]
+    # Por el nombre tal como lo cita el chat y después limpio, y el limpio solo si identifica
+    # un fichero (R1/H-04): «faltante» no puede depender de una marca invisible.
+    faltantes = [m.adjunto_ref for m in msgs if m.adjunto_ref
+                 and resolver_adjunto(m.adjunto_ref, presentes, m.adjunto_ref_crudo) is None]
     audios = [n for n in presentes if Path(n).suffix.lower() in _AUDIO_EXTS]
 
     timestamps = [m.timestamp for m in msgs if m.timestamp is not None]

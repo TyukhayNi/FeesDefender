@@ -225,3 +225,34 @@ class TestElegirChat:
     def test_sin_txt_no_hay_chat(self):
         assert elegir_chat({}) is None
         assert elegir_chat({"foto.jpg": "x"}) is None
+
+    def test_R1_H01_un_nombre_con_guion_bajo_no_es_un_derivado(self):
+        """R1/H-01: excluir todo lo que empieza por `_` rechazaba un export cuyo chat se
+        llamara `_conversacion.txt`. Derivados nuestros solo son los que el canal escribe."""
+        assert elegir_chat({"_conversacion.txt": _AND}) == "_conversacion.txt"
+
+    def test_R1_H02_un_adjunto_interpretable_no_le_gana_al_chat_que_cita_los_ficheros(self):
+        """R1/H-02: con un `.txt` adjunto que se interpreta, el primero por orden ganaba.
+        El chat del export es el que cita los ficheros que vienen en el export."""
+        textos = {"Acta.txt": "8/1/24, 09:00 - Otro: Acta",
+                  "Chat de WhatsApp con Ana.txt": "8/1/24, 10:00 - Ana: IMG.jpg (archivo adjunto)"}
+        presentes = [*textos, "IMG.jpg"]
+        assert elegir_chat(textos, presentes) == "Chat de WhatsApp con Ana.txt"
+
+    def test_R1_H02_un_export_reenviado_que_el_chat_cita_no_es_el_chat(self):
+        largo = "\n".join(f"8/1/24, 09:{i:02d} - X: m{i}" for i in range(10))
+        textos = {"A reenviado.txt": largo,
+                  "Chat de WhatsApp con Pablo.txt":
+                      "8/1/24, 10:00 - Pablo: A reenviado.txt (archivo adjunto)"}
+        assert elegir_chat(textos, textos) == "Chat de WhatsApp con Pablo.txt"
+
+    def test_R1_H02_sin_ficheros_citados_gana_la_conversacion_mas_larga(self):
+        textos = {"Acta.txt": "8/1/24, 09:00 - Otro: Acta",
+                  "Chat de WhatsApp con Ana.txt":
+                      "8/1/24, 10:00 - Ana: uno\n8/1/24, 10:01 - Ana: dos\n8/1/24, 10:02 - Eva: tres"}
+        assert elegir_chat(textos) == "Chat de WhatsApp con Ana.txt"
+
+    def test_R1_H03_sin_custodia_un_txt_que_no_es_conversacion_no_es_chat(self):
+        """La regla 3 es del intake —no dejar de depositar—; el atomizador no la usa."""
+        assert elegir_chat({"notas.txt": "nota libre"}, custodia=False) is None
+        assert elegir_chat({"notas.txt": "nota libre"}) == "notas.txt"

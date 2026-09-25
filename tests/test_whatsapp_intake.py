@@ -96,6 +96,30 @@ def test_analyze_sigue_dando_por_faltante_el_que_de_verdad_falta():
     assert prev.adjuntos_faltantes == ["PTT-20260409-WA0009.opus"]
 
 
+def test_R1_H01_un_export_cuyo_chat_empieza_por_guion_bajo_se_acepta():
+    """R1/H-01: custodia antes que parser. El filtro de «derivados» rechazaba el export
+    entero —sin escribir ni el zip original— por el nombre de su chat."""
+    from core import whatsapp_intake
+
+    importlib.reload(whatsapp_intake)
+
+    content = _make_zip({"_conversacion.txt": "8/1/24, 10:32 - Ana: hola\n".encode("utf-8")})
+    prev = whatsapp_intake.analyze(content, zip_name="c.zip")
+    assert prev.n_mensajes == 1
+
+
+def test_R1_H04_un_adjunto_cuyo_nombre_en_disco_lleva_la_marca_no_es_faltante():
+    from core import whatsapp_intake
+
+    importlib.reload(whatsapp_intake)
+
+    chat = "8/1/24, 10:32 - Pablo: \u200efoto.jpg (archivo adjunto)\n"
+    content = _make_zip({"Chat de WhatsApp con Pablo.txt": chat.encode("utf-8"),
+                         "\u200efoto.jpg": b"ORIGINAL"})
+    prev = whatsapp_intake.analyze(content, zip_name="x.zip")
+    assert prev.adjuntos_faltantes == []
+
+
 def test_analyze_sin_chat_txt_falla():
     from core import whatsapp_intake
 
