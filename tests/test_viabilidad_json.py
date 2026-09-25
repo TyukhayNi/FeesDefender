@@ -7,6 +7,7 @@ contrato «derivado por ejecucion» y que resultaron INCORRECTOS, medidos el
 Spec: docs/superpowers/specs/2026-09-15-corrida-prepara-sesion-remata-design.md §2.
 """
 import json
+import os
 
 import pytest
 
@@ -354,3 +355,92 @@ def test_escribir_no_sobrescribe_si_el_destino_aparece_durante_la_escritura(
     restos = [p.name for p in destino.parent.iterdir()]
     assert restos == [destino.name], (
         f"escribir() dejó temporales huérfanos tras perder la carrera: {restos!r}")
+
+
+# ---------------------------------------------------------------------------
+# MEJORAS #276: el montaje de Drive for Desktop (`G:`) no implementa hard links, y ahí
+# vive todo expediente real. `os.link` devolvía `WinError 1` y la corrida V1 entera
+# terminaba en `bloqueado` (W-030A13 el 2026-09-16, W-0462E1 el 2026-09-17). Medido en
+# `G:` el 2026-09-25: `os.link` → `WinError 1`; `os.rename` sobre un destino existente →
+# `FileExistsError` (`WinError 183`), así que en Windows publica sin pisar y sin quedar
+# a medias.
+# ---------------------------------------------------------------------------
+
+def _sin_enlace(src, dst):
+    """Lo que devuelve `CreateHardLink` sobre el montaje de Drive for Desktop."""
+    e = OSError(22, "Función incorrecta")
+    e.winerror = 1
+    raise e
+
+
+def test_sin_enlace_duro_el_json_se_publica_igual(tmp_path, monkeypatch):
+    (tmp_path / "00_Input").mkdir()
+    monkeypatch.setattr(vj.os, "link", _sin_enlace)
+    datos = vj.preparar(_Ident(), hoy="2026-09-15")
+
+    if os.name != "nt":
+        # Fuera de Windows no hay vía segura —`os.rename` pisa en silencio—, así que el
+        # error se propaga como antes en vez de disfrazarse.
+        with pytest.raises(OSError):
+            vj.escribir(tmp_path, datos)
+        return
+
+    p = vj.escribir(tmp_path, datos)
+    assert json.loads(p.read_text(encoding="utf-8"))["ref"] == "W-TEST01"
+    assert [x.name for x in p.parent.iterdir()] == [p.name], "ni temporal ni resto"
+
+
+def test_sin_enlace_duro_sigue_sin_pisar_lo_que_aparece_en_la_carrera(tmp_path, monkeypatch):
+    """La garantía por la que la función existe, en la vía nueva: el destino aparece
+    entre la comprobación rápida y la publicación —aquí, dentro del propio intento de
+    enlace— y la vía sin hard link NO lo pisa."""
+    (tmp_path / "00_Input").mkdir()
+    destino = vj.ruta(tmp_path)
+    ajeno = '{"ref": "LO QUE REMATO LA SESION"}'
+
+    def _carrera_y_sin_enlace(src, dst):
+        destino.write_text(ajeno, encoding="utf-8")
+        _sin_enlace(src, dst)
+
+    monkeypatch.setattr(vj.os, "link", _carrera_y_sin_enlace)
+
+    with pytest.raises(OSError) as info:
+        vj.escribir(tmp_path, vj.preparar(_Ident(), hoy="2026-09-15"))
+
+    if os.name == "nt":
+        assert isinstance(info.value, FileExistsError), info.value
+        assert "no se pisa" in str(info.value)
+    assert destino.read_text(encoding="utf-8") == ajeno, "pisó lo que remató la sesión"
+    assert [x.name for x in destino.parent.iterdir()] == [destino.name]
+
+
+def test_un_permiso_denegado_no_se_disfraza_de_filesystem_sin_enlaces(tmp_path, monkeypatch):
+    """Control positivo: solo el «no sé hacer hard links» toma la vía de repuesto. Un
+    permiso denegado es otra cosa y tiene que seguir saliendo como lo que es."""
+    (tmp_path / "00_Input").mkdir()
+
+    def _denegado(src, dst):
+        e = PermissionError(13, "Acceso denegado")
+        e.winerror = 5
+        raise e
+
+    monkeypatch.setattr(vj.os, "link", _denegado)
+
+    with pytest.raises(PermissionError):
+        vj.escribir(tmp_path, vj.preparar(_Ident(), hoy="2026-09-15"))
+    assert not vj.ruta(tmp_path).exists()
+    assert list(vj.ruta(tmp_path).parent.iterdir()) == []
+
+
+@pytest.mark.parametrize("winerror, errno_, esperado", [
+    (1, 22, True),      # ERROR_INVALID_FUNCTION: lo que da Drive for Desktop (medido)
+    (50, 22, True),     # ERROR_NOT_SUPPORTED
+    (5, 13, False),     # ERROR_ACCESS_DENIED: un permiso, no el filesystem
+    (None, 5, False),   # EIO sin winerror: un fallo de E/S cualquiera
+    (None, 22, False),  # EINVAL sin winerror: en POSIX no dice «sin hard links»
+], ids=["winerror1", "winerror50", "acceso_denegado", "eio", "einval_posix"])
+def test_que_cuenta_como_filesystem_sin_enlaces(winerror, errno_, esperado):
+    e = OSError(errno_, "x")
+    if winerror is not None:
+        e.winerror = winerror
+    assert vj._sin_enlace_duro(e) is esperado

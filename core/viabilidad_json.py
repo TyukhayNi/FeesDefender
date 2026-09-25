@@ -244,6 +244,23 @@ def _mensaje_ya_existe(destino: Path) -> str:
             f"sesion que lo remato: no se pisa.")
 
 
+#: Los `winerror` con los que Windows dice «este sistema de ficheros no hace hard links»:
+#: 1 (ERROR_INVALID_FUNCTION), que es lo que devuelve el montaje de Drive for Desktop
+#: —medido en W-030A13 el 2026-09-16, en W-0462E1 el 2026-09-17 y en `G:` el
+#: 2026-09-25—, y 50 (ERROR_NOT_SUPPORTED).
+_WINERROR_SIN_ENLACE = frozenset({1, 50})
+
+
+def _sin_enlace_duro(exc: OSError) -> bool:
+    """¿El `os.link` falló porque el sistema de ficheros no admite hard links?
+
+    Se decide por `winerror`, no por `errno`: en ese montaje el `errno` es 22 (EINVAL),
+    que en POSIX significa muchas cosas y ninguna es esta. Un permiso denegado o un fallo
+    de E/S NO son esto, y siguen propagándose como lo que son (MEJORAS #276).
+    """
+    return getattr(exc, "winerror", None) in _WINERROR_SIN_ENLACE
+
+
 def escribir(case_dir, datos: dict) -> Path:
     """Escribe el JSON. **Nunca sobrescribe** y, si el destino llega a existir,
     **nunca esta a medias** -ni siquiera si el proceso muere de golpe en mitad de la
@@ -276,6 +293,11 @@ def escribir(case_dir, datos: dict) -> Path:
         de exito y ese `unlink` deja el temporal en disco. No es el destino -no lleva
         su nombre, nada lo confunde con el protocolo del caso- pero es litter que un
         reintento no limpia solo.
+
+    **En un sistema de ficheros sin hard links** (el montaje de Drive for Desktop en
+    Windows, `MEJORAS #276`) el temporal se publica con `os.rename`, que en Windows
+    conserva las DOS promesas: no pisa un destino existente y publica de una vez lo que
+    ya estaba completo. Fuera de Windows no hay esa vía y el error se propaga.
     """
     problemas = validar(datos)
     if problemas:
@@ -318,6 +340,22 @@ def escribir(case_dir, datos: dict) -> Path:
             os.link(tmp, destino)
         except FileExistsError:
             raise FileExistsError(_mensaje_ya_existe(destino)) from None
+        except OSError as exc:
+            # MEJORAS #276. El montaje de Drive for Desktop —donde vive TODO expediente de
+            # `CASOS_ROOT`— no implementa hard links y devuelve `WinError 1`; la etapa
+            # `viabilidad` tumbaba entera la corrida V1. En Windows hay una primitiva que
+            # da las DOS promesas del docstring: `os.rename` (MoveFileEx sin
+            # REPLACE_EXISTING) falla si el destino existe y publica de una vez un
+            # temporal ya completo. Medido en `G:` el 2026-09-25: con el destino
+            # presente, `FileExistsError` (`WinError 183`) y el destino intacto. Fuera de
+            # Windows `os.rename` PISA en silencio, así que ahí no hay vía de repuesto y
+            # el error se propaga como antes.
+            if not (os.name == "nt" and _sin_enlace_duro(exc)):
+                raise
+            try:
+                os.rename(tmp, destino)
+            except FileExistsError:
+                raise FileExistsError(_mensaje_ya_existe(destino)) from None
     finally:
         # A diferencia de `os.replace` (que renombra: el nombre `tmp` deja de existir
         # tras el exito), `os.link` AÑADE un nombre nuevo sin tocar el viejo: tras un
