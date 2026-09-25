@@ -4,12 +4,17 @@
     python -m scripts.codicert enviar   W-04AKM2 --tipo OVC --plaza Madrid --doc A.pdf --confirmar <digest>
     python -m scripts.codicert estado   W-04AKM2 --tipo OVC --plaza Madrid
     python -m scripts.codicert cosechar W-04AKM2 --tipo OVC --plaza Madrid
+    python -m scripts.codicert aportable W-04AKM2 --tipo OVC --plaza Madrid
 
-Las dos primeras son F1 y las dos últimas F2. Solo `enviar` exige confirmación con
-digest: es la que gasta 16,97 € y manda una comunicación irreversible a un tercero.
-`estado` solo lee; `cosechar` archiva el certificado en el expediente y lo cuelga del
-CRM, las dos cosas reversibles — pero corre bajo mutex, porque dos a la vez subirían
-el mismo certificado dos veces.
+Las dos primeras son F1, `estado` y `cosechar` F2, y `aportable` F3. Solo `enviar`
+exige confirmación con digest: es la que gasta 16,97 € y manda una comunicación
+irreversible a un tercero. `estado` solo lee; `cosechar` archiva el certificado en el
+expediente y lo cuelga del CRM, las dos cosas reversibles — pero corre bajo mutex,
+porque dos a la vez subirían el mismo certificado dos veces.
+
+`aportable` deja junto a cada íntegro la versión que va al juzgado —sin las páginas de
+condiciones— y su manifiesto. Ni gasta ni sube nada, y corre bajo el MISMO mutex que la
+cosecha, porque lee lo que ella escribe.
 
 La orden manda sobre la variable (spec §8): producción exige `--entorno produccion`
 escrito en la propia orden, aunque `CODICERT_ENTORNO=produccion` esté puesto en el
@@ -207,6 +212,28 @@ def render_cosecha(cosechados, pendientes) -> str:
     return "\n".join(lineas)
 
 
+def render_aportables(resultados) -> str:
+    """Qué se preparó para el juzgado, qué no y por qué. Ningún envío sin su línea."""
+    lineas = ["APORTABLES", ""]
+    for r in resultados:
+        lineas.append(f"  {r.id_envio}  [{r.estado.upper().replace('_', ' ')}]  {r.canal}")
+        if r.ruta_aportable:
+            lineas.append(f"      aportable .... {r.ruta_aportable}")
+        if r.ruta_manifiesto:
+            lineas.append(f"      manifiesto ... {r.ruta_manifiesto}")
+        if r.retiradas:
+            lineas.append("      retiradas .... páginas "
+                          + ", ".join(str(p) for p in r.retiradas) + " del certificado")
+        if r.motivo:
+            lineas.append(f"      motivo ....... {r.motivo}")
+        lineas += [f"      ⚠ {a}" for a in r.avisos]
+    if not resultados:
+        lineas.append("  Nada que preparar.")
+    lineas += ["", "  El aportable NO lleva la firma del prestador: la prueba custodiada",
+               "  es el íntegro, con la huella que da su manifiesto."]
+    return "\n".join(lineas)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="codicert", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -216,8 +243,9 @@ def main(argv: list[str] | None = None) -> int:
         "enviar": "ejecuta un plan ya confirmado; gasta",
         "estado": "relee en Codicert qué ha recibido cada requerido",
         "cosechar": "baja los certificados, los archiva y los sube al CRM",
+        "aportable": "prepara la versión que va al juzgado, sin las condiciones",
     }
-    for nombre in ("plan", "enviar", "estado", "cosechar"):
+    for nombre in ("plan", "enviar", "estado", "cosechar", "aportable"):
         s = sub.add_parser(nombre, help=AYUDA[nombre])
         s.add_argument("w_code", help="expediente, p. ej. W-04AKM2")
         s.add_argument("--tipo", required=True, choices=list(exp.TIPOS_COMUNICACION))
@@ -279,6 +307,20 @@ def main(argv: list[str] | None = None) -> int:
                                            ordinal=args.ordinal)
             print(render_cosecha(cosechados, expedicion.pendientes))
             return 0
+
+        if args.orden == "aportable":
+            # La MISMA clave que `cosechar`: F3 lee el íntegro que la cosecha escribe
+            # en la misma carpeta, y dos a la vez leerían uno a medio escribir.
+            with sostener(
+                    exp.clave_mutex_cosecha(args.w_code, args.tipo, entorno_exp,
+                                            args.ordinal),
+                    avisar=lambda m: print(m, file=sys.stderr),
+                    que="la preparación de los aportables"):
+                resultados = exp.preparar_aportables(
+                    args.w_code, args.tipo, entorno_exp=entorno_exp,
+                    ordinal=args.ordinal)
+            print(render_aportables(resultados))
+            return 1 if any(r.estado == exp.PARADO for r in resultados) else 0
 
         plan = exp.planificar(args.w_code, args.tipo, [Path(d) for d in args.docs],
                               entorno_exp=entorno_exp, plaza=plaza, entorno=entorno,
