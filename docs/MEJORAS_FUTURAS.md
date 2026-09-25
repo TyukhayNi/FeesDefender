@@ -12875,3 +12875,21 @@ aquí no lo es, y pierde el chat.
 vez de tres criterios.
 
 **Disparador de promoción.** Cualquier export Android con `.txt` propio.
+
+## 286. F3 no prepara el aportable de una expedición solo de burofax
+
+> **Declarado al construir F3, el 2026-09-25** (plan `docs/superpowers/plans/2026-09-25-codicert-f3.md`).
+
+`core/expedicion_certificada.documentos_enviados` saca los documentos que salieron de la **entrega
+electrónica** de la expedición, porque es la única cuyo acta lista los adjuntos uno a uno con su
+huella. El burofax los funde en un PDF de nombre UUID y no dice dónde acaba cada documento (M-4),
+así que una expedición **sin correo ni SMS** —requeridos sin email ni móvil— para con «ninguna
+entrega electrónica en esta expedición» y no produce aportable. No es un fallo silencioso: para y
+lo dice.
+
+**Remedio probable.** Admitir `--doc` en `codicert aportable`, como en `plan`, y verificar cada
+documento **por casado de texto** contra la reproducción del burofax, ya que no hay huella por
+fichero contra la que cotejarlo.
+
+**Disparador de promoción.** El primer expediente real cuyos requeridos no tengan ni correo ni
+móvil y necesite aportar el certificado del burofax.

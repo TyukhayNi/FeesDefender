@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "12"
+rev: "13"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,18 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 13 (2026-09-25).** Actualizada al construir **F3**, con diez mediciones sobre tres
+> certificados reales y los adjuntos de dos envíos (plan
+> [`2026-09-25-codicert-f3.md`](../plans/2026-09-25-codicert-f3.md), M-1 a M-10; lectura de
+> producción autorizada por Nikolai en la sesión, 0,00 € gastados). **Dos premisas del §7 no se
+> sostenían en lo construido:** el motor **no compone** las condiciones —las trae el operador—, así
+> que su texto se lee de los adjuntos que salieron, verificados contra la huella del acta (§7.3); y
+> el requerimiento **sí lleva importes** —la deuda reclamada—, así que el aviso de «sin cifras»
+> habría saltado en todo envío real y se rehace sobre las frases propias de las condiciones (§7.4).
+> Además, la reproducción real es el refundido **más la factura**, y el burofax se recorta con los
+> adjuntos del correo de la misma expedición, porque su fichero fundido es la concatenación exacta
+> de estos (§7.3).
+>
 > **Rev. 12 (2026-09-21).** Actualizada al construir **F2**, con diez mediciones de producción
 > en solo lectura (0,00 € gastados). Tres cambian el diseño: el **§1.3** gana **seis códigos de
 > estado vivos** que no clasificaba —y la regla de que lo no clasificado se declara, nunca se
@@ -792,9 +804,30 @@ consten para que nadie los reinvente:
    el primer adjunto, 7 el segundo). Vale como control cruzado del instrumento de abajo, no como
    instrumento único: del burofax no está medido.
 
-**El instrumento que sí funciona: casar el texto.** El motor compone B, luego conoce su texto
-exactamente. Para cada página de la reproducción extrae el texto y lo casa, normalizado, contra las
-páginas de B. Es independiente del orden, del número de adjuntos y de que Codicert los fusione.
+**El instrumento que sí funciona: casar el texto.** Para cada página de la reproducción se extrae
+el texto y se casa, normalizado, contra las páginas de B. Es independiente del orden, del número de
+adjuntos y de que Codicert los fusione.
+
+> ⚠️ **Rev. 13: de dónde sale el texto de B.** Este párrafo decía «el motor compone B, luego
+> conoce su texto exactamente», y **en lo construido no es así**: F1 recibe los PDF por `--doc` y
+> dejó escrito que partir la plantilla es trabajo del operador (M-9 del plan de F3). F3 lee B de
+> **los adjuntos que salieron**, bajados de Codicert con `GET /envios/{id}/adjuntos/{nombre}` y
+> verificados contra la huella que lista el acta —3 de 3 coinciden (M-5)—, lo que además es más
+> fiable que lo que el operador diga que mandó. Salen de la **entrega electrónica**, la única cuyo
+> acta lista los adjuntos uno a uno; y valen para el **burofax** de la misma expedición, porque su
+> fichero fundido es la concatenación exacta de esos adjuntos, página a página y en el mismo orden
+> (M-4). Una expedición **solo de burofax** no trae de dónde sacarlos, y F3 para y lo dice.
+>
+> **Lo medido, que fija el instrumento** (M-3): quitada la cabecera que Codicert pone a cada página
+> de la reproducción («Código de envío: … Página: N de M»), original y copia coinciden al **100 %**
+> en las ocho parejas medidas; la misma plantilla en otra expedición, **0,877-0,939**; páginas
+> distintas, **0,39** como mucho. El umbral está en **0,98**. B son las páginas desde la que lleva
+> el rótulo **como línea entera** hasta el final de su documento: la palabra «condiciones» sale
+> también en el requerimiento y en la factura (M-7), y si el rótulo no cae al final se retira de
+> más, nunca de menos, y se avisa de la página arrastrada.
+>
+> **Y la reproducción real no es el documento de tres páginas de la tabla de arriba**: es el
+> refundido **más la factura**, cuatro páginas (M-1). La factura es prueba y se queda.
 
 **Y el literal `CONFIDENCIAL - CONDICIONES` se ha visto funcionar sobre un documento real** (rev.
 10): en la OVC `006catetonk`, enviada por correo a un requerido de verdad, aparece en la página 7
@@ -819,6 +852,15 @@ solo existe cuando B **no** se ha localizado del todo, y ese es exactamente el c
 Nuestro B nace de un RTF y lleva texto siempre; si un día no se localizara, es que algo cambió y
 hace falta un humano.
 
+> **Rev. 13: la parada, construida, son tres** (`core/certificado_aportable.recortar`), las tres
+> antes de entregar nada: (1) una página de B que no se localiza en la reproducción, o que no
+> tiene texto con que localizarla, para; (2) una página que se conserva y lleva el rótulo para,
+> **también si es del acta**, que no se recorta —es la red de la primera por un instrumento
+> independiente—; y (3) el PDF producido **se relee** y tiene que ser exactamente las páginas
+> conservadas, sin copia de B ni rótulo. Y una cuarta regla, de las que no se escriben solas: **si
+> ningún documento enviado lleva el rótulo, F3 no certifica que el íntegro sea aportable** —o no
+> había condiciones, o las había con otro rótulo—: para y lo decide una persona.
+
 ### 7.4 Qué produce, y el aviso que sí tiene discriminante
 
 Tres artefactos, los tres archivados:
@@ -833,6 +875,25 @@ Tres artefactos, los tres archivados:
 **bloque A** no contenga cifras ni términos de la oferta —importe, calendario, quita, plazo de
 aceptación— y que **el asunto y el cuerpo** tampoco, porque el acta los reproduce y el acta no se
 recorta. Si salta, nombra qué encontró y dónde.
+
+> ⚠️ **Rev. 13: el discriminante de «cifras» no sirve, y se cambia por el texto de B.** Los tres
+> requerimientos reales llevan la **deuda reclamada en euros** («…adeudando… la cantidad de X €»),
+> y la factura, base, IVA y total (M-2): un aviso por cifras habría saltado en todo envío. Lo que
+> distingue una fuga es el **propio texto de las condiciones**: se buscan sus frases de **8
+> palabras** —tras el rótulo y antes de la despedida— en todo lo que se conserva, **acta incluida**,
+> que es donde van el asunto y el cuerpo. Medido: cero coincidencias en los tres certificados; con
+> 5 o 6 palabras saltan en falso el IBAN de la factura y «de la Oferta Vinculante Confidencial»
+> (M-6), y los sintéticos de la suite reproducen esas dos fuentes para que el umbral no se pueda
+> bajar sin que un test lo vea. Sigue siendo **aviso, no parada**.
+>
+> **Los ficheros**, junto al íntegro en `04_Output predemanda/Certificados`:
+> `<íntegro> - APORTABLE.pdf` y `<íntegro> - MANIFIESTO.json`. El aportable **no lleva la firma**
+> del prestador —recortar la rompe— **ni su sello visible**: el widget de firma de la página 1 se
+> quita, porque pintaría «Digitally signed by…» sobre un documento que ya no está firmado (M-8,
+> comprobado a ojo sobre el aportable real). Lo que sí conserva es la numeración de Codicert en el
+> pie («Página 1 de 8» en un aportable de 7): el salto se ve, y el aportable no aparenta estar
+> completo. El recorte es **determinista**, y por eso volver a lanzarlo compara por contenido y ni
+> duplica ni pisa. F3 **no sube** el aportable al CRM: el íntegro, que es la prueba, ya lo subió F2.
 
 ## 8. Credenciales y entornos
 
@@ -863,7 +924,16 @@ pruebas, «así no se cobrará nada».
 |---|---|---|
 | **F1** | `core/codicert.py` + `planificar` + `ejecutar` + `plan`/`enviar` | Sí: sustituye el picado manual |
 | **F2** | `refrescar` + `cosechar` + `core/sudespacho_documentos.py` + `estado`/`cosechar` | Sí: cierra la prueba del envío |
-| **F3** | `core/certificado_aportable.py` + el aportable y su manifiesto | Sí: produce lo que va al juzgado |
+| **F3** | `core/certificado_aportable.py` + el aportable y su manifiesto + `aportable` | Sí: produce lo que va al juzgado |
+
+> **Rev. 13 (2026-09-25), al construir F3.** El humo (`scripts/_codicert_humo_f3.py`) corrió
+> contra **producción**, en solo lectura y fuera del expediente, sobre `W-04AKM2 - OVC`: aportable
+> del correo `006catetonk` sin su página 7 y del burofax `006catfpdv6` sin su página 9 —las dos,
+> la de condiciones, casada al 1,000 en las tres numeraciones—; `006catf83zx` declarado pendiente;
+> factura conservada, rótulo ausente, huellas de íntegro y aportable iguales a las del manifiesto,
+> sello de firma presente en el íntegro y ausente en el aportable; crédito 836,9215 € antes y
+> después. **El camino real queda ejercido para Madrid**; las otras seis plazas siguen sin
+> credencial.
 
 **Lo que se prueba con doble y lo que no.** Con el puerto del §4.2, el criterio del jurídico se
 prueba entera contra dobles. Lo que **no se puede probar sin enviar de verdad** se nombra aquí para
@@ -1059,3 +1129,15 @@ la consecuencia, escrita para que nadie la lea de más:
   la parte revisada, y la regla de cierre dice que lo que hay que argumentar como trivial no lo
   es—: se declara **dispensada por quien tiene el techo duro**. La diferencia importa, porque una
   exención es un juicio sobre el diff y una dispensa es una decisión sobre el coste.
+
+### 12.4 La cobertura de F3 (2026-09-25)
+
+**Una ronda, sobre el diff**, que es la lectura de la tabla de `CLAUDE.md`: F3 no decide quién
+escribe sobre qué copia ni destruye datos de cliente —crea dos ficheros nuevos junto al íntegro y
+no pisa ninguno—. Con **`gpt-6-astra`·`medium`**, la fila de «escritura sobre datos de cliente…
+idempotencia», y la frontera que lo justifica es **silenciosa**: un aportable con la página de
+condiciones dentro *parece* correcto —nombre, manifiesto y páginas en su sitio— y su defecto solo
+aparece cuando la otra parte lo lee en el juzgado.
+
+La adjudicación va en el plan de F3 y el informe literal en su acta hermana; el estado de la ronda
+se escribe aquí al adjudicarla.
