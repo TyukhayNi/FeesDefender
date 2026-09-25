@@ -17,7 +17,9 @@ from .case_manager import dir_intake
 from .config import PENDIENTE_CHECKIN_SUBDIR, WHATSAPP_SUBDIRS, caso_path, settings
 from .intake_manifest import IntakeManifest, compute_sha256_bytes
 from .intake_utils import safe_zip_members, sanitize_filename
-from .whatsapp_export import filter_by_date_range, parse_chat, referencias_adjuntos
+from .whatsapp_export import (
+    elegir_chat, filter_by_date_range, parse_chat, referencias_adjuntos, resolver_adjunto,
+)
 
 _AUDIO_EXTS = frozenset({".opus", ".ogg", ".m4a", ".aac", ".mp3"})
 _ORIGINAL_ZIP_NAME = "_export_original.zip"
@@ -60,18 +62,17 @@ def _read_members(content: bytes) -> dict[str, bytes]:
 
 
 def _find_chat_txt(members: dict[str, bytes]) -> tuple[str, str]:
-    """Localiza el ``.txt`` del chat y lo decodifica.  Lanza ValueError si no hay."""
-    if "_chat.txt" in members:
-        name = "_chat.txt"
-    else:
-        txts = [n for n in members if n.lower().endswith(".txt")]
-        if not txts:
-            raise ValueError(
-                "El export no contiene ningún _chat.txt (.txt) — "
-                "no parece una exportación de WhatsApp."
-            )
-        name = sorted(txts)[0]
-    return name, members[name].decode("utf-8", errors="replace")
+    """Localiza el fichero de chat con la regla única del canal (``elegir_chat``,
+    MEJORAS #285) y lo decodifica.  Lanza ValueError si no hay ningún candidato."""
+    textos = {n: b.decode("utf-8", errors="replace")
+              for n, b in members.items() if n.lower().endswith(".txt")}
+    name = elegir_chat(textos, members)
+    if name is None:
+        raise ValueError(
+            "El export no contiene ningún _chat.txt (.txt) — "
+            "no parece una exportación de WhatsApp."
+        )
+    return name, textos[name]
 
 
 def _resolver_chat_dir_previo(case_id: str, case_dir: Path, parent: Path) -> Path:
@@ -101,8 +102,10 @@ def analyze(content: bytes, *, zip_name: str) -> ChatPreview:
     refs = referencias_adjuntos(msgs)
 
     presentes = sorted(n for n in members if n != chat_txt_name)
-    presentes_set = set(presentes)
-    faltantes = [r for r in refs if r not in presentes_set]
+    # Por el nombre tal como lo cita el chat y después limpio, y el limpio solo si identifica
+    # un fichero (R1/H-04): «faltante» no puede depender de una marca invisible.
+    faltantes = [m.adjunto_ref for m in msgs if m.adjunto_ref
+                 and resolver_adjunto(m.adjunto_ref, presentes, m.adjunto_ref_crudo) is None]
     audios = [n for n in presentes if Path(n).suffix.lower() in _AUDIO_EXTS]
 
     timestamps = [m.timestamp for m in msgs if m.timestamp is not None]
@@ -194,7 +197,11 @@ def deposit_export(
             items.append(intake_lotes.ItemManifiesto(
                 relpath=f"{rol_subdir}/{preview.chat_name}/{name}",
                 sha256=sha, size=len(data),
-                tipo_contenido=intake_lotes.clasificar_tipo_contenido(name),
+                # El chat es `whatsapp` se llame como se llame: la clasificación por
+                # nombre solo reconoce `_chat.txt`, y el export Android trae el suyo
+                # (MEJORAS #285: W-0462E1 lo registró como `txt`).
+                tipo_contenido=("whatsapp" if name == chat_txt_name
+                                else intake_lotes.clasificar_tipo_contenido(name)),
                 duplicado_de=dup,
             ))
 

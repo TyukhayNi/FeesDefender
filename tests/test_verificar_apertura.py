@@ -1975,3 +1975,179 @@ def test_r1_h08_la_orden_que_se_imprime_lleva_el_W_CODE_no_el_case_id(tmp_path, 
     salida = capsys.readouterr().out
     assert "--case-id W-TEST01" in salida
     assert "(" not in salida.split("--case-id")[1].split("\n")[0]
+
+
+# --- El verificador dice lo que ya sabe (MEJORAS #268, #269, #218; 2026-09-25) --------
+#
+# Tres comprobaciones calculaban el dato que separa un rojo conocido de uno grave y no lo
+# ponían en la línea que el operador lee. Ningún veredicto se ablanda aquí: un `fallo`
+# sigue siendo `fallo`; lo que cambia es que diga por qué.
+
+
+def _relleno(original: bytes) -> bytes:
+    """`original` con la cola de ceros de `MEJORAS #225` hasta el siguiente múltiplo de 512."""
+    return original + b"\0" * (512 - len(original) % 512)
+
+
+def test_c2_si_TODAS_las_discrepancias_son_el_relleno_el_detalle_lo_dice(tmp_path):
+    """W-02SRFU (2026-09-15): «49 fichero(s) cuyo sha256 NO es el que Drive declara» y los
+    49 eran el relleno conocido, confirmado por la propia función y guardado en una
+    evidencia que nadie lee."""
+    a, b = b"encargo firmado", b"hoja de visita"
+    c = _caso_drive(tmp_path, {"a.pdf": _relleno(a), "b.pdf": _relleno(b)})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("a.pdf", sha256=_sha(a)),
+                              vaf.FicheroRemoto("b.pdf", sha256=_sha(b))])
+    r = _rr(c, "hash_drive", f)
+    assert r.estado == va.FALLO, "se explica, no se aprueba"
+    assert "TODOS son el relleno" in r.detalle and "MEJORAS #225" in r.detalle, r.detalle
+    assert (r.evidencia["n_discrepan"], r.evidencia["n_relleno_225"]) == (2, 2)
+    assert r.evidencia["sin_explicar"] == []
+
+
+def test_c2_si_solo_ALGUNAS_lo_son_nombra_las_que_no(tmp_path):
+    """El caso que importa: una alteración real entre rellenos conocidos no puede quedar
+    escondida detrás de la explicación de las demás."""
+    a = b"encargo firmado"
+    c = _caso_drive(tmp_path, {"a.pdf": _relleno(a), "b.pdf": b"contenido MANIPULADO"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("a.pdf", sha256=_sha(a)),
+                              vaf.FicheroRemoto("b.pdf", sha256=_sha(b"otro contenido"))])
+    r = _rr(c, "hash_drive", f)
+    assert r.estado == va.FALLO
+    assert "1 con el relleno" in r.detalle and "1 SIN explicar" in r.detalle, r.detalle
+    assert "b.pdf" in r.detalle
+    assert r.evidencia["sin_explicar"] == ["b.pdf"]
+
+
+def test_c2_si_NINGUNA_lo_es_tambien_lo_dice(tmp_path):
+    """Control positivo: sin relleno, el mensaje no puede sonar a defecto conocido."""
+    c = _caso_drive(tmp_path, {"b.pdf": b"contenido MANIPULADO"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("b.pdf", sha256=_sha(b"otro contenido"))])
+    r = _rr(c, "hash_drive", f)
+    assert r.estado == va.FALLO
+    assert "ninguno es el relleno" in r.detalle and "TODOS" not in r.detalle, r.detalle
+
+
+def test_c2_los_CONTEOS_no_se_truncan_aunque_las_listas_si(tmp_path):
+    """W-02SRFU: con 49 discrepancias y 8 confirmaciones listadas era imposible saber
+    desde la salida si estaban explicadas las 49 o solo ocho."""
+    originales = {f"d{i:02d}.pdf": f"documento {i}".encode() for i in range(12)}
+    c = _caso_drive(tmp_path, {n: _relleno(o) for n, o in originales.items()})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto(n, sha256=_sha(o))
+                              for n, o in originales.items()])
+    r = _rr(c, "hash_drive", f)
+    assert (r.evidencia["n_discrepan"], r.evidencia["n_relleno_225"]) == (12, 12)
+    assert len(r.evidencia["discrepan"]) == 8, "las listas sí se truncan"
+    assert "12 fichero(s)" in r.detalle
+
+
+def test_c3_ve_el_catalogo_que_la_skill_deja_DENTRO_de_la_sala(tmp_path):
+    """W-02SRFU: C4 decía «los 4 presentes» (`catalogo_en: sala`) y C3, en la misma
+    corrida, «no hay catálogo»: dos comprobaciones contradiciéndose sobre el mismo hecho."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a"}, {"slug": "b"}])
+    sala = _con_sala_lectura(c)
+    (sala / "indice_documental.yaml").write_text(
+        yaml.dump([{"slug": "a"}, {"slug": "b"}]), encoding="utf-8")
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.OK, r.detalle
+    assert r.evidencia["catalogo_en"] == "sala"
+
+
+def test_c3_sigue_viendo_el_catalogo_en_01_procesado_y_dice_donde(tmp_path):
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a"}])
+    _con_catalogo(c, 1)
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.OK and r.evidencia["catalogo_en"] == "01_Procesado"
+
+
+def test_c3_una_ubicacion_OCUPADA_por_un_directorio_es_fallo(tmp_path):
+    """No poder mirar no es «no hay»: un catálogo que existe y no es un fichero es una
+    colisión, también en la ubicación nueva."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a"}])
+    sala = _con_sala_lectura(c)
+    (sala / "indice_documental.yaml").mkdir()
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.FALLO and "no es un fichero" in r.detalle, r.detalle
+
+
+def test_c9_dice_los_dos_importes_y_que_es_el_truncado_del_alta(tmp_path):
+    """W-030A13 (2026-09-16): «la cuantía local y la del CRM no coinciden» sin ninguno de
+    los dos números, y hubo que leer el CRM a mano para saber cuánto decía."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, cuantia=48702.50,
+                 _expedientes=[{"id": "653", "element": "extrajudiciales"}])
+    r = _rr(c, "cuantia_coherente", _FuentesDobles(expediente=_exp(exp_id="653",
+                                                                   cuantia="48702.00")))
+    assert r.estado == va.FALLO, "se explica, no se aprueba"
+    assert "no coinciden" in r.detalle
+    assert "48702.50" in r.detalle and "48702.00" in r.detalle, r.detalle
+    assert "MEJORAS #218" in r.detalle
+    assert r.evidencia["expedientes"]["653"]["crm"] == 48702.0
+
+
+def test_c9_R1_H06_solo_es_el_truncado_si_el_CRM_es_EXACTAMENTE_el_redondeo_del_alta(tmp_path):
+    """R1/H-06: la primera versión llamaba «truncado del alta» a cualquier CRM entero a
+    menos de un euro. El alta manda `int(round(cuantia))`: con 48702.90 habría mandado
+    48703, así que un CRM en 48702 es OTRA cosa y no puede salir etiquetado como el defecto
+    conocido."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, cuantia=48702.90,
+                 _expedientes=[{"id": "644", "element": "extrajudiciales"}])
+    r = _rr(c, "cuantia_coherente", _FuentesDobles(expediente=_exp(cuantia="48702")))
+    assert r.estado == va.FALLO
+    assert "MEJORAS #218" not in r.detalle, r.detalle
+
+
+def test_c9_R1_H06_el_redondeo_bancario_del_alta_si_se_reconoce(tmp_path):
+    """Control positivo de H-06 en el valor donde el redondeo bancario se aparta del
+    escolar (`MEJORAS #218`): `round(28132.5)` es 28132, y eso SÍ es lo que manda el alta."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, cuantia=28132.5,
+                 _expedientes=[{"id": "641", "element": "extrajudiciales"}])
+    r = _rr(c, "cuantia_coherente", _FuentesDobles(expediente=_exp(exp_id="641",
+                                                                   cuantia="28132.00")))
+    assert r.estado == va.FALLO and "MEJORAS #218" in r.detalle, r.detalle
+
+
+def test_c3_R1_H05_con_los_DOS_catalogos_y_distintos_es_fallo(tmp_path):
+    """R1/H-05: con los dos catálogos presentes C3 cogía el de la sala y no miraba el otro,
+    así que un catálogo raíz que discrepa del de la sala salía `ok` donde `base/` daba
+    `fallo`. Aceptar dos ubicaciones es mirar las dos."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a"}])
+    _con_catalogo(c, 2)
+    sala = _con_sala_lectura(c)
+    (sala / "indice_documental.yaml").write_text(yaml.dump([{"slug": "a"}]),
+                                                 encoding="utf-8")
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.FALLO, r.detalle
+    assert "sala" in r.detalle and "01_Procesado" in r.detalle
+    assert r.evidencia["catalogos"] == {"sala": 1, "01_Procesado": 2}
+
+
+def test_c3_R1_H05_con_los_dos_catalogos_iguales_compara_y_lo_dice(tmp_path):
+    """Control positivo: dos catálogos que cuadran entre sí no son un fallo, pero la
+    evidencia dice que había dos."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a"}])
+    _con_catalogo(c, 1)
+    sala = _con_sala_lectura(c)
+    (sala / "indice_documental.yaml").write_text(yaml.dump([{"slug": "a"}]),
+                                                 encoding="utf-8")
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.OK, r.detalle
+    assert r.evidencia["catalogos"] == {"sala": 1, "01_Procesado": 1}
+
+
+def test_c9_sin_la_mencion_al_alta_cuando_la_diferencia_no_es_el_truncado(tmp_path):
+    """Control positivo: una discrepancia de verdad no puede salir etiquetada como el
+    defecto conocido."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, cuantia=73140.0,
+                 _expedientes=[{"id": "644", "element": "extrajudiciales"}])
+    r = _rr(c, "cuantia_coherente", _FuentesDobles(expediente=_exp(cuantia="12000")))
+    assert r.estado == va.FALLO
+    assert "73140.00" in r.detalle and "12000.00" in r.detalle, r.detalle
+    assert "MEJORAS #218" not in r.detalle

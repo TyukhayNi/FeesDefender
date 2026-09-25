@@ -244,6 +244,23 @@ def _mensaje_ya_existe(destino: Path) -> str:
             f"sesion que lo remato: no se pisa.")
 
 
+#: Los `winerror` con los que Windows dice «este sistema de ficheros no hace hard links»:
+#: 1 (ERROR_INVALID_FUNCTION), que es lo que devuelve el montaje de Drive for Desktop
+#: —medido en W-030A13 el 2026-09-16, en W-0462E1 el 2026-09-17 y en `G:` el
+#: 2026-09-25—, y 50 (ERROR_NOT_SUPPORTED).
+_WINERROR_SIN_ENLACE = frozenset({1, 50})
+
+
+def _sin_enlace_duro(exc: OSError) -> bool:
+    """¿El `os.link` falló porque el sistema de ficheros no admite hard links?
+
+    Se decide por `winerror`, no por `errno`: en ese montaje el `errno` es 22 (EINVAL),
+    que en POSIX significa muchas cosas y ninguna es esta. Un permiso denegado o un fallo
+    de E/S NO son esto, y siguen propagándose como lo que son (MEJORAS #276).
+    """
+    return getattr(exc, "winerror", None) in _WINERROR_SIN_ENLACE
+
+
 def escribir(case_dir, datos: dict) -> Path:
     """Escribe el JSON. **Nunca sobrescribe** y, si el destino llega a existir,
     **nunca esta a medias** -ni siquiera si el proceso muere de golpe en mitad de la
@@ -264,8 +281,8 @@ def escribir(case_dir, datos: dict) -> Path:
     comprobacion.
 
     Dos promesas, y hasta donde llega cada una:
-      - GARANTIZADA siempre, incluso si el proceso muere sin avisar (`kill -9`, corte
-        de luz) en cualquier instante: el destino nunca se pisa -si otra sesion ya lo
+      - GARANTIZADA siempre, incluso si el proceso muere sin avisar (`kill -9`) en
+        cualquier instante: el destino nunca se pisa -si otra sesion ya lo
         remato, esta funcion falla con `FileExistsError` en vez de tocarlo- y, si esta
         funcion SI llega a crearlo, nunca queda con contenido parcial -nace de un
         `os.link` a un temporal que ya estaba completo, no de escribirse in situ, asi
@@ -276,6 +293,16 @@ def escribir(case_dir, datos: dict) -> Path:
         de exito y ese `unlink` deja el temporal en disco. No es el destino -no lleva
         su nombre, nada lo confunde con el protocolo del caso- pero es litter que un
         reintento no limpia solo.
+
+    **En un sistema de ficheros sin hard links** (el montaje de Drive for Desktop en
+    Windows, `MEJORAS #276`) el temporal se publica con `os.rename`, que en Windows
+    conserva las DOS promesas: no pisa un destino existente y publica de una vez lo que
+    ya estaba completo. Fuera de Windows no hay esa vía y el error se propaga.
+
+    **Lo que ninguna de las dos vías promete: sobrevivir a un corte de luz.** No hay
+    `fsync` ni del contenido ni del nombre, así que la persistencia física no está
+    acreditada. Hasta el 2026-09-25 este docstring la daba por garantizada; lo señaló la
+    R2 de Codex sobre `#276`, y es anterior a ese cambio.
     """
     problemas = validar(datos)
     if problemas:
@@ -318,13 +345,29 @@ def escribir(case_dir, datos: dict) -> Path:
             os.link(tmp, destino)
         except FileExistsError:
             raise FileExistsError(_mensaje_ya_existe(destino)) from None
+        except OSError as exc:
+            # MEJORAS #276. El montaje de Drive for Desktop —donde vive TODO expediente de
+            # `CASOS_ROOT`— no implementa hard links y devuelve `WinError 1`; la etapa
+            # `viabilidad` tumbaba entera la corrida V1. En Windows hay una primitiva que
+            # da las DOS promesas del docstring: `os.rename` (MoveFileEx sin
+            # REPLACE_EXISTING) falla si el destino existe y publica de una vez un
+            # temporal ya completo. Medido en `G:` el 2026-09-25: con el destino
+            # presente, `FileExistsError` (`WinError 183`) y el destino intacto. Fuera de
+            # Windows `os.rename` PISA en silencio, así que ahí no hay vía de repuesto y
+            # el error se propaga como antes.
+            if not (os.name == "nt" and _sin_enlace_duro(exc)):
+                raise
+            try:
+                os.rename(tmp, destino)
+            except FileExistsError:
+                raise FileExistsError(_mensaje_ya_existe(destino)) from None
     finally:
         # A diferencia de `os.replace` (que renombra: el nombre `tmp` deja de existir
         # tras el exito), `os.link` AÑADE un nombre nuevo sin tocar el viejo: tras un
         # `link` de exito, `tmp` sigue existiendo como entrada separada que apunta al
         # mismo contenido. Este `unlink` la retira en TODOS los casos -exito, fallo de
-        # `os.link`, o fallo de la escritura de mas arriba-; `missing_ok=True` es
-        # defensivo (nada en este camino deja a `tmp` ausente por si mismo), no una
-        # segunda comprobacion de fallo.
+        # `os.link`, o fallo de la escritura de mas arriba-. `missing_ok=True` es
+        # NECESARIO, no defensivo: tras el `os.rename` de exito de la via sin hard link
+        # (`MEJORAS #276`) el nombre `tmp` ya no existe.
         tmp.unlink(missing_ok=True)
     return destino
