@@ -201,6 +201,25 @@ def test_una_razon_social_con_Y_dentro_NO_es_un_sobre_conjunto(tmp_path):
     assert exp.AVISO_SOBRE_CONJUNTO not in m["avisos"]
 
 
+def test_H05_sobre_conjunto_con_una_razon_social_que_LLEVA_Y(tmp_path):
+    """R1/H-05: partir por « Y » rompía el nombre de la sociedad y el aviso no salía."""
+    partes = lambda w: [{"nombre": "GARCIA Y ASOCIADOS, S.L."},  # noqa: E731
+                        {"nombre": "ANA", "1apellido": "LOPEZ"}]
+    entorno, _, _ = _escenario(tmp_path, partes=partes,
+                               destinatario_burofax="GARCIA Y ASOCIADOS, S.L. Y ANA LOPEZ")
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    m = json.loads(r["006b"].ruta_manifiesto.read_text(encoding="utf-8"))
+    assert exp.AVISO_SOBRE_CONJUNTO in m["avisos"]
+
+
+def test_H05_un_destinatario_que_no_casa_con_las_partes_AVISA_de_la_incertidumbre(tmp_path):
+    """La comparación es con las partes de HOY: si no casan, no se afirma nada y se dice."""
+    entorno, _, _ = _escenario(tmp_path, destinatario_burofax="PEDRO GOMEZ RUIZ")
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    assert any("no se puede atribuir" in a for a in r["006b"].avisos), r["006b"].avisos
+    assert exp.AVISO_SOBRE_CONJUNTO not in r["006b"].avisos
+
+
 def test_si_el_CRM_no_responde_se_avisa_en_vez_de_callar(tmp_path):
     def sin_crm(w):
         raise exp.ExpedicionError("el caso no está indexado")

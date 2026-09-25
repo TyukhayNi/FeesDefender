@@ -2584,19 +2584,52 @@ def documentos_enviados(expedicion: Expedicion, *,
     return tuple(documentos)
 
 
-def _es_sobre_conjunto(envio: EnvioObservado, partes: list[dict]) -> bool:
-    """¿El burofax fue a más de un requerido en el mismo sobre? (spec §5 regla 3)
+#: El aviso cuando el destinatario de un burofax no se puede atribuir a las partes.
+AVISO_DESTINATARIO_INCIERTO = (
+    "el destinatario del burofax no se puede atribuir a las partes del CRM (sus nombres "
+    "pudieron cambiar, o no constan): si fue a varios requeridos en el mismo sobre, "
+    "acredita la entrega en el domicilio, no a cada uno.")
 
-    F1 compone el nombre de un sobre conjunto uniendo los nombres con « Y »
-    (`destinatarios_de`), y el listado lo devuelve en `destinatarios` (M-7 de F2). Se
-    parte por « Y » y se cuentan los trozos que son, enteros, el nombre de una parte:
-    una razón social con « Y » dentro no casa con ninguna y no dispara el aviso.
+
+def _cubre(texto: str, nombres: set[str], desde: int = 0) -> int:
+    """Cuántos nombres, como mucho, cubren `texto[desde:]` entero unidos por « y »; -1 si
+    no se puede."""
+    mejor = -1
+    for nombre in nombres:
+        if not texto.startswith(nombre, desde):
+            continue
+        fin = desde + len(nombre)
+        if fin == len(texto):
+            mejor = max(mejor, 1)
+        elif texto.startswith(" y ", fin):
+            resto = _cubre(texto, nombres, fin + 3)
+            if resto > 0:
+                mejor = max(mejor, 1 + resto)
+    return mejor
+
+
+def _atribucion_burofax(envio: EnvioObservado, partes: list[dict]) -> str | None:
+    """El aviso que toca al destinatario de un burofax, o `None` (spec §5 regla 3, R1/H-05).
+
+    F1 compone el nombre de un sobre conjunto uniendo con « Y » los nombres COMPLETOS
+    (`destinatarios_de`), y el listado lo devuelve en `destinatarios`. Partirlo por « Y »
+    rompía el nombre de una sociedad que la lleva dentro («GARCIA Y ASOCIADOS, S.L. Y ANA
+    LOPEZ»), y el aviso no salía. Ahora se lee al revés: el destinatario ES una parte, o
+    se puede leer entero como dos o más nombres de partes unidos por « y », o no se puede
+    atribuir —porque los nombres del CRM cambiaron o no constan—, y **eso se dice**, en vez
+    de callar como si fuera a una sola persona.
     """
     if envio.canal != "burofax":
-        return False
-    nombres = {nombre_completo_de(p).strip().lower() for p in partes} - {""}
-    trozos = [t.strip().lower() for t in envio.destinatario.split(" Y ")]
-    return sum(1 for t in trozos if t in nombres) >= 2
+        return None
+    from core.certificado_lectura import _normalizar
+
+    nombres = {_normalizar(nombre_completo_de(p)) for p in partes} - {""}
+    destinatario = _normalizar(envio.destinatario)
+    if destinatario in nombres:
+        return None
+    if _cubre(destinatario, nombres) >= 2:
+        return AVISO_SOBRE_CONJUNTO
+    return AVISO_DESTINATARIO_INCIERTO
 
 
 def _escribir_atomico(destino: Path, datos: bytes) -> None:
@@ -2717,8 +2750,10 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
                     f"no se pudo comprobar si el sobre fue conjunto ({error_partes}): si "
                     "este burofax fue a varios requeridos, acredita la entrega en el "
                     "domicilio, no a cada uno.")
-            elif _es_sobre_conjunto(envio, partes):
-                avisos_extra.append(AVISO_SOBRE_CONJUNTO)
+            else:
+                aviso = _atribucion_burofax(envio, partes)
+                if aviso is not None:
+                    avisos_extra.append(aviso)
         destino, manifiesto = ruta_aportable(integro), ruta_manifiesto(integro)
         cuerpo = json.dumps(apo.manifiesto_de(
             recorte, id_envio=envio.id_envio, canal=envio.canal,
