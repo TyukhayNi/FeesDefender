@@ -13157,3 +13157,205 @@ alta extrajudicial mande los dos campos, como la judicial. (3) Decidir con Nikol
 las altas ya hechas: es escritura en el CRM.
 
 **Disparador.** La medición del paso (1), que es barata y no escribe nada.
+
+---
+
+## 295. `abrir_caso --modo v1 --fuente email` no deriva la identidad, y el comando del runbook que trae correo no pasa esos flags
+
+> **Leído en el código el 2026-09-25, abriendo W-02UIQU; no corrido.** Pasé los flags a mano para
+> no gastar una ronda V1, porque cada ronda extra vuelve a duplicar los ficheros sin extensión
+> (`MEJORAS #214`, punto 2).
+
+`scripts/abrir_caso.py:2098` solo llama a `_autoderivar_drive_ev` cuando `fuente == "drive_ev"`.
+Con `--modo v1 --fuente email` no se derivan `--codigo-caso` ni `--sufijo`, y la línea 2110 aborta
+con «faltan flags de identidad». El «Comando que además trae correo» de
+`RUNBOOK_APERTURA_EXPEDIENTE.md` §3 (línea 243) no los pasa: si el código es como lo leo, ese
+comando copiado tal cual aborta. V1 materializa Drive E&V con cualquier `--fuente`, así que la
+derivación tendría el `--folder-id` que necesita.
+
+**Remedio probable.** Derivar la identidad desde `--folder-id` sea cual sea `--fuente`; si no, que
+el runbook ponga los dos flags en ese comando.
+
+**Disparador de promoción.** La próxima apertura con correo lanzada copiando el runbook. Antes de
+tocar nada, confirmar la lectura corriéndolo.
+
+---
+
+## 296. `rclone config show gdrive_ev` tarda 4-6 s, y dos consumidores con timeout corto lo convierten en un error que no dice la causa
+
+> **Medido el 2026-09-25, abriendo W-02UIQU.**
+
+**El alta.** `abrir_caso --case-id … --fuente drive_ev --crm api` abortó sin escribir nada con
+«--team-id no se pudo derivar de --folder-id (sin --folder-id o token/red)». No faltaba el
+`--folder-id` ni había problema de token: acto seguido, `rclone config show gdrive_ev` tardó 6,44,
+4,33 y 3,89 s, el token seguía vigente y `files.get` devolvió 200.
+`core/intake_drive.py::_get_drive_access_token` (línea 457) lanza esa orden con `timeout=5`
+(líneas 484-488 y 530-534); el `TimeoutExpired` se traga como `None`, `get_drive_folder_info`
+devuelve `None` y el CLI lo pinta como red o token. Con `--team-id` explícito el alta salió a la
+primera.
+
+**El precheck, probablemente la misma causa, sin aislar.** `precheck_rclone.py gdrive_tl:`, de la
+skill `organizar-sala-lectura`, dio `exit 4` («rclone/remote no disponible») con `rclone` en el
+PATH, y un minuto después `exit 0` en 1,3 s; en ese momento la corrida V1 del caso tenía `rclone`
+ocupado. Su `timeout=15` (línea 43) es más holgado, pero el `exit 4` junta en un solo código «no
+instalado», «remote inexistente» y «tardó demasiado» (docstring, línea 14), así que un transitorio
+manda a la copia secuencial sin decir por qué. Falla hacia el lado lento, no hacia el peligroso.
+
+**La frontera:** un timeout de subproceso que se traga y se informa como otra causa. Hoy lo hacen
+los dos sitios que leen el token con `config show`.
+
+**Remedio probable.** Un solo lector del token, con timeout holgado, que distinga «tardó» de «no
+existe» y lo diga en el mensaje; en el precheck, un código de salida propio para el timeout.
+
+**Disparador de promoción.** El próximo alta que aborte con ese mensaje.
+
+---
+
+## 297. `PROCESO_BAD_DEBT_EV.md` §9 manda leer por `gviz`, y `gviz` deja sin nombre justo las columnas que responden la pregunta
+
+> **Medido el 2026-09-25 sobre el fichero `BD SEV, SAN, SSE, BIL 2026`**, consultado para W-02UIQU
+> (¿se ha enviado requerimiento u OVC?).
+
+La vía del §9 (`docs/PROCESO_BAD_DEBT_EV.md:232`, `gviz/tq?tqx=out:csv&sheet=JURIDICO`) devolvió
+158 filas con la cabecera fundida: la fila 1 y la 3 del original mezcladas, y `Fecha Burofax`,
+`Fecha OVC`, `Fecha demanda` y `Pdte.` sin nombre. La exportación por pestaña,
+`/export?format=csv&gid=<gid>`, devolvió 159 filas con la cabecera real en la fila 4 y sin
+inferencia de tipos. Los `gid` salen de `/htmlview` con el mismo token (cuatro pestañas:
+`BD 21.09.2026`=0, `JURIDICO`, `BP List` y `Listado Mails`). La Sheets API no sirve:
+`403 SERVICE_DISABLED` en el proyecto OAuth de `google-despacho`.
+
+**Remedio probable.** Que el §9 dé `export?format=csv&gid=` como vía primaria y deje `gviz` como
+plan B con este aviso. La skill `engel-volkers` (§6.2, trampa 5) repite la vía `gviz` y va en el
+mismo cambio.
+
+**Disparador de promoción.** La próxima consulta a un fichero BD cuya cabecera no esté en la
+fila 1.
+
+---
+
+## 298. El split corta bien por hojas en blanco, pero deja dos escrituras en un segmento y lo etiqueta todo `DOCUMENTO`
+
+> **Medido el 2026-09-25 en W-02UIQU**, sobre el PDF de títulos de propiedad de la carpeta de
+> captación de E&V (54 páginas).
+
+`core/split_documental.py::segmentar_por_blancos` (línea 135) lo partió en cuatro piezas por las
+hojas en blanco 40, 46, 50 y 54: págs. 1-39, 41-45 (nota de inscripción registral), 47-49 y 51-53
+(certificaciones registrales de garaje y trastero). Dos defectos:
+
+1. **El primer segmento lleva dos escrituras**, una compraventa de 1981 y una donación de 2024,
+   porque entre ellas no hay hoja en blanco y el clasificador solo mira la primera página.
+2. **Las cuatro piezas salen `DOCUMENTO`.** `TIPOS_EXTRA_EV` (línea 92) no tiene marcadores de
+   escritura notarial, certificación registral ni nota simple, que en la carpeta de captación de
+   E&V son lo normal.
+
+**Remedio probable.** Para (2), barato: marcadores `ESCRITURA DE COMPRAVENTA`, `DONACIÓN`,
+`CERTIFICACIÓN REGISTRAL` y `NOTA SIMPLE`. Para (1): el módulo ya corta por marcadores
+(`separar.detectar_segmentos`), pero solo como fallback cuando no hay hojas en blanco (línea 226).
+Aplicarlo también dentro de un segmento largo, con el arranque de una escritura («Número … En
+<ciudad>, mi residencia») como marcador.
+
+**Disparador de promoción.** Un título de propiedad que llegue como un solo PDF con varias
+escrituras, lo normal cuando hay herencia o donación.
+
+---
+
+## 299. El OCR de las fotos de marketing: 40 minutos, 105 MB y cero texto útil, con el mutex del caso tomado
+
+> **Medido el 2026-09-25 en W-02UIQU**, sobre `01_Drive EV/01_CAPTACIÓN/08_FOTOS` (90 JPG,
+> 189,4 MB: dos juegos, HD y web, de las mismas fotos). Nikolai preguntó qué se gana y qué se
+> pierde con ese OCR.
+
+82 `empty`, 4 `low` y 4 `ok`, con 1.179 caracteres en total y todos ruido (texturas leídas como
+letras): los cuatro `ok` son falsos. Los 90 PDF buscables ocupan 104,7 MB en `01_OCR` y se
+escribieron en 40,5 minutos de una ronda que tiene el mutex, así que retrasan también el alta CRM
+y la sala de lectura. La ruta `imagen` no distingue una foto de un papel fotografiado, y E&V sube
+papeles como foto (en este caso, DNI, recibos del IBI, el justificante de las arras y la tarjeta
+de un letrado), así que no basta con «no OCR a las imágenes».
+
+**Remedio probable.** Dos palancas: saltar el OCR (no la custodia) en `…/08_FOTOS`, que es la
+carpeta de marketing de la plantilla de E&V; o, en general, mirar antes si la imagen es de tono
+continuo (fotografía) o bimodal (papel), la distinción que `MEJORAS #90` ya midió.
+
+**Disparador de promoción.** Cualquier apertura V1 con carpeta de fotos, que en la plantilla de
+E&V son casi todas.
+
+---
+
+## 300. El alta en modo libre copia la plantilla del informe de viabilidad a cualquier tipo de caso, contra lo que dice `config.py`, y C5 depende de cuál es más reciente
+
+> **Medido el 2026-09-25 en W-02UIQU (BAD_DEBT).**
+
+`core/case_manager.py` (líneas 1012-1022) copia `_INFORME_TEMPLATE` a
+`02_Analisis/Informe viabilidad - <id_go>.xlsx` para cualquier tipo de caso y lo pre-rellena;
+`INFORME_VIABILIDAD_TIPOS` solo condiciona el cuestionario (línea 1025). El comentario de
+`core/config.py:802-805` dice lo contrario: que el copiado es condicional y que `BAD_DEBT`,
+`LAU_20`, `DEVOLUCION_RESERVA` y `DEVOLUCION_HONORARIOS` quedan fuera «por decisión de producto»;
+y nombra otro destino, `_informe_viabilidad.xlsx`. En V1 no pasa, porque retorna antes (línea
+1005); pasó en el segundo comando de la apertura (`--case-id … --crm api`, modo libre), que dejó
+un fichero de 8 KB con las hojas `OPERACION` y `_meta`.
+
+Después, `verificar_apertura` C5 elige el informe **más reciente por `mtime`**
+(`core/verificar_apertura.py:334`). Con solo la plantilla suelta, C5 dio `FALLO` («no tiene hoja
+PREGUNTAS»); al generar el informe con la skill pasó a `ok`, pero solo por ser más nuevo. Si
+alguien abre y guarda la plantilla suelta, C5 vuelve a `FALLO`. La plantilla sigue en el
+expediente: borrarla es decisión de Nikolai.
+
+**Remedio probable.** Que el copiado respete `INFORME_VIABILIDAD_TIPOS`, como dice el comentario
+(o corregir el comentario si la decisión cambió); y que C5 avise cuando haya más de un informe en
+vez de quedarse en silencio con el más reciente.
+
+**Disparador de promoción.** El próximo alta en modo libre de un tipo fuera de
+`INFORME_VIABILIDAD_TIPOS`.
+
+---
+
+## 301. `parse_ev_folder_name` no reconoce las carpetas de E&V que llevan el W-code delante
+
+> **Medido el 2026-09-25 en W-02UIQU (plaza de Santander).**
+
+La carpeta de E&V del caso sigue el formato `<W-code> - <CIUDAD>. <dirección> - <consultor>`, con el
+W-code **delante**. `core/intake_drive.py::parse_ev_folder_name` (línea 360) devuelve `('', '')` y B5
+no deriva `--direccion`: `MEJORAS #224`, que cerró esa derivación, solo contempla
+`<dirección> - <W-code> - <consultor>`. Degrada limpio, porque pide el flag, y no bloquea; pero el
+formato existe en la plaza de Santander y la derivación que vino a quitar un tecleo no lo cubre.
+
+**Remedio probable.** Aceptar los dos órdenes: el W-code es el ancla, esté delante o en medio.
+
+**Disparador de promoción.** La próxima apertura de Santander, o un censo de nombres de carpeta de
+E&V que diga qué plazas usan cada orden.
+
+---
+
+## 302. El INDICE de la sala esconde en «(+N anexos)» cualquier documento que solo esté como adjunto de un correo
+
+> **Medido el 2026-09-25 en W-02UIQU**, cuando Nikolai no encontró en la sala la oferta aceptada.
+
+Estaba, pero como anexo del hilo de correo que puso en contexto al jurídico, y `construir_indice`
+(`.claude/skills/organizar-sala-lectura/scripts/indices_desde_manifiesto.py:53`) colapsa los anexos
+de un bundle en una línea «(+8 anexos)» bajo 07. RECLAMACIONES, aunque el manifiesto guarde la
+categoría de cada uno (la oferta figuraba en 03). Tampoco salían en 04 el contrato de arras firmado
+por DocuSign ni el justificante de la transferencia de las arras: los tres documentos centrales de
+la operación.
+
+Se sumaron dos piezas:
+
+1. **La deduplicación del #225 eligió el ejemplar escondido.** La copia de Drive traía 94 bytes a
+   cero de más (8.189.440 B frente a los 8.189.346 que declara Drive, con el mismo sha256 que el
+   adjunto). La deduplicación sin esa cola, que monté en el plan (`MEJORAS #225`), conservó el
+   adjunto porque tiene los bytes exactos. `dedup_por_sha`, en `preclasificar.py`, conserva el
+   primero que ve, y con las rutas de Drive delante habría dejado suelta la copia de Drive: el
+   #225 invirtió la elección porque ninguna regla dice qué ejemplar se conserva cuando un
+   documento suelto y un adjunto son el mismo fichero.
+2. **El generador colapsa los anexos, y esa es la frontera.** Un documento que **solo** llegue
+   como adjunto (un contrato firmado que la agencia manda por correo) desaparece de su categoría en
+   el INDICE sin ningún #225 de por medio. El manifiesto y `CRONOLOGIA.md` sí lo listan.
+
+En W-02UIQU lo corregí a mano: los tres pasaron a documentos sueltos y se regeneraron índice,
+cronología y catálogo desde el manifiesto (`_plan/ajuste-2026-09-25-1725.md` de la sala;
+`verificar_sala.py --hash completo` en verde).
+
+**Remedio probable.** En `construir_indice`, listar también en su propia categoría los anexos cuya
+categoría difiere de la del principal, con una marca de «anexo de…»; y en la skill, fijar qué
+ejemplar se conserva cuando un suelto y un adjunto son el mismo fichero.
+
+**Disparador de promoción.** La próxima sala con un documento clave que solo llegó por correo.
