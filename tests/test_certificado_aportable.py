@@ -276,6 +276,18 @@ def test_la_deuda_en_euros_del_requerimiento_NO_avisa():
     assert not any("EUR" in a or "€" in a for a in avisos)
 
 
+@pytest.mark.parametrize("palabras", [5, 6])
+def test_con_5_o_6_palabras_el_aviso_saltaria_en_FALSO(monkeypatch, palabras):
+    """M-6, y es el control de la calibración: los sintéticos llevan las dos fuentes de
+    falso positivo medidas —la cuenta repetida en la factura y «de la Oferta Vinculante
+    Confidencial» en el requerimiento—, así que con menos de 8 palabras el caso limpio
+    avisaría. Si esto deja de avisar con 5 o 6, el fixture ya no reproduce lo medido y
+    `test_sobre_lo_MEDIDO_no_hay_avisos` ya no protege el umbral."""
+    monkeypatch.setattr(apo, "PALABRAS_AVISO", palabras)
+    r, f = s.refundido(), s.factura()
+    assert apo.recortar(s.certificado([r, f]), _condiciones(r, f)).avisos != ()
+
+
 def test_la_despedida_y_el_membrete_compartidos_NO_avisan():
     """Lo de antes del rótulo y lo de después de «Sin otro particular» lo comparten el
     requerimiento y las condiciones; sin cortarlo, el aviso saltaría en todo envío."""
@@ -292,3 +304,58 @@ def test_AVISA_de_una_pagina_arrastrada_sin_rotulo():
     assert [x.pagina_certificado for x in recorte.retiradas] == [4, 5]
     assert any("página 3 de 'RARO.pdf'" in a and "no lleva el rótulo" in a
                for a in recorte.avisos)
+
+
+# --- el manifiesto ---------------------------------------------------------------
+
+def _manifiesto(**cambios):
+    import json
+
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f])
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    kw = dict(id_envio="006sint", canal="electronico", id_personalizado="W-000AAA - OVC",
+              generado="2026-09-25T10:00:00+00:00", integro_nombre="X - W-000AAA-006sint.pdf",
+              integro_sha256=hashlib.sha256(cert).hexdigest(),
+              aportable_nombre="X - W-000AAA-006sint - APORTABLE.pdf",
+              emisor={"razon_social": "EV MMC SPAIN, S.L.U.", "usuario": "madrid.bd",
+                      "verificado": True},
+              ficheros_acta=apo.ficheros_listados(cert),
+              documentos=[_doc(r), _doc(f)])
+    kw.update(cambios)
+    m = apo.manifiesto_de(recorte, **kw)
+    json.dumps(m, ensure_ascii=False)       # serializable, o revienta aquí
+    return m, recorte, cert
+
+
+def test_el_manifiesto_trae_lo_que_pide_el_spec():
+    """Spec §7.4: código de envío, sha256 del íntegro, huellas tal como las lista el
+    acta, páginas conservadas y retiradas, y el emisor verificado."""
+    m, recorte, cert = _manifiesto()
+    assert m["id_envio"] == "006sint"
+    assert m["integro"]["sha256"] == hashlib.sha256(cert).hexdigest()
+    assert m["aportable"]["sha256"] == recorte.sha256
+    assert [x["nombre"] for x in m["acta"]["ficheros_listados"]] == [
+        "OVC REFUNDIDA.pdf", "FACTURA 0000001.pdf"]
+    assert m["conservadas"] == [1, 2, 3, 4, 6]
+    (retirada,) = m["retiradas"]
+    assert retirada["pagina_certificado"] == 5 and retirada["pagina_documento"] == 3
+    assert m["emisor"]["verificado"] is True
+
+
+def test_el_manifiesto_dice_que_el_aportable_NO_lleva_firma():
+    m, _, _ = _manifiesto()
+    assert "no conserva la firma" in m["firma"] and "326.4" in m["firma"]
+
+
+def test_el_manifiesto_lleva_los_avisos_del_recorte_y_los_de_fuera():
+    m, _, _ = _manifiesto(avisos_extra=["⚠ sobre conjunto: acredita entrega EN EL "
+                                        "DOMICILIO, no a cada uno"])
+    assert any("sobre conjunto" in a for a in m["avisos"])
+
+
+def test_el_manifiesto_documenta_los_documentos_con_su_huella():
+    m, _, _ = _manifiesto()
+    r = s.refundido()
+    assert {"nombre": r.nombre,
+            "sha256": hashlib.sha256(r.contenido).hexdigest()} in m["documentos_enviados"]

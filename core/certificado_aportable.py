@@ -18,6 +18,7 @@ siempre y se rehace sobre las frases propias de las condiciones (M-2, M-6).
 """
 from __future__ import annotations
 
+import dataclasses
 import difflib
 import hashlib
 import io
@@ -477,3 +478,49 @@ def recortar(certificado: bytes,
                    paginas_reproduccion=reproduccion,
                    retiradas=tuple(retiradas[n] for n in sorted(retiradas)),
                    conservadas=conservadas, avisos=tuple(avisos))
+
+
+# --- el manifiesto --------------------------------------------------------------
+
+AVISO_FIRMA = (
+    "El aportable es un documento DERIVADO y no conserva la firma electrónica del "
+    "prestador: recortar páginas la rompe (spec §7.2), y con ella la presunción del art. "
+    "326.4 LEC. La prueba custodiada es el certificado íntegro, con la huella que figura "
+    "en este manifiesto.")
+
+
+def manifiesto_de(recorte: Recorte, *, id_envio: str, canal: str, id_personalizado: str,
+                  generado: str, integro_nombre: str, integro_sha256: str,
+                  aportable_nombre: str, emisor: dict,
+                  ficheros_acta: Sequence[FicheroListado],
+                  documentos: Sequence[DocumentoEnviado],
+                  avisos_extra: Sequence[str] = ()) -> dict:
+    """El manifiesto del aportable (spec §7.4): qué se retiró, de dónde y con qué huellas.
+
+    Las huellas van **tal como las lista el acta** (`acta.ficheros_listados`) y, aparte,
+    las de los documentos con que se localizaron las condiciones: en un burofax el acta
+    lista UN fichero fundido (M-4) y los documentos son los del correo. Las páginas
+    retiradas van en las tres numeraciones del §7.3.
+    """
+    return {
+        "version": 1,
+        "id_envio": id_envio,
+        "canal": canal,
+        "id_personalizado": id_personalizado,
+        "generado": generado,
+        "integro": {"fichero": integro_nombre, "sha256": integro_sha256,
+                    "paginas": recorte.paginas_totales},
+        "aportable": {"fichero": aportable_nombre, "sha256": recorte.sha256,
+                      "paginas": len(recorte.conservadas)},
+        "emisor": dict(emisor),
+        "acta": {"paginas": list(recorte.paginas_acta),
+                 "ficheros_listados": [{"nombre": f.nombre, "sha256": f.sha256}
+                                       for f in ficheros_acta]},
+        "documentos_enviados": [{"nombre": d.nombre, "sha256": d.sha256}
+                                for d in documentos],
+        "reproduccion": {"paginas_certificado": list(recorte.paginas_reproduccion)},
+        "retiradas": [dataclasses.asdict(r) for r in recorte.retiradas],
+        "conservadas": list(recorte.conservadas),
+        "firma": AVISO_FIRMA,
+        "avisos": [*recorte.avisos, *avisos_extra],
+    }

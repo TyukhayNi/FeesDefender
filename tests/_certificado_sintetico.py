@@ -27,12 +27,16 @@ _POR_DEFECTO = dict(requerido="Inmobiliaria Ejemplo Uno S.L.",
 
 
 def requerimiento(**kw) -> str:
+    """El requerimiento. Lleva a propósito las dos cosas que M-2 y M-6 midieron en los
+    reales: la deuda en euros y la fórmula «de la Oferta Vinculante Confidencial», que
+    comparte con las condiciones y hace saltar en falso un aviso de 5 palabras."""
     d = {**_POR_DEFECTO, **kw}
     return f"""{_cabecera(**d)}
 En Madrid, a 01.09.2026.
 Les requerimos el pago de los honorarios devengados, adeudando a la fecha
 de esta comunicacion la cantidad de 1.234,56 EUR (en adelante, los Honorarios).
-Les remitimos para su recepcion las condiciones adjuntas."""
+Les remitimos para su recepcion las condiciones adjuntas, y la Agencia podra
+iniciar un proceso judicial con el mismo objeto de la Oferta Vinculante Confidencial."""
 
 
 def ovc(**kw) -> str:
@@ -52,9 +56,11 @@ def condiciones(*, fecha: str = "01.09.2026", **kw) -> str:
 CONFIDENCIAL - CONDICIONES
 En Madrid, a {fecha}.
 Pago fraccionado de los Honorarios sin intereses. Se abonara en DOS plazos:
-a. El primer 50% entre los dias 1 y 5 del mes siguiente a la primera recepcion.
+a. El primer 50% entre los dias 1 y 5 del mes siguiente a la primera recepcion
+de la Oferta Vinculante Confidencial.
 b. El segundo 50% entre los dias 20 y 25 del mismo mes siguiente.
-Cuenta de pago: deberan efectuar los pagos en la cuenta ES00 0000 0000 0000.
+Cuenta de pago: deberan efectuar los pagos en la siguiente cuenta bancaria:
+CUENTA: ES00 0000 0000 0000 0000 0000
 Aceptacion: la oferta se considerara aceptada si la Agencia recibe el primer pago.
 Sin otro particular, atentamente
 NIKOLAI TYUKHAY
@@ -69,12 +75,16 @@ CONDICIONES_DE_OTRA = condiciones(requerido="Sociedad Distinta Dos S.L.",
                                   direccion="Avenida Ficticia 99, 46001 Valencia",
                                   nif="B99999999", w_code="W-999ZZZ", fecha="15.08.2026")
 
+#: La factura. Repite la cuenta de las condiciones (M-6: seis palabras en común, que
+#: hacen saltar en falso un aviso de 5 o 6) y lleva «Condiciones de pago» (M-7).
 FACTURA = """Factura A/R
 N documento 0000001
 Base 1.020,30
 IVA 21 % 214,26
 Total EUR 1.234,56
-Condiciones de pago a la vista"""
+Condiciones de pago a la vista
+IBAN ES00 0000 0000 0000 0000 0000
+SWIFT BBVAESMMXXX"""
 
 
 def pdf(paginas: list[str]) -> bytes:
