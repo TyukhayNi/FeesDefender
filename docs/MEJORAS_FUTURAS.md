@@ -10304,6 +10304,16 @@ runbook).
 **Disparador de promoción.** Medio-alto para la cuantía: entra con la próxima alta de un
 expediente cuyo principal lleve céntimos, que es la norma. La línea del preview va en el mismo PR
 porque es el mismo fichero y el mismo momento del flujo.
+
+**Dato del 2026-09-16 (W-030A13), rescatado el 2026-09-25 del PR #387.** El síntoma llega a
+`verificar_apertura`: `abrir_caso --cuantia 48702.50` dejó en el CRM `48702.00` y C9 declaró «la
+cuantía local y la del CRM no coinciden» **sin enseñar ninguno de los dos importes** —su evidencia
+era `{"local": 48702.5, "653": {"crm_declarada": true, "legible": true}}`—, así que hubo que leer el
+CRM a mano para saber cuánto decía. Contrastado en cuatro expedientes más (645, 652, 644 y 643):
+todos terminan en `.00`. Allí se desbloqueó **bajando `meta.cuantia` al entero del CRM**, y ese
+apaño es el que no conviene repetir: pone la pérdida también en el índice local, cuando la
+medición de arriba dice que la property REST **sí** admite céntimos. Lo que hay que corregir es el
+CRM, no `_caso.md`.
 ## 219. `_tiempos.jsonl` mide el reparto del OCR pero no registra las PÁGINAS, que es lo que decide si paralelizar
 
 **Medido el 2026-09-10 en la apertura de W-030TZY** (68 documentos por la ruta `ocr`,
@@ -11389,7 +11399,7 @@ lote**. El remedio tiene que cubrir los dos dialectos, no solo `_RE_ADJ_IOS`.
 
 ---
 
-## 237. `apply_label` con `target_type: "thread"` devuelve éxito y no aplica la etiqueta
+## 237. `apply_label` con `target_type: "thread"` devuelve éxito y no aplica la etiqueta  [DIAGNÓSTICO DISPUTADO 2026-09-25]
 
 **Medido el 2026-09-10** creando la etiqueta del caso W-02V48N en la cuenta de E&V con el MCP
 `gmail-multiaccount` (`plugins/gmail_mcp/server.py`).
@@ -11421,6 +11431,25 @@ y no un campo decorativo.
 
 **Disparador de promoción.** La próxima apertura que etiquete un hilo. Mientras: etiquetar
 **mensaje a mensaje** y verificar que la etiqueta aparece en `label_ids`.
+
+**Dato del 2026-09-25 (apertura de W-02UIQU): el disparador se consumió, y contradice la
+conclusión de arriba.** Etiquetando los ocho hilos del caso con `target_type="thread"`, las ocho
+respuestas traían `label_ids: []`, y **verificado por resultado** con
+`messages().list(labelIds=[<id>])` la etiqueta **sí** estaba: 11 mensajes en 8 hilos.
+
+**La causa del campo vacío está leída, no supuesta:** `plugins/gmail_mcp/server.py:391` (y `:407`
+en `remove_label`) devuelve `resp.get("labelIds", [])`, y la respuesta de `threads().modify` es un
+recurso **Thread**, que lleva las etiquetas en `messages[].labelIds` y no en la raíz. Para un hilo,
+`label_ids` sale vacío **siempre**, se haya aplicado la etiqueta o no.
+
+**Lo que NO se puede afirmar todavía.** Las dos mediciones coinciden en el síntoma y discrepan en
+si la etiqueta entra, pero no usaron el mismo instrumento: el 2026-09-10 se comprobó con una
+**búsqueda** por la etiqueta, y el 2026-09-25 con el **filtro** `labelIds`. Sin repetir una con el
+instrumento de la otra no se puede decir cuál de los dos días describe el comportamiento real.
+
+**El remedio (2) de arriba sirve para las dos lecturas**, y es el que hay que construir: la
+respuesta se arma desde el estado releído —en un hilo, la unión de `messages[].labelIds`— y, si la
+etiqueta pedida no está, es un error y no un campo decorativo.
 
 ---
 
@@ -12617,6 +12646,18 @@ aparte y sí generó el informe, sin pasar por esta etapa).
 **Disparador.** Cualquier apertura en V1 que llegue a la etapa `viabilidad` sobre un caso
 en `G:` — es decir, la próxima apertura estándar.
 
+**Dato anterior, rescatado el 2026-09-25 del PR #387** (apertura de W-030A13, 2026-09-16, un día
+ANTES que la de arriba). La misma corrida terminó `bloqueado`, código 1, con las siete etapas
+anteriores bien —`drive` con 24 documentos, `sala_maquina` con 38 y 698,6 s de OCR— y dejó
+`verificar` sin ejecutar (`etapa_no_ejecutada:verificar`): el estado final deja de distinguir un
+caso roto de uno sano. Para desbloquearla se escribió el fichero con `open(destino, "x")`
+—`O_EXCL`— con el contenido validado antes por `validar`, y **funcionó sobre el montaje**.
+
+**Lo que ese dato prueba y lo que no.** Prueba que en `G:` se puede **crear** con creación
+exclusiva. No prueba que `O_EXCL` **rechace un destino que ya existe** en ese filesystem, que es la
+única garantía por la que la función existe —no pisar lo que remató una sesión—. Esa segunda
+mitad se mide antes de escribir el remedio (plan `2026-09-25-mejoras-aperturas-semana.md`, Task 4).
+
 ## 277. Censo remoto de Drive: colisión de forma Unicode y más de un checksum para el mismo nombre
 
 **Lo medido** (2026-09-17, `verificar_apertura --con-red` sobre W-0462E1):
@@ -12875,3 +12916,167 @@ aquí no lo es, y pierde el chat.
 vez de tres criterios.
 
 **Disparador de promoción.** Cualquier export Android con `.txt` propio.
+
+---
+
+## 287. C3 de `verificar_apertura` no puede pasar en NINGÚN caso con bundles partidos: falla en los nueve del repo
+
+> **Rescatada el 2026-09-25 del PR #387**, donde llevaba el número 277 desde el 2026-09-16
+> (apertura de W-030A13). Ese PR no se mergeó y otra entrada ocupó el 277 en `main`; la nota de
+> apertura figuraba `fichado`, así que `session_close` tampoco avisaba. El texto es el del PR.
+
+**Lo medido** (2026-09-16) sobre **los nueve** expedientes de `CASOS/Barcelona` que tienen a la
+vez `_cobertura.json` e `indice_documental.yaml`: **C3 sale `fallo` en los nueve**, y en
+**siete** con el mismo mensaje — `N fila(s) con 'parent_slug' que no apunta a un bundle real`.
+En W-030A13 son 21 filas y 7 padres; en W-02JSVZ, 43.
+
+**Por qué es estructural.** C3 descuenta los hijos de bundle para hacer comparables los dos
+lados, y la corrección R1/H-02 añadió que *«un hijo solo cuenta como hijo si su padre existe»*
+en la cobertura. Pero el split de la sala de máquina **sustituye el padre por sus piezas**: en
+`_cobertura.json` están `…__d01_DOC_EMAIL`, `…__d02_DOC_PBC`, y el slug padre **no está**. La
+guarda pide una condición que el productor del fichero nunca cumple, así que el descuento no se
+aplica nunca y la comprobación no puede salir verde en un caso con un solo PDF compuesto.
+
+**La intención de R1/H-02 era buena** —evitar que un documento desaparezca del catálogo amparado
+en un `parent_slug` inventado—, pero la señal elegida para «el padre existe» es la presencia en
+la cobertura, y ahí no está por diseño. Habría que acreditarlo contra lo que sí lo sabe: el
+propio sufijo `__dNN_` del slug del hijo, o el inventario previo al split.
+
+**El contraste que sí funciona, y conviene conservar** (`[APER-60]`): cuadrar las **rutas de
+origen** (`rel_path`) de la cobertura contra las `ruta_relativa` del catálogo. En W-030A13 dio 36
+contra 34, y las 2 de diferencia son los duplicados por `sha256` del propio Drive —el mismo PDF
+subido a dos carpetas—, cuyos sha **sí** están en el catálogo. Cero documentos perdidos, en una
+comprobación de un segundo.
+
+**De qué frontera es esto un ejemplo.** De validar una invariante contra el fichero equivocado:
+el padre existe —es el PDF de `00_Input`—; lo que no existe es su fila en la cobertura.
+
+**Disparador.** La próxima apertura que quiera leer C3 como señal y no como ruido.
+
+---
+
+## 288. La verificación de `crm_ficha` comprueba INCLUSIÓN, no igualdad: dos colaboradores ajenos pasaron por delante de un «VERIFICADA por lectura»
+
+> **Rescatada el 2026-09-25 del PR #387** (allí, número 279; apertura de W-030A13, 2026-09-16),
+> por la misma causa que `#287`. El texto es el del PR.
+
+**Lo medido** (2026-09-16, expediente extrajudicial 653 de W-030A13). `scripts/crm_ficha.py`
+vinculó los cuatro colaboradores del `_ficha_crm.yaml` y cerró con:
+
+```
+Verificación: expediente 653 Numero_Expediente=87
+  [ok] colaboradores id=256
+  [ok] colaboradores id=805
+  [ok] colaboradores id=102
+  [ok] colaboradores id=552
+OK ficha CRM completada y VERIFICADA por lectura
+```
+
+El expediente tenía **seis**. Los dos de más —`624` y `677`, dos *team leaders* de otro Market
+Center— **no aparecen en ninguna línea**, porque la verificación recorre lo que pidió escribir y
+comprueba que está: es una comprobación de **inclusión**, y lo que hacía falta era de
+**igualdad**. Lo descubrió el letrado mirando la pantalla del CRM, no el verificador.
+
+**Por qué importa más que este caso.** Un colaborador de más en un expediente es un problema de
+confidencialidad, no de estética: da acceso y aparece en la ficha del cliente. Y el mensaje
+«VERIFICADA por lectura» es justamente el que hace que nadie vuelva a mirar — el mismo patrón que
+`#268` y que el C9 de `#218`, pero aquí el ciego no es el mensaje sino la **forma de la
+comprobación**.
+
+**Remedio.** Releer el bloque `colaboradores` (y `clientes_contrarios`, que tiene el mismo
+problema) y contrastar el conjunto **completo** contra el esperado, diciendo tanto los que faltan
+como los **sobrantes**. Si sobra alguno, no es «ok»: es un hallazgo. El dato ya está a mano —
+`get_relaciones("extrajudiciales", exp_id)` devuelve la lista acumulada, y es lo que se usó para
+detectarlo a mano.
+
+**Lo que NO se pudo determinar, y se dice en vez de rellenarlo.** Qué vinculó a esos dos al
+expediente. Se descartó midiendo: el alta no toca colaboradores (no aparecen en
+`core/sudespacho_create.py`); sus permisos por defecto son del despacho; las cuatro llamadas de
+`crm_ficha` devolvieron cuatro ids y son los correctos; de ocho expedientes muestreados **solo el
+653** los tenía, así que tampoco es un preset general; y no es el dedup por buzón compartido de
+`[APER-71]`, porque los seis colaboradores tienen email y móvil propios y distintos. Las dos fichas
+son legítimas y activas en otros casos. Sin log de auditoría no se puede distinguir un automatismo
+del CRM de una acción desde la UI.
+
+**Resuelto en el expediente**: `DELETE /api/relation_element/extrajudiciales/653` con
+`["right.colaboradores.624"]` y `…677` → `200 "Deleted!"` los dos, y la re-lectura devuelve
+exactamente los cuatro esperados y nadie más. Las fichas no se tocaron.
+
+**Presupuesto (anotado al rescatarla, 2026-09-25).** Va con `#283` —el mismo fichero y el mismo
+momento del flujo— y es pieza de **dos rondas**: decide qué partes quedan vinculadas a un
+expediente, y un error suyo da acceso a quien no debe tenerlo.
+
+**Disparador.** La próxima ficha CRM, porque hasta entonces ninguna acredita lo que dice acreditar.
+
+---
+
+## 289. Una apertura PARTICULAR (no E&V) no tiene ningún camino en el código ni en el runbook
+
+> **Medido el 2026-09-25** en la apertura del extrajudicial 659 (caso particular del letrado, sin
+> W-code; nota `PARTICULAR-659`). La fichó la sesión de reparación del mismo día, con autorización
+> de Nikolai, porque ninguna sesión viva iba a hacerlo.
+
+Dos compradores, extrajudicial CRM 659 (nº 93/2026), clientes 236 y 237, carpeta en
+`CASOS - NO FEESDEFENDER\PARTICULAR\`. Todo se hizo a mano con scripts de *scratchpad* sobre
+`core.sudespacho_create` / `core.sudespacho_relations`, porque:
+
+- **No hay función que cree un `clientes_propios`.** El código solo conoce los ids fijos de E&V
+  (`CLIENTES_PROPIOS_EV`: 2 y 27); el POST a `element_register/clientes_propios` se escribió a
+  mano. El elemento no tiene `1apellido`/`2apellido`: solo `nombre` (en los particulares
+  existentes, «NOMBRE APELLIDOS» en mayúsculas).
+- **La etiqueta del CRM para estos casos (`109` = PARTICULAR) no está en
+  `core/sudespacho_create.py`**, ni el valor `compraventa` de `Tipo_Procedimiento` (el enum sí lo
+  tiene; lo recoge el atlas). `TIPOS_CASO_OTROS` y `NOTA_OTROS` presuponen E&V.
+- `RUNBOOK_APERTURA_EXPEDIENTE.md` es solo E&V (W-code, Drive E&V, `abrir_caso`); no dice dónde
+  va un particular. El precedente se leyó del Drive y del CRM (expedientes 548 y 559).
+
+**No es un defecto de lo que existe: es un camino que no existe.** Construirlo solo con
+disparador (regla de promoción); una apertura particular suelta no lo es.
+
+**Disparador de promoción.** La segunda apertura particular, o decisión expresa de Nikolai.
+
+---
+
+## 290. `movil`: lo que rechaza el CRM parece ser el SEPARADOR, no el prefijo internacional — medido en un solo elemento
+
+> **Medido el 2026-09-25** en `clientes_propios` (POST con `x-api-key`), apertura del
+> extrajudicial 659. Fichada por la sesión de reparación (ver `#289`).
+
+Un móvil brasileño con espacios y guion —`+55 11 9XXXX-XXXX`— devolvió
+`404 "The value … sent for the property: movil is incorrect"`; el mismo número **compacto**
+—`+55119XXXXXXXX`— devolvió **201**, y el GET lo devuelve tal cual. Es justo lo que ya produce
+`core.utils.normalize_es_phone` para un número extranjero: quita separadores y no toca el prefijo
+ajeno.
+
+El runbook (`[APER-63]`, «Contrario extranjero: el móvil no se puede guardar… déjalo vacío») y el
+docstring de `normalize_es_phone` («rechaza `+34`… y espacios») pueden estar describiendo el
+separador como si fuera el prefijo.
+
+**Solo medido en `clientes_propios`.** Antes de corregir el runbook hay que repetir la prueba en
+`clientes_contrarios` y en `colaboradores` —y con un `+34` compacto—, porque se midió en un
+elemento y no se puede afirmar de otro.
+
+**Disparador.** La próxima parte con móvil extranjero en una apertura.
+
+---
+
+## 291. Las altas extrajudiciales de FeesDefender dejan vacío `profesional_asignado`
+
+> **Medido el 2026-09-25 por GET**, apertura del extrajudicial 659. Fichada por la sesión de
+> reparación (ver `#289`).
+
+`core/sudespacho_create.py::_build_rest_payload_extrajudicial` manda `Profesional`
+(`datos.responsable`) y no `profesional_asignado`; el payload judicial sí manda
+`profesional_asignado` (`datos.abogado_principal`). Medido: el **654** (alta de FeesDefender)
+tiene `Profesional` relleno y `profesional_asignado` **vacío**; el **548** y el **559** (altas
+desde la UI) tienen justo al revés. En el 659 se mandaron los dos a mano.
+
+**Sin comprobar** qué campo usan los listados y los filtros de la UI. Si es
+`profesional_asignado`, las altas automáticas **no salen en «mis expedientes»** de nadie, que es
+un fallo silencioso de visibilidad para Paola y Ana.
+
+**Remedio, en este orden.** (1) Medir el filtro de la UI (solo lectura). (2) Si lo confirma, que el
+alta extrajudicial mande los dos campos, como la judicial. (3) Decidir con Nikolai si se corrigen
+las altas ya hechas: es escritura en el CRM.
+
+**Disparador.** La medición del paso (1), que es barata y no escribe nada.
