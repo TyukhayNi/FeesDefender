@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "13"
+rev: "14"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -860,6 +860,12 @@ hace falta un humano.
 > conservadas, sin copia de B ni rótulo. Y una cuarta regla, de las que no se escriben solas: **si
 > ningún documento enviado lleva el rótulo, F3 no certifica que el íntegro sea aportable** —o no
 > había condiciones, o las había con otro rótulo—: para y lo decide una persona.
+>
+> **Rev. 14 (R2): el rótulo ABRE las condiciones como título, y la tercera parada relee el
+> FICHERO.** Una cita del título en la prosa del requerimiento lo retiraba entero (R2/H-03):
+> ahora solo abre las condiciones el rótulo que abre una línea —aunque la extracción lo parta—, y
+> una mención en una página que se conserva **para**, diciendo que es una mención. Y la relectura
+> ya no mira el texto de las páginas: mira el fichero entero contra una **lista blanca** (§7.4).
 
 ### 7.4 Qué produce, y el aviso que sí tiene discriminante
 
@@ -894,6 +900,23 @@ recorta. Si salta, nombra qué encontró y dónde.
 > pie («Página 1 de 8» en un aportable de 7): el salto se ve, y el aportable no aparenta estar
 > completo. El recorte es **determinista**, y por eso volver a lanzarlo compara por contenido y ni
 > duplica ni pisa. F3 **no sube** el aportable al CRM: el íntegro, que es la prueba, ya lo subió F2.
+>
+> ⚠️ **Rev. 14 (R2/H-01): el aportable es la IMAGEN de las páginas que se conservan, con una capa
+> de texto leída por OCR.** Copiar su estructura arrastraba lo que compartían con las retiradas: el
+> formulario de las condiciones (R1) y, podado ese, patrones, fuentes, máscaras y metadatos que
+> ninguna página conservada dibujaba (R2, siete vías). Cada remedio cerraba una vía; la imagen
+> cierra la frontera: **lo que no se dibuja no está**. Cada página conservada se dibuja **sin
+> anotaciones** a 200 ppp —las huellas del acta se leen a ojo— y va como una imagen JPEG; encima,
+> una capa de texto **invisible** de OCR (OCRmyPDF + Tesseract, `spa`), que solo ve esos píxeles,
+> para que el aportable se pueda buscar y lo lea una LLM (lo pidió Nikolai el 2026-09-25). **Sin
+> OCR no hay aportable.** El texto fiel sigue siendo el del íntegro, y el manifiesto (versión 2) y
+> el frontal lo dicen. La relectura exige un **perfil**: cada página, su imagen —byte a byte la del
+> raster, que el OCR no toca— y como mucho una capa de texto invisible; nada suelto en el fichero; y
+> que el OCR no lea el rótulo ni una página que se parezca más a una retirada que a la suya.
+> **Idempotencia:** la imagen es determinista y el OCR no, así que volver a lanzar **relee** el
+> aportable escrito contra la imagen de hoy, sin pasar el OCR otra vez; un manifiesto sin su
+> aportable **para**, porque un aportable repuesto no casaría con él. Y lo que el CRM dijo del
+> destinatario va en su propia clave del manifiesto, fuera de su identidad (R2/H-04).
 
 ## 8. Credenciales y entornos
 
@@ -941,6 +964,13 @@ pruebas, «así no se cobrará nada».
 > sus páginas (§12.4). Remediado y **re-verificado sin red sobre esos mismos certificados**:
 > formularios con el rótulo 1 → 0, lo conservado idéntico píxel a píxel salvo el sello. Los dos
 > PDF defectuosos solo existieron en el directorio temporal de la sesión.
+>
+> **Rev. 14:** la R2 enseñó siete vías más, y el aportable pasó a ser imagen con OCR (§7.4).
+> **Re-verificado sin red sobre los mismos dos certificados:** ni un stream del íntegro sobrevive en
+> el aportable, cada imagen es su página y el OCR lee lo conservado sin leer el rótulo. Y correrlo
+> sobre los REALES encontró lo que el sintético no enseñaba: por encima de 1 MB OCRmyPDF linealiza
+> —objetos que no cuelgan de nada, que la relectura para— y deja `sys.stderr` cambiado por un
+> `StringIO` que se tragaba las trazas. Los dos, arreglados en el adaptador y con su test.
 
 **Lo que se prueba con doble y lo que no.** Con el puerto del §4.2, el criterio del jurídico se
 prueba entera contra dobles. Lo que **no se puede probar sin enviar de verdad** se nombra aquí para
@@ -1157,7 +1187,17 @@ aparece cuando la otra parte lo lee en el juzgado.
   cumple ahora sobre el **fichero**, no sobre lo que se ve: recursos podados a lo que cada página
   dibuja, sin anotaciones, y una relectura del grafo entero que para si queda un solo objeto que
   solo usaban las páginas retiradas.
-- **Sobre los nueve commits de la remediación la cobertura independiente es AUSENTE**: cada
+- **Sobre los nueve commits de la remediación la cobertura independiente era AUSENTE**: cada
   remedio con su test visto en rojo, 26 de 26 mutantes muertos por su test y la suite con las dos
   semillas, lo que prueba que cada remedio hace lo que dice, **no** que ninguno haya abierto algo
   que nadie fue a buscar. Una segunda ronda excede la tabla y la decide Nikolai.
+- **R2 de Codex sobre esa remediación, autorizada expresamente por Nikolai el 2026-09-25**
+  (`a87e2d9` → `3ae4cbe`, mismo modelo y por la misma frontera): **NO-SHIP**, 7 hallazgos —1
+  `alta`, 5 `media`, 1 `baja`—, **los siete confirmados contra la fuente y remediados**. Acta
+  literal: [`2026-09-25-codicert-f3-r2-adversarial-review.md`](../plans/2026-09-25-codicert-f3-r2-adversarial-review.md);
+  adjudicación en el §13 del plan. **El alto cambió la pieza**, no el remedio: la poda cerraba
+  vías de una en una, y el aportable pasó a ser la imagen de lo conservado con su capa de OCR
+  (§7.4), con la relectura como lista blanca.
+- **La remediación de la R2 NO ha pasado ronda: su cobertura independiente es AUSENTE**, y pesa
+  más que la anterior porque la imagen, el perfil y el puerto de OCR son código nuevo. Una R3
+  supera el techo de dos rondas: solo la autoriza Nikolai.

@@ -12893,3 +12893,55 @@ fichero contra la que cotejarlo.
 
 **Disparador de promoción.** El primer expediente real cuyos requeridos no tengan ni correo ni
 móvil y necesite aportar el certificado del burofax.
+
+## 292. El test del OCR real del aportable no lo corre ninguna verja
+
+> **Declarado en la R2 de F3, el 2026-09-25** (plan `docs/superpowers/plans/2026-09-25-codicert-f3.md` §13).
+
+`test_R2_el_OCR_REAL_deja_un_aportable_que_la_relectura_admite` es el único que ejerce el adaptador
+de verdad (`core/expedicion_certificada._ocr_aportable`: OCRmyPDF + Tesseract) y lleva `slow`, así
+que solo corre con `--runslow`. `scripts/session_close` activa `--runslow` **solo cuando el commit
+toca `core/anon/`**. Es exactamente el test que encontró los dos defectos que el sintético no
+enseñaba —la linealización por encima de 1 MB y el `stderr` secuestrado—, y un cambio en el
+aportable o en el adaptador puede entrar sin que nadie lo corra. El resto de la suite usa un OCR de
+mentira, y el guard de `entorno_real` solo comprueba que el puerto está cableado.
+
+**Remedio probable.** Que `session_close` active `--runslow` también cuando el diff toque
+`core/certificado_aportable.py` o el adaptador —unos 30 s más—, o un marcador propio para el OCR
+del aportable.
+
+**Disparador de promoción.** El próximo cambio en `core/certificado_aportable.py` o en
+`_ocr_aportable`.
+
+## 293. `ocrmypdf.ocr()` deja `sys.stderr` sustituido por un `StringIO`, también en `core/anon/`
+
+> **Medido en la R2 de F3, el 2026-09-25**, con OCRmyPDF 17.11: antes de la llamada `sys.stderr` es
+> el `TextIOWrapper` de siempre; después, un `io.StringIO` que nadie devuelve.
+
+Desde ahí se pierde en silencio todo lo que vaya al `stderr` —avisos, `logging` y la traza de
+cualquier excepción—: el proceso sale con 1 **sin decir por qué**. Así se presentó en F3, y el
+adaptador del aportable ya lo devuelve como estaba. **`core/anon/ocr.py` llama al mismo
+`ocrmypdf.ocr()` y no lo devuelve**, así que el pipeline de anonimización tiene el mismo agujero.
+Por la regla de `core/anon/` (cero pérdida de lógica; las mejoras, aquí), no se toca en este diff.
+
+**Remedio probable.** Guardar `sys.stderr` antes de la llamada y devolverlo en un `finally`, como
+hace `_ocr_aportable`, con un test que lo compruebe tras un OCR real.
+
+**Disparador de promoción.** Una corrida de la anonimización que falle después del OCR sin dejar
+traza, o la próxima vez que se toque `core/anon/ocr.py`.
+
+## 294. El aportable en imagen pesa ~545 KB por página
+
+> **Medido en la R2 de F3, el 2026-09-25**, sobre los dos certificados reales: 3,8 MB para 7 páginas
+> y 4,8 MB para 9, a 200 ppp en JPEG de calidad 85.
+
+Es el precio de que el aportable sea la imagen de lo conservado (R2/H-01) y de que las huellas del
+acta se lean a ojo. Para los envíos medidos —7 a 10 páginas— no es un problema, pero un burofax
+admite 200 páginas (spec §1.4), y eso daría unos 110 MB, que ningún canal de presentación
+admitiría. A 150 ppp el OCR lee lo mismo (medido) y pesa ~362 KB por página; en escala de grises,
+menos aún, a cambio de perder el color de membretes y logotipos.
+
+**Remedio probable.** Bajar la resolución o pasar a grises solo por encima de un número de páginas,
+declarándolo en el manifiesto; o partir el aportable.
+
+**Disparador de promoción.** El primer aportable que no se pueda presentar por su tamaño.
