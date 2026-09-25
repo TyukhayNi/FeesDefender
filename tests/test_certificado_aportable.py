@@ -49,6 +49,39 @@ def test_sin_bloque_FICHEROS_se_dice_no_se_devuelve_vacio():
         apo.ficheros_listados_de_textos(["una página cualquiera"])
 
 
+def test_H03_un_bloque_FUERA_del_acta_no_cuenta():
+    """R1/H-03: el parser tomaba el primer «FICHEROS ADJUNTOS» del PDF, estuviera o no en
+    el acta: una página de la reproducción que lo imitara suplantaba la lista."""
+    falso = s.pagina_ficheros("006x", [("FALSO.pdf", b"falso")]).replace(s.MARCA_ACTA, "")
+    real = s.pagina_ficheros("006x", [("A.pdf", b"a")])
+    assert [x.nombre for x in apo.ficheros_listados_de_textos([falso, real])] == ["A.pdf"]
+
+
+def test_H03_una_lista_SIN_su_cierre_no_se_da_por_completa():
+    """Sin la línea de cierre la lista puede seguir en otra página: se para."""
+    texto = s.pagina_ficheros("006x", [("A.pdf", b"a")])
+    sin_cierre = "\n".join(l for l in texto.splitlines() if not l.startswith("La autenticidad"))
+    with pytest.raises(apo.AportableError, match="cierre"):
+        apo.ficheros_listados_de_textos([sin_cierre])
+
+
+def test_H03_dos_bloques_en_el_acta_paran():
+    uno = s.pagina_ficheros("006x", [("A.pdf", b"a")])
+    otro = s.pagina_ficheros("006x", [("B.pdf", b"b")])
+    with pytest.raises(apo.AportableError, match="más de un"):
+        apo.ficheros_listados_de_textos([uno, otro])
+
+
+def test_H03_la_lista_empieza_en_SU_cabecera_no_en_un_Huella_digital_anterior():
+    """No se ancla a cualquier «Huella digital» de la página: solo a la cabecera de la
+    lista, «Nombre Huella digital», DESPUÉS del rótulo FICHEROS ADJUNTOS."""
+    texto = s.pagina_ficheros("006x", [("A.pdf", b"a")])
+    trampa = texto.replace("CERTIFICADO DE CONTENIDO",
+                           "Huella digital de otra cosa\nFALSO.pdf " + "0" * 46 + "\n" + "0" * 18
+                           + "\nCERTIFICADO DE CONTENIDO")
+    assert [x.nombre for x in apo.ficheros_listados_de_textos([trampa])] == ["A.pdf"]
+
+
 def test_un_PDF_roto_es_AportableError_no_la_excepcion_de_pypdf():
     with pytest.raises(apo.AportableError, match="PDF"):
         apo.ficheros_listados(b"esto no es un PDF")

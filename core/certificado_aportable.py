@@ -58,46 +58,70 @@ def _textos_pdf(datos: bytes, *, que: str) -> list[str]:
             f"{que}: no se puede leer como PDF ({type(exc).__name__}: {exc})") from exc
 
 
+#: La cabecera de la lista dentro del bloque: «Nombre Huella digital (sha256)» (M-5).
+_RE_CABECERA_LISTA = re.compile(r"^[ \t]*Nombre\s+Huella digital\b.*$", re.M)
+
+
 def ficheros_listados_de_textos(textos: Sequence[str]) -> tuple[FicheroListado, ...]:
-    """El bloque FICHEROS ADJUNTOS del acta, con cada huella reconstruida (M-5).
+    """El bloque FICHEROS ADJUNTOS **del acta**, con cada huella reconstruida (M-5).
 
     La huella viene PARTIDA en dos líneas —46 caracteres en la del nombre y 18 en la
     siguiente— y ya costó un falso negativo en el W-04A6LI: se concatenan hasta 64.
     Una línea que no es ni entrada ni continuación **para** en vez de saltarse: un
     nombre partido en dos líneas, o un formato que nadie ha medido, no se adivina.
+
+    **Qué bloque** (R1/H-03): solo cuenta el que está en una página del ACTA —la que lleva
+    el sello temporal—, tiene que ser el único, la lista empieza en SU cabecera
+    («Nombre Huella digital», después del rótulo) y **tiene que llegar a su línea de
+    cierre**. Sin cierre la lista puede seguir en otra página, y dar por completa la
+    mitad dejaría fuera un documento que salió.
     """
-    for texto in textos:
-        plano = sin_ligaduras(texto or "")
-        if "FICHEROS ADJUNTOS" not in plano:
-            continue
-        _, _, cola = plano.partition("Huella digital")
-        lineas = [l.strip() for l in cola.splitlines()[1:] if l.strip()]
-        salida: list[FicheroListado] = []
-        n = 0
-        while n < len(lineas):
-            if lineas[n].lower().startswith(_FIN_FICHEROS):
-                break
-            entrada = _RE_ENTRADA.match(lineas[n])
-            if entrada is None:
-                raise AportableError(
-                    "el bloque FICHEROS ADJUNTOS trae una línea que no es ni un fichero "
-                    f"ni la continuación de una huella: {lineas[n][:60]!r}. No se adivina.")
-            huella = entrada.group("huella")
+    acta = set(paginas_de_acta_de_textos(textos))
+    bloques = [n for n, t in enumerate(textos, 1)
+               if n in acta and "FICHEROS ADJUNTOS" in sin_ligaduras(t or "")]
+    if not bloques:
+        raise AportableError(
+            "el certificado no trae el bloque FICHEROS ADJUNTOS en su acta: sin él no se "
+            "puede comprobar qué documentos salieron.")
+    if len(bloques) > 1:
+        raise AportableError(
+            f"el acta trae más de un bloque FICHEROS ADJUNTOS (páginas {bloques}): no se "
+            "adivina cuál es el que certifica.")
+    tras = sin_ligaduras(textos[bloques[0] - 1]).split("FICHEROS ADJUNTOS", 1)[1]
+    cabecera = _RE_CABECERA_LISTA.search(tras)
+    if cabecera is None:
+        raise AportableError(
+            "el bloque FICHEROS ADJUNTOS no trae la cabecera «Nombre Huella digital»: no "
+            "se sabe dónde empieza la lista.")
+    lineas = [l.strip() for l in tras[cabecera.end():].splitlines() if l.strip()]
+    salida: list[FicheroListado] = []
+    n, cerrado = 0, False
+    while n < len(lineas):
+        if lineas[n].lower().startswith(_FIN_FICHEROS):
+            cerrado = True
+            break
+        entrada = _RE_ENTRADA.match(lineas[n])
+        if entrada is None:
+            raise AportableError(
+                "el bloque FICHEROS ADJUNTOS trae una línea que no es ni un fichero ni la "
+                f"continuación de una huella: {lineas[n][:60]!r}. No se adivina.")
+        huella = entrada.group("huella")
+        n += 1
+        while len(huella) < 64 and n < len(lineas) and _RE_HEX.match(lineas[n]):
+            huella += lineas[n]
             n += 1
-            while len(huella) < 64 and n < len(lineas) and _RE_HEX.match(lineas[n]):
-                huella += lineas[n]
-                n += 1
-            if len(huella) != 64:
-                raise AportableError(
-                    f"la huella de {entrada.group('nombre')!r} no suma 64 caracteres "
-                    f"hexadecimales sino {len(huella)}: no se reconstruye a medias.")
-            salida.append(FicheroListado(nombre=entrada.group("nombre"), sha256=huella))
-        if not salida:
-            raise AportableError("el bloque FICHEROS ADJUNTOS del acta está vacío.")
-        return tuple(salida)
-    raise AportableError(
-        "el certificado no trae el bloque FICHEROS ADJUNTOS: sin él no se puede "
-        "comprobar qué documentos salieron.")
+        if len(huella) != 64:
+            raise AportableError(
+                f"la huella de {entrada.group('nombre')!r} no suma 64 caracteres "
+                f"hexadecimales sino {len(huella)}: no se reconstruye a medias.")
+        salida.append(FicheroListado(nombre=entrada.group("nombre"), sha256=huella))
+    if not cerrado:
+        raise AportableError(
+            "la lista de FICHEROS ADJUNTOS no llega a su línea de cierre en la página del "
+            "acta: puede seguir en otra, y no se da por completa.")
+    if not salida:
+        raise AportableError("el bloque FICHEROS ADJUNTOS del acta está vacío.")
+    return tuple(salida)
 
 
 def ficheros_listados(pdf: bytes) -> tuple[FicheroListado, ...]:
