@@ -135,13 +135,21 @@ def normalizar_pagina(texto: str) -> str:
     return " ".join(_plano(sin_cabecera).split())
 
 
-_ROTULO = " ".join(_plano(LITERAL_CONDICIONES).split())
+#: El rótulo como FRASE: las dos palabras seguidas con el guion entre medias, con
+#: cualquier espacio o salto de línea alrededor (R1/H-02).
+_RE_ROTULO = re.compile(r"\bconfidencial\s*-\s*condiciones\b")
 
 
 def lleva_rotulo(texto: str) -> bool:
-    """¿Alguna LÍNEA de la página es, entera, el rótulo de las condiciones? (M-7)"""
-    return any(" ".join(_plano(linea).split()) == _ROTULO
-               for linea in sin_ligaduras(texto or "").splitlines())
+    """¿Lleva la página el rótulo de las condiciones, como FRASE? (M-7, R1/H-02)
+
+    Hasta la R1 se exigía la LÍNEA entera, y un rótulo que la extracción partiera en dos
+    —«CONFIDENCIAL -» en una línea y «CONDICIONES» en la siguiente— no se reconocía: un
+    segundo documento de condiciones salía entero en el aportable, sin un aviso. La frase
+    con su guion es tan específica como la línea: la palabra «condiciones» suelta que
+    midió M-7 —«las condiciones adjuntas», «Condiciones de pago a la vista»— no la forma.
+    """
+    return bool(_RE_ROTULO.search(" ".join(_plano(texto).split())))
 
 
 @dataclass(frozen=True)
@@ -468,10 +476,12 @@ def _cuerpo(condiciones: Sequence[PaginaCondiciones]) -> list[str]:
     """
     palabras: list[str] = []
     for c in condiciones:
-        lineas = sin_ligaduras(c.texto).splitlines()
-        inicio = next((n + 1 for n, l in enumerate(lineas)
-                       if " ".join(_plano(l).split()) == _ROTULO), 0)
-        palabras += _palabras("\n".join(lineas[inicio:]))
+        propias = _palabras(c.texto)
+        # El rótulo, entre las palabras y no por líneas (R1/H-02): partido por la
+        # extracción sigue siendo «confidencial» seguido de «condiciones».
+        inicio = next((n + 2 for n in range(len(propias) - 1)
+                       if propias[n:n + 2] == ["confidencial", "condiciones"]), 0)
+        palabras += propias[inicio:]
     for n in range(len(palabras) - len(_DESPEDIDA) + 1):
         if tuple(palabras[n:n + len(_DESPEDIDA)]) == _DESPEDIDA:
             return palabras[:n]

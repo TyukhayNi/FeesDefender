@@ -85,7 +85,43 @@ def test_la_palabra_condiciones_SUELTA_no_es_el_rotulo():
 def test_el_rotulo_tolera_caja_espacios_y_raya_tipografica():
     assert apo.lleva_rotulo("x\n  confidencial  -  condiciones  \ny")
     assert apo.lleva_rotulo("x\nCONFIDENCIAL \u2013 CONDICIONES\ny")
-    assert not apo.lleva_rotulo("x\nCONFIDENCIAL - CONDICIONES ECONÓMICAS DE PAGO\ny")
+    # Hasta la R1 esto era `not`: se exigía la LÍNEA entera. H-02 enseñó que esa regla deja
+    # fuera un rótulo partido por la extracción, y un rótulo más largo es, con más razón,
+    # la cabecera de unas condiciones: se reconoce. Retirar de más, nunca de menos.
+    assert apo.lleva_rotulo("x\nCONFIDENCIAL - CONDICIONES ECONÓMICAS DE PAGO\ny")
+
+
+def test_H02_el_rotulo_PARTIDO_o_sin_espacios_se_reconoce():
+    """R1/H-02: la extracción puede partir el rótulo en dos líneas o pegar el guion."""
+    assert apo.lleva_rotulo("x\nCONFIDENCIAL -\nCONDICIONES\ny")
+    assert apo.lleva_rotulo("x\nCONFIDENCIAL\n-\nCONDICIONES\ny")
+    assert apo.lleva_rotulo("x\nCONFIDENCIAL-CONDICIONES\ny")
+
+
+def test_H02_la_frase_sigue_sin_casar_con_las_palabras_SUELTAS():
+    """El control del otro lado (M-7): el requerimiento real lleva «Oferta Vinculante
+    Confidencial» y «las condiciones adjuntas» en la MISMA página, y no es el rótulo."""
+    assert "Oferta Vinculante Confidencial" in s.REQUERIMIENTO
+    assert "condiciones adjuntas" in s.REQUERIMIENTO
+    assert apo.lleva_rotulo(s.REQUERIMIENTO) is False
+    assert apo.lleva_rotulo("confidencial.\nCondiciones de pago a la vista") is False
+
+
+def test_H02_un_SEGUNDO_documento_con_el_rotulo_partido_tambien_sale():
+    """La sonda del revisor: el primer documento lleva el rótulo, así que la parada
+    global por ausencia no salta, y el segundo —con el rótulo partido por la
+    extracción— salía entero en el aportable, sin aviso, en los dos canales."""
+    otras = s.Adjunto("OTRAS CONDICIONES.pdf", (
+        "EV MMC Spain, S.L.U.\nCONFIDENCIAL -\nCONDICIONES\n"
+        "Se ofrece una quita del setenta por ciento sobre la deuda reclamada si se paga\n"
+        "en un solo plazo antes de fin de mes.",))
+    r, f = s.refundido(), s.factura()
+    condiciones = _condiciones(r, otras, f)
+    assert [(c.documento, c.pagina) for c in condiciones] == [
+        ("OVC REFUNDIDA.pdf", 3), ("OTRAS CONDICIONES.pdf", 1)]
+    recorte = apo.recortar(s.certificado([r, otras, f]), condiciones)
+    assert [x.pagina_certificado for x in recorte.retiradas] == [5, 6]
+    assert not any("quita" in t for t in _textos(recorte.pdf))
 
 
 def test_lo_que_SIGUE_al_rotulo_en_el_mismo_documento_tambien_sale():
