@@ -2087,6 +2087,60 @@ def test_c9_dice_los_dos_importes_y_que_es_el_truncado_del_alta(tmp_path):
     assert r.evidencia["expedientes"]["653"]["crm"] == 48702.0
 
 
+def test_c9_R1_H06_solo_es_el_truncado_si_el_CRM_es_EXACTAMENTE_el_redondeo_del_alta(tmp_path):
+    """R1/H-06: la primera versión llamaba «truncado del alta» a cualquier CRM entero a
+    menos de un euro. El alta manda `int(round(cuantia))`: con 48702.90 habría mandado
+    48703, así que un CRM en 48702 es OTRA cosa y no puede salir etiquetado como el defecto
+    conocido."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, cuantia=48702.90,
+                 _expedientes=[{"id": "644", "element": "extrajudiciales"}])
+    r = _rr(c, "cuantia_coherente", _FuentesDobles(expediente=_exp(cuantia="48702")))
+    assert r.estado == va.FALLO
+    assert "MEJORAS #218" not in r.detalle, r.detalle
+
+
+def test_c9_R1_H06_el_redondeo_bancario_del_alta_si_se_reconoce(tmp_path):
+    """Control positivo de H-06 en el valor donde el redondeo bancario se aparta del
+    escolar (`MEJORAS #218`): `round(28132.5)` es 28132, y eso SÍ es lo que manda el alta."""
+    c = _caso(tmp_path)
+    _con_caso_md(c, cuantia=28132.5,
+                 _expedientes=[{"id": "641", "element": "extrajudiciales"}])
+    r = _rr(c, "cuantia_coherente", _FuentesDobles(expediente=_exp(exp_id="641",
+                                                                   cuantia="28132.00")))
+    assert r.estado == va.FALLO and "MEJORAS #218" in r.detalle, r.detalle
+
+
+def test_c3_R1_H05_con_los_DOS_catalogos_y_distintos_es_fallo(tmp_path):
+    """R1/H-05: con los dos catálogos presentes C3 cogía el de la sala y no miraba el otro,
+    así que un catálogo raíz que discrepa del de la sala salía `ok` donde `base/` daba
+    `fallo`. Aceptar dos ubicaciones es mirar las dos."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a"}])
+    _con_catalogo(c, 2)
+    sala = _con_sala_lectura(c)
+    (sala / "indice_documental.yaml").write_text(yaml.dump([{"slug": "a"}]),
+                                                 encoding="utf-8")
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.FALLO, r.detalle
+    assert "sala" in r.detalle and "01_Procesado" in r.detalle
+    assert r.evidencia["catalogos"] == {"sala": 1, "01_Procesado": 2}
+
+
+def test_c3_R1_H05_con_los_dos_catalogos_iguales_compara_y_lo_dice(tmp_path):
+    """Control positivo: dos catálogos que cuadran entre sí no son un fallo, pero la
+    evidencia dice que había dos."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a"}])
+    _con_catalogo(c, 1)
+    sala = _con_sala_lectura(c)
+    (sala / "indice_documental.yaml").write_text(yaml.dump([{"slug": "a"}]),
+                                                 encoding="utf-8")
+    r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.OK, r.detalle
+    assert r.evidencia["catalogos"] == {"sala": 1, "01_Procesado": 1}
+
+
 def test_c9_sin_la_mencion_al_alta_cuando_la_diferencia_no_es_el_truncado(tmp_path):
     """Control positivo: una discrepancia de verdad no puede salir etiquetada como el
     defecto conocido."""

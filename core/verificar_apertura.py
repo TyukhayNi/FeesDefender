@@ -186,25 +186,42 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     # inexistente y este contraste —el que caza lo que nadie catalogó— no corría.
     proc = case_dir / _PROCESADO
     candidatas = ubicaciones_del_catalogo(proc, proc / _SALA_LECTURA)
+
+    def _donde(p: Path) -> str:
+        return "sala" if p.parent.name == _SALA_LECTURA else _PROCESADO
+
     ocupadas = [p for p in candidatas if p.exists() and not p.is_file()]
     if ocupadas:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
-                         f"`{_CATALOGO}` existe y no es un fichero "
-                         f"({'sala' if ocupadas[0].parent.name == _SALA_LECTURA else _PROCESADO})")
-    cat_path = next((p for p in candidatas if p.is_file()), None)
-    if cat_path is None:
+                         f"`{_CATALOGO}` existe y no es un fichero ({_donde(ocupadas[0])})")
+    presentes = [p for p in candidatas if p.is_file()]
+    if not presentes:
         return Resultado("cobertura_vs_catalogo", _T_C3, PENDIENTE,
                          "no hay catálogo: la sala de lectura no se ha montado")
-    catalogo_en = "sala" if cat_path.parent.name == _SALA_LECTURA else _PROCESADO
 
     filas, err = _leer_lista_de_mapas(cob_path, json.loads)
     if err:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
                          f"`{cob_path.name}`: {err}")
-    entradas, err = _leer_lista_de_mapas(cat_path, _yaml_load)
-    if err:
+    # Aceptar las dos ubicaciones es MIRAR las dos (R1/H-05): con las dos presentes, la
+    # primera versión cogía la de la sala y no leía la otra, así que un catálogo que
+    # discrepaba salía `ok` donde antes salía `fallo`. Si no cuadran entre sí, eso es el
+    # hallazgo; si cuadran, se compara una y la evidencia dice que había dos.
+    catalogos: dict[str, list[dict]] = {}
+    for p in presentes:
+        entradas_p, err = _leer_lista_de_mapas(p, _yaml_load)
+        if err:
+            return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
+                             f"`{p.name}` ({_donde(p)}): {err}")
+        catalogos[_donde(p)] = entradas_p
+    conteos = {k: len(v) for k, v in catalogos.items()}
+    if len(set(conteos.values())) > 1:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
-                         f"`{cat_path.name}`: {err}")
+                         "hay dos catálogos y no cuadran entre sí: "
+                         + ", ".join(f"{k} {n}" for k, n in conteos.items()),
+                         {"catalogos": conteos})
+    catalogo_en = _donde(presentes[0])
+    entradas = catalogos[catalogo_en]
 
     slugs = {str(f.get("slug") or "").strip() for f in filas}
     slugs.discard("")
@@ -225,7 +242,7 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
 
     ev = {"filas_cobertura": len(filas), "hijos_de_bundle": len(filas) - len(logicos) - len(huerfanos),
           "documentos_logicos": len(logicos), "entradas_catalogo": len(entradas),
-          "huerfanos": huerfanos[:8], "catalogo_en": catalogo_en}
+          "huerfanos": huerfanos[:8], "catalogo_en": catalogo_en, "catalogos": conteos}
     if huerfanos:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
                          f"{len(huerfanos)} fila(s) con `parent_slug` que no apunta a "
@@ -1053,10 +1070,12 @@ def c9_cuantia_coherente(case_dir: Path, ctx: "_Contexto") -> Resultado:
             # Medio céntimo: el alta mandaba la cuantía como entero y los céntimos se
             # perdían (`MEJORAS #218`); por debajo de eso es el redondeo conocido.
             nota = ""
-            if n_crm == int(n_crm) and abs(n_local - n_crm) < 1:
-                # Un CRM sin céntimos a menos de un euro del local es la firma del alta
-                # que redondea a entero; se dice, y el veredicto sigue siendo fallo: la
-                # property REST admite céntimos, así que lo que está mal es el CRM.
+            if n_crm == float(int(round(n_local))):
+                # EXACTAMENTE lo que manda el alta —`int(round(cuantia))`, con el redondeo
+                # bancario de Python— y nada más (R1/H-06: «entero a menos de un euro»
+                # etiquetaba también un 48702 frente a un local de 48702.90, que el alta
+                # habría mandado como 48703). El veredicto sigue siendo fallo: la property
+                # REST admite céntimos, así que lo que está mal es el CRM.
                 nota = ": es el truncado del alta (`MEJORAS #218`)"
             problemas.append(f"{exp_id}: la cuantía local ({n_local:.2f}) y la del CRM "
                              f"({n_crm:.2f}) no coinciden{nota}")
