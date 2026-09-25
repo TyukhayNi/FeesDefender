@@ -1007,6 +1007,24 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
   resolvería la cobertura pero no la granularidad, así que seguiría sin servir para leer
   `JURIDICO`.
 
+## La sincronización de la app con `main` (`sync_with_base_branch`) falla al descargar, mientras `git fetch` sí baja
+
+- **Intentado:** poner al día con `main` la rama del PR #397, que el #399 había dejado en
+  conflicto, con la herramienta de la app, que es la vía que el entorno manda para los conflictos
+  de un PR. Dos veces: con la base por defecto y con `base: main`.
+- **Resultado:** las dos, «The merge of origin/main could not be completed at the fetch step
+  ("fetching main from origin failed")». En el mismo minuto, `git fetch origin` desde la sesión
+  había bajado `origin/main` sin error.
+- **Confirmado:** 2026-09-25.
+- **Conclusión:** si los ficheros en conflicto **no** son rutas protegidas del sandbox
+  (`.claude/hooks`, `.claude/skills`, `.mcp.json`…), el merge a mano: `git merge --no-ff
+  origin/main`, resolver, `git commit --no-edit`, y comprobar que ningún lado pierde líneas
+  (`git diff origin/main` y `git diff HEAD` sobre los resueltos: lo que «falta» tiene que ser
+  edición propia de la rama). Si el conflicto toca rutas protegidas, eso sí necesita la
+  herramienta de la app: parar y decirlo.
+- **Acción pendiente:** ninguna. Sin medir si es transitorio: fueron dos intentos seguidos, con
+  el mismo error.
+
 ## Plantilla para nuevas entradas
 
 ```markdown

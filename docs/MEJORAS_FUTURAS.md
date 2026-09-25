@@ -13359,3 +13359,34 @@ categoría difiere de la del principal, con una marca de «anexo de…»; y en l
 ejemplar se conserva cuando un suelto y un adjunto son el mismo fichero.
 
 **Disparador de promoción.** La próxima sala con un documento clave que solo llegó por correo.
+
+---
+
+## 303. El aviso «PLAN.md ↔ git» de `session_close` toma las rutas `docs/…` por ramas, y no reconoce las ramas `claude/…`
+
+> **Medido el 2026-09-25, en el cierre de la sesión de mejoras de las aperturas (PR #397).** Es
+> un aviso y no bloquea nada: el coste es de atención, no de datos.
+
+`scripts/session_close.py:49` busca «tokens con pinta de rama» con
+`\b(?:feat|fix|docs|chore|refactor|test|hotfix|release)/[A-Za-z0-9._\-/]+`, y eso falla por los
+dos lados a la vez:
+
+- **Toda ruta `docs/…` casa**, como si fuera una rama `docs/…`. Y como `_plan_items_desfasados`
+  trocea `PLAN.md` por encabezados y la cola priorizada es **un solo bloque** —una tabla—, basta
+  una frase de pendiente en cualquier fila para que **todas** las rutas `docs/…` de la tabla salgan
+  como «ramas que git ya no conoce». En este cierre fueron unas cincuenta, desde handoffs de agosto
+  hasta el plan del mismo día.
+- **Las ramas reales no casan:** las de este repo se llaman `claude/<nombre>` —el prefijo que pone
+  la app— y `claude` no está en la lista. Una fila que dijera «pendiente en `claude/x`» con la rama
+  ya podada, que es el caso que el aviso existe para cazar, **no sale**.
+
+**La frontera:** un aviso que grita siempre y no acierta nunca enseña a no leerlo, y el día que
+acierte nadie lo mirará.
+
+**Remedio probable.** Reconocer una rama por lo que git conoce —`git branch -a` y el prefijo de la
+app— en vez de por una lista de prefijos convencionales; no casar dentro de una ruta de fichero; y
+trocear la cola por **fila**, no por encabezado. Tests: una ruta `docs/…` en una fila pendiente no
+sale; una `claude/x` podada, sí. Una ronda: toca `scripts/`, no datos de cliente.
+
+**Disparador de promoción.** El próximo cierre que tenga que explicar el aviso en vez de leerlo, o
+antes si se toca `session_close` por otra cosa.
