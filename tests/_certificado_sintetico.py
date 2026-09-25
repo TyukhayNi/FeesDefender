@@ -183,15 +183,17 @@ def certificado(adjuntos: list[Adjunto], *, id_envio: str = "006sint",
     return pdf(acta + repro)
 
 
-def con_firma(datos: bytes, *, con_padre: bool = False) -> bytes:
+def con_firma(datos: bytes, *, con_padre: bool = False, visible: bool = False) -> bytes:
     """Le pone al PDF un campo de firma con su widget en la página 1, como los reales (M-8).
 
     `con_padre=True` separa el campo del widget (el widget lleva `/Parent` y el `/FT`
     está en el campo): los reales los fusionan, pero el recorte no puede depender de eso.
+    `visible=True` le da una apariencia que PINTA —un recuadro negro—: en los reales no
+    pinta nada (medido el 2026-09-25), pero el aportable no puede depender de eso.
     """
     from pypdf import PdfReader, PdfWriter
-    from pypdf.generic import (ArrayObject, DictionaryObject, FloatObject, NameObject,
-                               NumberObject, TextStringObject)
+    from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject,
+                               FloatObject, NameObject, NumberObject, TextStringObject)
 
     escritor = PdfWriter(clone_from=PdfReader(io.BytesIO(datos)))
     widget = DictionaryObject({
@@ -201,6 +203,17 @@ def con_firma(datos: bytes, *, con_padre: bool = False) -> bytes:
                                           FloatObject(560), FloatObject(110)]),
         NameObject("/F"): NumberObject(4),
     })
+    if visible:
+        apariencia = DecodedStreamObject()
+        apariencia.set_data(b"0 g 0 0 180 80 re f")
+        apariencia.update({
+            NameObject("/Type"): NameObject("/XObject"),
+            NameObject("/Subtype"): NameObject("/Form"),
+            NameObject("/BBox"): ArrayObject([FloatObject(0), FloatObject(0),
+                                              FloatObject(180), FloatObject(80)]),
+        })
+        widget[NameObject("/AP")] = DictionaryObject(
+            {NameObject("/N"): escritor._add_object(apariencia)})
     if con_padre:
         campo = DictionaryObject({NameObject("/FT"): NameObject("/Sig"),
                                   NameObject("/T"): TextStringObject("Signature")})
@@ -346,3 +359,336 @@ def refundido() -> Adjunto:
 
 def factura() -> Adjunto:
     return Adjunto("FACTURA 0000001.pdf", (FACTURA,))
+
+
+# --- R2/H-01: el aportable es IMAGEN ---------------------------------------------
+
+def render(pdf: bytes, pagina: int, *, anotaciones: bool = False):
+    """La página `pagina` (base 1) dibujada a la resolución del aportable.
+
+    Por su cuenta, sin pasar por el código que se prueba: es lo que permite decir si la
+    imagen k del aportable es la página que tocaba, y no la que el código cree. Con
+    `anotaciones=True`, como la vería un visor: PDFium solo pinta un widget con los
+    formularios inicializados, y el resto de anotaciones con `draw_annots` (medido el
+    2026-09-25).
+    """
+    import pypdfium2 as pdfium
+
+    from core.certificado_aportable import PPP
+
+    doc = pdfium.PdfDocument(pdf)
+    if anotaciones:
+        doc.init_forms()
+    return doc[pagina - 1].render(scale=PPP / 72, draw_annots=anotaciones,
+                                  may_draw_forms=anotaciones).to_pil().convert("RGB")
+
+
+def con_anotacion_visible(datos: bytes, *, pagina: int, subtipo: str = "/Stamp") -> bytes:
+    """Una anotación que PINTA —un recuadro negro— en la página `pagina` (base 1)."""
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject,
+                               FloatObject, NameObject, NumberObject)
+
+    escritor = PdfWriter(clone_from=PdfReader(io.BytesIO(datos)))
+    apariencia = DecodedStreamObject()
+    apariencia.set_data(b"0 g 0 0 180 80 re f")
+    apariencia.update({
+        NameObject("/Type"): NameObject("/XObject"),
+        NameObject("/Subtype"): NameObject("/Form"),
+        NameObject("/BBox"): ArrayObject([FloatObject(0), FloatObject(0),
+                                          FloatObject(180), FloatObject(80)]),
+    })
+    anotacion = DictionaryObject({
+        NameObject("/Type"): NameObject("/Annot"),
+        NameObject("/Subtype"): NameObject(subtipo),
+        NameObject("/Rect"): ArrayObject([FloatObject(380), FloatObject(30),
+                                          FloatObject(560), FloatObject(110)]),
+        NameObject("/F"): NumberObject(4),
+        NameObject("/AP"): DictionaryObject({NameObject("/N"): escritor._add_object(apariencia)}),
+    })
+    escritor.pages[pagina - 1][NameObject("/Annots")] = ArrayObject(
+        [escritor._add_object(anotacion)])
+    buffer = io.BytesIO()
+    escritor.write(buffer)
+    return buffer.getvalue()
+
+
+def imagenes(pdf: bytes) -> list:
+    """La imagen de cada página del PDF, decodificada. Exige UNA por página."""
+    from PIL import Image
+    from pypdf import PdfReader
+
+    salida = []
+    for pagina in PdfReader(io.BytesIO(pdf)).pages:
+        xobjetos = pagina["/Resources"].get_object()["/XObject"].get_object()
+        (imagen,) = [x.get_object() for x in xobjetos.values()
+                     if x.get_object().get("/Subtype") == "/Image"]
+        salida.append(Image.open(io.BytesIO(imagen._data)).convert("RGB"))
+    return salida
+
+
+def distancia(a, b) -> float:
+    """Diferencia media por canal entre dos imágenes del mismo tamaño (0 = iguales)."""
+    from PIL import ImageChops, ImageStat
+
+    return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3
+
+
+def _escapar(linea: str) -> bytes:
+    crudo = linea.encode("cp1252", errors="replace")
+    return crudo.replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)")
+
+
+def con_capa_de_texto(pdf: bytes, textos, *, modo: int = 3, fuente: str = "/Type1",
+                      operadores: bytes = b"") -> bytes:
+    """El PDF con una capa de texto por página, como la deja un OCR: un formulario que
+    escribe el texto en modo de render `modo` (3 = invisible) con una fuente estándar, y
+    que la página dibuja delante de su imagen.
+
+    `fuente` y `operadores` existen para fabricar capas FUERA del perfil del aportable
+    —una fuente Type3, que dibuja; operadores que pintan— y ver que la relectura las para.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject,
+                               FloatObject, NameObject)
+
+    escritor = PdfWriter(clone_from=PdfReader(io.BytesIO(pdf)))
+    datos_fuente = {NameObject("/Type"): NameObject("/Font"),
+                    NameObject("/Subtype"): NameObject(fuente),
+                    NameObject("/BaseFont"): NameObject("/Helvetica"),
+                    NameObject("/Encoding"): NameObject("/WinAnsiEncoding")}
+    ref_fuente = escritor._add_object(DictionaryObject(datos_fuente))
+    for pagina, texto in zip(escritor.pages, textos):
+        alto = float(pagina.mediabox.height)
+        lineas = [f"BT {modo} Tr /F1 10 Tf 40 {alto - 40:.0f} Td".encode()]
+        lineas += [b"(" + _escapar(linea) + b") Tj 0 -12 Td" for linea in texto.splitlines()]
+        lineas += [b"ET", operadores]
+        forma = DecodedStreamObject()
+        forma.set_data(b"\n".join(lineas))
+        forma.update({
+            NameObject("/Type"): NameObject("/XObject"),
+            NameObject("/Subtype"): NameObject("/Form"),
+            NameObject("/BBox"): ArrayObject([FloatObject(0), FloatObject(0),
+                                              FloatObject(float(pagina.mediabox.width)),
+                                              FloatObject(alto)]),
+            NameObject("/Resources"): DictionaryObject({NameObject("/Font"): DictionaryObject(
+                {NameObject("/F1"): ref_fuente})}),
+        })
+        recursos = pagina["/Resources"].get_object()
+        recursos["/XObject"].get_object()[NameObject("/OCR")] = escritor._add_object(forma)
+        # El contenido se reescribe EN SU SITIO: uno nuevo dejaría el viejo huérfano dentro
+        # del fichero, y la relectura —con razón— para ante un objeto que no cuelga de nada.
+        contenido = pagina["/Contents"].get_object()
+        contenido.set_data(b"q /OCR Do Q\n" + contenido.get_data())
+    buffer = io.BytesIO()
+    escritor.write(buffer)
+    return buffer.getvalue()
+
+
+_RE_ROTULO_OCR = __import__("re").compile(r"(?i)confidencial\s*-\s*condiciones")
+
+
+@__import__("functools").lru_cache(maxsize=64)
+def _candidatas(cert: bytes) -> tuple:
+    """Miniatura y texto de cada página del certificado. Se guarda por certificado: los
+    tests repiten los mismos, y lo que se prueba —el recorte— se ejecuta entero cada vez."""
+    from pypdf import PdfReader
+
+    textos = [p.extract_text() or "" for p in PdfReader(io.BytesIO(cert)).pages]
+    return tuple((render(cert, n).reduce(8), t) for n, t in enumerate(textos, 1))
+
+
+def ocr_fiel(*certificados: bytes, lee_rotulo: bool = True, extra: dict | None = None):
+    """Un OCR de mentira que LEE LA IMAGEN, y no los índices del código que se prueba.
+
+    Casa cada página del raster, por sus píxeles, con la página de los certificados que
+    dibuja, y le pone como capa de texto invisible el texto de ESA página. Así un error de
+    índices en el recorte se ve en el texto, como con un OCR de verdad; un doble que
+    devolviera el texto de lo que el código CREE haber conservado aprobaría justo ese
+    error. `lee_rotulo=False` lo lee todo menos el rótulo —el OCR que falla ahí— y
+    `extra={k: texto}` añade `texto` a lo que lee en la página k (base 1) del raster.
+
+    Se casa sobre miniaturas (1/8): el ruido del JPEG se promedia y lo que distingue una
+    página de otra —dónde hay texto— se queda. Si la mejor no gana con holgura, revienta:
+    un doble que adivina es peor que ninguno.
+    """
+    candidatas = [c for cert in certificados for c in _candidatas(cert)]
+
+    def ocr(raster: bytes) -> bytes:
+        leidos = []
+        for k, imagen in enumerate(imagenes(raster), 1):
+            mini = imagen.reduce(8)
+            orden = sorted(((distancia(mini, c), t) for c, t in candidatas
+                            if c.size == mini.size), key=lambda x: x[0])
+            if not orden or orden[0][0] > 1.0 or any(
+                    d < 2 * orden[0][0] + 0.5 and t != orden[0][1] for d, t in orden[1:]):
+                raise AssertionError(f"el OCR de mentira no sabe qué página es la {k}: "
+                                     f"{[round(d, 2) for d, _ in orden[:3]]}")
+            texto = orden[0][1]
+            if not lee_rotulo:
+                texto = _RE_ROTULO_OCR.sub("C0NF1DENC1AL - C0ND1C10NES", texto)
+            leidos.append(texto + ("\n" + extra[k] if extra and k in extra else ""))
+        return con_capa_de_texto(raster, leidos)
+
+    return ocr
+
+
+def carga(pdf: bytes) -> bytes:
+    """Los datos DECODIFICADOS de todos los streams del fichero, cuelguen o no de algo."""
+    from pypdf import PdfReader
+    from pypdf.generic import StreamObject
+
+    lector, trozos = PdfReader(io.BytesIO(pdf)), []
+    for num in range(1, int(lector.trailer["/Size"])):
+        try:
+            objeto = lector.get_object(num)
+        except Exception:  # noqa: BLE001 — entradas libres del xref
+            continue
+        if isinstance(objeto, StreamObject):
+            try:
+                trozos.append(objeto.get_data())
+            except Exception:  # noqa: BLE001 — un filtro que pypdf no decodifica
+                trozos.append(bytes(getattr(objeto, "_data", b"")))
+    return b"\n".join(trozos)
+
+
+def alcanzable_desde(pdf: bytes, pagina: int) -> bytes:
+    """Los streams que se alcanzan desde la página (base 1) sin subir a `/Parent`, decodificados.
+
+    Es el control de las sondas: prueba que las condiciones están AL ALCANCE de la página
+    que se conserva, que es lo que las metía en el aportable estructural.
+    """
+    from pypdf import PdfReader
+    from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject, StreamObject
+
+    lector = PdfReader(io.BytesIO(pdf))
+    vistos, trozos = set(), []
+
+    def recorrer(valor) -> None:
+        if isinstance(valor, IndirectObject):
+            if valor.idnum in vistos:
+                return
+            vistos.add(valor.idnum)
+            valor = valor.get_object()
+        if isinstance(valor, StreamObject):
+            trozos.append(valor.get_data())
+        if isinstance(valor, DictionaryObject):
+            for clave, v in valor.items():
+                if clave != "/Parent":
+                    recorrer(v)
+        elif isinstance(valor, ArrayObject):
+            for v in valor:
+                recorrer(v)
+
+    recorrer(lector.pages[pagina - 1].indirect_reference)
+    return b"\n".join(trozos)
+
+
+#: Las vías de la R2/H-01: por dónde viajaban las condiciones en el aportable estructural.
+VIAS_DE_FUGA = ("pattern", "shading", "font", "smask", "image_smask", "metadata",
+                "contents_array")
+
+
+def con_fuga(via: str) -> bytes:
+    """El certificado de las sondas de la R2 (H-01): las condiciones dentro de un recurso
+    que la página conservada (la 3) COMPARTE con la retirada (la 5) sin dibujarlo.
+
+    Portadas de las sondas del revisor (acta R2, §2). Con el aportable estructural los
+    siete aportables llevaban dentro el contenido de las condiciones, sin rótulo en sus
+    páginas ni aviso: la poda solo miraba `Do`. Con la imagen, lo que no se dibuja no está.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import ArrayObject as A
+    from pypdf.generic import DecodedStreamObject
+    from pypdf.generic import DictionaryObject as D
+    from pypdf.generic import NameObject as N
+    from pypdf.generic import NumberObject as I
+
+    w = PdfWriter(clone_from=PdfReader(io.BytesIO(certificado([refundido(), factura()]))))
+
+    def flujo(datos: bytes, **claves):
+        st = DecodedStreamObject()
+        st.set_data(datos)
+        for k, v in claves.items():
+            st[N("/" + k)] = v
+        return w._add_object(st)
+
+    conservada, retirada = w.pages[2], w.pages[4]
+    original = retirada.get_contents().get_data()
+    caja = A([I(0), I(0), I(595), I(842)])
+    recursos = D(dict(conservada["/Resources"].get_object()))
+    op = b""
+    if via == "pattern":
+        patron = flujo(original, Type=N("/Pattern"), PatternType=I(1), PaintType=I(1),
+                       TilingType=I(1), BBox=caja, XStep=I(595), YStep=I(842),
+                       Resources=retirada["/Resources"])
+        recursos[N("/Pattern")] = D({N("/Secret"): patron})
+        op = b"q /Pattern cs /Secret scn 0 0 595 842 re f Q"
+    elif via == "shading":
+        # Función PostScript válida: lo económico viaja en sus comentarios.
+        datos = (b"{\n" + b"\n".join(b"% " + l for l in original.splitlines())
+                 + b"\npop pop 0 0 0 }")
+        funcion = flujo(datos, FunctionType=I(4), Domain=A([I(0), I(1), I(0), I(1)]),
+                        Range=A([I(0), I(1)] * 3))
+        recursos[N("/Shading")] = D({N("/Secret"): D({
+            N("/ShadingType"): I(1), N("/ColorSpace"): N("/DeviceRGB"),
+            N("/Function"): funcion})})
+        op = b"q /Secret sh Q"
+    elif via == "font":
+        glifo = flujo(b"600 0 d0\n" + original)
+        fuente = D({N("/Type"): N("/Font"), N("/Subtype"): N("/Type3"),
+                    N("/FontBBox"): caja, N("/FontMatrix"): A([I(1), I(0), I(0), I(1), I(0), I(0)]),
+                    N("/CharProcs"): D({N("/A"): glifo}), N("/Resources"): retirada["/Resources"],
+                    N("/Encoding"): D({N("/Type"): N("/Encoding"),
+                                       N("/Differences"): A([I(65), N("/A")])}),
+                    N("/FirstChar"): I(65), N("/LastChar"): I(65), N("/Widths"): A([I(600)])})
+        recursos[N("/Font")] = D(dict(recursos["/Font"].get_object()))
+        recursos["/Font"][N("/Secret")] = w._add_object(fuente)
+        op = b"BT /Secret 1 Tf (A) Tj ET"
+    elif via == "smask":
+        forma = flujo(original, Type=N("/XObject"), Subtype=N("/Form"), BBox=caja,
+                      Resources=retirada["/Resources"])
+        forma.get_object()[N("/Group")] = D({N("/S"): N("/Transparency"),
+                                             N("/CS"): N("/DeviceGray")})
+        recursos[N("/ExtGState")] = D({N("/Secret"): D({
+            N("/Type"): N("/ExtGState"),
+            N("/SMask"): D({N("/S"): N("/Luminosity"), N("/G"): forma})})})
+        op = b"q /Secret gs 0 0 100 100 re f Q"
+    elif via == "image_smask":
+        # La máscara lleva los bytes de las condiciones como muestras de imagen; la imagen
+        # exterior, inocua, la dibujan las dos páginas.
+        mascara = flujo(original, Type=N("/XObject"), Subtype=N("/Image"),
+                        Width=I(len(original)), Height=I(1), ColorSpace=N("/DeviceGray"),
+                        BitsPerComponent=I(8))
+        imagen = flujo(b"\xff" * len(original), Type=N("/XObject"), Subtype=N("/Image"),
+                       Width=I(len(original)), Height=I(1), ColorSpace=N("/DeviceGray"),
+                       BitsPerComponent=I(8), SMask=mascara)
+        recursos[N("/XObject")] = D({N("/Secret"): imagen})
+        op = b"q /Secret Do Q"
+        conservada[N("/Contents")] = flujo(conservada.get_contents().get_data() + b"\n" + op)
+    elif via == "metadata":
+        # Metadatos en un formulario que la CONSERVADA sí dibuja: al catálogo y a la página
+        # no llegan, a sus formularios sí.
+        meta = flujo(('<x:xmpmeta xmlns:x="adobe:ns:meta/">' + CONDICIONES
+                      + "</x:xmpmeta>").encode(), Type=N("/Metadata"), Subtype=N("/XML"))
+        propia = flujo(conservada.get_contents().get_data(), Type=N("/XObject"),
+                       Subtype=N("/Form"), BBox=caja, Resources=conservada["/Resources"],
+                       Metadata=meta)
+        recursos[N("/XObject")] = D({N("/Keep"): propia})
+        conservada[N("/Contents")] = flujo(b"q /Keep Do Q")
+        retirada[N("/Metadata")] = meta
+    elif via == "contents_array":
+        # El contenido retirado en un array INDIRECTO, y el stream al alcance de la
+        # conservada desde un recurso que no invoca.
+        secreto = retirada.raw_get("/Contents")
+        retirada[N("/Contents")] = w._add_object(A([secreto]))
+        recursos[N("/Pattern")] = D({N("/Stored"): secreto})
+    else:
+        raise ValueError(via)
+    conservada[N("/Resources")] = recursos
+    retirada[N("/Resources")] = recursos
+    if op:
+        retirada[N("/Contents")] = flujo(original + b"\n" + op)
+    buffer = io.BytesIO()
+    w.write(buffer)
+    return buffer.getvalue()

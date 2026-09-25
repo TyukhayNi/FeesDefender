@@ -137,6 +137,13 @@ def test_las_lecturas_del_transporte_real_llegan_al_modulo_de_transporte(monkeyp
     assert llamadas == [metodo]
 
 
+def test_el_entorno_real_trae_el_OCR_REAL(monkeypatch):
+    """El puerto que estrena la R2 de F3 (H-01): sin `ocr`, `preparar_aportables` para, y
+    los dobles lo traen, así que esto NO lo ve ninguna prueba de comportamiento. Tiene que
+    ser el adaptador de verdad —no `None`, no un doble—."""
+    assert _transporte_real(monkeypatch, atributo="ocr") is exp._ocr_aportable
+
+
 def test_descargar_adjunto_del_transporte_real_llega_al_modulo_de_transporte(monkeypatch):
     """La lectura que estrena F3. Mismo contrato que las cuatro de arriba: no basta con
     que exista; tiene que llamar a `core.codicert` con el envío y el nombre."""

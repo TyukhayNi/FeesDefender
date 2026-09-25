@@ -21,6 +21,7 @@ def test_render_aportables_ensena_estado_ruta_retiradas_y_avisos():
     assert "006c" in texto and "PRODUCIDO" in texto and "APORTABLE" in texto
     assert "páginas 5 del certificado" in texto and "un aviso" in texto
     assert "NO lleva la firma" in texto
+    assert "IMAGEN" in texto and "OCR" in texto        # R2/H-01: qué es, dicho donde se usa
 
 
 def test_render_aportables_ensena_el_MOTIVO_de_una_parada():

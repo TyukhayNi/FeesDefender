@@ -230,7 +230,9 @@ def render_aportables(resultados) -> str:
     if not resultados:
         lineas.append("  Nada que preparar.")
     lineas += ["", "  El aportable NO lleva la firma del prestador: la prueba custodiada",
-               "  es el íntegro, con la huella que da su manifiesto."]
+               "  es el íntegro, con la huella que da su manifiesto.",
+               "  Es la IMAGEN de las páginas que se conservan, con su texto leído por OCR:",
+               "  sirve para buscar y leer, y el texto fiel es el del íntegro."]
     return "\n".join(lineas)
 
 

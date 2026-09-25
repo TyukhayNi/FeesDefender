@@ -11,6 +11,7 @@ import io
 import json
 import os
 import re
+import sys
 import tempfile
 import threading
 import uuid
@@ -1392,6 +1393,12 @@ class EntornoExpedicion:
     #: Lector del emisor de un certificado PDF (`core.certificado_lectura`).
     leer_emisor: Callable[[bytes], Any] | None = None
 
+    # --- el puerto de F3 (`preparar_aportables`) ------------------------------
+    #: El OCR del aportable: recibe su IMAGEN y la devuelve con una capa de texto
+    #: invisible (R2/H-01). `entorno_real` monta el de verdad (`_ocr_aportable`); los tests
+    #: pasan un doble, porque el de verdad tarda ~20 s por certificado.
+    ocr: Callable[[bytes], bytes] | None = None
+
 
 @dataclass(frozen=True)
 class Confirmacion:
@@ -2126,6 +2133,7 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
         gestor=_GestorDocumental(),
         exp_crm=_exp_crm_de,
         leer_emisor=_leer_emisor_de,
+        ocr=_ocr_aportable,
     )
 
 
@@ -2590,22 +2598,34 @@ AVISO_DESTINATARIO_INCIERTO = (
     "pudieron cambiar, o no constan): si fue a varios requeridos en el mismo sobre, "
     "acredita la entrega en el domicilio, no a cada uno.")
 
+#: El aviso cuando el destinatario se lee IGUAL de bien como una parte que como varias
+#: (R2/H-06): no se sabe si fue un sobre conjunto.
+AVISO_DESTINATARIO_AMBIGUO = (
+    "el destinatario del burofax se puede leer como una sola parte del CRM o como varias "
+    "en el mismo sobre, y no se sabe cuál fue: si fue a varios requeridos, acredita la "
+    "entrega en el domicilio, no a cada uno.")
 
-def _cubre(texto: str, nombres: set[str], desde: int = 0) -> int:
-    """Cuántos nombres, como mucho, cubren `texto[desde:]` entero unidos por « y »; -1 si
-    no se puede."""
-    mejor = -1
-    for nombre in nombres:
-        if not texto.startswith(nombre, desde):
-            continue
-        fin = desde + len(nombre)
-        if fin == len(texto):
-            mejor = max(mejor, 1)
-        elif texto.startswith(" y ", fin):
-            resto = _cubre(texto, nombres, fin + 3)
-            if resto > 0:
-                mejor = max(mejor, 1 + resto)
-    return mejor
+
+def _cubre(texto: str, nombres: set[str]) -> int:
+    """Cuántos nombres, como mucho, cubren `texto` entero unidos por « y »; -1 si no se puede.
+
+    Se calcula de atrás adelante, cada posición UNA vez (R2/H-07): la recursión sin
+    memoria repetía el mismo sufijo por cada manera de llegar a él, y con nombres que son
+    prefijos unos de otros —«ana», «ana y ana»…— eran 250.904 llamadas para 18 segmentos.
+    """
+    fin = len(texto)
+    #: mejor[i]: cuántos nombres, como mucho, cubren `texto[i:]`; -1 si no se puede.
+    mejor = [-1] * (fin + 1)
+    for i in range(fin - 1, -1, -1):
+        for nombre in nombres:
+            if not texto.startswith(nombre, i):
+                continue
+            tras = i + len(nombre)
+            if tras == fin:
+                mejor[i] = max(mejor[i], 1)
+            elif texto.startswith(" y ", tras) and mejor[tras + 3] > 0:
+                mejor[i] = max(mejor[i], 1 + mejor[tras + 3])
+    return mejor[0] if fin else -1
 
 
 def _atribucion_burofax(envio: EnvioObservado, partes: list[dict]) -> str | None:
@@ -2618,6 +2638,10 @@ def _atribucion_burofax(envio: EnvioObservado, partes: list[dict]) -> str | None
     se puede leer entero como dos o más nombres de partes unidos por « y », o no se puede
     atribuir —porque los nombres del CRM cambiaron o no constan—, y **eso se dice**, en vez
     de callar como si fuera a una sola persona.
+
+    **Las dos lecturas a la vez son una tercera respuesta** (R2/H-06): si casa entero con
+    una parte y TAMBIÉN se lee como varias, no se sabe a quién fue, y la coincidencia
+    íntegra no puede callar la otra lectura.
     """
     if envio.canal != "burofax":
         return None
@@ -2625,11 +2649,70 @@ def _atribucion_burofax(envio: EnvioObservado, partes: list[dict]) -> str | None
 
     nombres = {_normalizar(nombre_completo_de(p)) for p in partes} - {""}
     destinatario = _normalizar(envio.destinatario)
-    if destinatario in nombres:
+    entero = destinatario in nombres
+    conjunto = _cubre(destinatario, nombres) >= 2
+    if entero and conjunto:
+        return AVISO_DESTINATARIO_AMBIGUO
+    if entero:
         return None
-    if _cubre(destinatario, nombres) >= 2:
+    if conjunto:
         return AVISO_SOBRE_CONJUNTO
     return AVISO_DESTINATARIO_INCIERTO
+
+
+def _destinatario(envio: EnvioObservado, partes: list[dict],
+                  error_partes: str | None) -> dict | None:
+    """Lo que se sabe HOY del destinatario de un burofax: `None` en una entrega electrónica.
+
+    Es una OBSERVACIÓN del día —depende de si el CRM respondió y de cómo se llaman hoy las
+    partes—, no identidad del aportable (R2/H-04): va a su propia clave del manifiesto.
+    """
+    if envio.canal != "burofax":
+        return None
+    if error_partes is not None:
+        return {"comprobado": False, "avisos": [
+            f"no se pudo comprobar si el sobre fue conjunto ({error_partes}): si este "
+            "burofax fue a varios requeridos, acredita la entrega en el domicilio, no a "
+            "cada uno."]}
+    aviso = _atribucion_burofax(envio, partes)
+    return {"comprobado": True, "avisos": [aviso] if aviso else []}
+
+
+def _destinatario_por_revisar(historico: dict | None, hoy: dict | None) -> str | None:
+    """¿Obliga lo que hoy se sabe del destinatario a revisar el manifiesto? (R2/H-04)
+
+    Solo en un caso: **el manifiesto no avisa de nada y hoy la comprobación sí**. Entonces
+    el aportable se acompañaría de un manifiesto que calla un aviso, y lo mira una
+    persona. En todos los demás vale el manifiesto: si hoy no se pudo comprobar, lo que
+    se comprobó al generarlo sigue en pie; y si el manifiesto ya avisaba, su aviso ya dice
+    lo que hace falta —los tres avisos acaban igual: la entrega en el domicilio—.
+    """
+    if hoy is None or not hoy["comprobado"] or not hoy["avisos"]:
+        return None
+    # Un burofax sin su `destinatario` en el manifiesto se trata como uno que no avisa.
+    if (historico or {}).get("avisos"):
+        return None
+    return (f"el manifiesto no dice nada del destinatario y hoy la comprobación avisa: "
+            f"«{hoy['avisos'][0]}». Puede que hayan cambiado las partes del CRM: revísalo "
+            "y, si procede, aparta el manifiesto para que se genere de nuevo.")
+
+
+def _notas_del_destinatario(existente: dict, hoy: dict | None) -> tuple[str, ...]:
+    """Lo que el operador tiene que saber cuando hoy no se dice lo mismo que el manifiesto."""
+    if hoy is None:
+        return ()
+    historico = existente.get("destinatario") or {}
+    generado = existente.get("generado", "?")
+    if not hoy["comprobado"]:
+        return (f"hoy no se ha podido volver a comprobar el destinatario (el CRM no "
+                f"respondió): vale lo que dice el manifiesto, generado el {generado}.",)
+    if hoy["avisos"] != historico.get("avisos"):
+        hoy_dice = " / ".join(hoy["avisos"]) or "nada que avisar"
+        manifiesto_dice = " / ".join(historico.get("avisos") or []) or "nada que avisar"
+        return (f"hoy la comprobación del destinatario da «{hoy_dice}» y el manifiesto, "
+                f"generado el {generado}, dice «{manifiesto_dice}»: vale el manifiesto. "
+                "Revísalo si han cambiado las partes.",)
+    return ()
 
 
 def _escribir_atomico(destino: Path, datos: bytes) -> None:
@@ -2651,6 +2734,58 @@ def _escribir_atomico(destino: Path, datos: bytes) -> None:
         raise
 
 
+#: El idioma del OCR: los documentos que F3 recorta son del despacho, en castellano, y el
+#: acta de Codicert también.
+IDIOMA_OCR = "spa"
+
+
+def _ocr_aportable(pdf: bytes) -> bytes:
+    """La capa de texto del aportable: OCRmyPDF + Tesseract sobre su IMAGEN (R2/H-01).
+
+    Solo ve la imagen —no el íntegro—, y no la toca: ni endereza, ni gira, ni optimiza,
+    porque la relectura exige que cada imagen salga idéntica, byte a byte, a la del
+    recorte (medido con OCRmyPDF 17.11: la conserva). Salida `pdf` y no PDF/A: la
+    conversión a PDF/A reescribe las imágenes.
+
+    Dos cosas medidas sobre los certificados REALES que el sintético no enseñaba:
+
+    - **Sin linealizar.** Por encima de 1 MB OCRmyPDF linealiza la salida («vista web
+      rápida»), y eso mete un diccionario `/Linearized` y un stream de pistas que no
+      cuelgan de nada: la relectura —con razón— los para. Un umbral inalcanzable lo apaga.
+    - **El `stderr` se devuelve como estaba.** `ocrmypdf.ocr()` lo deja sustituido por un
+      `StringIO`, y desde ahí se perdían en silencio los avisos del frontal y la traza de
+      cualquier fallo posterior: el proceso salía con 1 sin decir por qué.
+    """
+    import ocrmypdf
+
+    stderr = sys.stderr
+    try:
+        with tempfile.TemporaryDirectory(prefix="aportable-ocr-") as tmp:
+            entrada, salida = Path(tmp) / "imagen.pdf", Path(tmp) / "ocr.pdf"
+            entrada.write_bytes(pdf)
+            codigo = ocrmypdf.ocr(entrada, salida, language=[IDIOMA_OCR], output_type="pdf",
+                                  optimize=0, deskew=False, rotate_pages=False, clean=False,
+                                  progress_bar=False, fast_web_view=_SIN_LINEALIZAR)
+            if int(codigo) != 0:
+                raise RuntimeError(f"OCRmyPDF terminó con el código {int(codigo)}")
+            return salida.read_bytes()
+    finally:
+        sys.stderr = stderr
+
+
+#: Megas a partir de los cuales OCRmyPDF linealiza: ninguno que un aportable alcance.
+_SIN_LINEALIZAR = 1e9
+
+
+#: Por qué hace falta cada puerto: el error que para lo dice.
+_PUERTOS_DE_F3 = {
+    "carpeta_certificados": "`preparar_aportables` escribe en el expediente y sin ese "
+                            "puerto no hay dónde",
+    "leer_emisor": "sin él no se comprueba de quién es el íntegro",
+    "ocr": "sin él no hay capa de texto, y sin capa de texto no hay aportable",
+}
+
+
 def preparar_aportables(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
                         ordinal: int = 1, emisor_esperado: str | None = None,
                         verificar_plaza: bool = True) -> list[AportablePreparado]:
@@ -2662,12 +2797,10 @@ def preparar_aportables(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicio
     adquiere. No sube nada al CRM: el spec pide los tres artefactos archivados, y el
     íntegro, que es la prueba, ya lo subió F2.
     """
-    for nombre, valor in (("carpeta_certificados", entorno_exp.carpeta_certificados),
-                          ("leer_emisor", entorno_exp.leer_emisor)):
-        if valor is None:
+    for nombre, porque in _PUERTOS_DE_F3.items():
+        if getattr(entorno_exp, nombre) is None:
             raise ExpedicionError(
-                f"el entorno no trae `{nombre}`: `preparar_aportables` escribe en el "
-                "expediente y sin ese puerto no hay dónde. Usa `entorno_real`.")
+                f"el entorno no trae `{nombre}`: {porque}. Usa `entorno_real`.")
     clave_mutex = clave_mutex_cosecha(w_code, tipo, entorno_exp, ordinal)
     with _candado_de(clave_mutex):
         _exigir_mutex_de_cosecha(clave_mutex, w_code=w_code, tipo=tipo,
@@ -2693,8 +2826,8 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
     condiciones = apo.paginas_de_condiciones(documentos)
     if not condiciones:
         raise ExpedicionError(
-            f"ninguno de los {len(documentos)} documentos enviados lleva el rótulo "
-            f"«{apo.LITERAL_CONDICIONES}» en una línea propia. O el envío no llevaba "
+            f"ninguno de los {len(documentos)} documentos enviados abre una página con el "
+            f"rótulo «{apo.LITERAL_CONDICIONES}» como título. O el envío no llevaba "
             "condiciones —y entonces lo que se aporta es el íntegro, con su firma— o las "
             "llevaba con otro rótulo —y entonces NO—. Eso lo decide una persona mirando "
             "el documento: F3 no certifica que no haya nada que retirar.")
@@ -2735,81 +2868,117 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
                         "(art. 17.2).")))
             continue
         try:
-            apo.comprobar_reproduccion(datos, documentos)
+            avisos_reproduccion = apo.comprobar_reproduccion(datos, documentos)
             recorte = apo.recortar(datos, condiciones)
             ficheros_acta = apo.ficheros_listados(datos)
         except apo.AportableError as err:
             resultados.append(AportablePreparado(envio.id_envio, envio.canal, PARADO,
                                                  motivo=str(err)))
             continue
-
-        avisos_extra: list[str] = []
-        if envio.canal == "burofax":
-            if error_partes is not None:
-                avisos_extra.append(
-                    f"no se pudo comprobar si el sobre fue conjunto ({error_partes}): si "
-                    "este burofax fue a varios requeridos, acredita la entrega en el "
-                    "domicilio, no a cada uno.")
-            else:
-                aviso = _atribucion_burofax(envio, partes)
-                if aviso is not None:
-                    avisos_extra.append(aviso)
+        hoy = _destinatario(envio, partes, error_partes)
         destino, manifiesto = ruta_aportable(integro), ruta_manifiesto(integro)
+        existe_aportable, existe_manifiesto = destino.exists(), manifiesto.exists()
+        retiradas = tuple(r.pagina_certificado for r in recorte.retiradas)
+
+        # R2/H-01: el OCR no es determinista, así que un aportable repuesto no casaría con
+        # un manifiesto que ya está. Ni se repone ni se pisa: se dice.
+        if existe_manifiesto and not existe_aportable:
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, PARADO, ruta_manifiesto=manifiesto,
+                motivo=(f"hay un {manifiesto.name} sin su aportable: el aportable no se "
+                        "puede reponer idéntico —su capa de texto la lee un OCR, y no da "
+                        "dos veces los mismos bytes—, así que ese manifiesto no lo "
+                        "describiría. Si sobra, apártalo a mano y vuelve a lanzar.")))
+            continue
+        if existe_aportable:
+            # El que ya está se RELEE contra la imagen de hoy —byte a byte las mismas
+            # imágenes—, y así volver a lanzar no pasa el OCR otra vez (lo caro).
+            pdf = destino.read_bytes()
+            try:
+                apo.verificar_aportable(pdf, recorte)
+            except apo.AportableError as err:
+                resultados.append(AportablePreparado(
+                    envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
+                    motivo=(f"ya hay un {destino.name} que no es el aportable de este "
+                            f"íntegro ({err}): no se pisa. Si sobra, apártalo a mano y "
+                            "vuelve a lanzar.")))
+                continue
+        else:
+            try:
+                pdf = apo.aportable_de(recorte, ocr=entorno_exp.ocr)
+            except apo.AportableError as err:
+                resultados.append(AportablePreparado(envio.id_envio, envio.canal, PARADO,
+                                                     motivo=str(err)))
+                continue
+
         nuevo = apo.manifiesto_de(
             recorte, id_envio=envio.id_envio, canal=envio.canal,
             id_personalizado=expedicion.id_personalizado, generado=generado,
             integro_nombre=integro.name, integro_sha256=hashlib.sha256(datos).hexdigest(),
-            aportable_nombre=destino.name,
+            aportable_nombre=destino.name, aportable_sha256=hashlib.sha256(pdf).hexdigest(),
             # QUÉ se comprobó del emisor, no un «verificado» genérico (R1, §5): con
             # `verificar_plaza=False` la cuenta no se compara, y decirlo verificado
             # afirmaría más de lo que se miró.
             emisor={"razon_social": emisor.razon_social, "usuario": emisor.usuario,
                     "razon_social_verificada": True, "usuario_verificado": plaza is not None},
             ficheros_acta=ficheros_acta, documentos=documentos,
-            avisos_extra=avisos_extra)
-        avisos = (*recorte.avisos, *avisos_extra)
-        retiradas = tuple(r.pagina_certificado for r in recorte.retiradas)
+            avisos_extra=avisos_reproduccion, destinatario=hoy)
 
-        existe_aportable, existe_manifiesto = destino.exists(), manifiesto.exists()
-        if existe_aportable and destino.read_bytes() != recorte.pdf:
+        if existe_manifiesto:
+            # R1/H-04: un manifiesto que ya está se VALIDA contra lo que se acaba de
+            # comprobar —todo salvo lo volátil—; R2/H-04: lo del destinatario es volátil,
+            # y solo obliga a revisar si hoy avisa de algo que el manifiesto calla.
+            existente = _manifiesto_existente(manifiesto)
+            if existente is None or not _manifiesto_corresponde(existente, nuevo):
+                resultados.append(AportablePreparado(
+                    envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
+                    ruta_manifiesto=manifiesto,
+                    motivo=(f"ya hay un manifiesto ({manifiesto.name}) que no corresponde a "
+                            "este aportable —huellas, páginas o avisos distintos—: no se "
+                            "pisa. Si sobra, apártalo a mano y vuelve a lanzar.")))
+                continue
+            revisar = _destinatario_por_revisar(existente.get("destinatario"), hoy)
+            if revisar:
+                resultados.append(AportablePreparado(
+                    envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
+                    ruta_manifiesto=manifiesto, motivo=revisar))
+                continue
             resultados.append(AportablePreparado(
-                envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
-                motivo=(f"ya hay un {destino.name} con otro contenido: no se pisa. "
-                        "Si sobra, apártalo a mano y vuelve a lanzar.")))
+                envio.id_envio, envio.canal, YA_ESTABA, ruta_aportable=destino,
+                ruta_manifiesto=manifiesto, retiradas=retiradas,
+                avisos=(*existente["avisos"],
+                        *(existente.get("destinatario") or {}).get("avisos", []),
+                        *_notas_del_destinatario(existente, hoy))))
             continue
-        # R1/H-04: un manifiesto que ya está se VALIDA contra lo que se acaba de
-        # comprobar —todo salvo el instante en que se generó—, tenga o no su aportable
-        # al lado. Antes, uno adulterado pasaba por «ya estaba» y uno huérfano se pisaba.
-        if existe_manifiesto and not _manifiesto_corresponde(manifiesto, nuevo):
-            resultados.append(AportablePreparado(
-                envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
-                ruta_manifiesto=manifiesto,
-                motivo=(f"ya hay un manifiesto ({manifiesto.name}) que no corresponde a "
-                        "este aportable —huellas, páginas o avisos distintos—: no se pisa. "
-                        "Si sobra, apártalo a mano y vuelve a lanzar.")))
-            continue
+
         if not existe_aportable:
-            _escribir_atomico(destino, recorte.pdf)
-        if not existe_manifiesto:
-            cuerpo = json.dumps(nuevo, ensure_ascii=False, indent=2) + "\n"
-            _escribir_atomico(manifiesto, cuerpo.encode("utf-8"))
+            _escribir_atomico(destino, pdf)
+        cuerpo = json.dumps(nuevo, ensure_ascii=False, indent=2) + "\n"
+        _escribir_atomico(manifiesto, cuerpo.encode("utf-8"))
         resultados.append(AportablePreparado(
             envio.id_envio, envio.canal, YA_ESTABA if existe_aportable else PRODUCIDO,
             ruta_aportable=destino, ruta_manifiesto=manifiesto, retiradas=retiradas,
-            avisos=avisos))
+            avisos=(*nuevo["avisos"], *(hoy["avisos"] if hoy else ()))))
     return resultados
 
 
-def _manifiesto_corresponde(ruta: Path, nuevo: dict) -> bool:
-    """¿El manifiesto en disco dice lo mismo que el recién calculado, salvo `generado`?"""
+#: Lo que un manifiesto dice y NO es identidad del aportable: el instante en que se generó
+#: y lo que el CRM de ese día dijo del destinatario (R2/H-04).
+_CLAVES_VOLATILES = frozenset({"generado", "destinatario"})
+
+
+def _manifiesto_existente(ruta: Path) -> dict | None:
     try:
         existente = json.loads(ruta.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return False
-    if not isinstance(existente, dict):
-        return False
-    return ({k: v for k, v in existente.items() if k != "generado"}
-            == {k: v for k, v in nuevo.items() if k != "generado"})
+        return None
+    return existente if isinstance(existente, dict) else None
+
+
+def _manifiesto_corresponde(existente: dict, nuevo: dict) -> bool:
+    """¿El manifiesto en disco dice lo mismo que el recién calculado, salvo lo volátil?"""
+    return ({k: v for k, v in existente.items() if k not in _CLAVES_VOLATILES}
+            == {k: v for k, v in nuevo.items() if k not in _CLAVES_VOLATILES})
 
 
 #: Reexportados para que quien use `cosechar` no tenga que importar dos módulos más
