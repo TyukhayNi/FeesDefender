@@ -930,10 +930,17 @@ pruebas, «así no se cobrará nada».
 > contra **producción**, en solo lectura y fuera del expediente, sobre `W-04AKM2 - OVC`: aportable
 > del correo `006catetonk` sin su página 7 y del burofax `006catfpdv6` sin su página 9 —las dos,
 > la de condiciones, casada al 1,000 en las tres numeraciones—; `006catf83zx` declarado pendiente;
-> factura conservada, rótulo ausente, huellas de íntegro y aportable iguales a las del manifiesto,
-> sello de firma presente en el íntegro y ausente en el aportable; crédito 836,9215 € antes y
-> después. **El camino real queda ejercido para Madrid**; las otras seis plazas siguen sin
-> credencial.
+> factura conservada, rótulo ausente **de lo visible**, huellas de íntegro y aportable iguales a
+> las del manifiesto, sello de firma presente en el íntegro y ausente en el aportable; crédito
+> 836,9215 € antes y después. **El camino real queda ejercido para Madrid**; las otras seis plazas
+> siguen sin credencial.
+>
+> ⚠️ **Y lo que ese humo NO vio, que es lo importante:** releía el texto de las páginas, no el
+> fichero. La R1 (H-01) demostró que **los dos aportables llevaban dentro el formulario de la
+> página de condiciones**, porque los certificados reales comparten un `/Resources` entre todas
+> sus páginas (§12.4). Remediado y **re-verificado sin red sobre esos mismos certificados**:
+> formularios con el rótulo 1 → 0, lo conservado idéntico píxel a píxel salvo el sello. Los dos
+> PDF defectuosos solo existieron en el directorio temporal de la sesión.
 
 **Lo que se prueba con doble y lo que no.** Con el puerto del §4.2, el criterio del jurídico se
 prueba entera contra dobles. Lo que **no se puede probar sin enviar de verdad** se nombra aquí para
@@ -1139,5 +1146,18 @@ idempotencia», y la frontera que lo justifica es **silenciosa**: un aportable c
 condiciones dentro *parece* correcto —nombre, manifiesto y páginas en su sitio— y su defecto solo
 aparece cuando la otra parte lo lee en el juzgado.
 
-La adjudicación va en el plan de F3 y el informe literal en su acta hermana; el estado de la ronda
-se escribe aquí al adjudicarla.
+- **R1 de Codex sobre el diff** (commit `a87e2d9`): **NO-SHIP**, 7 hallazgos —2 `alta`, 5
+  `media`—, **los siete confirmados contra la fuente y remediados**, más dos observaciones
+  laterales también remediadas. Acta literal:
+  [`2026-09-25-codicert-f3-r1-adversarial-review.md`](../plans/2026-09-25-codicert-f3-r1-adversarial-review.md);
+  adjudicación en el §12 del [plan de F3](../plans/2026-09-25-codicert-f3.md).
+- **El alto que la justifica, medido en los certificados reales:** las páginas comparten un
+  `/Resources` con el Form XObject de cada página de la reproducción, y copiar las conservadas
+  metía en el aportable el formulario de las condiciones —invisible, recuperable—. El §7.4 se
+  cumple ahora sobre el **fichero**, no sobre lo que se ve: recursos podados a lo que cada página
+  dibuja, sin anotaciones, y una relectura del grafo entero que para si queda un solo objeto que
+  solo usaban las páginas retiradas.
+- **Sobre los nueve commits de la remediación la cobertura independiente es AUSENTE**: cada
+  remedio con su test visto en rojo, 26 de 26 mutantes muertos por su test y la suite con las dos
+  semillas, lo que prueba que cada remedio hace lo que dice, **no** que ninguno haya abierto algo
+  que nadie fue a buscar. Una segunda ronda excede la tabla y la decide Nikolai.
