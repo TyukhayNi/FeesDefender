@@ -467,25 +467,31 @@ def _palabras(texto: str) -> list[str]:
     return _RE_PALABRA.findall(_plano(sin_cabecera))
 
 
-def _cuerpo(condiciones: Sequence[PaginaCondiciones]) -> list[str]:
-    """Las palabras propias de las condiciones: tras el rótulo y antes de la despedida.
+def _cuerpos(condiciones: Sequence[PaginaCondiciones]) -> list[list[str]]:
+    """Las palabras propias de las condiciones, UNA lista por documento: tras el rótulo y
+    antes de SU despedida.
 
     Lo de antes del rótulo es membrete, requerido y referencia, y lo de después de «Sin
     otro particular», la despedida y la firma: las dos cosas las comparte con el
     requerimiento, y sin cortarlas el aviso saltaría en todo envío (M-6).
+
+    **Por documento** (R1/H-06): con un solo corte sobre todas las palabras juntas, la
+    despedida del primer documento dejaba fuera del aviso el cuerpo entero del segundo.
     """
-    palabras: list[str] = []
+    por_documento: dict[str, list[str]] = {}
     for c in condiciones:
         propias = _palabras(c.texto)
         # El rótulo, entre las palabras y no por líneas (R1/H-02): partido por la
         # extracción sigue siendo «confidencial» seguido de «condiciones».
         inicio = next((n + 2 for n in range(len(propias) - 1)
                        if propias[n:n + 2] == ["confidencial", "condiciones"]), 0)
-        palabras += propias[inicio:]
-    for n in range(len(palabras) - len(_DESPEDIDA) + 1):
-        if tuple(palabras[n:n + len(_DESPEDIDA)]) == _DESPEDIDA:
-            return palabras[:n]
-    return palabras
+        por_documento.setdefault(c.documento, []).extend(propias[inicio:])
+    cuerpos = []
+    for palabras in por_documento.values():
+        fin = next((n for n in range(len(palabras) - len(_DESPEDIDA) + 1)
+                    if tuple(palabras[n:n + len(_DESPEDIDA)]) == _DESPEDIDA), len(palabras))
+        cuerpos.append(palabras[:fin])
+    return cuerpos
 
 
 def _frases(palabras: list[str]) -> set[tuple[str, ...]]:
@@ -503,7 +509,9 @@ def _avisos_de_fuga(conservadas: dict[int, str],
     propias condiciones. **Aviso, no parada**, como dice el spec: nombra la página y la
     frase y decide una persona.
     """
-    frases = _frases(_cuerpo(condiciones))
+    frases: set[tuple[str, ...]] = set()
+    for cuerpo in _cuerpos(condiciones):
+        frases |= _frases(cuerpo)
     avisos = []
     for pagina, texto in conservadas.items():
         comunes = frases & _frases(_palabras(texto))

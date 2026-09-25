@@ -406,6 +406,20 @@ def test_la_despedida_y_el_membrete_compartidos_NO_avisan():
     assert apo.recortar(s.certificado([r, f]), _condiciones(r, f)).avisos == ()
 
 
+def test_H06_la_despedida_del_PRIMER_documento_no_corta_las_frases_del_SEGUNDO():
+    """R1/H-06: el corte de «Sin otro particular» era UNO sobre todas las palabras
+    juntas, así que la despedida del primer documento dejaba fuera del aviso todo lo que
+    viniera después. Un segundo documento de condiciones cuya frase reproduce el acta
+    —que no se recorta— salía sin aviso."""
+    frase = "Se ofrece una quita del setenta por ciento sobre la deuda si se paga de una vez."
+    otras = s.Adjunto("ANEXO QUITA.pdf",
+                      (f"CONFIDENCIAL - CONDICIONES\n{frase}\nSin otro particular, atentamente",))
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, otras, f], acta_extra="Asunto:\n" + frase)
+    avisos = apo.recortar(cert, _condiciones(r, otras, f)).avisos
+    assert any(a.startswith("la página 1 del certificado repite") for a in avisos), avisos
+
+
 def test_AVISA_de_una_pagina_arrastrada_sin_rotulo():
     """Retirar de más tiene un coste —se pierde prueba— y se dice."""
     raro = s.Adjunto("RARO.pdf", (s.REQUERIMIENTO, s.CONDICIONES,
