@@ -18,6 +18,7 @@ siempre y se rehace sobre las frases propias de las condiciones (M-2, M-6).
 """
 from __future__ import annotations
 
+import difflib
 import hashlib
 import io
 import re
@@ -26,6 +27,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from core.certificado_lectura import _sin_ligaduras as sin_ligaduras
+from core.certificado_lectura import paginas_de_acta_de_textos
 
 _RE_ENTRADA = re.compile(r"^(?P<nombre>.+?)\s+(?P<huella>[0-9a-f]{6,64})$")
 _RE_HEX = re.compile(r"^[0-9a-f]+$")
@@ -185,3 +187,223 @@ def paginas_de_condiciones(
         salida += [PaginaCondiciones(documento=doc.nombre, pagina=n + 1, texto=textos[n])
                    for n in range(inicio, len(textos))]
     return tuple(salida)
+
+
+# --- el recorte -----------------------------------------------------------------
+
+#: Similitud mínima para tener una página de la reproducción por COPIA de una página
+#: de condiciones (M-3): original contra copia, 1,000 en las ocho parejas medidas; la
+#: misma plantilla en otra expedición, 0,877-0,939; páginas distintas, 0,39 como
+#: mucho. 0,98 deja margen a un ruido de extracción que no se ha visto y queda lejos de
+#: lo que sí se ha visto.
+UMBRAL_COPIA = 0.98
+
+#: Por debajo de esto una página de condiciones no tiene texto con que casarla
+#: —escaneada o en blanco— y no se puede garantizar que salga: se para.
+MIN_CARACTERES = 40
+
+
+@dataclass(frozen=True)
+class PaginaRetirada:
+    """Una página que sale del aportable, en las TRES numeraciones (spec §7.3)."""
+
+    pagina_certificado: int
+    pagina_reproduccion: int
+    documento: str
+    pagina_documento: int
+    similitud: float
+
+
+@dataclass(frozen=True)
+class Recorte:
+    """El aportable ya producido y verificado, con lo que hace falta para el manifiesto."""
+
+    pdf: bytes
+    paginas_totales: int
+    paginas_acta: tuple[int, ...]
+    paginas_reproduccion: tuple[int, ...]
+    retiradas: tuple[PaginaRetirada, ...]
+    conservadas: tuple[int, ...]
+    avisos: tuple[str, ...] = ()
+
+    @property
+    def sha256(self) -> str:
+        return hashlib.sha256(self.pdf).hexdigest()
+
+
+def _ratio(a: str, b: str) -> float:
+    """Similitud 0..1 entre dos textos normalizados.
+
+    `quick_ratio` es cota SUPERIOR y es barata: si no llega al umbral, el `ratio` de
+    verdad tampoco. Un burofax admite 200 páginas (spec §1.4); sin el prefiltro serían
+    200 comparaciones completas por cada página de condiciones.
+    """
+    m = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    cota = m.quick_ratio()
+    return cota if cota < UMBRAL_COPIA else m.ratio()
+
+
+def _mas_parecida(objetivo: str, candidatas: dict[int, str]) -> tuple[int | None, float]:
+    """La página más parecida y su similitud EXACTA, para decir por qué no casó."""
+    mejor, valor = None, 0.0
+    for pagina, texto in candidatas.items():
+        r = difflib.SequenceMatcher(None, objetivo, texto, autojunk=False).ratio()
+        if r > valor:
+            mejor, valor = pagina, r
+    return mejor, valor
+
+
+def _es_widget_de_firma(anotacion) -> bool:
+    """¿Es el widget del campo de firma? Fusionado con el campo o colgando de él (M-8)."""
+    if anotacion.get("/Subtype") != "/Widget":
+        return False
+    tipo = anotacion.get("/FT")
+    if tipo is None and anotacion.get("/Parent") is not None:
+        tipo = anotacion["/Parent"].get_object().get("/FT")
+    return tipo == "/Sig"
+
+
+def _sin_firma(pagina) -> None:
+    """Quita de la página el widget de la firma, que el aportable ya no tiene (M-8).
+
+    Recortar rompe la firma (spec §7.2) y el `/AcroForm` no viaja; el widget sí, y
+    seguiría pintando un sello de firma sin firma detrás. Presentar como firmado un
+    documento que no lo está es justo lo que el nombre `APORTABLE` y el manifiesto
+    existen para no hacer.
+    """
+    from pypdf.generic import ArrayObject, NameObject
+
+    anotaciones = pagina.get("/Annots")
+    if anotaciones is None:
+        return
+    quedan = ArrayObject(a for a in anotaciones.get_object()
+                         if not _es_widget_de_firma(a.get_object()))
+    if quedan:
+        pagina[NameObject("/Annots")] = quedan
+    else:
+        del pagina["/Annots"]
+
+
+def _sin_paginas(lector, conservadas: Sequence[int]) -> bytes:
+    """Un PDF nuevo con las páginas conservadas, en su orden y sin el widget de firma."""
+    from pypdf import PdfWriter
+
+    escritor = PdfWriter()
+    for numero in conservadas:
+        pagina = lector.pages[numero - 1]
+        _sin_firma(pagina)
+        escritor.add_page(pagina)
+    buffer = io.BytesIO()
+    escritor.write(buffer)
+    return buffer.getvalue()
+
+
+def _verificar(pdf: bytes, *, esperadas: Sequence[str],
+               condiciones: Sequence[PaginaCondiciones]) -> None:
+    """Se relee lo producido: exactamente las páginas conservadas, sin rastro de condiciones.
+
+    Es la tercera parada y no depende de las otras dos: comprueba el RESULTADO, no la
+    aritmética que lo produjo. Las tres numeraciones del §7.3 son exactamente donde se
+    cuela un error de uno.
+    """
+    hechas = _textos_pdf(pdf, que="el aportable producido")
+    if len(hechas) != len(esperadas):
+        raise AportableError(
+            f"el aportable producido tiene {len(hechas)} páginas y debían ser "
+            f"{len(esperadas)}. No se entrega.")
+    objetivos = [normalizar_pagina(c.texto) for c in condiciones]
+    for n, (hecha, esperada) in enumerate(zip(hechas, esperadas), 1):
+        normal = normalizar_pagina(hecha)
+        if normal != normalizar_pagina(esperada):
+            raise AportableError(
+                f"la página {n} del aportable no es la que tocaba conservar: la cuenta de "
+                "páginas falló. No se entrega.")
+        if lleva_rotulo(hecha) or any(_ratio(o, normal) >= UMBRAL_COPIA
+                                      for o in objetivos):
+            raise AportableError(
+                f"la página {n} del aportable reproduce las condiciones. No se entrega.")
+
+
+def recortar(certificado: bytes,
+             condiciones: Sequence[PaginaCondiciones]) -> Recorte:
+    """El aportable: el certificado sin las páginas que reproducen las condiciones.
+
+    Tres paradas, las tres antes de entregar nada (spec §7.3, reenunciado con M-3):
+
+    1. **Una página de condiciones que no se localiza en la reproducción para.** Lo que
+       no se sabe dónde está no se puede garantizar que haya salido.
+    2. **Una página que se conserva y lleva el rótulo para**, sea de la reproducción o
+       del acta. Es la red de la primera por un instrumento independiente: el texto
+       casado puede fallar de formas que el rótulo no, y al revés.
+    3. **El resultado se relee** (`_verificar`).
+
+    Se retira TODA página de la reproducción que sea copia de una de condiciones, no
+    solo la primera: dos copias son dos páginas de condiciones.
+    """
+    if not condiciones:
+        raise AportableError(
+            "no hay páginas de condiciones que retirar. Un aportable sin nada retirado "
+            "sería el íntegro sin su firma: si no hay condiciones, lo que se aporta es el "
+            "íntegro.")
+    for c in condiciones:
+        if len(normalizar_pagina(c.texto)) < MIN_CARACTERES:
+            raise AportableError(
+                f"la página {c.pagina} de {c.documento!r} es de condiciones y no tiene "
+                "texto con que localizarla (¿escaneada? ¿en blanco?). Lo que no se puede "
+                "localizar no se puede garantizar que salga: se para.")
+    from pypdf import PdfReader
+
+    try:
+        lector = PdfReader(io.BytesIO(certificado))
+        textos = [p.extract_text() or "" for p in lector.pages]
+    except Exception as exc:  # noqa: BLE001 — pypdf lanza de todo ante un PDF roto
+        raise AportableError(
+            f"el certificado no se puede leer como PDF ({type(exc).__name__}: {exc})"
+        ) from exc
+    total = len(textos)
+    acta = paginas_de_acta_de_textos(textos)
+    if not acta:
+        raise AportableError(
+            "el PDF no tiene páginas de acta —ninguna lleva el sello temporal en la "
+            "cabecera—: no es un certificado de Codicert.")
+    reproduccion = tuple(n for n in range(1, total + 1) if n not in acta)
+    normal = {n: normalizar_pagina(textos[n - 1]) for n in reproduccion}
+
+    retiradas: dict[int, PaginaRetirada] = {}
+    for c in condiciones:
+        objetivo = normalizar_pagina(c.texto)
+        copias = [(n, r) for n, r in ((n, _ratio(objetivo, t)) for n, t in normal.items())
+                  if r >= UMBRAL_COPIA]
+        if not copias:
+            donde, valor = _mas_parecida(objetivo, normal)
+            raise AportableError(
+                f"la página {c.pagina} de {c.documento!r} (condiciones) no aparece en la "
+                f"reproducción del certificado: la más parecida es la {donde} del "
+                f"certificado, con {valor:.2f}, y hace falta {UMBRAL_COPIA}. No se sabe "
+                "dónde está, así que no se puede garantizar que salga: no se produce "
+                "aportable.")
+        for n, r in copias:
+            previa = retiradas.get(n)
+            if previa is None or r > previa.similitud:
+                retiradas[n] = PaginaRetirada(
+                    pagina_certificado=n, pagina_reproduccion=reproduccion.index(n) + 1,
+                    documento=c.documento, pagina_documento=c.pagina,
+                    similitud=round(r, 4))
+    conservadas = tuple(n for n in range(1, total + 1) if n not in retiradas)
+
+    for n in conservadas:
+        if lleva_rotulo(textos[n - 1]):
+            donde = ("es del ACTA, que no se recorta: el asunto o el cuerpo de la "
+                     "comunicación lo reproducen" if n in acta else
+                     "y no casa con ninguna página de condiciones de lo que salió")
+            raise AportableError(
+                f"la página {n} del certificado se conserva y lleva el rótulo "
+                f"«{LITERAL_CONDICIONES}» —{donde}—. No se produce aportable.")
+
+    pdf = _sin_paginas(lector, conservadas)
+    _verificar(pdf, esperadas=[textos[n - 1] for n in conservadas],
+               condiciones=condiciones)
+    return Recorte(pdf=pdf, paginas_totales=total, paginas_acta=tuple(acta),
+                   paginas_reproduccion=reproduccion,
+                   retiradas=tuple(retiradas[n] for n in sorted(retiradas)),
+                   conservadas=conservadas)

@@ -104,3 +104,146 @@ def test_la_normalizacion_quita_la_cabecera_de_codicert():
 def test_la_huella_de_un_documento_enviado_es_la_de_sus_bytes():
     d = apo.DocumentoEnviado(nombre="x.pdf", contenido=b"abc")
     assert d.sha256 == hashlib.sha256(b"abc").hexdigest()
+
+
+# --- el recorte ------------------------------------------------------------------
+
+def _condiciones(*adjuntos):
+    return apo.paginas_de_condiciones([_doc(a) for a in adjuntos])
+
+
+def _textos(pdf):
+    import io
+
+    from pypdf import PdfReader
+    return [p.extract_text() or "" for p in PdfReader(io.BytesIO(pdf)).pages]
+
+
+def test_retira_la_pagina_de_condiciones_y_conserva_todo_lo_demas():
+    """El caso medido (M-1): acta 1-2, reproducción 3-6, condiciones en la 5."""
+    r, f = s.refundido(), s.factura()
+    recorte = apo.recortar(s.certificado([r, f]), _condiciones(r, f))
+    assert recorte.paginas_acta == (1, 2)
+    assert recorte.paginas_reproduccion == (3, 4, 5, 6)
+    assert [x.pagina_certificado for x in recorte.retiradas] == [5]
+    assert recorte.conservadas == (1, 2, 3, 4, 6)
+    textos = _textos(recorte.pdf)
+    assert len(textos) == 5
+    assert not any(apo.lleva_rotulo(t) for t in textos)
+    assert "Factura A/R" in textos[-1]          # la factura es prueba y se queda
+
+
+def test_la_retirada_se_nombra_en_las_TRES_numeraciones():
+    """Spec §7.3: página del documento, de la reproducción y del certificado."""
+    r, f = s.refundido(), s.factura()
+    (x,) = apo.recortar(s.certificado([r, f]), _condiciones(r, f)).retiradas
+    assert (x.pagina_certificado, x.pagina_reproduccion) == (5, 3)
+    assert (x.documento, x.pagina_documento) == ("OVC REFUNDIDA.pdf", 3)
+    assert x.similitud >= apo.UMBRAL_COPIA
+
+
+def test_el_BUROFAX_se_recorta_con_los_documentos_del_correo():
+    """M-4: el fundido es la concatenación de los adjuntos del correo."""
+    r, f = s.refundido(), s.factura()
+    recorte = apo.recortar(s.certificado([r, f], burofax=True), _condiciones(r, f))
+    assert [x.pagina_certificado for x in recorte.retiradas] == [5]
+
+
+def test_PARADA_1_si_las_condiciones_no_aparecen_no_hay_aportable():
+    """Spec §7.3: si las páginas de condiciones no se localizan TODAS, se para."""
+    r, f = s.refundido(), s.factura()
+    sin_ellas = s.certificado([r, f], reproduccion=[s.REQUERIMIENTO, s.OVC, s.FACTURA])
+    with pytest.raises(apo.AportableError, match="no aparece en la reproducción"):
+        apo.recortar(sin_ellas, _condiciones(r, f))
+
+
+def test_la_MISMA_plantilla_de_OTRA_expedicion_no_se_toma_por_copia():
+    """M-3: 0,877-0,939 entre expediciones distintas; el umbral está en 0,98.
+
+    Un certificado que reproduce las condiciones de OTRO requerido no acredita las
+    nuestras, y tomarlas por copia retiraría una página ajena dejando las nuestras sin
+    localizar.
+    """
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f], reproduccion=[s.REQUERIMIENTO, s.OVC,
+                                               s.CONDICIONES_DE_OTRA, s.FACTURA])
+    with pytest.raises(apo.AportableError, match="no aparece"):
+        apo.recortar(cert, _condiciones(r, f))
+
+
+def test_PARADA_2_una_pagina_que_se_conserva_con_el_rotulo_para():
+    """La red de la primera parada, por un instrumento independiente."""
+    r, f = s.refundido(), s.factura()
+    duplicada = "CONFIDENCIAL - CONDICIONES\nuna hoja que nadie mandó así"
+    cert = s.certificado([r, f], reproduccion=[s.REQUERIMIENTO, s.OVC, s.CONDICIONES,
+                                               duplicada, s.FACTURA])
+    with pytest.raises(apo.AportableError, match="lleva el rótulo"):
+        apo.recortar(cert, _condiciones(r, f))
+
+
+def test_PARADA_2_tambien_si_el_rotulo_esta_en_el_ACTA_que_no_se_recorta():
+    """El acta reproduce asunto y cuerpo, y el acta no se recorta (spec §7.4, J-05)."""
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f], acta_extra="Asunto:\nCONFIDENCIAL - CONDICIONES")
+    with pytest.raises(apo.AportableError, match="ACTA"):
+        apo.recortar(cert, _condiciones(r, f))
+
+
+def test_una_pagina_de_condiciones_SIN_TEXTO_para():
+    """Escaneada o en blanco: lo que no se puede localizar no se garantiza que salga."""
+    vacia = apo.PaginaCondiciones(documento="ESCANEO.pdf", pagina=1, texto="  ")
+    with pytest.raises(apo.AportableError, match="no tiene texto"):
+        apo.recortar(s.certificado([s.refundido()]), [vacia])
+
+
+def test_sin_condiciones_que_retirar_NO_se_produce_un_integro_sin_firma():
+    with pytest.raises(apo.AportableError, match="íntegro"):
+        apo.recortar(s.certificado([s.refundido()]), [])
+
+
+def test_un_PDF_que_no_es_un_certificado_se_dice():
+    r = s.refundido()
+    with pytest.raises(apo.AportableError, match="no es un certificado"):
+        apo.recortar(s.pdf([s.REQUERIMIENTO, s.CONDICIONES]), _condiciones(r))
+
+
+def test_las_condiciones_DUPLICADAS_salen_las_dos():
+    """Dos copias de la misma página en la reproducción: las dos son condiciones."""
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f], reproduccion=[s.REQUERIMIENTO, s.OVC, s.CONDICIONES,
+                                               s.CONDICIONES, s.FACTURA])
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    assert [x.pagina_certificado for x in recorte.retiradas] == [5, 6]
+
+
+def test_el_aportable_NO_lleva_el_widget_de_la_firma():
+    """M-8: dejarlo pintaría un sello de firma sin firma detrás."""
+    import io
+
+    from pypdf import PdfReader
+
+    r, f = s.refundido(), s.factura()
+    for con_padre in (False, True):
+        cert = s.con_firma(s.certificado([r, f]), con_padre=con_padre)
+        assert PdfReader(io.BytesIO(cert)).pages[0].get("/Annots") is not None
+        aportable = PdfReader(io.BytesIO(apo.recortar(cert, _condiciones(r, f)).pdf))
+        assert aportable.pages[0].get("/Annots") is None, con_padre
+        assert aportable.trailer["/Root"].get("/AcroForm") is None
+
+
+def test_el_recorte_es_DETERMINISTA():
+    """M-8: mismos bytes en dos corridas. Es lo que sostiene la idempotencia."""
+    r, f = s.refundido(), s.factura()
+    cert = s.con_firma(s.certificado([r, f]))
+    a = apo.recortar(cert, _condiciones(r, f))
+    b = apo.recortar(cert, _condiciones(r, f))
+    assert a.pdf == b.pdf and a.sha256 == b.sha256 == hashlib.sha256(a.pdf).hexdigest()
+
+
+def test_PARADA_3_se_verifica_el_resultado_no_la_aritmetica(monkeypatch):
+    """Si el PDF producido no es el que tocaba, no se entrega (verificar por resultado)."""
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f])
+    monkeypatch.setattr(apo, "_sin_paginas", lambda lector, conservadas: cert)
+    with pytest.raises(apo.AportableError, match="aportable"):
+        apo.recortar(cert, _condiciones(r, f))
