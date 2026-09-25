@@ -503,10 +503,16 @@ def _verificar(pdf: bytes, *, esperadas: Sequence[str],
             raise AportableError(
                 f"la página {n} del aportable no es la que tocaba conservar: la cuenta de "
                 "páginas falló. No se entrega.")
-        if lleva_rotulo(hecha) or any(_ratio(o, normal) >= UMBRAL_COPIA
-                                      for o in objetivos):
+        # Dos causas, dos mensajes: cada una tiene su test (R1/H-07), y un mensaje
+        # compartido dejaría pasar un mutante que solo comprobara una.
+        if lleva_rotulo(hecha):
             raise AportableError(
-                f"la página {n} del aportable reproduce las condiciones. No se entrega.")
+                f"la página {n} del aportable lleva el rótulo de las condiciones. No se "
+                "entrega.")
+        if any(_ratio(o, normal) >= UMBRAL_COPIA for o in objetivos):
+            raise AportableError(
+                f"la página {n} del aportable es copia de una página de condiciones. No se "
+                "entrega.")
 
 
 #: Palabras por frase al buscar las condiciones en lo que se conserva (M-6). Con 8,

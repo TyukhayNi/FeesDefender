@@ -418,6 +418,61 @@ def test_H01_la_relectura_del_grafo_cuenta_las_PAGINAS_del_fichero(monkeypatch):
         apo.recortar(cert, _condiciones(r, f))
 
 
+# --- R1/H-07: la relectura, rama por rama y con la MISMA cuenta de páginas --------
+
+def _pdf_con_paginas(cert: bytes, numeros: list[int]) -> bytes:
+    """Un PDF con esas páginas del certificado, en ese orden (base 1)."""
+    import io
+
+    from pypdf import PdfReader, PdfWriter
+
+    lector, escritor = PdfReader(io.BytesIO(cert)), PdfWriter()
+    for n in numeros:
+        escritor.add_page(lector.pages[n - 1])
+    buffer = io.BytesIO()
+    escritor.write(buffer)
+    return buffer.getvalue()
+
+
+def test_H07_misma_cuenta_de_paginas_pero_una_EQUIVOCADA_para(monkeypatch):
+    """R1/H-07: el test de la parada 3 devolvía una página de MÁS, así que lo mataba el
+    conteo y ninguna comprobación de contenido tenía quien la defendiera: un `_verificar`
+    que solo contara páginas pasaba la suite entera."""
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f])
+    monkeypatch.setattr(apo, "_sin_paginas",
+                        lambda lector, conservadas: _pdf_con_paginas(cert, [1, 2, 4, 3, 6]))
+    with pytest.raises(apo.AportableError, match="no es la que tocaba"):
+        apo.recortar(cert, _condiciones(r, f))
+
+
+def test_H07_la_relectura_para_una_COPIA_de_las_condiciones():
+    r, f = s.refundido(), s.factura()
+    sin_rotulo = s.CONDICIONES.replace("CONFIDENCIAL - CONDICIONES", "")
+    cert = s.certificado([s.Adjunto("X.pdf", (sin_rotulo,))])
+    condiciones = [apo.PaginaCondiciones(documento="X.pdf", pagina=1, texto=s.CONDICIONES)]
+    salida = _pdf_con_paginas(cert, [3])
+    with pytest.raises(apo.AportableError, match="copia de una página de condiciones"):
+        apo._verificar(salida, esperadas=_textos(salida), condiciones=condiciones)
+
+
+def test_H07_la_relectura_para_el_ROTULO_aunque_el_texto_no_case():
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([s.Adjunto("X.pdf", ("CONFIDENCIAL - CONDICIONES\notra cosa distinta",))])
+    salida = _pdf_con_paginas(cert, [3])
+    with pytest.raises(apo.AportableError, match="lleva el rótulo"):
+        apo._verificar(salida, esperadas=_textos(salida), condiciones=_condiciones(r, f))
+
+
+def test_H01_la_relectura_del_grafo_para_si_quedan_ANOTACIONES(monkeypatch):
+    """La tercera rama de la relectura del grafo: la poda no quitó el widget."""
+    r, f = s.refundido(), s.factura()
+    cert = s.con_firma(s.certificado([r, f]))
+    monkeypatch.setattr(apo, "_podar", lambda pagina, lector: set())
+    with pytest.raises(apo.AportableError, match="anotaciones"):
+        apo.recortar(cert, _condiciones(r, f))
+
+
 def test_PARADA_3_se_verifica_el_resultado_no_la_aritmetica(monkeypatch):
     """Si el PDF producido no es el que tocaba, no se entrega (verificar por resultado)."""
     r, f = s.refundido(), s.factura()
