@@ -7,7 +7,7 @@ from __future__ import annotations
 from core.config import caso_path
 from core.whatsapp_export import parse_chat
 
-from .pipeline import descubrir_chats
+from .pipeline import chat_txt_de, descubrir_chats
 
 _MAX_MUESTRAS = 5
 
@@ -16,7 +16,10 @@ def preparar_propuesta(case_id: str) -> list[dict]:
     case_dir = caso_path(case_id)
     muestras: dict[str, list[str]] = {}
     for chat_dir in descubrir_chats(case_dir):
-        texto = (chat_dir / "_chat.txt").read_text(encoding="utf-8")
+        chat = chat_txt_de(chat_dir)
+        if chat is None:
+            continue
+        texto = chat.read_text(encoding="utf-8")
         for m in parse_chat(texto):
             if m.es_sistema or not m.autor:
                 continue

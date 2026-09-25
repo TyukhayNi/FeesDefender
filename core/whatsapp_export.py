@@ -8,8 +8,10 @@ Android (guion), años de 2/4 cifras y horas 12/24h.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import PurePath
 
 
 @dataclass
@@ -96,14 +98,34 @@ _RE_MEDIA_OMITTED = re.compile(
 )
 
 
+# Marcas de dirección y de orden de bytes que el export pone delante (o detrás) del NOMBRE
+# del adjunto, en iOS dentro del propio tag y en Android delante de `(archivo adjunto)`.
+# `str.strip()` no las quita —no son espacio en blanco— y con ellas la referencia no casa
+# nunca con el fichero en disco (MEJORAS #236: 0 de 39 en W-02V48N). Solo se quitan de los
+# BORDES: por dentro, el nombre es el que es.
+_MARCAS_INVISIBLES = "\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\ufeff"
+
+
+def _limpiar_ref(nombre: str) -> str:
+    """El nombre del adjunto sin espacios ni marcas invisibles en los bordes.
+
+    Hasta punto fijo: con espacios y marcas alternados (marca, espacio y otra marca
+    delante del nombre) una sola pasada de cada `strip` deja una marca dentro."""
+    anterior = None
+    while anterior != nombre:
+        anterior = nombre
+        nombre = nombre.strip().strip(_MARCAS_INVISIBLES)
+    return nombre
+
+
 def _adjunto_ref(texto_linea: str) -> str | None:
     """Extrae el nombre del adjunto referenciado en una línea, si lo hay."""
     m = _RE_ADJ_IOS.search(texto_linea)  # sin anclar: cubre documentos con preámbulo
     if m:
-        return m.group(1).strip()
+        return _limpiar_ref(m.group(1))
     m = _RE_ADJ_ANDROID.match(texto_linea)
     if m:
-        return m.group(1).strip()
+        return _limpiar_ref(m.group(1))
     if _RE_ADJ_BARE.match(texto_linea):
         return "<archivo adjunto>"
     if _RE_MEDIA_OMITTED.match(texto_linea):
@@ -147,6 +169,39 @@ def parse_chat(texto: str) -> list[WhatsAppMessage]:
 def referencias_adjuntos(msgs: list[WhatsAppMessage]) -> list[str]:
     """Nombres de fichero referenciados como adjunto, en orden de aparición."""
     return [m.adjunto_ref for m in msgs if m.adjunto_ref]
+
+
+#: El nombre del chat en el export de iOS (y en los depósitos legacy).
+CHAT_TXT = "_chat.txt"
+
+
+def elegir_chat(textos: Mapping[str, str]) -> str | None:
+    """El fichero de chat de un export, con UNA regla para todo el canal (MEJORAS #285).
+
+    El intake aceptaba cualquier `.txt` y el atomizador solo `_chat.txt`, así que el chat
+    de un export Android en español —`Chat de WhatsApp con <contacto>.txt`— se depositaba y
+    se quedaba fuera de la atomización (W-0462E1: 173 mensajes). `textos` es
+    `{nombre: texto}`; lo que no sea `.txt` se ignora. En este orden:
+
+    1. `_chat.txt` si está, aunque el parser no lo entienda (como hasta ahora);
+    2. si no, el primer `.txt` por orden alfabético que `parse_chat` interpreta: un `.txt`
+       que se envió como ADJUNTO no le gana al chat por ir antes;
+    3. si ninguno se interpreta, el primer `.txt`: custodia antes que parser — el intake
+       no deja de depositar por no entender, y el atomizador lo verá como un chat con cero
+       mensajes, que sale en su índice en vez de desaparecer;
+    4. `None` si no hay ningún `.txt`.
+
+    Los derivados nuestros (los que empiezan por `_`, salvo `_chat.txt`, como el
+    `_chat_recortado.txt` del intake) nunca son candidatos.
+    """
+    if CHAT_TXT in textos:
+        return CHAT_TXT
+    txts = sorted(n for n in textos
+                  if n.lower().endswith(".txt") and not PurePath(n).name.startswith("_"))
+    for n in txts:
+        if parse_chat(textos[n]):
+            return n
+    return txts[0] if txts else None
 
 
 def filter_by_date_range(

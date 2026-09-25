@@ -145,3 +145,83 @@ class TestAdjuntosYFiltro:
             msgs, desde=datetime(2024, 1, 9), hasta=datetime(2024, 1, 9, 23, 59)
         )
         assert [m.texto for m in out] == ["B"]
+
+
+class TestMarcasInvisiblesEnAdjuntos:
+    """MEJORAS #236: la marca de dirección (U+200E y familia) que el export pone delante o
+    detrás del NOMBRE del adjunto viajaba dentro de la referencia, y así no casaba nunca con
+    el fichero en disco (W-02V48N: 0 de 39; W-0462E1: 30 «faltantes» con los 30 en el lote).
+    `str.strip()` no la quita: no es espacio en blanco."""
+
+    def test_ios_con_la_marca_dentro_del_tag(self):
+        texto = "[8/1/24 10:32:05] Juan: \u200e<adjunto: \u200eIMG-20240310-WA0000.jpg>"
+        assert parse_chat(texto)[0].adjunto_ref == "IMG-20240310-WA0000.jpg"
+
+    def test_android_con_la_marca_delante_del_nombre(self):
+        texto = "8/1/24, 10:32 - Pablo: \u200ePTT-20260409-WA0001.opus (archivo adjunto)"
+        assert parse_chat(texto)[0].adjunto_ref == "PTT-20260409-WA0001.opus"
+
+    def test_la_marca_al_final_tambien_sale(self):
+        texto = "[8/1/24 10:32:05] Juan: <adjunto: IMG-1.jpg\u200f>"
+        assert parse_chat(texto)[0].adjunto_ref == "IMG-1.jpg"
+
+    def test_el_bom_delante_del_nombre_sale(self):
+        texto = "[8/1/24 10:32:05] Juan: <adjunto: \ufeffDOC 1.pdf>"
+        assert parse_chat(texto)[0].adjunto_ref == "DOC 1.pdf"
+
+    def test_marcas_y_espacios_alternados_salen_todos(self):
+        texto = "[8/1/24 10:32:05] Juan: <adjunto: \u200e \u200eIMG-1.jpg \u200f >"
+        assert parse_chat(texto)[0].adjunto_ref == "IMG-1.jpg"
+
+    def test_por_dentro_el_nombre_es_el_que_es(self):
+        # Solo los BORDES: un carácter raro en medio del nombre forma parte de él, y
+        # quitarlo haría que la referencia dejara de casar con un fichero que sí existe.
+        texto = "[8/1/24 10:32:05] Juan: <adjunto: a\u200eb.jpg>"
+        assert parse_chat(texto)[0].adjunto_ref == "a\u200eb.jpg"
+
+    def test_referencias_limpias_en_los_dos_dialectos(self):
+        texto = (
+            "[8/1/24 10:32:05] Juan: \u200e<adjunto: \u200eIMG-1.jpg>\n"
+            "[8/1/24 10:33:05] Juan: \u200ePTT-2.opus (archivo adjunto)"
+        )
+        assert referencias_adjuntos(parse_chat(texto)) == ["IMG-1.jpg", "PTT-2.opus"]
+
+# ---------------------------------------------------------------------------
+# elegir_chat — UNA regla de «fichero de chat» para todo el canal (MEJORAS #285)
+# ---------------------------------------------------------------------------
+from core.whatsapp_export import CHAT_TXT, elegir_chat
+
+_IOS = "[8/1/24 10:32:05] Ana: hola"
+_AND = "8/1/24, 10:32 - Pablo: hola"
+
+
+class TestElegirChat:
+    """El intake aceptaba cualquier `.txt` y el atomizador solo `_chat.txt`: el chat de un
+    export Android en español (`Chat de WhatsApp con <contacto>.txt`) se depositaba y se
+    quedaba fuera de la atomización (W-0462E1: 173 mensajes)."""
+
+    def test_prefiere_chat_txt_aunque_haya_otros_txt(self):
+        assert elegir_chat({CHAT_TXT: _IOS, "Acta.txt": "texto libre"}) == CHAT_TXT
+
+    def test_chat_txt_se_elige_aunque_no_se_interprete(self):
+        # Como hasta ahora: un `_chat.txt` es el chat aunque el parser no lo entienda.
+        assert elegir_chat({CHAT_TXT: "x"}) == CHAT_TXT
+
+    def test_android_por_contenido_y_no_por_orden(self):
+        # «Acta.txt» va antes por orden alfabético y NO es una conversación: es un adjunto.
+        textos = {"Acta.txt": "texto libre", "Chat de WhatsApp con Pablo.txt": _AND}
+        assert elegir_chat(textos) == "Chat de WhatsApp con Pablo.txt"
+
+    def test_si_ninguno_se_interpreta_el_primero_por_orden(self):
+        # Custodia antes que parser: el intake no deja de depositar por no entender.
+        assert elegir_chat({"b.txt": "x", "a.txt": "y"}) == "a.txt"
+
+    def test_la_extension_no_distingue_mayusculas(self):
+        assert elegir_chat({"CHAT.TXT": _AND}) == "CHAT.TXT"
+
+    def test_un_derivado_nuestro_no_es_candidato(self):
+        assert elegir_chat({"_chat_recortado.txt": _AND, "foto.jpg": ""}) is None
+
+    def test_sin_txt_no_hay_chat(self):
+        assert elegir_chat({}) is None
+        assert elegir_chat({"foto.jpg": "x"}) is None

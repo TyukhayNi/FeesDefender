@@ -56,6 +56,56 @@ def test_atomize_genera_salida_y_no_toca_input(tmp_path, monkeypatch):
     assert (out / "CRONOLOGIA.md").exists()
 
 
+# --- MEJORAS #285: el chat de un export Android no se llama `_chat.txt` -------------------
+
+ANDROID = "8/1/24, 10:32 - Pablo: uno\n8/1/24, 10:33 - Elena: dos\n"
+
+
+def _montar_android(tmp_path) -> Path:
+    chat_dir = (tmp_path / "00_Input" / "2026-09-23_whatsapp_02" / "03_Otros"
+                / "Chat de WhatsApp con Pablo")
+    chat_dir.mkdir(parents=True)
+    (chat_dir / "Chat de WhatsApp con Pablo.txt").write_text(ANDROID, encoding="utf-8")
+    return chat_dir
+
+
+def test_descubre_el_chat_android_con_nombre_propio(tmp_path):
+    _montar_android(tmp_path)
+    assert {p.name for p in descubrir_chats(tmp_path)} == {"Chat de WhatsApp con Pablo"}
+
+
+def test_atomiza_tambien_el_chat_android(tmp_path, monkeypatch):
+    """El síntoma medido en W-0462E1: con tres lotes, `chats: 2, mensajes: 87`; los 173
+    mensajes del chat Android quedaron fuera. Aquí, uno iOS y uno Android: los dos entran."""
+    caso = _montar_caso(tmp_path)
+    _montar_android(tmp_path)
+    import core.whatsapp_atomize.pipeline as pl
+    monkeypatch.setattr(pl, "caso_path", lambda cid: caso)
+    resumen = atomize_whatsapp_case("CASO-X")
+    assert resumen["chats"] == 2
+    assert resumen["mensajes"] == 4
+    assert (caso / "01_Procesado" / "Whatsapp"
+            / "Chat de WhatsApp con Pablo__LECTURA.md").exists()
+
+
+def test_el_chat_con_nombre_propio_no_se_lee_como_media(tmp_path):
+    from core.whatsapp_atomize.pipeline import _leer_media, chat_txt_de
+    chat_dir = _montar_android(tmp_path)
+    (chat_dir / "foto.jpg").write_bytes(b"\xff\xd8")
+    (chat_dir / "_export_original.zip").write_bytes(b"PK")
+    chat = chat_txt_de(chat_dir)
+    assert chat == chat_dir / "Chat de WhatsApp con Pablo.txt"
+    assert set(_leer_media(chat_dir, chat)) == {"foto.jpg"}
+
+
+def test_un_directorio_sin_txt_no_es_un_chat(tmp_path):
+    from core.whatsapp_atomize.pipeline import chat_txt_de
+    d = tmp_path / "solo_fotos"
+    d.mkdir()
+    (d / "foto.jpg").write_bytes(b"\xff\xd8")
+    assert chat_txt_de(d) is None
+
+
 def test_idempotente(tmp_path, monkeypatch):
     caso = _montar_caso(tmp_path)
     import core.whatsapp_atomize.pipeline as pl
