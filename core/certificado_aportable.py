@@ -18,8 +18,10 @@ siempre y se rehace sobre las frases propias de las condiciones (M-2, M-6).
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -98,3 +100,88 @@ def ficheros_listados_de_textos(textos: Sequence[str]) -> tuple[FicheroListado, 
 def ficheros_listados(pdf: bytes) -> tuple[FicheroListado, ...]:
     """`ficheros_listados_de_textos` sobre el PDF del certificado."""
     return ficheros_listados_de_textos(_textos_pdf(pdf, que="el certificado"))
+
+
+# --- qué páginas son de condiciones ---------------------------------------------
+
+#: El rótulo con que la plantilla abre la página de condiciones (spec §7.3). Se busca
+#: como LÍNEA ENTERA (M-7): la palabra «condiciones» sale también en el requerimiento
+#: («las condiciones adjuntas») y en la factura («Condiciones de pago a la vista»).
+LITERAL_CONDICIONES = "CONFIDENCIAL - CONDICIONES"
+
+_CABECERA_REPRODUCCION = re.compile(r"^[ \t]*C[óo]digo de env[íi]o:.*$", re.M)
+_GUIONES = str.maketrans({"–": "-", "—": "-", "‐": "-",
+                          "‑": "-", "−": "-"})
+
+
+def _plano(texto: str) -> str:
+    """Ligaduras deshechas, guiones unificados, sin tildes y en minúsculas."""
+    t = sin_ligaduras(texto or "").translate(_GUIONES)
+    t = unicodedata.normalize("NFKD", t)
+    return "".join(c for c in t if not unicodedata.combining(c)).lower()
+
+
+def normalizar_pagina(texto: str) -> str:
+    """El texto de una página, listo para compararlo con el de otra (M-3).
+
+    Quita la cabecera que Codicert pone a cada página de la reproducción —«Código de
+    envío: … Página: N de M»—, que es lo único que distingue la copia del original: sin
+    ella coinciden al 100 %.
+    """
+    sin_cabecera = _CABECERA_REPRODUCCION.sub("", sin_ligaduras(texto or ""))
+    return " ".join(_plano(sin_cabecera).split())
+
+
+_ROTULO = " ".join(_plano(LITERAL_CONDICIONES).split())
+
+
+def lleva_rotulo(texto: str) -> bool:
+    """¿Alguna LÍNEA de la página es, entera, el rótulo de las condiciones? (M-7)"""
+    return any(" ".join(_plano(linea).split()) == _ROTULO
+               for linea in sin_ligaduras(texto or "").splitlines())
+
+
+@dataclass(frozen=True)
+class DocumentoEnviado:
+    """Un adjunto tal como salió, bajado de Codicert (`GET /envios/{id}/adjuntos/…`)."""
+
+    nombre: str
+    contenido: bytes
+
+    @property
+    def sha256(self) -> str:
+        return hashlib.sha256(self.contenido).hexdigest()
+
+
+@dataclass(frozen=True)
+class PaginaCondiciones:
+    """Una página de condiciones: documento, página (numeración DEL DOCUMENTO) y texto."""
+
+    documento: str
+    pagina: int
+    texto: str
+
+
+def paginas_de_condiciones(
+        documentos: Sequence[DocumentoEnviado]) -> tuple[PaginaCondiciones, ...]:
+    """Las páginas de condiciones de los documentos enviados (spec §7.3, M-1, M-7).
+
+    La regla: desde la primera página que lleva el rótulo como línea entera **hasta el
+    final de ese documento**. En el refundido medido las condiciones son el último
+    bloque, y en el documento partido que pide el §7 (`ANEXO II.pdf`) son el documento
+    entero: la misma regla vale para los dos.
+
+    **Si el rótulo cae antes del final, se retira de más, nunca de menos.** Una página
+    que no es de condiciones y queda dentro sale del aportable —se pierde prueba, que el
+    íntegro conserva—; ninguna de condiciones puede quedar fuera de lo que se retira.
+    El recorte avisa de esas páginas arrastradas.
+    """
+    salida: list[PaginaCondiciones] = []
+    for doc in documentos:
+        textos = _textos_pdf(doc.contenido, que=doc.nombre)
+        inicio = next((n for n, t in enumerate(textos) if lleva_rotulo(t)), None)
+        if inicio is None:
+            continue
+        salida += [PaginaCondiciones(documento=doc.nombre, pagina=n + 1, texto=textos[n])
+                   for n in range(inicio, len(textos))]
+    return tuple(salida)

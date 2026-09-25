@@ -52,3 +52,55 @@ def test_sin_bloque_FICHEROS_se_dice_no_se_devuelve_vacio():
 def test_un_PDF_roto_es_AportableError_no_la_excepcion_de_pypdf():
     with pytest.raises(apo.AportableError, match="PDF"):
         apo.ficheros_listados(b"esto no es un PDF")
+
+
+# --- qué páginas son de condiciones ----------------------------------------------
+
+def _doc(adjunto: s.Adjunto) -> apo.DocumentoEnviado:
+    return apo.DocumentoEnviado(nombre=adjunto.nombre, contenido=adjunto.contenido)
+
+
+def test_en_el_refundido_las_condiciones_son_la_TERCERA_pagina():
+    """M-1: requerimiento, OVC y condiciones en un solo PDF; las condiciones, al final."""
+    paginas = apo.paginas_de_condiciones([_doc(s.refundido()), _doc(s.factura())])
+    assert [(p.documento, p.pagina) for p in paginas] == [("OVC REFUNDIDA.pdf", 3)]
+
+
+def test_en_el_documento_PARTIDO_que_pide_el_spec_son_el_documento_entero():
+    anexo = s.Adjunto("ANEXO II.pdf", (s.CONDICIONES,))
+    requerimiento = s.Adjunto("A.pdf", (s.REQUERIMIENTO, s.OVC))
+    paginas = apo.paginas_de_condiciones([_doc(requerimiento), _doc(anexo)])
+    assert [(p.documento, p.pagina) for p in paginas] == [("ANEXO II.pdf", 1)]
+
+
+def test_la_palabra_condiciones_SUELTA_no_es_el_rotulo():
+    """M-7: sale en el requerimiento («las condiciones adjuntas») y en la factura
+    («Condiciones de pago a la vista»). Casar por subcadena retiraría las dos."""
+    assert "condiciones adjuntas" in s.REQUERIMIENTO
+    assert "Condiciones de pago" in s.FACTURA
+    assert apo.paginas_de_condiciones([_doc(s.factura()),
+                                       _doc(s.Adjunto("A.pdf", (s.REQUERIMIENTO,)))]) == ()
+
+
+def test_el_rotulo_tolera_caja_espacios_y_raya_tipografica():
+    assert apo.lleva_rotulo("x\n  confidencial  -  condiciones  \ny")
+    assert apo.lleva_rotulo("x\nCONFIDENCIAL \u2013 CONDICIONES\ny")
+    assert not apo.lleva_rotulo("x\nCONFIDENCIAL - CONDICIONES ECONÓMICAS DE PAGO\ny")
+
+
+def test_lo_que_SIGUE_al_rotulo_en_el_mismo_documento_tambien_sale():
+    """Retirar de más, nunca de menos: si el rótulo no cae al final, sale lo que siga."""
+    raro = s.Adjunto("RARO.pdf", (s.REQUERIMIENTO, s.CONDICIONES, "segunda hoja de pagos"))
+    paginas = apo.paginas_de_condiciones([_doc(raro)])
+    assert [p.pagina for p in paginas] == [2, 3]
+
+
+def test_la_normalizacion_quita_la_cabecera_de_codicert():
+    """M-3: sin la cabecera, original y copia coinciden al 100 %."""
+    copia = "Código de envío: 006x Página: 7 de 8\n" + s.CONDICIONES
+    assert apo.normalizar_pagina(copia) == apo.normalizar_pagina(s.CONDICIONES)
+
+
+def test_la_huella_de_un_documento_enviado_es_la_de_sus_bytes():
+    d = apo.DocumentoEnviado(nombre="x.pdf", contenido=b"abc")
+    assert d.sha256 == hashlib.sha256(b"abc").hexdigest()
