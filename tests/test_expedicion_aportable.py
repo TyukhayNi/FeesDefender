@@ -32,17 +32,18 @@ def _resolucion_de_prueba(request, monkeypatch):
 
 
 class OcrContado:
-    """El puerto de OCR de la orquestación: devuelve la imagen tal cual —un aportable sin
-    texto, que la relectura admite— y cuenta cuántas veces se le llama. Lo que el OCR LEE
-    lo prueban los tests del módulo puro con `s.ocr_fiel`; aquí importa CUÁNDO se pasa."""
+    """El puerto de OCR de la orquestación: lee cada página con el OCR honesto de los tests
+    (`s.ocr_fiel`) y cuenta cuántas le pasan. Desde la R3 un aportable sin texto NO se
+    entrega (H-04), así que el doble ya no puede devolver nada; lo que el OCR lee lo prueba
+    el módulo puro, y aquí importa CUÁNDO se pasa."""
 
-    def __init__(self, ocr=None):
+    def __init__(self, ocr):
         self.llamadas = 0
         self._ocr = ocr
 
-    def __call__(self, imagen: bytes) -> bytes:
+    def __call__(self, jpeg: bytes):
         self.llamadas += 1
-        return self._ocr(imagen) if self._ocr else imagen
+        return self._ocr(jpeg)
 
 
 class FakeTransporte:
@@ -90,13 +91,15 @@ def _escenario(tmp_path, *, adjuntos=None, partes=None, destinatario_burofax="AN
     for id_envio in archivar:
         (carpeta / exp.nombre_canonico("OFERTA VINCULANTE", W, id_envio)).write_bytes(
             certs[id_envio])
+    # El acta del correo y la del burofax solo cambian en su código: el doble no exige
+    # distinguirlas (`estricto=False`), porque aquí se prueba cuándo se pasa, no qué lee.
     entorno = exp.EntornoExpedicion(
         codicert=t, partes_de=partes or (lambda w: [{"nombre": "ANA", "1apellido": "LOPEZ"}]),
         ahora=lambda: datetime(2026, 9, 25, tzinfo=timezone.utc),
         raiz=tmp_path, plaza="Madrid", entorno="produccion", usuario="madrid.bd",
         carpeta_certificados=lambda w: carpeta,
         leer_emisor=certificado_lectura.leer_emisor,
-        ocr=ocr or OcrContado())
+        ocr=ocr or OcrContado(s.ocr_fiel(*certs.values(), estricto=False)))
     return entorno, t, carpeta
 
 
@@ -124,10 +127,11 @@ def test_produce_el_aportable_y_el_manifiesto_junto_a_cada_integro(tmp_path):
         assert m["emisor"] == {"razon_social": "EV MMC SPAIN, S.L.U.",
                                "usuario": "madrid.bd", "razon_social_verificada": True,
                                "usuario_verificado": True}
-        # R2/H-01: la huella es la del fichero ESCRITO, que es imagen con su capa de texto.
+        # R2/H-01: la huella es la del fichero ESCRITO, que es imagen con su capa de texto;
+        # versión 3 desde la R3, cuando el aportable lo pasa a componer el motor.
         escrito = r[id_envio].ruta_aportable.read_bytes()
         assert m["aportable"]["sha256"] == hashlib.sha256(escrito).hexdigest()
-        assert m["version"] == 2 and "imagen" in m["aportable"]["forma"]
+        assert m["version"] == 3 and "imagen" in m["aportable"]["forma"]
 
 
 def test_el_INTEGRO_no_se_toca(tmp_path):
@@ -170,16 +174,16 @@ def test_si_NINGUN_documento_lleva_el_rotulo_F3_no_decide_por_ti(tmp_path):
 
 
 def test_volver_a_lanzar_NO_duplica_ni_pisa(tmp_path):
-    """M-8, rehecho con la R2: la IMAGEN es determinista y el OCR no, así que el aportable
-    que ya está se relee contra la imagen de hoy —byte a byte las mismas imágenes— y no se
-    vuelve a pasar el OCR, que es lo caro (unos 20 s por certificado real)."""
+    """M-8, rehecho con la R2 y la R3: el aportable que ya está se RELEE —se recompone con la
+    imagen de hoy y el texto que lleva— y no se vuelve a pasar el OCR, que es lo caro (de
+    1,4 a 10,9 s por página real, M-13). El OCR va por página: cinco conservadas por envío."""
     entorno, _, carpeta = _escenario(tmp_path)
     exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
     antes = {p.name: p.read_bytes() for p in carpeta.iterdir()}
     llamadas = entorno.ocr.llamadas
     r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
     assert r["006c"].estado == exp.YA_ESTABA and r["006b"].estado == exp.YA_ESTABA
-    assert entorno.ocr.llamadas == llamadas == 2
+    assert entorno.ocr.llamadas == llamadas == 10
     assert {p.name: p.read_bytes() for p in carpeta.iterdir()} == antes
 
 
@@ -252,23 +256,70 @@ def test_H04_un_manifiesto_HUERFANO_que_no_corresponde_no_se_pisa(tmp_path):
     assert not exp.ruta_aportable(_integro_006c(carpeta)).exists()
 
 
-def test_R2_un_manifiesto_HUERFANO_para_aunque_corresponda(tmp_path):
-    """Hasta la R2, si solo faltaba el aportable se reponía y el manifiesto se quedaba: el
-    recorte era determinista y el aportable nuevo tenía la huella del manifiesto. Con la
-    capa de texto ya no —el OCR no es determinista—, así que un aportable repuesto NO
-    casaría con ese manifiesto, y pisarlo tampoco vale. Lo único honrado es parar y
-    decirlo: un manifiesto sin aportable solo sale de apartar el aportable a mano, y quien
-    lo apartó termina la maniobra."""
+def test_R3_un_manifiesto_HUERFANO_que_corresponde_REPONE_su_aportable(tmp_path):
+    """La R2 paraba aquí: el PDF lo escribía OCRmyPDF, no daba dos veces los mismos bytes y
+    un aportable repuesto no casaba con el manifiesto. Desde la R3 lo compone el motor con
+    las líneas que el OCR lee —el mismo OCR sobre la misma imagen da las mismas líneas: 18
+    de 18 páginas reales, M-13—, así que se repone si sale con la huella que el manifiesto
+    dice, y el manifiesto no se toca."""
     entorno, _, carpeta = _escenario(tmp_path)
     exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
     integro = _integro_006c(carpeta)
-    manifiesto = exp.ruta_manifiesto(integro)
-    antes = manifiesto.read_bytes()
-    exp.ruta_aportable(integro).unlink()
+    manifiesto, aportable = exp.ruta_manifiesto(integro), exp.ruta_aportable(integro)
+    antes_m, antes_a = manifiesto.read_bytes(), aportable.read_bytes()
+    aportable.unlink()
     r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
-    assert r["006c"].estado == exp.PARADO and "sin su aportable" in r["006c"].motivo
-    assert manifiesto.read_bytes() == antes and not exp.ruta_aportable(integro).exists()
+    assert r["006c"].estado == exp.PRODUCIDO, r["006c"].motivo
+    assert aportable.read_bytes() == antes_a and manifiesto.read_bytes() == antes_m
     assert r["006b"].estado == exp.YA_ESTABA
+
+
+def test_R3_un_manifiesto_HUERFANO_cuyo_aportable_saldria_DISTINTO_para(tmp_path):
+    """Si hoy el OCR lee otra cosa —otra versión de Tesseract—, el aportable no tendría la
+    huella del manifiesto: ni se escribe ni se pisa el manifiesto, y se dice."""
+    entorno, _, carpeta = _escenario(tmp_path)
+    exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
+    integro = _integro_006c(carpeta)
+    manifiesto, aportable = exp.ruta_manifiesto(integro), exp.ruta_aportable(integro)
+    antes = manifiesto.read_bytes()
+    aportable.unlink()
+    fiel = entorno.ocr
+
+    def otro_ocr(jpeg):
+        return tuple(dataclasses.replace(l, texto=l.texto + " x") for l in fiel(jpeg))
+
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=dataclasses.replace(
+        entorno, ocr=otro_ocr)))
+    assert r["006c"].estado == exp.PARADO and "no corresponde" in r["006c"].motivo
+    assert manifiesto.read_bytes() == antes and not aportable.exists()
+
+
+def test_R3_H05_una_MENCION_del_rotulo_en_un_documento_para_todo(tmp_path):
+    """R3/H-05 en la orquestación: la mención antes del título para en
+    `paginas_de_condiciones`, y los documentos son los de TODOS los envíos, así que para la
+    expedición entera, como `ExpedicionError` y con su motivo —no como un error sin cazar—."""
+    mencion = s.REQUERIMIENTO + "\nEl anexo se titula\nCONFIDENCIAL - CONDICIONES y se adjunta."
+    adjuntos = [s.Adjunto("OVC REFUNDIDA.pdf", (mencion, s.OVC, s.CONDICIONES)), s.factura()]
+    entorno, _, carpeta = _escenario(tmp_path, adjuntos=adjuntos)
+    with pytest.raises(exp.ExpedicionError, match="menciona el rótulo"):
+        exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
+    assert not list(carpeta.glob("* - APORTABLE.pdf"))
+
+
+def test_R3_los_avisos_de_lo_que_el_OCR_LEE_viajan_al_manifiesto(tmp_path):
+    """El aviso del escaneo (R3, §2) va al manifiesto con los demás, y es el mismo al volver
+    a lanzar: se calcula de lo que el aportable lleva, no de una corrida del OCR."""
+    adjuntos = [s.refundido(), s.Adjunto("BLANCO.pdf", ("",)), s.factura()]
+    certs = [s.certificado(adjuntos, id_envio="006c"),
+             s.certificado(adjuntos, id_envio="006b", burofax=True)]
+    frase = "el primer 50% entre los dias 1 y 5 del mes siguiente a la primera recepcion"
+    ocr = OcrContado(s.ocr_fiel(*certs, estricto=False, extra={6: frase}))
+    entorno, _, _ = _escenario(tmp_path, adjuntos=adjuntos, ocr=ocr)
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    m = json.loads(r["006c"].ruta_manifiesto.read_text(encoding="utf-8"))
+    assert any("página 6 del certificado muestra en su imagen" in a for a in m["avisos"])
+    otra = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    assert otra["006c"].estado == exp.YA_ESTABA, otra["006c"].motivo
 
 
 def test_el_manifiesto_dice_QUE_se_comprobo_del_emisor(tmp_path):
@@ -512,17 +563,51 @@ def test_un_acta_electronica_sin_bloque_FICHEROS_para_todo(tmp_path):
         exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
 
 
-def test_R2_el_adaptador_de_OCR_dice_el_CODIGO_de_error_y_devuelve_el_stderr(monkeypatch):
-    """Un código distinto de 0 es un fallo, aunque OCRmyPDF no lance nada; y el `stderr` se
-    devuelve también cuando falla."""
-    import sys
+#: Una salida TSV de Tesseract 5 con la forma medida (M-13): el nivel 4 es la línea, con su
+#: caja; el 5, cada palabra; y hay filas de estructura (1-3) y palabras vacías.
+_TSV = "\n".join("\t".join(map(str, fila)) for fila in [
+    ("level", "page_num", "block_num", "par_num", "line_num", "word_num", "left", "top",
+     "width", "height", "conf", "text"),
+    (1, 1, 0, 0, 0, 0, 0, 0, 1654, 2339, -1, ""),
+    (2, 1, 1, 0, 0, 0, 100, 200, 900, 90, -1, ""),
+    (3, 1, 1, 1, 0, 0, 100, 200, 900, 90, -1, ""),
+    (4, 1, 1, 1, 1, 0, 100, 200, 600, 40, -1, ""),
+    (5, 1, 1, 1, 1, 1, 100, 200, 180, 40, 96.2, "Pago"),
+    (5, 1, 1, 1, 1, 2, 300, 202, 400, 38, 95.1, "fraccionado"),
+    (4, 1, 1, 1, 2, 0, 100, 250, 900, 40, -1, ""),
+    (5, 1, 1, 1, 2, 1, 100, 250, 90, 40, 91.0, "de"),
+    (5, 1, 1, 1, 2, 2, 200, 250, 100, 40, 95.0, " "),
+    (5, 1, 1, 1, 2, 3, 310, 250, 250, 40, 93.3, "Honorarios"),
+    (4, 1, 2, 1, 1, 0, 100, 900, 50, 40, -1, ""),
+    (5, 1, 2, 1, 1, 1, 100, 900, 50, 40, 12.0, ""),
+]) + "\n"
 
-    ocrmypdf = pytest.importorskip("ocrmypdf", reason="el adaptador envuelve OCRmyPDF")
-    stderr = sys.stderr
-    monkeypatch.setattr(ocrmypdf, "ocr", lambda *a, **kw: 6)
-    with pytest.raises(RuntimeError, match="código 6"):
-        exp._ocr_aportable(b"%PDF-1.4")
-    assert sys.stderr is stderr
+
+def test_R3_el_adaptador_agrupa_las_PALABRAS_de_Tesseract_en_LINEAS():
+    """El puerto devuelve líneas con la caja del nivel 4 y las palabras del 5 en su orden;
+    las palabras vacías no cuentan y una línea sin palabras no sale."""
+    from core.certificado_aportable import Linea
+
+    assert exp._lineas_de_tsv(_TSV) == (Linea("Pago fraccionado", 100, 200, 700, 240),
+                                        Linea("de Honorarios", 100, 250, 1000, 290))
+
+
+def test_R3_el_adaptador_dice_el_CODIGO_de_error_de_Tesseract(monkeypatch):
+    """Un código distinto de 0 es un fallo, con lo que Tesseract dijo por `stderr`."""
+    import subprocess
+
+    monkeypatch.setattr(exp, "_binario_tesseract", lambda: "tesseract")
+    monkeypatch.setattr(exp.subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(
+        args, 1, "", "Error opening data file spa.traineddata"))
+    with pytest.raises(RuntimeError, match="código 1.*spa.traineddata"):
+        exp._ocr_tesseract(b"\xff\xd8")
+
+
+def test_R3_sin_Tesseract_se_dice_donde_se_ha_buscado(monkeypatch, tmp_path):
+    monkeypatch.setattr(exp.shutil, "which", lambda nombre: None)
+    monkeypatch.setattr(exp, "_TESSERACT_WINDOWS", tmp_path / "no-esta" / "tesseract.exe")
+    with pytest.raises(RuntimeError, match="no se encuentra Tesseract"):
+        exp._binario_tesseract()
 
 
 def test_R2_sin_el_puerto_de_OCR_se_para(tmp_path):
@@ -538,7 +623,7 @@ def test_R2_si_el_OCR_FALLA_ese_envio_para_y_no_se_escribe_nada(tmp_path):
     entorno, _, carpeta = _escenario(tmp_path, ocr=roto)
     r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
     assert r["006c"].estado == r["006b"].estado == exp.PARADO
-    assert "OCR" in r["006c"].motivo
+    assert "no se pudo pasar el OCR" in r["006c"].motivo
     assert not list(carpeta.glob("* - APORTABLE.pdf"))
     assert not list(carpeta.glob("* - MANIFIESTO.json"))
 
@@ -559,41 +644,56 @@ def test_R2_el_aportable_ESCRITO_lleva_la_capa_de_texto_del_OCR(tmp_path):
                                                    for t in textos)
 
 
+def _sin_tesseract() -> bool:
+    try:
+        exp._binario_tesseract()
+    except RuntimeError:
+        return True
+    return False
+
+
 @pytest.mark.slow
-def test_R2_el_OCR_REAL_deja_un_aportable_que_la_relectura_admite():
-    """El adaptador de verdad —OCRmyPDF + Tesseract— sobre un certificado sintético: su
-    salida pasa el perfil (las imágenes intactas, la capa invisible, nada suelto), lee lo
-    que se conserva y no las condiciones. Lento: lo corre `--runslow`.
-
-    Dos defectos que solo enseñaron los certificados REALES (2026-09-25), y por eso el
-    sintético pesa más de 1 MB: por encima OCRmyPDF linealiza, y la linealización mete
-    objetos que no cuelgan de nada; y `ocrmypdf.ocr()` deja el `stderr` cambiado por un
-    `StringIO`, que se tragaba los avisos y las trazas de todo lo que venía después.
-    """
-    import shutil
-    import sys
-
+def test_R3_el_OCR_REAL_deja_un_aportable_que_la_relectura_admite():
+    """El adaptador de verdad —Tesseract, directo— sobre un certificado sintético: lo que
+    lee casa con cada página, el aportable que se compone se relee byte a byte, se lee lo
+    que se conserva y no las condiciones. Lento: lo corre `--runslow`."""
     from pypdf import PdfReader
 
     from core import certificado_aportable as apo
 
-    pytest.importorskip("ocrmypdf", reason="el OCR real es OCRmyPDF")
-    if shutil.which("tesseract") is None:
-        pytest.skip("sin Tesseract en el PATH")
+    if _sin_tesseract():
+        pytest.skip("sin Tesseract")
     r, f = s.refundido(), s.factura()
-    facturas = [s.Adjunto(f"FACTURA {k}.pdf", (s.FACTURA,)) for k in range(6)]
-    adjuntos = [r, f, *facturas]
     condiciones = apo.paginas_de_condiciones(
-        [apo.DocumentoEnviado(a.nombre, a.contenido) for a in adjuntos])
-    recorte = apo.recortar(s.certificado(adjuntos), condiciones)
-    assert len(recorte.imagen) > 1_048_576, "control: por encima del umbral de linealizar"
-    stderr = sys.stderr
-    pdf = apo.aportable_de(recorte, ocr=exp._ocr_aportable)
-    assert sys.stderr is stderr
-    assert b"/Linearized" not in pdf[:4096]
-    textos = [p.extract_text() or "" for p in PdfReader(io.BytesIO(pdf)).pages]
-    assert len(textos) == 11 and "factura" in textos[-1].lower()
+        [apo.DocumentoEnviado(a.nombre, a.contenido) for a in (r, f)])
+    recorte = apo.recortar(s.certificado([r, f]), condiciones)
+    hecho = apo.aportable_de(recorte, ocr=exp._ocr_tesseract)
+    assert apo.verificar_aportable(hecho.pdf, recorte) == hecho.avisos == ()
+    textos = [p.extract_text() or "" for p in PdfReader(io.BytesIO(hecho.pdf)).pages]
+    assert len(textos) == 5 and "factura" in textos[-1].lower()
     assert not any(apo.lleva_rotulo(t) for t in textos)
+    # Determinista: la misma imagen, las mismas líneas (M-13), el mismo fichero.
+    assert apo.aportable_de(recorte, ocr=exp._ocr_tesseract).pdf == hecho.pdf
+
+
+@pytest.mark.slow
+def test_R3_el_OCR_REAL_lee_un_ESCANEO_con_las_condiciones_y_AVISA():
+    """La sonda del revisor en la R3 (§2), con el OCR de verdad: una página conservada
+    ESCANEADA —sin texto en el PDF— reproduce un fragmento de las condiciones sin su rótulo.
+    El texto no la ve; el OCR sí, y el aportable sale con el aviso que nombra la página."""
+    from core import certificado_aportable as apo
+
+    if _sin_tesseract():
+        pytest.skip("sin Tesseract")
+    fragmento = ("Pago fraccionado de los Honorarios sin intereses. Se abonara en DOS plazos:\n"
+                 "a. El primer 50% entre los dias 1 y 5 del mes siguiente a la primera "
+                 "recepcion\nde la Oferta Vinculante Confidencial.")
+    cert, condiciones = s.certificado_con_escaneo(fragmento)
+    recorte = apo.recortar(cert, condiciones)
+    assert recorte.conservadas == (1, 2) and recorte.normal[1] == ""
+    hecho = apo.aportable_de(recorte, ocr=exp._ocr_tesseract)
+    assert any("página 2 del certificado muestra en su imagen" in a for a in hecho.avisos), \
+        hecho.avisos
 
 
 def test_R2_H05_el_aviso_de_una_pagina_SIN_texto_viaja_al_manifiesto(tmp_path):

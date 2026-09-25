@@ -140,8 +140,8 @@ def test_las_lecturas_del_transporte_real_llegan_al_modulo_de_transporte(monkeyp
 def test_el_entorno_real_trae_el_OCR_REAL(monkeypatch):
     """El puerto que estrena la R2 de F3 (H-01): sin `ocr`, `preparar_aportables` para, y
     los dobles lo traen, así que esto NO lo ve ninguna prueba de comportamiento. Tiene que
-    ser el adaptador de verdad —no `None`, no un doble—."""
-    assert _transporte_real(monkeypatch, atributo="ocr") is exp._ocr_aportable
+    ser el adaptador de verdad —no `None`, no un doble—; desde la R3, Tesseract directo."""
+    assert _transporte_real(monkeypatch, atributo="ocr") is exp._ocr_tesseract
 
 
 def test_descargar_adjunto_del_transporte_real_llega_al_modulo_de_transporte(monkeypatch):

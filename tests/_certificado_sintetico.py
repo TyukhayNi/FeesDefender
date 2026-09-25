@@ -363,7 +363,7 @@ def factura() -> Adjunto:
 
 # --- R2/H-01: el aportable es IMAGEN ---------------------------------------------
 
-def render(pdf: bytes, pagina: int, *, anotaciones: bool = False):
+def render(pdf: bytes, pagina: int, *, anotaciones: bool = False, ancho: int | None = None):
     """La página `pagina` (base 1) dibujada a la resolución del aportable.
 
     Por su cuenta, sin pasar por el código que se prueba: es lo que permite decir si la
@@ -371,6 +371,10 @@ def render(pdf: bytes, pagina: int, *, anotaciones: bool = False):
     `anotaciones=True`, como la vería un visor: PDFium solo pinta un widget con los
     formularios inicializados, y el resto de anotaciones con `draw_annots` (medido el
     2026-09-25).
+
+    `ancho=` la dibuja EXACTAMENTE a ese ancho en píxeles: pypdfium2 calcula el tamaño con
+    `ceil(puntos × escala)`, y PDFium da los puntos en float32, así que sin margen se suma
+    un píxel y la página se redibuja reescalada (medido el 2026-09-25, R3, M-15).
     """
     import pypdfium2 as pdfium
 
@@ -379,8 +383,10 @@ def render(pdf: bytes, pagina: int, *, anotaciones: bool = False):
     doc = pdfium.PdfDocument(pdf)
     if anotaciones:
         doc.init_forms()
-    return doc[pagina - 1].render(scale=PPP / 72, draw_annots=anotaciones,
-                                  may_draw_forms=anotaciones).to_pil().convert("RGB")
+    hoja = doc[pagina - 1]
+    escala = PPP / 72 if ancho is None else ancho / hoja.get_width() * (1 - 1e-5)
+    return hoja.render(scale=escala, draw_annots=anotaciones,
+                       may_draw_forms=anotaciones).to_pil().convert("RGB")
 
 
 def con_anotacion_visible(datos: bytes, *, pagina: int, subtipo: str = "/Stamp") -> bytes:
@@ -492,46 +498,114 @@ _RE_ROTULO_OCR = __import__("re").compile(r"(?i)confidencial\s*-\s*condiciones")
 
 
 @__import__("functools").lru_cache(maxsize=64)
-def _candidatas(cert: bytes) -> tuple:
-    """Miniatura y texto de cada página del certificado. Se guarda por certificado: los
-    tests repiten los mismos, y lo que se prueba —el recorte— se ejecuta entero cada vez."""
+def _candidatas(cert: bytes, ppp: int) -> tuple:
+    """Miniatura, texto y número de cada página del certificado, a una resolución. Se
+    guarda por certificado y resolución: los tests repiten los mismos, y lo que se prueba
+    —el recorte— se ejecuta entero cada vez."""
     from pypdf import PdfReader
 
     textos = [p.extract_text() or "" for p in PdfReader(io.BytesIO(cert)).pages]
-    return tuple((render(cert, n).reduce(8), t) for n, t in enumerate(textos, 1))
+    return tuple((render(cert, n).reduce(8), t, n) for n, t in enumerate(textos, 1))
 
 
-def ocr_fiel(*certificados: bytes, lee_rotulo: bool = True, extra: dict | None = None):
+def lineas_de(texto: str, tamano: tuple[int, int]) -> tuple:
+    """Las líneas de un texto repartidas por la imagen, de arriba abajo, como las
+    devolvería un OCR: una por renglón, en píxeles, con el origen arriba a la izquierda."""
+    from core.certificado_aportable import Linea
+
+    ancho, alto = tamano
+    renglones = [" ".join(l.split()) for l in texto.splitlines() if l.split()]
+    paso = max(1, (alto - 4) // max(1, len(renglones)))
+    return tuple(Linea(r, 2, 2 + i * paso, ancho - 2, 2 + i * paso + max(1, paso - 1))
+                 for i, r in enumerate(renglones))
+
+
+def ocr_fiel(*certificados: bytes, lee_rotulo: bool = True, extra: dict | None = None,
+             estricto: bool = True):
     """Un OCR de mentira que LEE LA IMAGEN, y no los índices del código que se prueba.
 
-    Casa cada página del raster, por sus píxeles, con la página de los certificados que
-    dibuja, y le pone como capa de texto invisible el texto de ESA página. Así un error de
-    índices en el recorte se ve en el texto, como con un OCR de verdad; un doble que
-    devolviera el texto de lo que el código CREE haber conservado aprobaría justo ese
-    error. `lee_rotulo=False` lo lee todo menos el rótulo —el OCR que falla ahí— y
-    `extra={k: texto}` añade `texto` a lo que lee en la página k (base 1) del raster.
+    El puerto recibe la imagen de UNA página y devuelve sus líneas. Este doble la casa,
+    por sus píxeles, con la página de los certificados que dibuja, y devuelve las líneas
+    de ESA página. Así un error de índices en el recorte se ve en el texto, como con un
+    OCR de verdad; un doble que devolviera el texto de lo que el código CREE haber
+    conservado aprobaría justo ese error. `lee_rotulo=False` lo lee todo menos el rótulo
+    —el OCR que falla ahí— y `extra={n: texto}` añade `texto` a lo que lee en la imagen
+    de la página n (base 1) del certificado: así se fabrica lo que un OCR de verdad leería
+    en un ESCANEO, cuyo texto no está en el PDF (R3, §2).
 
     Se casa sobre miniaturas (1/8): el ruido del JPEG se promedia y lo que distingue una
     página de otra —dónde hay texto— se queda. Si la mejor no gana con holgura, revienta:
-    un doble que adivina es peor que ninguno.
+    un doble que adivina es peor que ninguno. Dos candidatas cuyo texto normalizado es el
+    mismo —la misma página de la reproducción en dos certificados de una expedición, que
+    solo cambian en la cabecera— no son ambigüedad. `estricto=False` se queda con la más
+    cercana sin exigir holgura: es el de la orquestación, donde el acta del correo y la del
+    burofax solo cambian en su código y lo que se prueba es CUÁNDO se pasa el OCR.
     """
-    candidatas = [c for cert in certificados for c in _candidatas(cert)]
+    from PIL import Image
 
-    def ocr(raster: bytes) -> bytes:
-        leidos = []
-        for k, imagen in enumerate(imagenes(raster), 1):
-            mini = imagen.reduce(8)
-            orden = sorted(((distancia(mini, c), t) for c, t in candidatas
-                            if c.size == mini.size), key=lambda x: x[0])
-            if not orden or orden[0][0] > 1.0 or any(
-                    d < 2 * orden[0][0] + 0.5 and t != orden[0][1] for d, t in orden[1:]):
-                raise AssertionError(f"el OCR de mentira no sabe qué página es la {k}: "
-                                     f"{[round(d, 2) for d, _ in orden[:3]]}")
-            texto = orden[0][1]
-            if not lee_rotulo:
-                texto = _RE_ROTULO_OCR.sub("C0NF1DENC1AL - C0ND1C10NES", texto)
-            leidos.append(texto + ("\n" + extra[k] if extra and k in extra else ""))
-        return con_capa_de_texto(raster, leidos)
+    from core.certificado_aportable import PPP, normalizar_pagina
+
+    candidatas = [c for cert in certificados for c in _candidatas(cert, PPP)]
+
+    def ocr(jpeg: bytes) -> tuple:
+        imagen = Image.open(io.BytesIO(jpeg)).convert("RGB")
+        mini = imagen.reduce(8)
+        orden = sorted(((distancia(mini, c), t, n) for c, t, n in candidatas
+                        if c.size == mini.size), key=lambda x: x[0])
+        if not orden or orden[0][0] > 1.0 or estricto and any(
+                d < 2 * orden[0][0] + 0.5
+                and normalizar_pagina(t) != normalizar_pagina(orden[0][1])
+                for d, t, _ in orden[1:]):
+            raise AssertionError(f"el OCR de mentira no sabe qué página es: "
+                                 f"{[round(d, 2) for d, _, _ in orden[:3]]}")
+        _, texto, n = orden[0]
+        if not lee_rotulo:
+            texto = _RE_ROTULO_OCR.sub("C0NF1DENC1AL - C0ND1C10NES", texto)
+        if extra and n in extra:
+            texto += "\n" + extra[n]
+        return lineas_de(texto, imagen.size)
+
+    return ocr
+
+
+def certificado_con_escaneo(texto_escaneado: str) -> tuple[bytes, list]:
+    """Un certificado con una página ESCANEADA —su imagen lleva `texto_escaneado` y el PDF no
+    lleva texto—, portado de la sonda del revisor en la R3 (§2): acta, escaneo y las
+    condiciones, que se retiran. Devuelve el certificado y las condiciones con que se recorta.
+
+    La relectura por TEXTO no ve lo que el escaneo muestra, porque el PDF no lo lleva; solo
+    lo ve un OCR sobre sus píxeles.
+    """
+    import pypdfium2 as pdfium
+    from pypdf import PdfWriter
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+
+    from core.certificado_aportable import PaginaCondiciones
+
+    doc = pdfium.PdfDocument(pdf([texto_escaneado]))
+    imagen = doc[0].render(scale=2).to_pil().convert("RGB")
+    doc.close()
+    escaneo = io.BytesIO()
+    lienzo = canvas.Canvas(escaneo, pagesize=(595.2756, 841.8898), invariant=1)
+    lienzo.drawImage(ImageReader(imagen), 0, 0, width=595.2756, height=841.8898)
+    lienzo.showPage()
+    lienzo.save()
+    escritor = PdfWriter()
+    for parte in (pdf([MARCA_ACTA + "\nActa de la prueba del escaneo."]), escaneo.getvalue(),
+                  pdf([CONDICIONES])):
+        escritor.append(io.BytesIO(parte))
+    salida = io.BytesIO()
+    escritor.write(salida)
+    return salida.getvalue(), [PaginaCondiciones("CONDICIONES.pdf", 1, CONDICIONES)]
+
+
+def ocr_que_lee(texto: str):
+    """Un OCR que lee SIEMPRE `texto`, sea cual sea la imagen: el que se equivoca de página."""
+    from PIL import Image
+
+    def ocr(jpeg: bytes) -> tuple:
+        return lineas_de(texto, Image.open(io.BytesIO(jpeg)).size)
 
     return ocr
 

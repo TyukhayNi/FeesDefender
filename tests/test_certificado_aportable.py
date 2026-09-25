@@ -1,8 +1,10 @@
 """El aportable: el certificado íntegro sin las páginas que reproducen las condiciones."""
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import io
+import re
 
 import pytest
 
@@ -203,18 +205,56 @@ def test_R2_H03_el_titulo_abre_las_condiciones_y_la_mencion_en_prosa_NO():
     assert apo.lleva_rotulo(s.REQUERIMIENTO + _CITA)            # la red sigue viéndola
 
 
-def test_R2_H03_citar_el_titulo_NO_retira_el_requerimiento():
+def test_R2_H03_citar_el_titulo_ni_retira_el_requerimiento_ni_se_deja_pasar():
+    """R2/H-03: citar el título retiraba el requerimiento entero. Desde la R3 (H-05) la
+    mención que va ANTES del título para ya aquí, nombrando la página: ni se retira en
+    silencio ni sigue hasta la segunda parada, y el mensaje dice que es una mención."""
     r = s.Adjunto("OVC REFUNDIDA.pdf", (s.REQUERIMIENTO + _CITA, s.OVC, s.CONDICIONES))
-    assert [c.pagina for c in apo.paginas_de_condiciones([_doc(r)])] == [3]
+    with pytest.raises(apo.AportableError,
+                       match="página 1 de 'OVC REFUNDIDA.pdf' menciona el rótulo"):
+        apo.paginas_de_condiciones([_doc(r)])
 
 
 def test_R2_H03_la_mencion_en_una_pagina_que_se_CONSERVA_para_y_dice_que_es_mencion():
-    """Parar para revisión, no retirarla en silencio ni dejarla pasar: la red de la
-    segunda parada la ve, y el mensaje dice que es una mención y no un título."""
-    r = s.Adjunto("OVC REFUNDIDA.pdf", (s.REQUERIMIENTO + _CITA, s.OVC, s.CONDICIONES))
-    f = s.factura()
-    with pytest.raises(apo.AportableError, match="menciona el rótulo"):
-        apo.recortar(s.certificado([r, f]), _condiciones(r, f))
+    """Parar para revisión, no dejarla pasar: la red de la segunda parada la ve en lo que
+    NO pasa por `paginas_de_condiciones` —el acta, que reproduce el cuerpo de la
+    comunicación y no se recorta—, y el mensaje dice que es una mención y no un título."""
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f], acta_extra="El anexo se titula «CONFIDENCIAL - CONDICIONES».")
+    with pytest.raises(apo.AportableError, match="se conserva y menciona el rótulo"):
+        apo.recortar(cert, _condiciones(r, f))
+
+
+#: La sonda del revisor en la R3 (H-05): la mención PARTIDA por la extracción justo delante
+#: del rótulo, que así abre una línea.
+_CITA_PARTIDA = "\nEl anexo se titula\nCONFIDENCIAL - CONDICIONES y se adjunta para su examen."
+
+
+def test_R3_H05_una_mencion_PARTIDA_por_un_salto_de_linea_no_es_titulo():
+    """R3/H-05: la R2 tomó por título la frase que abre una línea, y una mención que la
+    extracción partiera justo delante del rótulo abría las condiciones: se retiraban el
+    requerimiento, la OVC y las condiciones. Un título lo es también por lo que le SIGUE en
+    su línea: nada en minúscula. Los dos rótulos reales van solos en la suya (M-14)."""
+    assert not apo.abre_condiciones(s.REQUERIMIENTO + _CITA_PARTIDA)
+    assert apo.lleva_rotulo(s.REQUERIMIENTO + _CITA_PARTIDA)           # la red la sigue viendo
+    assert apo.abre_condiciones("x\nCONFIDENCIAL - CONDICIONES ECONÓMICAS DE PAGO\ny")
+    assert apo.abre_condiciones("x\nConfidencial - Condiciones.\ny")
+    assert not apo.abre_condiciones("x\nCONFIDENCIAL - CONDICIONES (anexo)\ny")
+
+
+def test_R3_H05_la_mencion_partida_ni_retira_el_requerimiento_ni_pasa():
+    """La sonda entera del revisor, en el refundido: para, y dice qué página y por qué."""
+    r = s.Adjunto("PRUEBA.pdf", (s.REQUERIMIENTO + _CITA_PARTIDA, s.OVC, s.CONDICIONES))
+    with pytest.raises(apo.AportableError, match="página 1 de 'PRUEBA.pdf' menciona el rótulo"):
+        apo.paginas_de_condiciones([_doc(r)])
+
+
+def test_R3_H05_una_mencion_DESPUES_del_titulo_sale_con_las_condiciones_y_no_para():
+    """Lo que sigue al título sale entero —retirar de más, nunca de menos—: una mención ahí
+    no se conserva, así que no hay nada que revisar."""
+    raro = s.Adjunto("RARO.pdf", (s.REQUERIMIENTO, s.CONDICIONES,
+                                  "Anexo\nVer el apartado CONFIDENCIAL - CONDICIONES y siguientes."))
+    assert [p.pagina for p in apo.paginas_de_condiciones([_doc(raro)])] == [2, 3]
 
 
 def test_la_normalizacion_quita_la_cabecera_de_codicert():
@@ -243,7 +283,7 @@ def _aportable(cert, condiciones, **ocr):
     """El aportable entero —la imagen y su capa de texto—, con el OCR honesto de los tests:
     el que lee la IMAGEN (`s.ocr_fiel`), no lo que el código cree haber conservado."""
     recorte = apo.recortar(cert, condiciones)
-    return recorte, apo.aportable_de(recorte, ocr=s.ocr_fiel(cert, **ocr))
+    return recorte, apo.aportable_de(recorte, ocr=s.ocr_fiel(cert, **ocr)).pdf
 
 
 def test_retira_la_pagina_de_condiciones_y_conserva_todo_lo_demas():
@@ -384,14 +424,25 @@ def test_R2_otra_anotacion_que_PINTA_no_se_pinta_y_se_AVISA():
 
 
 def test_el_recorte_es_DETERMINISTA():
-    """M-8: la IMAGEN sale con los mismos bytes en dos corridas. Es lo que sostiene la
-    idempotencia: el OCR no es determinista (fechas e identificadores propios), así que lo
-    que se compara al volver a lanzar es la imagen (R2/H-01)."""
+    """M-8: la IMAGEN sale con los mismos bytes en dos corridas. Es lo que la relectura
+    compara al volver a lanzar: el aportable que ya está se recompone con la imagen de hoy
+    (R2/H-01, R3)."""
     r, f = s.refundido(), s.factura()
     cert = s.con_firma(s.certificado([r, f]))
     a = apo.recortar(cert, _condiciones(r, f))
     b = apo.recortar(cert, _condiciones(r, f))
-    assert a.imagen == b.imagen and a.imagen.startswith(b"%PDF")
+    assert a.imagenes == b.imagenes and len(a.imagenes) == 5
+    assert all(i.jpeg.startswith(b"\xff\xd8") for i in a.imagenes)
+
+
+def test_R3_el_aportable_es_DETERMINISTA():
+    """El mismo recorte y las mismas líneas del OCR dan el mismo fichero: lo compone el
+    motor, sin fechas ni identificadores. Por eso un manifiesto huérfano se puede reponer."""
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f])
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    assert (apo.aportable_de(recorte, ocr=s.ocr_fiel(cert)).pdf
+            == apo.aportable_de(recorte, ocr=s.ocr_fiel(cert)).pdf)
 
 
 # --- R1, sobre M-4: el certificado reproduce lo que se bajó, o no se recorta ------
@@ -600,31 +651,68 @@ def test_R2_H01_un_formulario_de_condiciones_ANIDADO_en_otro_no_viaja():
 
 def test_R2_cada_pagina_del_aportable_es_la_IMAGEN_de_la_que_se_conserva():
     """Por los píxeles y con un render propio, no con el del código que se prueba: la
-    imagen k es la página conservada k —no otra—, y la imagen no lleva texto propio."""
+    imagen k del aportable es la página conservada k, y no otra."""
     r, f = s.refundido(), s.factura()
     cert = s.certificado([r, f])
-    recorte = apo.recortar(cert, _condiciones(r, f))
+    recorte, pdf = _aportable(cert, _condiciones(r, f))
     renders = {j: s.render(cert, j) for j in range(1, 7)}
-    hechas = s.imagenes(recorte.imagen)
+    hechas = s.imagenes(pdf)
     assert len(hechas) == len(recorte.conservadas) == 5
     for imagen, n in zip(hechas, recorte.conservadas):
         propia = s.distancia(imagen, renders[n])
         otra = min(s.distancia(imagen, renders[j]) for j in renders if j != n)
         assert propia < 1 < otra, (n, propia, otra)
-    assert all(not t.strip() for t in _textos(recorte.imagen))
 
 
-# --- R2/H-01: la relectura del FICHERO, contra un perfil admitido -----------------
-
-def _limpio():
+def test_R3_H03_el_aportable_DIBUJA_la_pagina_que_se_conserva_y_nada_encima():
+    """R3/H-03: la R2 comprobaba que la imagen estaba entre los recursos de la página, no
+    que la página la dibujara —un mutante que la guardaba sin pintarla pasaba los 242 tests
+    rápidos—. Aquí se DIBUJA el aportable, con un render propio: cada página tiene que ser
+    la del íntegro que se conserva, y la capa de texto no pinta nada —la misma página sin
+    texto da los mismos píxeles—."""
     r, f = s.refundido(), s.factura()
     cert = s.certificado([r, f])
     recorte, pdf = _aportable(cert, _condiciones(r, f))
-    return cert, recorte, pdf
+    sin_texto = apo._componer(recorte.imagenes, [()] * len(recorte.imagenes))
+    renders = {j: s.render(cert, j) for j in range(1, 7)}
+    for k, (imagen, n) in enumerate(zip(recorte.imagenes, recorte.conservadas), 1):
+        dibujada = s.render(pdf, k, ancho=imagen.ancho)
+        assert dibujada.size == renders[n].size
+        propia = s.distancia(dibujada, renders[n])
+        otra = min(s.distancia(dibujada, renders[j]) for j in renders if j != n)
+        assert propia < 1 < otra, (k, n, propia, otra)
+        assert s.distancia(dibujada, s.render(sin_texto, k, ancho=imagen.ancho)) == 0
+
+
+# --- R3/H-01 a H-04: el aportable lo COMPONE el motor, y se relee RECOMPONIÉNDOLO --
+
+MARCA = "MARCA-CONDICIONES-PRUEBA"
+
+
+@pytest.fixture(scope="module")
+def limpio():
+    """Un aportable limpio y su recorte, una vez por módulo: las sondas lo retocan."""
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f])
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    return cert, recorte, apo.aportable_de(recorte, ocr=s.ocr_fiel(cert)).pdf
+
+
+def test_R3_la_relectura_ACEPTA_el_aportable_limpio(limpio):
+    """El control del otro lado: un verificador que lo rechazara todo pasaría los demás."""
+    _, recorte, pdf = limpio
+    assert apo.verificar_aportable(pdf, recorte) == ()
+
+
+def test_R3_el_aportable_es_BYTE_A_BYTE_su_composicion(limpio):
+    """Lo que la relectura exige, dicho en positivo: recomponer el aportable con la imagen
+    del recorte y el texto que lleva da el MISMO fichero."""
+    _, recorte, pdf = limpio
+    assert apo._componer(recorte.imagenes, apo._leer_renglones(pdf, recorte)) == pdf
 
 
 def _retocar(pdf: bytes, cambio) -> bytes:
-    """El aportable con `cambio(escritor)` aplicado: salidas FUERA del perfil, a propósito."""
+    """El aportable REESCRITO por pypdf con `cambio(escritor)` aplicado."""
     from pypdf import PdfReader, PdfWriter
 
     escritor = PdfWriter(clone_from=PdfReader(io.BytesIO(pdf)))
@@ -634,283 +722,365 @@ def _retocar(pdf: bytes, cambio) -> bytes:
     return buffer.getvalue()
 
 
-def test_R2_la_relectura_ACEPTA_el_aportable_limpio():
-    """El control del otro lado: un verificador que lo rechazara todo pasaría los demás."""
-    _, recorte, pdf = _limpio()
-    apo.verificar_aportable(pdf, recorte)
+def _flujo(w, datos: bytes, **claves):
+    from pypdf.generic import DecodedStreamObject, NameObject
+
+    flujo = DecodedStreamObject()
+    flujo.set_data(datos)
+    for clave, valor in claves.items():
+        flujo[NameObject("/" + clave)] = valor
+    return w._add_object(flujo)
 
 
-def test_R2_H01_un_objeto_SUELTO_con_las_condiciones_para():
-    """La sonda de la reescritura (R2/H-01): el formulario de las condiciones, con un
-    comentario que le cambia la huella, metido SUELTO en una salida limpia. La relectura de
-    la R1 lo aceptaba porque buscaba huellas conocidas; ahora todo objeto del fichero tiene
-    que colgar de algo que el perfil admite."""
+def _anadir(pdf: bytes, numero: int, generacion: int, cuerpo: bytes, *,
+            info: bool = False) -> bytes:
+    """Una actualización INCREMENTAL sobre los bytes tal cual —el objeto, su sección de xref
+    y un tráiler con `/Prev`—: mete algo sin reescribir nada de lo que ya está."""
     from pypdf import PdfReader
 
-    _, recorte, pdf = _limpio()
-    origen = PdfReader(io.BytesIO(s.con_formularios(s.certificado([s.refundido(), s.factura()]))))
-    prohibido = origen.pages[4]["/Resources"]["/XObject"]["/TPL2"]
-
-    def meter(escritor):
-        copia = prohibido.clone(escritor)
-        copia.set_data(prohibido.get_data() + b"\n% reserializado sin cambio visual\n")
-
-    malo = _retocar(pdf, meter)
-    assert s.formularios_con_rotulo(malo), "control: el formulario está dentro"
-    with pytest.raises(apo.AportableError, match="no cuelga de nada"):
-        apo.verificar_aportable(malo, recorte)
-
-
-def test_R2_un_objeto_de_PAGINA_suelto_para():
-    """El enlace de la R1 (H-01) metía un objeto de página fuera del árbol: no se cuenta
-    como página del aportable, pero está dentro del fichero."""
-    from pypdf.generic import DictionaryObject, NameObject
-
-    _, recorte, pdf = _limpio()
-    malo = _retocar(pdf, lambda w: w._add_object(
-        DictionaryObject({NameObject("/Type"): NameObject("/Page")})))
-    with pytest.raises(apo.AportableError, match="no cuelga de nada"):
-        apo.verificar_aportable(malo, recorte)
+    lector = PdfReader(io.BytesIO(pdf))
+    previo = int(re.findall(rb"startxref\s+(\d+)", pdf)[-1])
+    raiz = lector.trailer.raw_get("/Root")
+    objeto = f"{numero} {generacion} obj\n".encode() + cuerpo + b"\nendobj\n"
+    donde, xref = len(pdf), len(pdf) + len(objeto)
+    tamano = max(numero + 1, int(lector.trailer["/Size"]))
+    con_info = f" /Info {numero} {generacion} R" if info else ""
+    cola = (f"xref\n{numero} 1\n{donde:010d} {generacion:05d} n \ntrailer\n"
+            f"<< /Size {tamano} /Root {raiz.idnum} {raiz.generation} R{con_info} "
+            f"/Prev {previo} >>\nstartxref\n{xref}\n%%EOF\n").encode()
+    return pdf + objeto + cola
 
 
-def test_R2_una_ANOTACION_en_el_aportable_para():
-    from pypdf.generic import ArrayObject, DictionaryObject, NameObject
+def _tamano(pdf: bytes) -> int:
+    from pypdf import PdfReader
 
-    def anotar(w):
-        w.pages[0][NameObject("/Annots")] = ArrayObject([w._add_object(DictionaryObject({
-            NameObject("/Type"): NameObject("/Annot"),
-            NameObject("/Subtype"): NameObject("/Link")}))])
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="/Annots"):
-        apo.verificar_aportable(_retocar(pdf, anotar), recorte)
+    return int(PdfReader(io.BytesIO(pdf)).trailer["/Size"])
 
 
-@pytest.mark.parametrize("clave", ["/OpenAction", "/AcroForm", "/Names"])
-def test_R2_una_clave_ajena_en_el_CATALOGO_para(clave):
-    from pypdf.generic import DictionaryObject, NameObject
-
-    def poner(w):
-        w._root_object[NameObject(clave)] = DictionaryObject()
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="catálogo"):
-        apo.verificar_aportable(_retocar(pdf, poner), recorte)
+def _sustituir_contenido(pdf: bytes, nuevo) -> bytes:
+    """Reescribe con pypdf el contenido de la página 1 como `nuevo(original)`."""
+    def cambio(w):
+        contenido = w.pages[0]["/Contents"].get_object()
+        contenido.set_data(nuevo(contenido.get_data()))
+    return _retocar(pdf, cambio)
 
 
-def test_R2_una_capa_de_texto_VISIBLE_para():
-    """La capa del OCR es invisible (modo de render 3): una que se ve pintaría texto
-    encima de la imagen, y el aportable dejaría de ser la imagen del certificado."""
-    _, recorte, _ = _limpio()
-    visible = s.con_capa_de_texto(recorte.imagen, ["texto"] * 5, modo=0)
-    with pytest.raises(apo.AportableError, match="se VE"):
-        apo.verificar_aportable(visible, recorte)
+def _con_formulario(pdf: bytes, datos: bytes) -> bytes:
+    """Un segundo formulario de texto, invisible y en regla, que la página NO invoca."""
+    from pypdf.generic import ArrayObject, DictionaryObject, FloatObject, NameObject
+
+    def cambio(w):
+        pagina = w.pages[0]
+        forma = _flujo(w, datos, Type=NameObject("/XObject"), Subtype=NameObject("/Form"),
+                       BBox=ArrayObject([FloatObject(0), FloatObject(0), FloatObject(10),
+                                         FloatObject(10)]),
+                       Resources=DictionaryObject({NameObject("/Font"): pagina["/Resources"]
+                                                  ["/Font"]}))
+        pagina["/Resources"]["/XObject"][NameObject("/OCR2")] = forma
+    return _retocar(pdf, cambio)
 
 
-def test_R2_una_capa_de_texto_que_PINTA_para():
-    _, recorte, _ = _limpio()
-    pinta = s.con_capa_de_texto(recorte.imagen, ["texto"] * 5, operadores=b"0 0 100 100 re f")
-    with pytest.raises(apo.AportableError, match="operador"):
-        apo.verificar_aportable(pinta, recorte)
+def _fuente(w):
+    return w.pages[0]["/Resources"]["/Font"]["/F1"]
 
 
-def test_R2_una_fuente_Type3_en_la_capa_de_texto_para():
-    """Una Type3 DIBUJA sus glifos con contenido propio: por ahí viajaba la sonda `font`."""
-    _, recorte, _ = _limpio()
-    con_type3 = s.con_capa_de_texto(recorte.imagen, ["texto"] * 5, fuente="/Type3")
-    with pytest.raises(apo.AportableError, match="Type3"):
-        apo.verificar_aportable(con_type3, recorte)
+def _sondas():
+    """Salidas FUERA de la forma que compone el motor, cada una con lo que la relectura
+    tiene que decir.
 
+    Van las de la R2 —las ramas de la lista blanca, que ya no existe— y las sondas de la
+    R3. Casi todas se fabrican reescribiendo el fichero con pypdf, y una reescritura SIN
+    cambios ya no es el aportable (`reserializado`): la comparación byte a byte las para a
+    todas por el mismo motivo, y lo que cada una prueba es que lo suyo no pasa por otro
+    sitio. Las de bytes —actualizaciones incrementales, generación 1, cola tras `%%EOF`— no
+    reescriben nada: son las que prueban que la comparación mira el FICHERO y no lo que
+    pypdf lee de él (R3/H-01). Las de contenido las para antes su forma.
+    """
+    from pypdf.generic import (ArrayObject, DictionaryObject, FloatObject, NameObject,
+                               NumberObject, TextStringObject)
 
-def test_R2_una_imagen_que_NO_es_la_de_la_imagen_producida_para():
-    """Las imágenes del aportable son, byte a byte, las del raster: el OCR no las toca."""
-    from pypdf.generic import NameObject
+    N, D, A = NameObject, DictionaryObject, ArrayObject
+    byte = "no es, byte a byte, el que compone este motor"
+    forma = "no tiene la forma que compone este motor"
+
+    def prohibido():
+        from pypdf import PdfReader
+        origen = PdfReader(io.BytesIO(s.con_formularios(s.certificado([s.refundido(),
+                                                                       s.factura()]))))
+        return origen.pages[4]["/Resources"]["/XObject"]["/TPL2"]
 
     def cruzar(w):
         uno, dos = (w.pages[k]["/Resources"]["/XObject"] for k in (0, 1))
-        (a,), (b,) = ([k for k in x if x[k].get_object().get("/Subtype") == "/Image"]
-                      for x in (uno, dos))
-        uno[NameObject(a)], dos[NameObject(b)] = dos.raw_get(b), uno.raw_get(a)
+        uno[N("/Im0")], dos[N("/Im0")] = dos.raw_get("/Im0"), uno.raw_get("/Im0")
 
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="la imagen de la página 1"):
-        apo.verificar_aportable(_retocar(pdf, cruzar), recorte)
+    def xmp(texto):
+        def cambio(w):
+            w._root_object[N("/Metadata")] = _flujo(
+                w, f'<x:xmpmeta xmlns:x="adobe:ns:meta/">{texto}</x:xmpmeta>'.encode(),
+                Type=N("/Metadata"), Subtype=N("/XML"))
+        return cambio
 
+    def ps(w):
+        w.pages[0]["/Resources"]["/XObject"][N("/Z")] = _flujo(
+            w, b"% PostScript", Type=N("/XObject"), Subtype=N("/PS"))
 
-def test_R2_un_contenido_de_pagina_que_PINTA_para():
-    """La página solo dibuja su imagen y su capa de texto: nada más en su contenido."""
-    def pintar(w):
-        contenido = w.pages[0]["/Contents"].get_object()
-        contenido.set_data(b"0 0 100 100 re f\n" + contenido.get_data())
+    def ciclo(w):
+        ref = _flujo(w, MARCA.encode())
+        ref.get_object()[N("/Vuelta")] = ref
+        _fuente(w)[N("/Auxiliar")] = ref
 
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="contenido de la página 1"):
-        apo.verificar_aportable(_retocar(pdf, pintar), recorte)
+    def pikepdf(pdf):
+        pikepdf = pytest.importorskip("pikepdf")
+        salida = io.BytesIO()
+        with pikepdf.open(io.BytesIO(pdf)) as p:
+            p.save(salida, object_stream_mode=pikepdf.ObjectStreamMode.generate)
+        return salida.getvalue()
 
+    def historial(pdf):
+        numero = _tamano(pdf)
+        anterior = _anadir(pdf, numero, 0, b"<< /Subject (" + MARCA.encode() + b") >>", info=True)
+        return _anadir(anterior, numero, 0, b"<< /Producer (FeesDefender) >>", info=True)
 
-def test_R2_una_imagen_de_MAS_en_una_pagina_para():
-    from pypdf.generic import NameObject
+    def contenido_cambiado(pdf):
+        """Una actualización que sustituye el contenido de la página 1 por uno CANÓNICO con
+        un renglón más: lo que pypdf lee es de la forma, y el fichero no."""
+        from pypdf import PdfReader
+        pagina = PdfReader(io.BytesIO(pdf)).pages[0]
+        ref = pagina.raw_get("/Contents")
+        datos = pagina["/Contents"].get_object().get_data().replace(
+            b"ET\n", b"/F1 10.00 Tf 1 0 0 1 10.00 10.00 Tm <" + MARCA.encode().hex().encode()
+            + b"> Tj\nET\n")
+        cuerpo = b"<< /Length %d >>\nstream\n" % len(datos) + datos + b"\nendstream"
+        return _anadir(pdf, ref.idnum, 0, cuerpo)
 
-    def duplicar(w):
-        xo = w.pages[0]["/Resources"]["/XObject"]
-        otra = next(k for k in w.pages[1]["/Resources"]["/XObject"]
-                    if w.pages[1]["/Resources"]["/XObject"][k].get("/Subtype") == "/Image")
-        xo[NameObject("/Im9")] = w.pages[1]["/Resources"]["/XObject"].raw_get(otra)
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="2 imágenes en la página 1"):
-        apo.verificar_aportable(_retocar(pdf, duplicar), recorte)
-
-
-def test_R2_un_nodo_del_arbol_con_RECURSOS_heredables_para():
-    """Un `/Resources` en el nodo de páginas lo heredan las páginas que no lo digan: por
-    ahí se colaría en ellas lo que no llevan."""
-    from pypdf.generic import DictionaryObject, NameObject
-
-    def heredar(w):
-        w._root_object["/Pages"].get_object()[NameObject("/Resources")] = DictionaryObject()
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="nodo del árbol"):
-        apo.verificar_aportable(_retocar(pdf, heredar), recorte)
-
-
-def test_R2_una_caja_de_pagina_distinta_de_la_de_su_imagen_para():
-    from pypdf.generic import ArrayObject, FloatObject, NameObject
-
-    def agrandar(w):
-        w.pages[0][NameObject("/MediaBox")] = ArrayObject(
-            [FloatObject(0), FloatObject(0), FloatObject(700), FloatObject(900)])
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="caja de página"):
-        apo.verificar_aportable(_retocar(pdf, agrandar), recorte)
-
-
-@pytest.mark.parametrize("donde", ["info", "xmp"])
-def test_R2_el_rotulo_en_los_METADATOS_del_aportable_para(donde):
-    from pypdf.generic import DecodedStreamObject, NameObject
-
-    def poner(w):
-        if donde == "info":
-            w.add_metadata({"/Subject": "CONFIDENCIAL - CONDICIONES"})
-            return
-        meta = DecodedStreamObject()
-        meta.set_data(b"<x:xmpmeta>CONFIDENCIAL - CONDICIONES</x:xmpmeta>")
-        meta.update({NameObject("/Type"): NameObject("/Metadata"),
-                     NameObject("/Subtype"): NameObject("/XML")})
-        w._root_object[NameObject("/Metadata")] = w._add_object(meta)
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="rótulo de las condiciones"):
-        apo.verificar_aportable(_retocar(pdf, poner), recorte)
-
-
-def _formulario_de_texto(w, pagina: int = 0):
-    xo = w.pages[pagina]["/Resources"]["/XObject"]
-    return next(xo[k] for k in xo if xo[k].get("/Subtype") == "/Form")
-
-
-def test_R2_una_clave_ajena_en_la_CAPA_DE_TEXTO_para():
-    """El formulario de texto lleva su caja y sus fuentes, y nada más: un `/Group` —o unos
-    metadatos, como en la sonda `metadata`— ya no es una capa de texto."""
-    from pypdf.generic import DictionaryObject, NameObject
-
-    def meter(w):
-        _formulario_de_texto(w)[NameObject("/Group")] = DictionaryObject()
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="«/Group» en la capa de texto de la página 1"):
-        apo.verificar_aportable(_retocar(pdf, meter), recorte)
-
-
-def test_R2_un_recurso_ajeno_en_la_CAPA_DE_TEXTO_para():
-    from pypdf.generic import DictionaryObject, NameObject
-
-    def meter(w):
-        _formulario_de_texto(w)["/Resources"][NameObject("/XObject")] = DictionaryObject()
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="recurso «/XObject» en la capa de texto"):
-        apo.verificar_aportable(_retocar(pdf, meter), recorte)
-
-
-def test_R2_una_pagina_SIN_recursos_propios_para():
-    """Sin recursos propios heredaría los del nodo del árbol, que no se miran como los suyos."""
-    def quitar(w):
-        del w.pages[0]["/Resources"]
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="sin recursos propios"):
-        apo.verificar_aportable(_retocar(pdf, quitar), recorte)
-
-
-def test_R2_un_recurso_ajeno_en_la_PAGINA_para():
-    """La página solo dibuja objetos (`/XObject`): una fuente o un patrón suyos no tienen qué
-    hacer en ella."""
-    from pypdf.generic import DictionaryObject, NameObject
-
-    def meter(w):
-        w.pages[0]["/Resources"][NameObject("/Pattern")] = DictionaryObject()
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="recurso «/Pattern» en la página 1"):
-        apo.verificar_aportable(_retocar(pdf, meter), recorte)
-
-
-def test_R2_un_objeto_DIRECTO_entre_los_de_la_pagina_para():
-    from pypdf.generic import DictionaryObject, NameObject
-
-    def meter(w):
-        w.pages[0]["/Resources"]["/XObject"][NameObject("/Z")] = DictionaryObject()
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="objeto directo como «/Z»"):
-        apo.verificar_aportable(_retocar(pdf, meter), recorte)
-
-
-def test_R2_un_objeto_de_OTRO_TIPO_entre_los_de_la_pagina_para():
-    from pypdf.generic import DecodedStreamObject, NameObject
-
-    def meter(w):
-        ps = DecodedStreamObject()
-        ps.set_data(b"% PostScript")
-        ps.update({NameObject("/Type"): NameObject("/XObject"),
-                   NameObject("/Subtype"): NameObject("/PS")})
-        w.pages[0]["/Resources"]["/XObject"][NameObject("/Z")] = w._add_object(ps)
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="objeto /PS como «/Z»"):
-        apo.verificar_aportable(_retocar(pdf, meter), recorte)
+    sondas = [
+        # — R2: las ramas de la lista blanca —
+        ("reserializado", lambda p: _retocar(p, lambda w: None), byte),
+        ("objeto_suelto_con_las_condiciones",
+         lambda p: _retocar(p, lambda w: prohibido().clone(w)), byte),
+        ("objeto_de_pagina_suelto",
+         lambda p: _retocar(p, lambda w: w._add_object(D({N("/Type"): N("/Page")}))), byte),
+        ("anotacion", lambda p: _retocar(p, lambda w: w.pages[0].__setitem__(
+            N("/Annots"), A([w._add_object(D({N("/Type"): N("/Annot"),
+                                              N("/Subtype"): N("/Link")}))]))), byte),
+        *((f"catalogo{clave.lower().replace('/', '_')}",
+           (lambda c: lambda p: _retocar(p, lambda w: w._root_object.__setitem__(N(c), D())))(clave),
+           byte) for clave in ("/OpenAction", "/AcroForm", "/Names")),
+        ("capa_visible", lambda p: s.con_capa_de_texto(p, ["texto"] * 5, modo=0), forma),
+        ("capa_que_pinta",
+         lambda p: s.con_capa_de_texto(p, ["texto"] * 5, operadores=b"0 0 100 100 re f"), forma),
+        ("capa_type3", lambda p: s.con_capa_de_texto(p, ["texto"] * 5, fuente="/Type3"), forma),
+        ("imagenes_cruzadas", lambda p: _retocar(p, cruzar), byte),
+        ("contenido_que_pinta",
+         lambda p: _sustituir_contenido(p, lambda c: b"0 0 100 100 re f\n" + c), forma),
+        ("imagen_de_mas", lambda p: _retocar(p, lambda w: w.pages[0]["/Resources"]["/XObject"]
+                                             .__setitem__(N("/Im9"), w.pages[1]["/Resources"]
+                                                          ["/XObject"].raw_get("/Im0"))), byte),
+        ("nodo_con_recursos", lambda p: _retocar(p, lambda w: w._root_object["/Pages"]
+                                                 .get_object().__setitem__(N("/Resources"), D())),
+         byte),
+        ("caja_distinta", lambda p: _retocar(p, lambda w: w.pages[0].__setitem__(
+            N("/MediaBox"), A([FloatObject(0), FloatObject(0), FloatObject(700),
+                               FloatObject(900)]))), byte),
+        ("info_con_rotulo",
+         lambda p: _retocar(p, lambda w: w.add_metadata({"/Subject": "CONFIDENCIAL - CONDICIONES"})),
+         byte),
+        ("xmp_con_rotulo", lambda p: _retocar(p, xmp("CONFIDENCIAL - CONDICIONES")), byte),
+        ("pagina_sin_recursos", lambda p: _retocar(p, lambda w: w.pages[0].__delitem__("/Resources")),
+         byte),
+        ("recurso_ajeno_en_la_pagina", lambda p: _retocar(p, lambda w: w.pages[0]["/Resources"]
+                                                          .__setitem__(N("/Pattern"), D())), byte),
+        ("objeto_directo_entre_los_de_la_pagina",
+         lambda p: _retocar(p, lambda w: w.pages[0]["/Resources"]["/XObject"]
+                            .__setitem__(N("/Z"), D())), byte),
+        ("objeto_PS_entre_los_de_la_pagina", lambda p: _retocar(p, ps), byte),
+        ("do_a_nada", lambda p: _sustituir_contenido(p, lambda c: b"q /Nada Do Q\n" + c), forma),
+        ("cifrado", lambda p: _retocar(p, lambda w: w.encrypt(
+            user_password="", owner_password="otra", algorithm="AES-128")), "cifrado"),
+        ("suelto_que_no_es_diccionario",
+         lambda p: _retocar(p, lambda w: w._add_object(A([NumberObject(1)]))), byte),
+        ("girada",
+         lambda p: _retocar(p, lambda w: w.pages[0].__setitem__(N("/Rotate"), NumberObject(90))),
+         byte),
+        # — R3/H-02: estructura que la lista blanca no enumeraba —
+        ("info_con_marca", lambda p: _retocar(p, lambda w: w.add_metadata({"/Subject": MARCA})),
+         byte),
+        ("xmp_con_marca", lambda p: _retocar(p, xmp(MARCA)), byte),
+        ("fuente_auxiliar",
+         lambda p: _retocar(p, lambda w: _fuente(w).__setitem__(N("/Auxiliar"),
+                                                                _flujo(w, MARCA.encode()))), byte),
+        ("fontfile", lambda p: _retocar(p, lambda w: _fuente(w).__setitem__(
+            N("/FontDescriptor"), w._add_object(D({
+                N("/Type"): N("/FontDescriptor"), N("/FontName"): N("/Helvetica"),
+                N("/FontFile2"): _flujo(w, MARCA.encode())})))), byte),
+        ("ciclo", lambda p: _retocar(p, ciclo), byte),
+        ("contents_auxiliar", lambda p: _retocar(p, lambda w: w.pages[0]["/Contents"].get_object()
+                                                 .__setitem__(N("/Auxiliar"),
+                                                              _flujo(w, MARCA.encode()))), byte),
+        ("procset", lambda p: _retocar(p, lambda w: w.pages[0]["/Resources"].__setitem__(
+            N("/ProcSet"), A([N("/PDF"), _flujo(w, MARCA.encode())]))), byte),
+        ("bdc", lambda p: _sustituir_contenido(
+            p, lambda c: b"/Span << /ActualText (" + MARCA.encode() + b") >> BDC\n" + c + b"EMC\n"),
+         forma),
+        ("comentario", lambda p: _sustituir_contenido(p, lambda c: c + b"% " + MARCA.encode() + b"\n"),
+         forma),
+        ("segunda_capa_no_dibujada",
+         lambda p: _con_formulario(p, b"BT 3 Tr /F1 12 Tf (" + MARCA.encode() + b") Tj ET"), byte),
+        *((f"stream_{tipo}_suelto",
+           (lambda t, claves: lambda p: _retocar(p, lambda w: _flujo(
+               w, MARCA.encode(), Type=N(t), **claves)))(t, claves), byte)
+          for tipo, t, claves in (
+              ("ObjStm", "/ObjStm", {"N": NumberObject(0), "First": NumberObject(4)}),
+              ("XRef", "/XRef", {"W": A([NumberObject(1), NumberObject(2), NumberObject(1)]),
+                                 "Size": NumberObject(0), "Index": A([])}))),
+        ("objstm_valido_de_pikepdf", pikepdf, byte),
+        # — R3/H-03: el dibujo de la página —
+        ("dibujo_sin_imagen", lambda p: _sustituir_contenido(p, lambda c: c[c.index(b"BT"):]),
+         forma),
+        ("dibujo_desplazado",
+         lambda p: _sustituir_contenido(p, lambda c: b"q 1 0 0 1 2000 0 cm\n" + c + b"Q\n"), forma),
+        ("dibujo_espejo",
+         lambda p: _sustituir_contenido(p, lambda c: b"q -1 0 0 1 595 0 cm\n" + c + b"Q\n"), forma),
+        ("dibujo_doble",
+         lambda p: _sustituir_contenido(p, lambda c: c + b"q 200 0 0 200 0 0 cm /Im0 Do Q\n"),
+         forma),
+        # — R3/H-01: el fichero, no lo que pypdf lee de él —
+        ("historial_incremental", historial, byte),
+        ("generacion_1", lambda p: _anadir(p, _tamano(p), 1, b"(" + MARCA.encode() + b")"), byte),
+        ("cola_tras_el_eof", lambda p: p + b"\n% " + MARCA.encode() + b"\n", byte),
+        ("contenido_cambiado_por_una_actualizacion", contenido_cambiado, byte),
+    ]
+    del TextStringObject
+    return [pytest.param(fabricar, patron, id=nombre) for nombre, fabricar, patron in sondas]
 
 
-def test_R2_un_Do_a_algo_que_NO_esta_en_la_pagina_para():
-    def dibujar(w):
-        contenido = w.pages[0]["/Contents"].get_object()
-        contenido.set_data(b"q /Nada Do Q\n" + contenido.get_data())
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="«Do» a algo que no está"):
-        apo.verificar_aportable(_retocar(pdf, dibujar), recorte)
-
-
-def test_R2_un_aportable_CIFRADO_para():
-    """pypdf abre sin preguntar uno cifrado con contraseña de usuario vacía: se para igual."""
-    def cifrar(w):
-        w.encrypt(user_password="", owner_password="otra", algorithm="AES-128")
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="cifrado"):
-        apo.verificar_aportable(_retocar(pdf, cifrar), recorte)
-
-
-def test_R2_un_objeto_SUELTO_que_no_es_un_diccionario_para():
-    from pypdf.generic import ArrayObject, NumberObject
-
-    _, recorte, pdf = _limpio()
-    malo = _retocar(pdf, lambda w: w._add_object(ArrayObject([NumberObject(1)])))
-    with pytest.raises(apo.AportableError, match=r"ArrayObject\), que no cuelga de nada"):
+@pytest.mark.parametrize("fabricar, patron", _sondas())
+def test_R3_toda_salida_fuera_de_la_forma_canonica_PARA(limpio, fabricar, patron):
+    """R3/H-01 y H-02, y lo que queda de la lista blanca de la R2: el aportable ya no es un
+    fichero ajeno que se admite por un perfil, sino uno que compone este motor —la imagen
+    del recorte y un renglón por línea leída—, y la relectura lo RECOMPONE con la imagen del
+    recorte y el texto que lleva y exige los mismos bytes. Lo que no enumera nadie no tiene
+    por dónde entrar: cualquier cosa de más cambia los bytes."""
+    _, recorte, pdf = limpio
+    malo = fabricar(pdf)
+    assert malo != pdf
+    with pytest.raises(apo.AportableError, match=patron):
         apo.verificar_aportable(malo, recorte)
+
+
+def test_R3_las_sondas_llevan_DENTRO_lo_que_prueban(limpio):
+    """El control de las sondas: la marca está en los bytes de las que la meten, y el
+    historial la guarda aunque pypdf lea la revisión limpia."""
+    from pypdf import PdfReader
+
+    _, _, pdf = limpio
+    fabricar = {p.id: p.values[0] for p in _sondas()}
+    # pypdf escribe el `/Info` codificado: se lee, no se busca en los bytes (el mismo error de
+    # instrumento que el revisor declaró en su primera versión de esta sonda).
+    info = PdfReader(io.BytesIO(fabricar["info_con_marca"](pdf))).metadata
+    assert info["/Subject"] == MARCA
+    for nombre in ("fuente_auxiliar", "fontfile", "generacion_1", "historial_incremental",
+                   "segunda_capa_no_dibujada", "cola_tras_el_eof"):
+        assert MARCA.encode() in fabricar[nombre](pdf), nombre
+    assert MARCA.encode().hex().encode() in fabricar[
+        "contenido_cambiado_por_una_actualizacion"](pdf)
+    historial = fabricar["historial_incremental"](pdf)
+    assert historial.count(b"startxref") == 3
+    assert MARCA not in str(PdfReader(io.BytesIO(historial)).metadata)
+
+
+def test_R3_una_linea_de_texto_FUERA_de_la_pagina_para(limpio):
+    """El renglón en la forma, pero fuera de la hoja: invisible y extraíble. Se fabrica
+    cambiando cifras por cifras —mismo largo, así que el fichero sigue siendo legible—."""
+    _, recorte, pdf = limpio
+    m = re.search(rb"1 0 0 1 \d+\.\d\d (\d+)\.\d\d Tm", pdf)
+    malo = pdf[:m.start(1)] + b"9" * len(m[1]) + pdf[m.end(1):]
+    with pytest.raises(apo.AportableError, match="fuera de la página 1"):
+        apo.verificar_aportable(malo, recorte)
+
+
+def test_R3_un_texto_que_no_es_WinAnsi_para(limpio):
+    """0x81 no es ningún carácter en WinAnsi: un renglón que lo lleva no lo compuso el motor."""
+    _, recorte, pdf = limpio
+    m = re.search(rb"Tm <([0-9a-f]{2})", pdf)
+    malo = pdf[:m.start(1)] + b"81" + pdf[m.end(1):]
+    with pytest.raises(apo.AportableError, match="no tiene la forma que compone este motor"):
+        apo.verificar_aportable(malo, recorte)
+
+
+def test_R3_un_texto_que_el_motor_NO_escribiria_para(limpio):
+    """El texto va en la forma del motor —canónico (`_texto_canonico`)—, y uno que no lo es
+    —aquí, un control 0x07, que WinAnsi sí codifica— no lo escribió él: recomponerlo con lo
+    leído daría los mismos bytes, así que se exige además que sea canónico."""
+    _, recorte, pdf = limpio
+    m = re.search(rb"Tm <([0-9a-f]{2})", pdf)
+    malo = pdf[:m.start(1)] + b"07" + pdf[m.end(1):]
+    with pytest.raises(apo.AportableError, match="no compuso este motor"):
+        apo.verificar_aportable(malo, recorte)
+
+
+def test_R3_una_resolucion_que_no_da_centesimas_EXACTAS_se_rechaza(monkeypatch):
+    """Los números del aportable son centésimas de punto exactas porque `PPP` divide a 7.200:
+    con otra resolución se redondearían, y lo que PDFium dibuja ya no mediría lo que la
+    imagen (M-15)."""
+    monkeypatch.setattr(apo, "PPP", 110)
+    with pytest.raises(ValueError, match="dividir a 7.200"):
+        apo._cp(3)
+
+
+def test_R3_una_imagen_que_no_se_puede_casar_con_NINGUNA_pagina_para(monkeypatch):
+    """El techo de cordura: si lo que dibuja una página no tiene con qué casarse —aquí, una
+    imagen a otra resolución que las miniaturas del íntegro—, no se da por buena aunque no
+    haya otra página más cerca."""
+    real, ppp = apo._rasterizar, apo.PPP
+
+    def a_otra_resolucion(cert, paginas):
+        monkeypatch.setattr(apo, "PPP", ppp // 2)
+        try:
+            return real(cert, paginas)
+        finally:
+            monkeypatch.setattr(apo, "PPP", ppp)
+
+    monkeypatch.setattr(apo, "_rasterizar", a_otra_resolucion)
+    r, f = s.refundido(), s.factura()
+    recorte = apo.recortar(s.certificado([r, f]), _condiciones(r, f))
+    with pytest.raises(apo.AportableError, match="no se parece a la página 1 del certificado"):
+        apo.aportable_de(recorte, ocr=s.ocr_que_lee("texto"))
+
+
+def test_R3_una_imagen_que_se_parece_TANTO_a_una_retirada_como_a_la_suya_para():
+    """Empatar con una retirada no vale: si la página que se conserva y una de condiciones se
+    ven igual, lo que se ve son las condiciones. Se fuerza con las miniaturas: la de la
+    retirada, la de la primera página."""
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f])
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    miniaturas = list(recorte.miniaturas)
+    miniaturas[4] = miniaturas[0]
+    trucado = dataclasses.replace(recorte, miniaturas=tuple(miniaturas))
+    with pytest.raises(apo.AportableError, match="que se retira, tanto como a la 1"):
+        apo.aportable_de(trucado, ocr=s.ocr_fiel(cert))
+
+
+def test_R3_H03_si_la_composicion_no_DIBUJARA_la_imagen_entera_la_relectura_lo_ve(monkeypatch):
+    """R3/H-03, el mutante del revisor llevado al compositor: con el aportable compuesto
+    aquí, una página que no pinte su imagen entera solo puede salir de un defecto de la
+    composición —el mismo al componer que al recomponer, así que los bytes coinciden—. Lo
+    que lo ve es DIBUJAR el fichero: cada página tiene que pintar su imagen tal cual."""
+    real = apo._contenido
+
+    def a_media_escala(imagen, renglones):
+        def mitad(m):
+            ancho, alto = (int(m[1]) * 100 + int(m[2])) // 2, (int(m[3]) * 100 + int(m[4])) // 2
+            return b"q %d.%02d 0 0 %d.%02d 0 0 cm" % (*divmod(ancho, 100), *divmod(alto, 100))
+        return re.sub(rb"^q (\d+)\.(\d\d) 0 0 (\d+)\.(\d\d) 0 0 cm", mitad, real(imagen, renglones))
+
+    monkeypatch.setattr(apo, "_contenido", a_media_escala)
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f])
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    with pytest.raises(apo.AportableError, match="no dibuja su imagen"):
+        apo.aportable_de(recorte, ocr=s.ocr_fiel(cert))
 
 
 def test_R2_rasterizar_un_PDF_roto_es_AportableError():
@@ -918,18 +1088,7 @@ def test_R2_rasterizar_un_PDF_roto_es_AportableError():
         apo._rasterizar(b"esto no es un PDF", [1])
 
 
-def test_R2_una_pagina_GIRADA_para():
-    from pypdf.generic import NameObject, NumberObject
-
-    def girar(w):
-        w.pages[0][NameObject("/Rotate")] = NumberObject(90)
-
-    _, recorte, pdf = _limpio()
-    with pytest.raises(apo.AportableError, match="gira"):
-        apo.verificar_aportable(_retocar(pdf, girar), recorte)
-
-
-# --- R2/H-01: la capa de texto, y lo que el OCR lee en ella ------------------------
+# --- R2/H-01 y R3/H-04: la capa de texto, y lo que el OCR lee en ella ----------
 
 def _con_raster_de(monkeypatch, sustituciones: dict[int, int]):
     """Un error de índices forzado: la imagen de la página `a` en el sitio de la `b`."""
@@ -951,10 +1110,9 @@ def test_R2_si_el_OCR_lee_el_ROTULO_en_el_aportable_para(monkeypatch):
 
 def test_H07_la_relectura_para_una_COPIA_de_las_condiciones_aunque_el_OCR_no_lea_el_rotulo(
         monkeypatch):
-    """R1/H-07 sobre la imagen: cada comprobación, su test. Si el OCR no lee el rótulo, la
-    página se sigue pareciendo más a la retirada que a la que tocaba. La imagen retirada va
-    a la página 1, que NO es vecina de la 5: así esto lo para la comparación con las
-    retiradas y no la de las vecinas, que tiene su propio test."""
+    """R1/H-07 sobre la imagen: cada comprobación, su test. Si el OCR no lee el rótulo, lo
+    que para es la comparación VISUAL (R3/H-04): la imagen se parece más a la página
+    retirada que a la que tocaba."""
     r, f = s.refundido(), s.factura()
     cert = s.certificado([r, f])
     _con_raster_de(monkeypatch, {1: 5})
@@ -964,13 +1122,23 @@ def test_H07_la_relectura_para_una_COPIA_de_las_condiciones_aunque_el_OCR_no_lea
 
 
 def test_H07_misma_cuenta_de_paginas_pero_una_EQUIVOCADA_para(monkeypatch):
-    """R1/H-07: una página conservada en el sitio de otra —la cuenta es la misma—. Ahora lo
-    ve el texto que el OCR lee en la imagen: se parece más a la vecina que a la suya."""
+    """R1/H-07: una página conservada en el sitio de otra —la cuenta es la misma—."""
     r, f = s.refundido(), s.factura()
     cert = s.certificado([r, f])
     _con_raster_de(monkeypatch, {3: 4, 4: 3})
     recorte = apo.recortar(cert, _condiciones(r, f))
     with pytest.raises(apo.AportableError, match="se parece más a la página 4"):
+        apo.aportable_de(recorte, ocr=s.ocr_fiel(cert))
+
+
+def test_R3_H04_una_imagen_de_una_pagina_LEJANA_tambien_para(monkeypatch):
+    """R3/H-04: la R2 solo comparaba con las retiradas y con las dos vecinas, y una página
+    lejana en el sitio de la primera pasaba. Ahora se compara con TODAS las del íntegro."""
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f])
+    _con_raster_de(monkeypatch, {1: 6})
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    with pytest.raises(apo.AportableError, match="se parece más a la página 6"):
         apo.aportable_de(recorte, ocr=s.ocr_fiel(cert))
 
 
@@ -984,12 +1152,12 @@ def test_H07_la_relectura_para_el_ROTULO_aunque_el_texto_no_case():
 
 
 def test_PARADA_3_se_verifica_el_resultado_no_la_aritmetica():
-    """Si lo que vuelve del OCR no es el aportable —aquí, el íntegro entero—, no se entrega."""
+    """Si lo que se relee no es el aportable —aquí, el íntegro entero—, no se entrega."""
     r, f = s.refundido(), s.factura()
     cert = s.certificado([r, f])
     recorte = apo.recortar(cert, _condiciones(r, f))
     with pytest.raises(apo.AportableError, match="páginas y debían ser"):
-        apo.aportable_de(recorte, ocr=lambda imagen: cert)
+        apo.verificar_aportable(cert, recorte)
 
 
 def test_R2_si_el_OCR_FALLA_no_hay_aportable():
@@ -1001,8 +1169,133 @@ def test_R2_si_el_OCR_FALLA_no_hay_aportable():
     def roto(imagen):
         raise RuntimeError("tesseract no está instalado")
 
-    with pytest.raises(apo.AportableError, match="OCR"):
+    # El mensaje de ESTE fallo: desde la R3 una capa vacía también para, y su mensaje dice
+    # «OCR», así que casar solo con «OCR» taparía que el fallo se tragara en silencio.
+    with pytest.raises(apo.AportableError, match="no se pudo pasar el OCR"):
         apo.aportable_de(recorte, ocr=roto)
+
+
+def test_R3_si_el_OCR_no_devuelve_LINEAS_no_hay_aportable():
+    """El puerto devuelve LÍNEAS —texto y caja—, no un PDF: lo que el OCR entrega no llega
+    al aportable más que como texto que compone el motor (R3/H-04, «acotar su salida»)."""
+    r, f = s.refundido(), s.factura()
+    recorte = apo.recortar(s.certificado([r, f]), _condiciones(r, f))
+    with pytest.raises(apo.AportableError, match="no devolvió líneas"):
+        apo.aportable_de(recorte, ocr=lambda jpeg: jpeg)
+
+
+def test_R3_una_linea_del_OCR_FUERA_de_la_imagen_no_se_compone():
+    r, f = s.refundido(), s.factura()
+    recorte = apo.recortar(s.certificado([r, f]), _condiciones(r, f))
+    with pytest.raises(apo.AportableError, match="fuera de la imagen"):
+        apo.aportable_de(recorte, ocr=lambda jpeg: (apo.Linea("texto", 0, 0, 10**6, 10),))
+
+
+def test_R3_H04_un_aportable_SIN_capa_de_texto_no_se_entrega():
+    """R3/H-04, la sonda del revisor: el puerto identidad devolvía la imagen sin texto y la
+    relectura lo admitía. Una página cuyo original tiene texto tiene que traer el suyo."""
+    r, f = s.refundido(), s.factura()
+    recorte = apo.recortar(s.certificado([r, f]), _condiciones(r, f))
+    with pytest.raises(apo.AportableError, match="página 1 del aportable no tiene texto leído"):
+        apo.aportable_de(recorte, ocr=lambda jpeg: ())
+
+
+def test_R3_H04_un_texto_que_NO_es_el_de_su_pagina_no_se_entrega():
+    """La otra sonda: una capa hecha solo de la marca. El texto leído tiene que parecerse al
+    de la página —al menos 0,30; lo medido en los reales, 0,56 como poco (M-13)—."""
+    r, f = s.refundido(), s.factura()
+    recorte = apo.recortar(s.certificado([r, f]), _condiciones(r, f))
+    with pytest.raises(apo.AportableError, match="no se parece al de la página 1"):
+        apo.aportable_de(recorte, ocr=s.ocr_que_lee(f"{MARCA} " * 4))
+
+
+def test_R3_H04_una_pagina_que_no_tiene_texto_no_exige_capa():
+    """El control del otro lado: una página sin texto en el original —un escaneo, una hoja
+    en blanco— no tiene con qué compararse, y una capa vacía no la para."""
+    r, blanco, f = s.refundido(), s.Adjunto("BLANCO.pdf", ("",)), s.factura()
+    cert = s.certificado([r, blanco, f])
+    recorte = apo.recortar(cert, _condiciones(r, blanco, f))
+    k = recorte.conservadas.index(6)
+    fiel = s.ocr_fiel(cert)
+    muda = recorte.imagenes[k].jpeg
+
+    def ocr(jpeg):
+        return () if jpeg == muda else fiel(jpeg)
+
+    assert apo.aportable_de(recorte, ocr=ocr).pdf.startswith(b"%PDF")
+
+
+#: Ocho palabras seguidas del cuerpo de las condiciones sintéticas.
+_FRASE_DE_LAS_CONDICIONES = ("el primer 50% entre los dias 1 y 5 del mes siguiente a la "
+                             "primera recepcion")
+
+
+def test_R3_un_ESCANEO_que_muestra_frases_de_las_condiciones_AVISA():
+    """R3, §2 (la sonda del escaneo): una página conservada SIN texto cuya imagen reproduce
+    las condiciones. El aviso por texto (§7.4) no la ve —no hay texto—; el OCR sí, y lo que
+    lee se contrasta con las frases de las condiciones: aviso, con la página y la frase, como
+    el del §7.4. El doble lo fabrica con `extra` (el sintético no tiene escaneos); el OCR de
+    verdad, en `test_expedicion_aportable`."""
+    r, blanco, f = s.refundido(), s.Adjunto("BLANCO.pdf", ("",)), s.factura()
+    cert = s.certificado([r, blanco, f])
+    recorte = apo.recortar(cert, _condiciones(r, blanco, f))
+    hecho = apo.aportable_de(recorte, ocr=s.ocr_fiel(cert, extra={6: _FRASE_DE_LAS_CONDICIONES}))
+    assert any("página 6 del certificado" in a and "imagen" in a for a in hecho.avisos), hecho.avisos
+    assert apo.verificar_aportable(hecho.pdf, recorte) == hecho.avisos
+    assert apo.aportable_de(recorte, ocr=s.ocr_fiel(cert)).avisos == ()
+
+
+def test_R3_lo_que_el_texto_YA_repite_no_se_avisa_dos_veces():
+    """Si la frase ya la lleva el TEXTO de la página, la avisa el recorte (§7.4); lo que el
+    OCR lee de más es lo que la imagen muestra y el texto no."""
+    fuga = s.REQUERIMIENTO + "\nLes proponemos que " + _FRASE_DE_LAS_CONDICIONES
+    r = s.Adjunto("OVC REFUNDIDA.pdf", (fuga, s.OVC, s.CONDICIONES))
+    f = s.factura()
+    cert = s.certificado([r, f])
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    assert any("página 3" in a for a in recorte.avisos)
+    assert apo.aportable_de(recorte, ocr=s.ocr_fiel(cert)).avisos == ()
+
+
+def test_R3_dos_paginas_CASI_iguales_que_el_OCR_no_distingue_no_paran():
+    """El falso rechazo de la R3 (§2, «empate»): dos páginas de plantilla que solo cambian en
+    una cifra, y un OCR que no la lee. La R2 comparaba textos entre páginas y paraba; ahora
+    lo que distingue una página de otra es su IMAGEN, y el texto solo tiene que parecerse al
+    suyo."""
+    r = s.refundido()
+    una = s.Adjunto("FACTURA 1.pdf", (s.FACTURA,))
+    otra = s.Adjunto("FACTURA 2.pdf", (s.FACTURA.replace("0000001", "0000002"),))
+    cert = s.certificado([r, una, otra])
+    recorte = apo.recortar(cert, _condiciones(r, una, otra))
+    lenta = s.ocr_fiel(cert, estricto=False)
+
+    def sin_la_cifra(jpeg):
+        return tuple(dataclasses.replace(l, texto=l.texto.replace("0000001", "000000")
+                                         .replace("0000002", "000000")) for l in lenta(jpeg))
+
+    assert apo.aportable_de(recorte, ocr=sin_la_cifra).pdf.startswith(b"%PDF")
+
+
+def test_R3_el_texto_del_OCR_se_CANONICALIZA_y_la_relectura_lo_admite():
+    """El texto va en WinAnsi —el castellano cabe entero—: lo que no cabe se escribe «?»,
+    una ligadura se deshace y un control se vuelve espacio. Y es estable: canonicalizar dos
+    veces da lo mismo, que es lo que deja a la relectura recomponer el fichero."""
+    rarezas = "ﬁnca «Ω» Д\x07 con\ttabulador — 1.234,56 €  ñandú"
+    canonico = apo._texto_canonico(rarezas)
+    assert apo._texto_canonico(canonico) == canonico
+    assert canonico == "finca «?» ? con tabulador — 1.234,56 € ñandú"
+    r, f = s.refundido(), s.factura()
+    cert = s.certificado([r, f])
+    recorte = apo.recortar(cert, _condiciones(r, f))
+    fiel = s.ocr_fiel(cert)
+
+    def ocr(jpeg):
+        primera, *resto = fiel(jpeg)
+        return (dataclasses.replace(primera, texto=primera.texto + " " + rarezas), *resto)
+
+    hecho = apo.aportable_de(recorte, ocr=ocr)
+    assert apo.verificar_aportable(hecho.pdf, recorte) == ()
+    assert "finca «?» ? con tabulador — 1.234,56 € ñandú" in _textos(hecho.pdf)[0]
 
 
 # --- los avisos ------------------------------------------------------------------
@@ -1141,11 +1434,13 @@ def test_R2_H04_lo_del_destinatario_va_APARTE_de_los_avisos_del_aportable():
 
 def test_R2_el_manifiesto_dice_que_el_aportable_es_IMAGEN_con_texto_OCR():
     """Lo que el aportable ES, dicho donde se archiva: la imagen de lo conservado y un texto
-    leído por OCR, que puede equivocarse. El texto fiel es el del íntegro."""
+    leído por OCR, que puede equivocarse. El texto fiel es el del íntegro. Versión 3 desde la
+    R3: el aportable ya no lo escribe el OCR, lo COMPONE el motor, y uno de la versión 2 no
+    se relee con las reglas de la 3."""
     m, _, _ = _manifiesto()
     assert "imagen" in m["aportable"]["forma"] and "OCR" in m["aportable"]["forma"]
     assert "OCR" in m["texto"] and "íntegro" in m["texto"]
-    assert m["version"] == 2
+    assert m["version"] == 3
 
 
 def test_el_manifiesto_documenta_los_documentos_con_su_huella():

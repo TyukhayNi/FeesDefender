@@ -15,13 +15,21 @@ vía y dejaba abierta la siguiente. La imagen cierra la frontera y no el ejemplo
 que ninguna página conservada dibuja no está en el aportable**, y el OCR solo ve esos
 píxeles.
 
+**Y el fichero lo COMPONE este motor** (R3): el OCR devuelve líneas —texto y caja— y
+nada más, y el aportable se escribe aquí, byte a byte, con una forma fija. Hasta la R3 el
+PDF lo escribía el OCR y la relectura lo admitía por una lista blanca, y un fichero ajeno
+tiene más sitios donde llevar algo que los que una lista enumera: revisiones anteriores,
+objetos de otra generación, datos auxiliares de una fuente (R3/H-01, H-02). La relectura
+ya no admite: **recompone** el fichero con la imagen del recorte y el texto que lleva, y
+exige los mismos bytes.
+
 Este módulo es puro: recibe bytes y devuelve bytes y datos. No sabe qué es un
 expediente ni toca la red o el disco, y el OCR le llega como un puerto (`ocr`); de dónde
 salen el certificado y los documentos enviados, y dónde se escribe, lo decide
 `core/expedicion_certificada.py`.
 
 Lo gobiernan mediciones del 2026-09-25 sobre tres certificados reales y los adjuntos
-de dos de ellos (plan `docs/superpowers/plans/2026-09-25-codicert-f3.md`, M-1 a M-12).
+de dos de ellos (plan `docs/superpowers/plans/2026-09-25-codicert-f3.md`, M-1 a M-15).
 Dos corrigen el spec: **el motor no compone las condiciones** —las trae el operador—,
 así que su texto se lee de los adjuntos que salieron (M-9); y el requerimiento **sí
 lleva importes** —la deuda reclamada—, así que el aviso de «sin cifras» saltaría
@@ -34,7 +42,6 @@ import difflib
 import hashlib
 import io
 import re
-import time
 import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -172,11 +179,16 @@ _GUIONES = str.maketrans({"–": "-", "—": "-", "‐": "-",
                           "‑": "-", "−": "-"})
 
 
-def _plano(texto: str) -> str:
-    """Ligaduras deshechas, guiones unificados, sin tildes y en minúsculas."""
+def _con_caja(texto: str) -> str:
+    """Ligaduras deshechas, guiones unificados y sin tildes, con sus mayúsculas."""
     t = sin_ligaduras(texto or "").translate(_GUIONES)
     t = unicodedata.normalize("NFKD", t)
-    return "".join(c for c in t if not unicodedata.combining(c)).lower()
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
+def _plano(texto: str) -> str:
+    """Ligaduras deshechas, guiones unificados, sin tildes y en minúsculas."""
+    return _con_caja(texto).lower()
 
 
 def normalizar_pagina(texto: str) -> str:
@@ -193,9 +205,10 @@ def normalizar_pagina(texto: str) -> str:
 #: El rótulo como FRASE: las dos palabras seguidas con el guion entre medias, con
 #: cualquier espacio o salto de línea alrededor (R1/H-02).
 _RE_ROTULO = re.compile(r"\bconfidencial\s*-\s*condiciones\b")
-#: El rótulo como TÍTULO: la misma frase, pero abriendo una línea (R2/H-03). Puede venir
-#: partida en varias —la extracción la parte—; lo que no puede es tener prosa delante.
-_RE_TITULO = re.compile(r"^[ \t]*confidencial\s*-\s*condiciones\b", re.M)
+#: El rótulo como TÍTULO (R2/H-03, R3/H-05): la frase abriendo una línea —puede venir
+#: partida en varias— y, en la línea donde acaba, NADA EN MINÚSCULA detrás.
+_RE_TITULO = re.compile(r"^[ \t]*confidencial\s*-\s*condiciones\b(?P<resto>[^\n]*)",
+                        re.M | re.I)
 
 
 def lleva_rotulo(texto: str) -> bool:
@@ -211,15 +224,20 @@ def lleva_rotulo(texto: str) -> bool:
 
 
 def abre_condiciones(texto: str) -> bool:
-    """¿Abre la página las condiciones, con el rótulo como TÍTULO? (R2/H-03)
+    """¿Abre la página las condiciones, con el rótulo como TÍTULO? (R2/H-03, R3/H-05)
 
     Desde la R1 bastaba la frase en cualquier sitio, y un requerimiento que CITARA el
     título («El anexo se titula “CONFIDENCIAL - CONDICIONES”») se retiraba entero como si
-    fuera condiciones. Un título abre una línea; una mención lleva prosa delante. La
-    mención no se retira en silencio: la ve la red (`lleva_rotulo`) en la segunda parada,
-    y para para que la mire una persona.
+    fuera condiciones. La R2 exigió que la frase abriera una línea, y una cita que la
+    extracción partiera justo delante del rótulo («El anexo se titula» / «CONFIDENCIAL -
+    CONDICIONES y se adjunta…») volvía a abrirlas (R3/H-05). Un título no lleva prosa
+    delante **ni detrás**: lo que le sigue en su línea no tiene minúsculas —«ECONÓMICAS
+    DE PAGO» sí vale, «y se adjunta» no—. Los dos rótulos reales van solos en su línea
+    (M-14). La mención no se retira en silencio: para (`paginas_de_condiciones`, y la
+    segunda parada de `recortar` en lo que no pasa por ahí).
     """
-    return bool(_RE_TITULO.search(_plano(texto)))
+    return any(not any(c.islower() for c in m.group("resto"))
+               for m in _RE_TITULO.finditer(_con_caja(texto)))
 
 
 @dataclass(frozen=True)
@@ -256,13 +274,23 @@ def paginas_de_condiciones(
     que no es de condiciones y queda dentro sale del aportable —se pierde prueba, que el
     íntegro conserva—; ninguna de condiciones puede quedar fuera de lo que se retira.
     El recorte avisa de esas páginas arrastradas.
+
+    **Y una página que menciona el rótulo sin que sea su título, ANTES de él, para**
+    (R3/H-05): es una cita o unas condiciones con otro formato, y ni se retira en silencio
+    ni se deja pasar. Lo que va detrás del título sale con él, mencione lo que mencione.
     """
     salida: list[PaginaCondiciones] = []
     for doc in documentos:
         textos = _textos_pdf(doc.contenido, que=doc.nombre)
-        inicio = next((n for n, t in enumerate(textos) if abre_condiciones(t)), None)
-        if inicio is None:
-            continue
+        inicio = next((n for n, t in enumerate(textos) if abre_condiciones(t)), len(textos))
+        for n in range(inicio):
+            if lleva_rotulo(textos[n]):
+                raise AportableError(
+                    f"la página {n + 1} de {doc.nombre!r} menciona el rótulo "
+                    f"«{LITERAL_CONDICIONES}» sin que sea su título —con prosa delante, o "
+                    "con texto en minúscula detrás en la misma línea—: puede ser una cita o "
+                    "unas condiciones con otro formato. Ni se retira en silencio ni se deja "
+                    "pasar: revísala. No se produce aportable.")
         salida += [PaginaCondiciones(documento=doc.nombre, pagina=n + 1, texto=textos[n])
                    for n in range(inicio, len(textos))]
     return tuple(salida)
@@ -284,9 +312,14 @@ MIN_CARACTERES = 40
 #: Resolución de la imagen (M-11, medido el 2026-09-25 sobre los reales): a 200 ppp las
 #: huellas del acta, en cuerpo pequeño, se leen a ojo, y el OCR lee lo mismo que a 150
 #: (similitud con el texto original, 0,61-0,95 contra 0,66-0,95). Pesa ~545 KB por
-#: página, contra ~362 a 150.
+#: página, contra ~362 a 150. **Tiene que dividir a 7.200** —200 y 72 lo hacen—: así cada
+#: píxel son centésimas de punto exactas en el aportable (`_cp`).
 PPP = 200
 CALIDAD_JPEG = 85
+
+#: Reducción de las miniaturas con que se casan páginas (M-13): 1/8 promedia el ruido del
+#: JPEG y deja lo que distingue una página de otra, dónde hay tinta.
+ESCALA_MINIATURA = 8
 
 
 @dataclass(frozen=True)
@@ -301,24 +334,39 @@ class PaginaRetirada:
 
 
 @dataclass(frozen=True)
+class ImagenDePagina:
+    """La imagen de una página que se conserva: su JPEG y su tamaño en píxeles."""
+
+    jpeg: bytes = field(repr=False)
+    ancho: int
+    alto: int
+
+
+@dataclass(frozen=True)
 class Recorte:
     """Qué se conserva y qué se retira, con la IMAGEN de lo conservado (R2/H-01).
 
-    Aún no es el aportable: le falta la capa de texto, que pone `aportable_de`. La imagen
-    es determinista —mismos bytes en cada corrida— y es lo que compara quien vuelve a
-    lanzar; el OCR no lo es.
+    Aún no es el aportable: le falta la capa de texto, que lee el OCR y compone
+    `aportable_de`. Las imágenes son deterministas —mismos bytes en cada corrida— y son
+    las que la relectura usa para recomponer el aportable (R3).
     """
 
-    imagen: bytes
+    imagenes: tuple[ImagenDePagina, ...]
     paginas_totales: int
     paginas_acta: tuple[int, ...]
     paginas_reproduccion: tuple[int, ...]
     retiradas: tuple[PaginaRetirada, ...]
     conservadas: tuple[int, ...]
     avisos: tuple[str, ...] = ()
-    #: El texto normalizado de CADA página del íntegro (índice = página - 1): lo que la
-    #: relectura compara con lo que el OCR lee en la imagen.
+    #: El texto normalizado de CADA página del íntegro (índice = página - 1): con él se
+    #: compara lo que el OCR lee en cada imagen.
     normal: tuple[str, ...] = field(default=(), repr=False)
+    #: La miniatura de CADA página del íntegro, dibujada aparte de las imágenes
+    #: (`_miniaturas`): contra ellas se casa lo que el aportable dibuja (R3/H-04).
+    miniaturas: tuple = field(default=(), repr=False, compare=False)
+    #: Las páginas de condiciones con que se recortó: sus frases son las que se buscan en
+    #: lo que el OCR lee (R3, el escaneo).
+    condiciones: tuple[PaginaCondiciones, ...] = field(default=(), repr=False)
 
 
 def _ratio(a: str, b: str) -> float:
@@ -405,65 +453,61 @@ def _tipos_de_anotacion(pagina) -> set[str]:
     return {str(a.get_object().get("/Subtype")) for a in anotaciones.get_object()}
 
 
-#: Fecha fija de la imagen: sin ella, dos corridas darían bytes distintos (M-8).
-_FECHA_FIJA = time.gmtime(0)
-
-
-def _rasterizar(certificado: bytes, paginas: Sequence[int]) -> bytes:
-    """La IMAGEN de esas páginas (base 1), en su orden: un PDF con una imagen por página y
-    nada más (R2/H-01).
-
-    Se dibuja **sin anotaciones**: el widget de la firma pintaría un sello sin firma
-    detrás (M-8). Una página cada vez —un burofax de 200 no cabe entero en memoria a esta
-    resolución— y con una estructura mínima escrita aquí: la página, su contenido
-    `q … cm /Im0 Do Q` y la imagen en JPEG. Es la que la relectura sabe reconocer, y es
-    determinista: los mismos bytes en cada corrida.
-    """
+def _documento_pdfium(datos: bytes, *, que: str):
+    """El PDF abierto con PDFium. Uno que no se puede abrir es `AportableError`."""
     import pypdfium2 as pdfium
-    from pypdf import PdfWriter
-    from pypdf.generic import (DecodedStreamObject, DictionaryObject, NameObject,
-                               NumberObject)
 
     try:
-        documento = pdfium.PdfDocument(certificado)
+        return pdfium.PdfDocument(datos)
     except Exception as exc:  # noqa: BLE001 — pdfium lanza su propio error ante un PDF roto
         raise AportableError(
-            f"el certificado no se puede dibujar ({type(exc).__name__}: {exc})") from exc
-    escritor = PdfWriter()
+            f"{que} no se puede dibujar ({type(exc).__name__}: {exc})") from exc
+
+
+def _dibujar(hoja, *, escala: float):
+    """Una página dibujada por PDFium, en RGB y **sin anotaciones ni formularios**: el
+    widget de la firma pintaría un sello sin firma detrás (M-8)."""
+    return hoja.render(scale=escala, draw_annots=False,
+                       may_draw_forms=False).to_pil().convert("RGB")
+
+
+def _miniatura(imagen):
+    return imagen.convert("RGB").reduce(ESCALA_MINIATURA)
+
+
+def _rasterizar(certificado: bytes, paginas: Sequence[int]) -> tuple[ImagenDePagina, ...]:
+    """La IMAGEN de esas páginas (base 1), en su orden: un JPEG por página (R2/H-01).
+
+    Una página cada vez —un burofax de 200 no cabe entero en memoria a esta resolución—.
+    Es determinista: los mismos bytes en cada corrida (M-8).
+    """
+    documento = _documento_pdfium(certificado, que="el certificado")
+    imagenes = []
     try:
         for numero in paginas:
-            imagen = documento[numero - 1].render(
-                scale=PPP / 72, draw_annots=False, may_draw_forms=False).to_pil()
+            imagen = _dibujar(documento[numero - 1], escala=PPP / 72)
             jpeg = io.BytesIO()
-            imagen.convert("RGB").save(jpeg, format="JPEG", quality=CALIDAD_JPEG)
-            ancho, alto = imagen.size
-            flujo = DecodedStreamObject()
-            flujo.set_data(jpeg.getvalue())
-            flujo.update({
-                NameObject("/Type"): NameObject("/XObject"),
-                NameObject("/Subtype"): NameObject("/Image"),
-                NameObject("/Width"): NumberObject(ancho),
-                NameObject("/Height"): NumberObject(alto),
-                NameObject("/ColorSpace"): NameObject("/DeviceRGB"),
-                NameObject("/BitsPerComponent"): NumberObject(8),
-                NameObject("/Filter"): NameObject("/DCTDecode"),
-            })
-            puntos = (ancho * 72 / PPP, alto * 72 / PPP)
-            pagina = escritor.add_blank_page(width=puntos[0], height=puntos[1])
-            pagina[NameObject("/Resources")] = DictionaryObject({
-                NameObject("/XObject"): DictionaryObject(
-                    {NameObject("/Im0"): escritor._add_object(flujo)})})
-            contenido = DecodedStreamObject()
-            contenido.set_data(f"q {puntos[0]:.4f} 0 0 {puntos[1]:.4f} 0 0 cm /Im0 Do Q"
-                               .encode("ascii"))
-            pagina[NameObject("/Contents")] = escritor._add_object(contenido)
+            imagen.save(jpeg, format="JPEG", quality=CALIDAD_JPEG)
+            imagenes.append(ImagenDePagina(jpeg=jpeg.getvalue(), ancho=imagen.width,
+                                           alto=imagen.height))
     finally:
         documento.close()
-    escritor.add_metadata({"/Producer": "FeesDefender",
-                           "/CreationDate": time.strftime("D:%Y%m%d%H%M%SZ", _FECHA_FIJA)})
-    buffer = io.BytesIO()
-    escritor.write(buffer)
-    return buffer.getvalue()
+    return tuple(imagenes)
+
+
+def _miniaturas(certificado: bytes) -> tuple:
+    """La miniatura de CADA página del íntegro, dibujada aparte de `_rasterizar` (R3/H-04).
+
+    Es el instrumento independiente de la imagen: si `_rasterizar` pusiera una página en
+    el sitio de otra, la relectura lo ve porque casa lo que el aportable DIBUJA contra
+    estas, que no salen de él.
+    """
+    documento = _documento_pdfium(certificado, que="el certificado")
+    try:
+        return tuple(_miniatura(_dibujar(documento[n], escala=PPP / 72))
+                     for n in range(len(documento)))
+    finally:
+        documento.close()
 
 
 def recortar(certificado: bytes,
@@ -479,7 +523,7 @@ def recortar(certificado: bytes,
        independiente: el texto casado puede fallar de formas que el rótulo no, y al revés.
 
     La tercera —la relectura del resultado— la hace `aportable_de` sobre el aportable
-    ya con su capa de texto (`verificar_aportable`).
+    ya compuesto (`verificar_aportable`).
 
     Se retira TODA página de la reproducción que sea copia de una de condiciones, no
     solo la primera: dos copias son dos páginas de condiciones.
@@ -559,353 +603,423 @@ def recortar(certificado: bytes,
                  f"{', '.join(sorted(tipos))}, que el aportable no pinta: comprueba en el "
                  "íntegro que no pintaban nada que haga falta aportar."
                  for n, tipos in anotaciones.items() if tipos])
-    return Recorte(imagen=_rasterizar(certificado, conservadas), paginas_totales=total,
+    return Recorte(imagenes=_rasterizar(certificado, conservadas), paginas_totales=total,
                    paginas_acta=tuple(acta), paginas_reproduccion=reproduccion,
                    retiradas=tuple(retiradas[n] for n in sorted(retiradas)),
-                   conservadas=conservadas, avisos=tuple(avisos), normal=todas)
+                   conservadas=conservadas, avisos=tuple(avisos), normal=todas,
+                   miniaturas=_miniaturas(certificado), condiciones=tuple(condiciones))
 
 
-# --- el aportable: la imagen con su capa de texto, y su relectura -----------------
+# --- el aportable: lo compone este motor ----------------------------------------
 
-def aportable_de(recorte: Recorte, *, ocr: Callable[[bytes], bytes]) -> bytes:
-    """El aportable: la imagen del recorte con su capa de texto, y RELEÍDO.
+@dataclass(frozen=True)
+class Linea:
+    """Un renglón leído por el OCR: su texto y su caja, en píxeles de la imagen, con el
+    origen arriba a la izquierda —como los da Tesseract—.
 
-    `ocr` recibe la imagen y devuelve el mismo PDF con una capa de texto invisible. Solo
-    ve esos píxeles —no el íntegro—, así que su texto no puede salir de otra parte.
-    **Sin capa de texto no hay aportable** (lo que Nikolai pidió es que se pueda leer): si
-    el OCR falla, para. Y lo que vuelve se relee entero (`verificar_aportable`), porque
-    es una herramienta externa y lo que devuelva no se da por bueno.
+    Es TODO lo que el OCR entrega (R3/H-04, «acotar su salida»): el aportable lo compone el
+    motor con esto, y nada del OCR —su PDF, su estructura, sus metadatos— llega a él.
     """
-    try:
-        pdf = ocr(recorte.imagen)
-    except Exception as exc:  # noqa: BLE001 — el OCR es externo: falle como falle, se para
-        raise AportableError(
-            f"no se pudo pasar el OCR sobre la imagen ({type(exc).__name__}: {exc}): sin su "
-            "capa de texto no se entrega el aportable.") from exc
-    verificar_aportable(pdf, recorte)
-    return pdf
+
+    texto: str
+    x0: int
+    y0: int
+    x1: int
+    y1: int
 
 
-#: El PERFIL del aportable (R2/H-01): lo único que puede llevar dentro. Es una lista
-#: BLANCA —lo que no está aquí, para—, porque la negra de la R1 («las huellas de lo que
-#: solo usaban las retiradas») dejaba pasar todo lo que no estuviera en ella.
-_CATALOGO = frozenset({"/Type", "/Pages", "/Metadata", "/Lang"})
-_NODO_PAGINAS = frozenset({"/Type", "/Kids", "/Count", "/Parent"})
-_PAGINA = frozenset({"/Type", "/Parent", "/MediaBox", "/CropBox", "/Rotate", "/Contents",
-                     "/Resources"})
-_RECURSOS_PAGINA = frozenset({"/ProcSet", "/XObject"})
-_OPERADORES_PAGINA = frozenset({b"q", b"Q", b"cm", b"Do"})
-#: La capa de texto: un formulario que solo ESCRIBE. Medido sobre OCRmyPDF 17.11: BT ET
-#: J Q Td Tf Tj Tr Tz cm q w. Se admiten además los de texto y color de otras versiones
-#: del OCR, y ninguno que pinte, dibuje otro objeto o meta una imagen.
-_FORMULARIO_TEXTO = frozenset({"/Type", "/Subtype", "/BBox", "/FormType", "/Matrix",
-                               "/Resources", "/Filter", "/DecodeParms", "/Length"})
-_RECURSOS_TEXTO = frozenset({"/ProcSet", "/Font"})
-_OPERADORES_TEXTO = frozenset({
-    b"BT", b"ET", b"Tf", b"Tr", b"Tz", b"Tm", b"Td", b"TD", b"T*", b"TL", b"Tc", b"Tw",
-    b"Ts", b"Tj", b"TJ", b"'", b'"', b"q", b"Q", b"cm", b"w", b"J", b"j", b"M", b"d",
-    b"g", b"G", b"rg", b"RG", b"k", b"K", b"BMC", b"BDC", b"EMC"})
-_MUESTRAN_TEXTO = frozenset({b"Tj", b"TJ", b"'", b'"'})
-#: Modo de render 3: el texto no se pinta. Es el de la capa de un OCR.
-_INVISIBLE = 3
+@dataclass(frozen=True)
+class Aportable:
+    """El aportable compuesto y releído, con los avisos de lo que el OCR lee en él."""
+
+    pdf: bytes = field(repr=False)
+    avisos: tuple[str, ...] = ()
 
 
-def _fuera_de_perfil(que: str) -> AportableError:
-    return AportableError(f"el aportable lleva {que}: no es de su perfil. No se entrega.")
+def _cp(pixeles: int) -> int:
+    """Píxeles de la imagen a centésimas de punto: exactas, porque `PPP` divide a 7.200."""
+    centesimas, resto = divmod(round(pixeles) * 7200, PPP)
+    if resto:
+        raise ValueError(f"{PPP} ppp no da centésimas de punto exactas: PPP tiene que "
+                         "dividir a 7.200")
+    return centesimas
 
 
-def _admitir(valor, admitidos: set[int]) -> None:
-    """Todo lo que cuelga de `valor`, admitido. Solo para lo que YA pasó su comprobación."""
-    from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject
-
-    pendientes = [valor]
-    while pendientes:
-        v = pendientes.pop()
-        if isinstance(v, IndirectObject):
-            if v.idnum in admitidos:
-                continue
-            admitidos.add(v.idnum)
-            v = v.get_object()
-        if isinstance(v, DictionaryObject):
-            pendientes += [v.raw_get(k) for k in v]
-        elif isinstance(v, ArrayObject):
-            pendientes += list(v)
+def _num(centesimas: int) -> str:
+    """Un número del aportable: centésimas de punto con sus dos decimales, sin coma flotante."""
+    return f"{centesimas // 100}.{centesimas % 100:02d}"
 
 
-def _referencia(contenedor, clave: str, admitidos: set[int]) -> None:
-    """Admite el objeto al que apunta `contenedor[clave]`, si es indirecto, sin bajar."""
-    from pypdf.generic import IndirectObject
+def _texto_canonico(texto: str) -> str:
+    """Lo que se escribe de un renglón: ligaduras y formas compatibles deshechas (NFKC),
+    controles y separadores raros como espacios, los espacios juntos en uno, y lo que no
+    cabe en WinAnsi como «?» —el castellano cabe entero—.
 
-    crudo = contenedor.raw_get(clave)
-    if isinstance(crudo, IndirectObject):
-        admitidos.add(crudo.idnum)
-
-
-def _operaciones(flujo, lector, *, que: str):
-    from pypdf.generic import ContentStream
-
-    try:
-        if isinstance(flujo, ContentStream):
-            return flujo.operations
-        return ContentStream(flujo, lector).operations
-    except Exception as exc:  # noqa: BLE001 — un contenido que pypdf no sabe leer
-        raise _fuera_de_perfil(f"un contenido ilegible en {que} ({exc})") from exc
+    Es IDEMPOTENTE —aplicado a su salida la deja igual—, y eso es lo que permite a la
+    relectura recomponer el fichero con el texto que lee de él.
+    """
+    t = unicodedata.normalize("NFKC", texto or "")
+    t = "".join(" " if unicodedata.category(c)[0] in "CZ" else c for c in t)
+    return " ".join(t.split()).encode("cp1252", errors="replace").decode("cp1252")
 
 
-def _huella_imagen(imagen) -> tuple[dict, bytes]:
-    """Lo que identifica una imagen: su diccionario —valores resueltos, sin la longitud:
-    los números de objeto cambian de un fichero a otro— y sus bytes tal cual."""
-    return ({str(k): str(imagen[k]) for k in imagen if k != "/Length"},
-            bytes(getattr(imagen, "_data", b"")))
+@dataclass(frozen=True)
+class _Renglon:
+    """Un renglón tal como se escribe: su texto canónico y, en centésimas de punto, dónde
+    empieza, su línea base y su cuerpo."""
+
+    texto: str
+    x: int
+    y: int
+    cuerpo: int
 
 
-def _capa_de_texto(ref, lector, *, k: int, admitidos: set[int]) -> None:
-    """Un formulario de la capa de texto: solo escribe texto, invisible, con fuentes que
-    no dibujan (no Type3). Lo que pase, se admite con todo lo que cuelga de sus fuentes."""
-    que = f"la capa de texto de la página {k}"
-    forma = ref.get_object()
-    ajenas = set(forma.keys()) - _FORMULARIO_TEXTO
-    if ajenas:
-        raise _fuera_de_perfil(f"«{min(ajenas)}» en {que}")
-    recursos = forma.get("/Resources")
-    recursos = recursos.get_object() if recursos is not None else {}
-    ajenas = set(recursos.keys()) - _RECURSOS_TEXTO
-    if ajenas:
-        raise _fuera_de_perfil(f"el recurso «{min(ajenas)}» en {que}")
-    fuentes = recursos.get("/Font")
-    fuentes = fuentes.get_object() if fuentes is not None else {}
-    for nombre in fuentes:
-        fuente = fuentes[nombre].get_object()
-        familia = [fuente] + [d.get_object() for d in fuente.get("/DescendantFonts") or []]
-        if any(f.get("/Subtype") == "/Type3" or "/CharProcs" in f or "/Resources" in f
-               for f in familia):
-            raise _fuera_de_perfil(f"una fuente Type3 —que dibuja sus glifos— en {que}")
-    modo, pila = 0, []
-    for operandos, operador in _operaciones(forma, lector, que=que):
-        if operador not in _OPERADORES_TEXTO:
-            raise _fuera_de_perfil(
-                f"el operador «{operador.decode('latin-1', 'replace')}» en {que}")
-        if operador == b"q":
-            pila.append(modo)
-        elif operador == b"Q":
-            modo = pila.pop() if pila else modo
-        elif operador == b"Tr" and operandos:
-            modo = int(operandos[0])
-        elif operador in _MUESTRAN_TEXTO and modo != _INVISIBLE:
+def _renglones(lineas: Sequence[Linea], imagen: ImagenDePagina, *,
+               k: int) -> tuple[_Renglon, ...]:
+    """Las líneas del OCR como renglones: cada una en su sitio, a la altura de su caja. Una
+    que no cae en la imagen para; una que se queda sin texto no se escribe."""
+    salida = []
+    for linea in lineas:
+        if not (0 <= linea.x0 < linea.x1 <= imagen.ancho
+                and 0 <= linea.y0 < linea.y1 <= imagen.alto):
             raise AportableError(
-                f"{que} se VE (modo de render {modo}): la del OCR es invisible, y una que "
-                "se ve pintaría texto encima de la imagen. No se entrega.")
-    admitidos.add(ref.idnum)
-    _admitir(forma.raw_get("/Resources") if "/Resources" in forma else None, admitidos)
-    for clave in forma:
-        if clave != "/Resources":
-            _admitir(forma.raw_get(clave), admitidos)
+                f"el OCR devolvió una línea fuera de la imagen de la página {k} del "
+                f"aportable ({linea.x0}, {linea.y0}, {linea.x1}, {linea.y1} en "
+                f"{imagen.ancho}×{imagen.alto}): no se compone con lo que no cae en ella.")
+        texto = _texto_canonico(linea.texto)
+        if texto:
+            salida.append(_Renglon(texto, x=_cp(linea.x0), y=_cp(imagen.alto - linea.y1),
+                                   cuerpo=_cp(linea.y1 - linea.y0)))
+    return tuple(salida)
 
 
-def _recorrer_pagina(pagina, lector, *, k: int, conservada: int, esperada, caja,
-                     admitidos: set[int]) -> None:
-    """Una página del aportable: su imagen es la del raster, su contenido solo la dibuja
-    (y a la capa de texto), y no lleva nada más."""
-    from pypdf.generic import IndirectObject
-
-    ajenas = set(pagina.keys()) - _PAGINA
-    if ajenas:
-        raise _fuera_de_perfil(f"«{min(ajenas)}» en la página {k}")
-    giro = int(pagina.get("/Rotate", 0) or 0)
-    if giro % 360:
-        raise AportableError(
-            f"la página {k} del aportable está girada (/Rotate {giro}): la imagen ya sale "
-            "derecha del íntegro. No se entrega.")
-    for nombre in ("/MediaBox", "/CropBox"):
-        if nombre in pagina and any(abs(float(a) - float(b)) > 0.01
-                                    for a, b in zip(pagina[nombre], caja)):
-            raise _fuera_de_perfil(f"una caja de página distinta de la de su imagen "
-                                   f"({nombre}) en la página {k}")
-    if "/Resources" not in pagina:
-        raise _fuera_de_perfil(f"una página sin recursos propios (la {k})")
-    recursos = pagina["/Resources"].get_object()
-    ajenas = set(recursos.keys()) - _RECURSOS_PAGINA
-    if ajenas:
-        raise _fuera_de_perfil(f"el recurso «{min(ajenas)}» en la página {k}")
-    xobjetos = recursos.get("/XObject")
-    xobjetos = xobjetos.get_object() if xobjetos is not None else {}
-    imagenes, formularios = [], []
-    for nombre in xobjetos:
-        ref = xobjetos.raw_get(nombre)
-        if not isinstance(ref, IndirectObject):
-            raise _fuera_de_perfil(f"un objeto directo como «{nombre}» en la página {k}")
-        subtipo = ref.get_object().get("/Subtype")
-        if subtipo == "/Image":
-            imagenes.append(ref)
-        elif subtipo == "/Form":
-            formularios.append(ref)
-        else:
-            raise _fuera_de_perfil(f"un objeto {subtipo} como «{nombre}» en la página {k}")
-    if len(imagenes) != 1:
-        raise _fuera_de_perfil(f"{len(imagenes)} imágenes en la página {k}")
-    if _huella_imagen(imagenes[0].get_object()) != esperada:
-        raise AportableError(
-            f"la imagen de la página {k} del aportable no es la de la página {conservada} "
-            "del certificado, que es la que tocaba conservar. No se entrega.")
-    _admitir(imagenes[0], admitidos)
-    for ref in formularios:
-        _capa_de_texto(ref, lector, k=k, admitidos=admitidos)
-    nombres = set(xobjetos.keys())
-    for operandos, operador in _operaciones(pagina.get_contents(), lector,
-                                            que=f"la página {k}"):
-        if operador not in _OPERADORES_PAGINA:
-            raise _fuera_de_perfil(f"el operador «{operador.decode('latin-1', 'replace')}» "
-                                   f"en el contenido de la página {k}")
-        if operador == b"Do" and (not operandos or str(operandos[0]) not in nombres):
-            raise _fuera_de_perfil(f"un «Do» a algo que no está en la página {k}")
-    for clave in ("/Resources", "/MediaBox", "/CropBox", "/Rotate", "/Type"):
-        if clave in pagina:
-            _referencia(pagina, clave, admitidos)
-    if "/XObject" in recursos:
-        _referencia(recursos, "/XObject", admitidos)
-    if "/ProcSet" in recursos:
-        _admitir(recursos.raw_get("/ProcSet"), admitidos)
-    _admitir(pagina.raw_get("/Contents"), admitidos)
+def _contenido(imagen: ImagenDePagina, renglones: Sequence[_Renglon]) -> bytes:
+    """El contenido de una página: la imagen a página completa y, encima, un renglón de
+    texto INVISIBLE —modo de render 3— por línea leída, en Helvetica, que es una de las
+    catorce estándar y no lleva programa de fuente."""
+    ancho, alto = _num(_cp(imagen.ancho)), _num(_cp(imagen.alto))
+    partes = [f"q {ancho} 0 0 {alto} 0 0 cm /Im0 Do Q\nBT 3 Tr\n".encode("ascii")]
+    partes += [f"/F1 {_num(r.cuerpo)} Tf 1 0 0 1 {_num(r.x)} {_num(r.y)} Tm "
+               f"<{r.texto.encode('cp1252').hex()}> Tj\n".encode("ascii") for r in renglones]
+    partes.append(b"ET\n")
+    return b"".join(partes)
 
 
-def _recorrer_nodos(ref, admitidos: set[int]) -> None:
-    """El árbol de páginas: sus nodos intermedios no llevan nada heredable (recursos,
-    cajas, giro), que colaría en las páginas lo que ellas no dicen."""
-    from pypdf.generic import IndirectObject
-
-    pendientes = [ref]
-    while pendientes:
-        r = pendientes.pop()
-        if isinstance(r, IndirectObject):
-            if r.idnum in admitidos:
-                continue
-            admitidos.add(r.idnum)
-        nodo = r.get_object()
-        if nodo.get("/Type") != "/Pages":
-            continue
-        ajenas = set(nodo.keys()) - _NODO_PAGINAS
-        if ajenas:
-            raise _fuera_de_perfil(f"«{min(ajenas)}» en un nodo del árbol de páginas")
-        _referencia(nodo, "/Kids", admitidos)
-        pendientes += list(nodo["/Kids"])
+_CATALOGO = b"<< /Type /Catalog /Pages 2 0 R >>"
+_FUENTE = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
 
 
-def verificar_aportable(pdf: bytes, recorte: Recorte) -> None:
-    """La tercera parada: se relee el aportable ENTERO —el fichero, no sus páginas
-    visibles— contra su perfil y contra la imagen del recorte (R2/H-01).
+def _flujo(diccionario: str, datos: bytes) -> bytes:
+    return (f"<< {diccionario}/Length {len(datos)} >>\nstream\n".encode("ascii") + datos
+            + b"\nendstream")
 
-    1. Tantas páginas como las conservadas.
-    2. **El perfil**: cada página lleva su imagen —byte a byte la del raster, que el OCR
-       no toca— y, como mucho, una capa de texto invisible; el catálogo, el árbol y los
-       metadatos, lo mínimo. Y **ningún objeto del fichero puede quedar suelto**: todo
-       tiene que colgar de algo admitido. La relectura de la R1 buscaba huellas de lo
-       prohibido y aceptaba lo que no conocía; un stream reescrito con otros bytes la
-       pasaba (R2/H-01).
-    3. **Lo que el OCR lee**: ni el rótulo en ninguna página, ni una página que se parezca
-       más a una retirada —o a su vecina— que a la que tocaba. Es el instrumento
-       independiente del raster: si la imagen de otra página acabara en su sitio, el texto
-       de la imagen lo diría.
+
+def _componer(imagenes: Sequence[ImagenDePagina],
+              renglones: Sequence[Sequence[_Renglon]]) -> bytes:
+    """El aportable, byte a byte: catálogo, árbol de páginas, la fuente, y por cada página
+    su diccionario, su contenido (`_contenido`) y su imagen. Nada más: ni metadatos, ni
+    revisiones, ni objetos que no se usen, ni compresión que dependa de la versión de una
+    biblioteca. La misma entrada da los mismos bytes.
+
+    Un renglón que cae fuera de su página, o cuyo texto no es canónico, para: el motor no
+    lo escribe así, y la relectura compone con lo que lee —recomponer un texto raro daría
+    los mismos bytes raros—.
     """
+    objetos: list[bytes] = [_CATALOGO, b"", _FUENTE]
+    hojas: list[int] = []
+    for k, (imagen, suyos) in enumerate(zip(imagenes, renglones, strict=True), 1):
+        ancho, alto = _cp(imagen.ancho), _cp(imagen.alto)
+        for r in suyos:
+            if not (0 <= r.x < ancho and 0 <= r.y < alto and r.cuerpo > 0
+                    and r.y + r.cuerpo <= alto):
+                raise AportableError(
+                    f"el aportable lleva una línea de texto fuera de la página {k}: no la "
+                    "compuso este motor. No se entrega.")
+            if not r.texto or _texto_canonico(r.texto) != r.texto:
+                raise AportableError(
+                    f"el aportable lleva en la página {k} un texto que no compuso este motor "
+                    f"({r.texto[:40]!r}): no es la forma en que escribe lo que el OCR lee. "
+                    "No se entrega.")
+        numero = len(objetos) + 1
+        hojas.append(numero)
+        objetos.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {_num(ancho)} {_num(alto)}] "
+            f"/Resources << /XObject << /Im0 {numero + 2} 0 R >> /Font << /F1 3 0 R >> >> "
+            f"/Contents {numero + 1} 0 R >>".encode("ascii"))
+        objetos.append(_flujo("", _contenido(imagen, suyos)))
+        objetos.append(_flujo(
+            f"/Type /XObject /Subtype /Image /Width {imagen.ancho} /Height {imagen.alto} "
+            "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode ", imagen.jpeg))
+    objetos[1] = (f"<< /Type /Pages /Kids [{' '.join(f'{n} 0 R' for n in hojas)}] "
+                  f"/Count {len(hojas)} >>").encode("ascii")
+    salida = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    posiciones = []
+    for numero, objeto in enumerate(objetos, 1):
+        posiciones.append(len(salida))
+        salida += f"{numero} 0 obj\n".encode("ascii") + objeto + b"\nendobj\n"
+    xref = len(salida)
+    salida += f"xref\n0 {len(objetos) + 1}\n0000000000 65535 f \n".encode("ascii")
+    salida += b"".join(f"{p:010d} 00000 n \n".encode("ascii") for p in posiciones)
+    salida += (f"trailer\n<< /Size {len(objetos) + 1} /Root 1 0 R >>\n"
+               f"startxref\n{xref}\n%%EOF\n").encode("ascii")
+    return bytes(salida)
+
+
+def aportable_de(recorte: Recorte, *, ocr: Callable[[bytes], Sequence[Linea]]) -> Aportable:
+    """El aportable: la imagen de cada página que se conserva con su texto, COMPUESTO aquí
+    y releído (R3).
+
+    `ocr` recibe el JPEG de UNA página y devuelve las líneas que lee (`Linea`). Solo ve
+    esos píxeles —no el íntegro—, y lo que devuelve no llega al aportable más que como
+    renglones que escribe este motor (R3/H-01, H-02). **Sin capa de texto no hay
+    aportable** (lo que Nikolai pidió es que se pueda leer): si el OCR falla, para. Y el
+    resultado se relee entero (`verificar_aportable`), con los avisos de lo que el OCR lee.
+    """
+    renglones = []
+    for k, (imagen, n) in enumerate(zip(recorte.imagenes, recorte.conservadas), 1):
+        try:
+            lineas = ocr(imagen.jpeg)
+        except Exception as exc:  # noqa: BLE001 — el OCR es externo: falle como falle, se para
+            raise AportableError(
+                f"no se pudo pasar el OCR sobre la imagen de la página {k} del aportable "
+                f"(la {n} del certificado) ({type(exc).__name__}: {exc}): sin su capa de "
+                "texto no se entrega el aportable.") from exc
+        if not isinstance(lineas, (list, tuple)) or not all(
+                isinstance(l, Linea) and isinstance(l.texto, str) for l in lineas):
+            raise AportableError(
+                f"el OCR no devolvió líneas para la página {k} del aportable (devolvió "
+                f"{type(lineas).__name__}): no se compone con lo que no se sabe qué es.")
+        renglones.append(_renglones(lineas, imagen, k=k))
+    pdf = _componer(recorte.imagenes, renglones)
+    return Aportable(pdf=pdf, avisos=verificar_aportable(pdf, recorte))
+
+
+# --- la relectura: se recompone, se dibuja y se lee ---------------------------------
+
+#: El contenido que escribe `_contenido`, y nada más: si una página lleva otra cosa, no la
+#: compuso este motor. Los números no se fijan aquí; los fija la recomposición.
+_RE_CONTENIDO = re.compile(
+    rb"q \d+\.\d\d 0 0 \d+\.\d\d 0 0 cm /Im0 Do Q\nBT 3 Tr\n"
+    rb"(?P<renglones>(?:/F1 \d+\.\d\d Tf 1 0 0 1 \d+\.\d\d \d+\.\d\d Tm "
+    rb"<(?:[0-9a-f]{2})+> Tj\n)*)ET\n")
+_RE_RENGLON = re.compile(
+    rb"/F1 (\d+)\.(\d\d) Tf 1 0 0 1 (\d+)\.(\d\d) (\d+)\.(\d\d) Tm <((?:[0-9a-f]{2})+)> Tj\n")
+
+
+def _centesimas(enteros: bytes, decimales: bytes) -> int:
+    return int(enteros) * 100 + int(decimales)
+
+
+def _leer_renglones(pdf: bytes, recorte: Recorte) -> tuple[tuple[_Renglon, ...], ...]:
+    """Los renglones de cada página del aportable, leídos de su contenido. Un contenido que
+    no tiene la forma que escribe `_contenido` para: no lo compuso este motor."""
+    from pypdf.generic import StreamObject
+
     lector = _lector(pdf, que="el aportable")
     if lector.is_encrypted:
-        raise _fuera_de_perfil("un cifrado")
+        raise AportableError("el aportable está cifrado, y este motor no cifra. No se entrega.")
     paginas = list(lector.pages)
     if len(paginas) != len(recorte.conservadas):
         raise AportableError(
             f"el aportable tiene {len(paginas)} páginas y debían ser "
             f"{len(recorte.conservadas)}. No se entrega.")
-    raster = _lector(recorte.imagen, que="la imagen del recorte")
-    esperadas, cajas = [], []
-    for pagina in raster.pages:
-        (imagen,) = [x.get_object() for x in pagina["/Resources"]["/XObject"].values()]
-        esperadas.append(_huella_imagen(imagen))
-        cajas.append([float(v) for v in pagina.mediabox])
-
-    admitidos: set[int] = set()
-    _referencia(lector.trailer, "/Root", admitidos)
-    catalogo = lector.trailer["/Root"]
-    ajenas = set(catalogo.keys()) - _CATALOGO
-    if ajenas:
-        raise _fuera_de_perfil(f"«{min(ajenas)}» en su catálogo")
-    if "/Metadata" in catalogo:
-        if lleva_rotulo(catalogo["/Metadata"].get_data().decode("utf-8", "replace")):
-            raise AportableError(
-                "los metadatos del aportable llevan el rótulo de las condiciones. No se "
-                "entrega.")
-        _admitir(catalogo.raw_get("/Metadata"), admitidos)
-    if "/Info" in lector.trailer:
-        info = lector.trailer["/Info"].get_object()
-        if any(lleva_rotulo(str(v)) for v in info.values()):
-            raise AportableError(
-                "la información del aportable lleva el rótulo de las condiciones. No se "
-                "entrega.")
-        _admitir(lector.trailer.raw_get("/Info"), admitidos)
-    _recorrer_nodos(catalogo.raw_get("/Pages"), admitidos)
-    for k, (pagina, conservada) in enumerate(zip(paginas, recorte.conservadas), 1):
-        _recorrer_pagina(pagina, lector, k=k, conservada=conservada,
-                         esperada=esperadas[k - 1], caja=cajas[k - 1], admitidos=admitidos)
-    _sin_sueltos(lector, admitidos)
-    _lo_que_lee_el_ocr(paginas, recorte)
-
-
-def _sin_sueltos(lector, admitidos: set[int]) -> None:
-    """Ningún objeto del fichero fuera de lo admitido, cuelgue o no del árbol."""
-    from pypdf.generic import DictionaryObject, StreamObject
-
-    for num in range(1, int(lector.trailer["/Size"])):
+    salida = []
+    for k, pagina in enumerate(paginas, 1):
+        forma = AportableError(
+            f"la página {k} del aportable no tiene la forma que compone este motor: su "
+            "contenido no es solo la imagen y un renglón invisible por línea leída. No se "
+            "entrega.")
         try:
-            objeto = lector.get_object(num)
-        except Exception:  # noqa: BLE001 — entradas libres del xref
-            continue
-        if objeto is None or num in admitidos:
-            continue
-        if isinstance(objeto, StreamObject) and objeto.get("/Type") in ("/XRef", "/ObjStm"):
-            continue
-        if isinstance(objeto, DictionaryObject):
-            tipo = f"{objeto.get('/Type', '')} {objeto.get('/Subtype', '')}".strip()
-            # Sin tipo, sus claves: `/Linearized` o `/Length` dicen más que «sin tipo».
-            tipo = tipo or "sin tipo; claves " + " ".join(sorted(objeto.keys())[:5])
-        else:
-            tipo = type(objeto).__name__
-        raise _fuera_de_perfil(
-            f"el objeto {num} ({tipo}), que no cuelga de nada que el aportable admita")
+            flujo = pagina["/Contents"].get_object()
+            datos = flujo.get_data() if isinstance(flujo, StreamObject) else None
+        except Exception:  # noqa: BLE001 — un contenido que pypdf no sabe leer
+            datos = None
+        coincide = _RE_CONTENIDO.fullmatch(datos) if datos is not None else None
+        if coincide is None:
+            raise forma
+        suyos = []
+        for r in _RE_RENGLON.finditer(coincide.group("renglones")):
+            try:
+                texto = bytes.fromhex(r[7].decode("ascii")).decode("cp1252")
+            except (UnicodeDecodeError, ValueError):
+                raise forma from None
+            suyos.append(_Renglon(texto, x=_centesimas(r[3], r[4]),
+                                  y=_centesimas(r[5], r[6]), cuerpo=_centesimas(r[1], r[2])))
+        salida.append(tuple(suyos))
+    return tuple(salida)
 
 
-def _similitud(a: str, b: str) -> float:
-    return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+#: Diferencia máxima, en niveles de 0 a 255, entre la miniatura de lo que una página del
+#: aportable DIBUJA y la de su imagen (M-15): 0 en los sintéticos y en los dos reales; una
+#: página que no dibuja su imagen, 85 como poco.
+UMBRAL_DIBUJO = 8
+
+#: Distancia máxima de lo que dibuja una página a la miniatura de la que se conserva
+#: (M-15): 0,52 como mucho en los reales, 0,15 en los sintéticos. No separa por sí sola —en
+#: un sintético con una hoja casi en blanco, la más cercana de las DEMÁS está a 1,31—: lo
+#: que separa es que ninguna otra esté más cerca. Esto es el techo de cordura.
+UMBRAL_MINIATURA = 2.0
+
+#: Similitud mínima entre lo que el OCR lee en una página y su texto original (M-13): en
+#: los reales, 0,56 como poco con la propia y 0,31 como mucho con otra. No distingue
+#: páginas —eso lo hace la imagen—: dice que el texto es de ESA página, y no una marca o
+#: nada.
+UMBRAL_OCR = 0.30
 
 
-def _lo_que_lee_el_ocr(paginas, recorte: Recorte) -> None:
-    """La capa de texto, página a página, contra el texto ORIGINAL del íntegro.
+#: Para dibujar una página del aportable a su tamaño EXACTO (M-15). pypdfium2 calcula el
+#: tamaño con `ceil(puntos × escala)`, y PDFium da los puntos en float32: 421,2 pt salen
+#: 421,20001220703125, un error relativo de ~3·10⁻⁸ que convertía una imagen de 1.170 px
+#: en una de 1.171, redibujada reescalada. El margen tiene que ser mayor que ese error y
+#: menor que un píxel: 10⁻⁵ lo es para cualquier página de menos de 100.000 px. El dibujo
+#: no cambia: PDFium ajusta la página al tamaño entero que se le pide.
+_CASI_UNO = 1 - 1e-5
 
-    Medido sobre los reales (M-12): el texto que el OCR lee en cada página se parece a su
-    original 0,54-0,95, y a cualquier otra 0,29 como mucho; y lee el rótulo en las dos de
-    condiciones y en ninguna más. No hay umbral que calibrar: basta con que la suya gane.
+
+def _distancia(a, b) -> float:
+    """Diferencia media por canal entre dos imágenes del mismo tamaño (0 = iguales)."""
+    from PIL import ImageChops, ImageStat
+
+    return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3
+
+
+def _diferencia(a, b) -> int:
+    """La mayor diferencia de un canal en un píxel, entre dos imágenes del mismo tamaño."""
+    from PIL import ImageChops
+
+    return max(alto for _, alto in ImageChops.difference(a, b).getextrema())
+
+
+def verificar_aportable(pdf: bytes, recorte: Recorte) -> tuple[str, ...]:
+    """La tercera parada: se relee el aportable, y lo que se relee es el FICHERO (R3/H-01).
+
+    1. **Se recompone.** Se leen sus renglones, se vuelve a componer con la imagen del
+       recorte y tiene que dar los mismos bytes. La R2 admitía el fichero de un tercero por
+       una lista blanca, y admitía revisiones anteriores, objetos de otra generación y datos
+       colgados de una fuente que la lista no enumeraba (R3/H-01, H-02): ahora no se
+       enumera nada, porque nada de más cabe en los mismos bytes.
+    2. **Ninguna página lleva el rótulo** en su texto.
+    3. **Cada página DIBUJA su imagen tal cual** (R3/H-03) —se dibuja el fichero, no se
+       miran sus recursos— y **lo que dibuja se parece más a la página que tocaba conservar
+       que a cualquier otra del íntegro** (R3/H-04: la R2 solo miraba las retiradas y las
+       vecinas, y por texto).
+    4. **Cada página con texto trae el suyo** (R3/H-04): sin él, o con uno que no se le
+       parece, no se entrega.
+
+    Lo que NO acredita, y se dice: que cada palabra del texto salga de los píxeles. Eso
+    descansa en que el OCR solo recibe esos píxeles; aquí se comprueba que el texto se
+    parece al de la página y no lleva el rótulo.
+
+    Devuelve los avisos de lo que el OCR lee en una imagen y su texto no dice: un escaneo
+    que muestra frases de las condiciones.
     """
-    retiradas = {r.pagina_certificado for r in recorte.retiradas}
-    for k, (pagina, n) in enumerate(zip(paginas, recorte.conservadas), 1):
-        leido = normalizar_pagina(pagina.extract_text() or "")
-        if lleva_rotulo(leido):
+    renglones = _leer_renglones(pdf, recorte)
+    if _componer(recorte.imagenes, renglones) != pdf:
+        raise AportableError(
+            "el aportable no es, byte a byte, el que compone este motor con la imagen del "
+            "recorte y el texto que lleva: tiene algo más, o algo distinto. No se entrega.")
+    leidos = {n: "\n".join(r.texto for r in suyos)
+              for n, suyos in zip(recorte.conservadas, renglones)}
+    for k, n in enumerate(recorte.conservadas, 1):
+        if lleva_rotulo(leidos[n]):
             raise AportableError(
                 f"la página {k} del aportable lleva el rótulo de las condiciones en su capa "
                 "de texto: el OCR lo lee en la imagen. No se entrega.")
-        propio = recorte.normal[n - 1]
-        if len(leido) < MIN_CARACTERES or len(propio) < MIN_CARACTERES:
-            continue
-        suya = _similitud(leido, propio)
-        vecinas = {n - 1, n + 1} & set(range(1, recorte.paginas_totales + 1))
-        for j in sorted(retiradas | vecinas):
-            retirada = j in retiradas
-            m = difflib.SequenceMatcher(None, leido, recorte.normal[j - 1], autojunk=False)
-            if m.quick_ratio() < suya:
-                continue
-            otra = m.ratio()
-            if otra > suya or (retirada and otra >= suya):
+    _comprobar_dibujo(pdf, recorte)
+    _comprobar_lectura(leidos, recorte)
+    return tuple(_avisos_de_lo_leido(leidos, recorte))
+
+
+def _comprobar_dibujo(pdf: bytes, recorte: Recorte) -> None:
+    """Lo que cada página del aportable DIBUJA es su imagen, y esa imagen es la de la página
+    que se conserva (R3/H-03, H-04)."""
+    from PIL import Image
+
+    retiradas = {r.pagina_certificado for r in recorte.retiradas}
+    documento = _documento_pdfium(pdf, que="el aportable")
+    try:
+        for k, (imagen, n) in enumerate(zip(recorte.imagenes, recorte.conservadas), 1):
+            hoja = documento[k - 1]
+            dibujada = _dibujar(hoja, escala=imagen.ancho / hoja.get_width() * _CASI_UNO)
+            guardada = Image.open(io.BytesIO(imagen.jpeg)).convert("RGB")
+            mini = _miniatura(dibujada)
+            if dibujada.size != guardada.size or _diferencia(
+                    mini, _miniatura(guardada)) > UMBRAL_DIBUJO:
                 raise AportableError(
-                    f"la página {k} del aportable se parece más a la página {j} del "
-                    f"certificado{', que se retira,' if retirada else ''} que a la {n}, que "
-                    f"es la que tocaba conservar ({otra:.2f} contra {suya:.2f}). No se "
-                    "entrega.")
+                    f"la página {k} del aportable no dibuja su imagen tal cual —entera, "
+                    "derecha y sin nada encima—. No se entrega.")
+            distancias = {j: _distancia(mini, m) for j, m in enumerate(recorte.miniaturas, 1)
+                          if m.size == mini.size}
+            propia = distancias.get(n, float("inf"))
+            # Primero la más cercana: si es otra, el mensaje dice QUÉ página es la imagen,
+            # que es lo que hace falta saber ante un error de índices.
+            cercana = min((j for j in distancias if j != n),
+                          key=lambda j: (distancias[j], j), default=None)
+            if cercana is not None and distancias[cercana] < propia:
+                raise AportableError(
+                    f"la página {k} del aportable se parece más a la página {cercana} del "
+                    f"certificado{', que se retira,' if cercana in retiradas else ''} que a "
+                    f"la {n}, que es la que tocaba conservar ({distancias[cercana]:.2f} "
+                    f"contra {propia:.2f}). No se entrega.")
+            if propia > UMBRAL_MINIATURA:
+                raise AportableError(
+                    f"lo que dibuja la página {k} del aportable no se parece a la página {n} "
+                    f"del certificado, que es la que tocaba conservar ({propia:.2f}, y hace "
+                    f"falta {UMBRAL_MINIATURA} como mucho). No se entrega.")
+            empate = min((j for j in retiradas if distancias.get(j, float("inf"))
+                          <= propia), default=None)
+            if empate is not None:
+                raise AportableError(
+                    f"la página {k} del aportable se parece a la página {empate} del "
+                    f"certificado, que se retira, tanto como a la {n}, que es la que tocaba "
+                    f"conservar ({propia:.2f}). No se entrega.")
+    finally:
+        documento.close()
+
+
+def _comprobar_lectura(leidos: dict[int, str], recorte: Recorte) -> None:
+    """Cada página cuyo original tiene texto trae el suyo: la R2 admitía un aportable sin
+    capa de texto, o con una hecha solo de una marca (R3/H-04)."""
+    for k, n in enumerate(recorte.conservadas, 1):
+        propio = recorte.normal[n - 1]
+        if len(propio) < MIN_CARACTERES:
+            continue
+        leido = normalizar_pagina(leidos[n])
+        if not leido:
+            raise AportableError(
+                f"la página {k} del aportable no tiene texto leído por el OCR, y la {n} del "
+                "certificado sí lo tiene: sin su capa de texto no se entrega.")
+        m = difflib.SequenceMatcher(None, leido, propio, autojunk=False)
+        parecido = m.quick_ratio()
+        if parecido >= UMBRAL_OCR:
+            parecido = m.ratio()
+        if parecido < UMBRAL_OCR:
+            raise AportableError(
+                f"el texto que el OCR lee en la página {k} del aportable no se parece al de "
+                f"la página {n} del certificado ({parecido:.2f}, y hace falta {UMBRAL_OCR}): "
+                "no es su texto. No se entrega.")
+
+
+def _avisos_de_lo_leido(leidos: dict[int, str], recorte: Recorte) -> list[str]:
+    """¿Muestra alguna imagen frases de las condiciones que su texto no lleva? (R3, §2)
+
+    Es el aviso del §7.4 sobre lo que el OCR lee: una página conservada ESCANEADA no tiene
+    texto con que avisar, y su imagen puede reproducir las condiciones. Lo que el texto ya
+    repite lo avisa el recorte; aquí sale lo que solo está en los píxeles. Aviso, no parada,
+    como el del §7.4: nombra la página y la frase y decide una persona.
+    """
+    frases: set[tuple[str, ...]] = set()
+    for cuerpo in _cuerpos(recorte.condiciones):
+        frases |= _frases(cuerpo)
+    avisos = []
+    for n, texto in leidos.items():
+        vistas = (frases & _frases(_palabras(texto))) - _frases(_palabras(recorte.normal[n - 1]))
+        if vistas:
+            avisos.append(
+                f"la página {n} del certificado muestra en su imagen {len(vistas)} frase(s) "
+                f"de las condiciones que su texto no lleva (p. ej. «{' '.join(min(vistas))}»): "
+                "el OCR las lee en los píxeles —¿un escaneo?—. Revísala antes de aportar.")
+    return avisos
 
 
 # --- los avisos -----------------------------------------------------------------
@@ -996,9 +1110,10 @@ AVISO_FIRMA = (
     "326.4 LEC. La prueba custodiada es el certificado íntegro, con la huella que figura "
     "en este manifiesto.")
 
-#: Qué es el aportable, dicho donde se archiva (R2/H-01).
+#: Qué es el aportable, dicho donde se archiva (R2/H-01, R3).
 FORMA_APORTABLE = (f"la imagen de cada página que se conserva, a {PPP} ppp, con una capa "
-                   "de texto invisible leída por OCR")
+                   "de texto invisible leída por OCR: un renglón por línea leída, compuesto "
+                   "por FeesDefender")
 
 AVISO_TEXTO = (
     "El texto del aportable lo ha leído un OCR sobre su imagen: sirve para buscarlo y "
@@ -1020,13 +1135,14 @@ def manifiesto_de(recorte: Recorte, *, id_envio: str, canal: str, id_personaliza
     lista UN fichero fundido (M-4) y los documentos son los del correo. Las páginas
     retiradas van en las tres numeraciones del §7.3.
 
-    La huella del aportable la da quien lo ESCRIBE (`aportable_sha256`): el OCR no es
-    determinista y el recorte no sabe qué bytes saldrán. Lo que se sabe del
-    `destinatario` va en su propia clave (R2/H-04): depende del CRM del día en que se
-    generó, y no es identidad del aportable.
+    La huella del aportable la da quien lo ESCRIBE (`aportable_sha256`): el recorte no
+    sabe qué líneas leerá el OCR. Lo que se sabe del `destinatario` va en su propia clave
+    (R2/H-04): depende del CRM del día en que se generó, y no es identidad del aportable.
+    Versión 3 desde la R3: el aportable lo compone el motor, y uno de la versión 2 —el
+    que escribía OCRmyPDF— no se relee con estas reglas.
     """
     manifiesto = {
-        "version": 2,
+        "version": 3,
         "id_envio": id_envio,
         "canal": canal,
         "id_personalizado": id_personalizado,

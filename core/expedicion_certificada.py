@@ -11,7 +11,8 @@ import io
 import json
 import os
 import re
-import sys
+import shutil
+import subprocess
 import tempfile
 import threading
 import uuid
@@ -1394,10 +1395,11 @@ class EntornoExpedicion:
     leer_emisor: Callable[[bytes], Any] | None = None
 
     # --- el puerto de F3 (`preparar_aportables`) ------------------------------
-    #: El OCR del aportable: recibe su IMAGEN y la devuelve con una capa de texto
-    #: invisible (R2/H-01). `entorno_real` monta el de verdad (`_ocr_aportable`); los tests
-    #: pasan un doble, porque el de verdad tarda ~20 s por certificado.
-    ocr: Callable[[bytes], bytes] | None = None
+    #: El OCR del aportable: recibe el JPEG de UNA página y devuelve las líneas que lee
+    #: (`certificado_aportable.Linea`), y nada más: el aportable lo compone el motor (R3).
+    #: `entorno_real` monta el de verdad (`_ocr_tesseract`); los tests pasan un doble,
+    #: porque el de verdad tarda de 1,4 a 10,9 s por página (M-13).
+    ocr: Callable[[bytes], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -2133,7 +2135,7 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
         gestor=_GestorDocumental(),
         exp_crm=_exp_crm_de,
         leer_emisor=_leer_emisor_de,
-        ocr=_ocr_aportable,
+        ocr=_ocr_tesseract,
     )
 
 
@@ -2739,42 +2741,68 @@ def _escribir_atomico(destino: Path, datos: bytes) -> None:
 IDIOMA_OCR = "spa"
 
 
-def _ocr_aportable(pdf: bytes) -> bytes:
-    """La capa de texto del aportable: OCRmyPDF + Tesseract sobre su IMAGEN (R2/H-01).
+#: Donde lo deja el instalador de Windows cuando no está en el PATH (medido en este PC).
+_TESSERACT_WINDOWS = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
-    Solo ve la imagen —no el íntegro—, y no la toca: ni endereza, ni gira, ni optimiza,
-    porque la relectura exige que cada imagen salga idéntica, byte a byte, a la del
-    recorte (medido con OCRmyPDF 17.11: la conserva). Salida `pdf` y no PDF/A: la
-    conversión a PDF/A reescribe las imágenes.
+#: Lo más que se espera a Tesseract con una página: lo medido, 10,9 s (M-13).
+_ESPERA_OCR_SEGUNDOS = 300
 
-    Dos cosas medidas sobre los certificados REALES que el sintético no enseñaba:
 
-    - **Sin linealizar.** Por encima de 1 MB OCRmyPDF linealiza la salida («vista web
-      rápida»), y eso mete un diccionario `/Linearized` y un stream de pistas que no
-      cuelgan de nada: la relectura —con razón— los para. Un umbral inalcanzable lo apaga.
-    - **El `stderr` se devuelve como estaba.** `ocrmypdf.ocr()` lo deja sustituido por un
-      `StringIO`, y desde ahí se perdían en silencio los avisos del frontal y la traza de
-      cualquier fallo posterior: el proceso salía con 1 sin decir por qué.
+def _binario_tesseract() -> str:
+    """El ejecutable de Tesseract: el del PATH o, si no, el del instalador de Windows."""
+    en_ruta = shutil.which("tesseract")
+    if en_ruta:
+        return en_ruta
+    if _TESSERACT_WINDOWS.is_file():
+        return str(_TESSERACT_WINDOWS)
+    raise RuntimeError(f"no se encuentra Tesseract: ni en el PATH ni en {_TESSERACT_WINDOWS}. "
+                       "Instálalo con el idioma «spa».")
+
+
+def _lineas_de_tsv(tsv: str) -> tuple:
+    """Las líneas de una salida TSV de Tesseract: la caja del nivel 4 y las palabras del 5,
+    en su orden. Una palabra vacía no cuenta, y una línea sin palabras no sale."""
+    from core.certificado_aportable import Linea
+
+    cajas: dict[tuple[str, str, str], tuple[int, int, int, int]] = {}
+    palabras: dict[tuple[str, str, str], list[str]] = {}
+    for fila in tsv.splitlines()[1:]:
+        campos = fila.split("\t", 11)
+        if len(campos) < 12:
+            continue
+        clave = (campos[2], campos[3], campos[4])
+        if campos[0] == "4":
+            x, y, ancho, alto = (int(v) for v in campos[6:10])
+            cajas[clave] = (x, y, x + ancho, y + alto)
+        elif campos[0] == "5" and campos[11].strip():
+            palabras.setdefault(clave, []).append(campos[11].strip())
+    return tuple(Linea(" ".join(palabras[clave]), *cajas[clave])
+                 for clave in cajas if palabras.get(clave))
+
+
+def _ocr_tesseract(jpeg: bytes) -> tuple:
+    """Las líneas que Tesseract lee en la imagen de UNA página del aportable (R3).
+
+    Tesseract directo, sin OCRmyPDF: el puerto solo necesita líneas —texto y caja—, y el
+    PDF lo compone el motor. Hasta la R3 el aportable era la salida de OCRmyPDF, y la
+    relectura tenía que admitir un fichero ajeno (R3/H-01, H-02). Medido sobre las 18
+    páginas reales: la misma imagen da las mismas líneas las dos veces (M-13), y eso deja
+    reponer un aportable huérfano con su huella.
     """
-    import ocrmypdf
+    from core import certificado_aportable as apo
 
-    stderr = sys.stderr
-    try:
-        with tempfile.TemporaryDirectory(prefix="aportable-ocr-") as tmp:
-            entrada, salida = Path(tmp) / "imagen.pdf", Path(tmp) / "ocr.pdf"
-            entrada.write_bytes(pdf)
-            codigo = ocrmypdf.ocr(entrada, salida, language=[IDIOMA_OCR], output_type="pdf",
-                                  optimize=0, deskew=False, rotate_pages=False, clean=False,
-                                  progress_bar=False, fast_web_view=_SIN_LINEALIZAR)
-            if int(codigo) != 0:
-                raise RuntimeError(f"OCRmyPDF terminó con el código {int(codigo)}")
-            return salida.read_bytes()
-    finally:
-        sys.stderr = stderr
-
-
-#: Megas a partir de los cuales OCRmyPDF linealiza: ninguno que un aportable alcance.
-_SIN_LINEALIZAR = 1e9
+    binario = _binario_tesseract()
+    with tempfile.TemporaryDirectory(prefix="aportable-ocr-") as tmp:
+        imagen = Path(tmp) / "pagina.jpg"
+        imagen.write_bytes(jpeg)
+        salida = subprocess.run(
+            [binario, str(imagen), "stdout", "-l", IDIOMA_OCR, "--dpi", str(apo.PPP), "tsv"],
+            capture_output=True, encoding="utf-8", errors="replace",
+            timeout=_ESPERA_OCR_SEGUNDOS)
+    if salida.returncode != 0:
+        raise RuntimeError(f"Tesseract terminó con el código {salida.returncode}: "
+                           f"{(salida.stderr or '').strip()[:300]}")
+    return _lineas_de_tsv(salida.stdout)
 
 
 #: Por qué hace falta cada puerto: el error que para lo dice.
@@ -2823,7 +2851,12 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
             f"{expedicion.id_personalizado}: sin envíos en la ventana consultada. Un "
             "censo vacío no es una ausencia (spec §5.2): comprueba el identificador.")
     documentos = documentos_enviados(expedicion, entorno_exp=entorno_exp)
-    condiciones = apo.paginas_de_condiciones(documentos)
+    try:
+        condiciones = apo.paginas_de_condiciones(documentos)
+    except apo.AportableError as err:
+        # R3/H-05: una mención del rótulo que no es título para aquí, y los documentos son
+        # los de todos los envíos: para la expedición entera, con su motivo.
+        raise ExpedicionError(f"{expedicion.id_personalizado}: {err}") from err
     if not condiciones:
         raise ExpedicionError(
             f"ninguno de los {len(documentos)} documentos enviados abre una página con el "
@@ -2880,22 +2913,12 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
         existe_aportable, existe_manifiesto = destino.exists(), manifiesto.exists()
         retiradas = tuple(r.pagina_certificado for r in recorte.retiradas)
 
-        # R2/H-01: el OCR no es determinista, así que un aportable repuesto no casaría con
-        # un manifiesto que ya está. Ni se repone ni se pisa: se dice.
-        if existe_manifiesto and not existe_aportable:
-            resultados.append(AportablePreparado(
-                envio.id_envio, envio.canal, PARADO, ruta_manifiesto=manifiesto,
-                motivo=(f"hay un {manifiesto.name} sin su aportable: el aportable no se "
-                        "puede reponer idéntico —su capa de texto la lee un OCR, y no da "
-                        "dos veces los mismos bytes—, así que ese manifiesto no lo "
-                        "describiría. Si sobra, apártalo a mano y vuelve a lanzar.")))
-            continue
         if existe_aportable:
-            # El que ya está se RELEE contra la imagen de hoy —byte a byte las mismas
-            # imágenes—, y así volver a lanzar no pasa el OCR otra vez (lo caro).
+            # El que ya está se RELEE —se recompone con la imagen de hoy y el texto que
+            # lleva, byte a byte—, y así volver a lanzar no pasa el OCR otra vez (lo caro).
             pdf = destino.read_bytes()
             try:
-                apo.verificar_aportable(pdf, recorte)
+                avisos_ocr = apo.verificar_aportable(pdf, recorte)
             except apo.AportableError as err:
                 resultados.append(AportablePreparado(
                     envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
@@ -2904,12 +2927,16 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
                             "vuelve a lanzar.")))
                 continue
         else:
+            # Sin aportable se compone, haya o no manifiesto: desde la R3 el mismo OCR
+            # sobre la misma imagen da el mismo fichero (M-13), así que un manifiesto
+            # huérfano se valida contra él más abajo, como cualquier otro.
             try:
-                pdf = apo.aportable_de(recorte, ocr=entorno_exp.ocr)
+                hecho = apo.aportable_de(recorte, ocr=entorno_exp.ocr)
             except apo.AportableError as err:
                 resultados.append(AportablePreparado(envio.id_envio, envio.canal, PARADO,
                                                      motivo=str(err)))
                 continue
+            pdf, avisos_ocr = hecho.pdf, hecho.avisos
 
         nuevo = apo.manifiesto_de(
             recorte, id_envio=envio.id_envio, canal=envio.canal,
@@ -2922,16 +2949,19 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
             emisor={"razon_social": emisor.razon_social, "usuario": emisor.usuario,
                     "razon_social_verificada": True, "usuario_verificado": plaza is not None},
             ficheros_acta=ficheros_acta, documentos=documentos,
-            avisos_extra=avisos_reproduccion, destinatario=hoy)
+            avisos_extra=(*avisos_reproduccion, *avisos_ocr), destinatario=hoy)
 
         if existe_manifiesto:
             # R1/H-04: un manifiesto que ya está se VALIDA contra lo que se acaba de
             # comprobar —todo salvo lo volátil—; R2/H-04: lo del destinatario es volátil,
-            # y solo obliga a revisar si hoy avisa de algo que el manifiesto calla.
+            # y solo obliga a revisar si hoy avisa de algo que el manifiesto calla. Si
+            # falta el aportable, el recién compuesto tiene que tener SU huella: si no, ni
+            # se escribe ni se pisa nada.
             existente = _manifiesto_existente(manifiesto)
             if existente is None or not _manifiesto_corresponde(existente, nuevo):
                 resultados.append(AportablePreparado(
-                    envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
+                    envio.id_envio, envio.canal, PARADO,
+                    ruta_aportable=destino if existe_aportable else None,
                     ruta_manifiesto=manifiesto,
                     motivo=(f"ya hay un manifiesto ({manifiesto.name}) que no corresponde a "
                             "este aportable —huellas, páginas o avisos distintos—: no se "
@@ -2940,12 +2970,15 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
             revisar = _destinatario_por_revisar(existente.get("destinatario"), hoy)
             if revisar:
                 resultados.append(AportablePreparado(
-                    envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
+                    envio.id_envio, envio.canal, PARADO,
+                    ruta_aportable=destino if existe_aportable else None,
                     ruta_manifiesto=manifiesto, motivo=revisar))
                 continue
+            if not existe_aportable:
+                _escribir_atomico(destino, pdf)
             resultados.append(AportablePreparado(
-                envio.id_envio, envio.canal, YA_ESTABA, ruta_aportable=destino,
-                ruta_manifiesto=manifiesto, retiradas=retiradas,
+                envio.id_envio, envio.canal, YA_ESTABA if existe_aportable else PRODUCIDO,
+                ruta_aportable=destino, ruta_manifiesto=manifiesto, retiradas=retiradas,
                 avisos=(*existente["avisos"],
                         *(existente.get("destinatario") or {}).get("avisos", []),
                         *_notas_del_destinatario(existente, hoy))))
