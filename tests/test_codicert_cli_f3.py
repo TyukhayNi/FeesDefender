@@ -24,6 +24,10 @@ def test_render_aportables_ensena_estado_ruta_retiradas_y_avisos():
     assert "IMAGEN" in texto and "OCR" in texto        # R2/H-01: qué es, dicho donde se usa
 
 
+def test_render_aportables_sin_nada_que_preparar_LO_DICE():
+    assert "Nada que preparar" in cli.render_aportables([])
+
+
 def test_render_aportables_ensena_el_MOTIVO_de_una_parada():
     r = exp.AportablePreparado(id_envio="006b", canal="burofax", estado=exp.PARADO,
                                motivo="no aparece en la reproducción")

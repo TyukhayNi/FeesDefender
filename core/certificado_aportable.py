@@ -808,7 +808,7 @@ def verificar_aportable(pdf: bytes, recorte: Recorte) -> None:
     """
     lector = _lector(pdf, que="el aportable")
     if lector.is_encrypted:
-        raise _fuera_de_perfil("cifrado")
+        raise _fuera_de_perfil("un cifrado")
     paginas = list(lector.pages)
     if len(paginas) != len(recorte.conservadas):
         raise AportableError(

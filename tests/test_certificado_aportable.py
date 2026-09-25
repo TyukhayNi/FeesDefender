@@ -93,6 +93,20 @@ def test_R2_H02_dos_bloques_en_la_MISMA_pagina_del_acta_paran():
         apo.ficheros_listados_de_textos([falso + "\n" + real])
 
 
+def test_el_bloque_FICHEROS_sin_su_CABECERA_para():
+    """Sin «Nombre Huella digital» no se sabe dónde empieza la lista, y no se adivina."""
+    texto = s.pagina_ficheros("006x", [("A.pdf", b"a")]).replace(
+        "Nombre Huella digital (sha256)\n", "")
+    with pytest.raises(apo.AportableError, match="cabecera"):
+        apo.ficheros_listados_de_textos([texto])
+
+
+def test_el_bloque_FICHEROS_VACIO_para():
+    texto = s.pagina_ficheros("006x", [])
+    with pytest.raises(apo.AportableError, match="vacío"):
+        apo.ficheros_listados_de_textos([texto])
+
+
 def test_un_PDF_roto_es_AportableError_no_la_excepcion_de_pypdf():
     with pytest.raises(apo.AportableError, match="PDF"):
         apo.ficheros_listados(b"esto no es un PDF")
@@ -790,6 +804,118 @@ def test_R2_el_rotulo_en_los_METADATOS_del_aportable_para(donde):
     _, recorte, pdf = _limpio()
     with pytest.raises(apo.AportableError, match="rótulo de las condiciones"):
         apo.verificar_aportable(_retocar(pdf, poner), recorte)
+
+
+def _formulario_de_texto(w, pagina: int = 0):
+    xo = w.pages[pagina]["/Resources"]["/XObject"]
+    return next(xo[k] for k in xo if xo[k].get("/Subtype") == "/Form")
+
+
+def test_R2_una_clave_ajena_en_la_CAPA_DE_TEXTO_para():
+    """El formulario de texto lleva su caja y sus fuentes, y nada más: un `/Group` —o unos
+    metadatos, como en la sonda `metadata`— ya no es una capa de texto."""
+    from pypdf.generic import DictionaryObject, NameObject
+
+    def meter(w):
+        _formulario_de_texto(w)[NameObject("/Group")] = DictionaryObject()
+
+    _, recorte, pdf = _limpio()
+    with pytest.raises(apo.AportableError, match="«/Group» en la capa de texto de la página 1"):
+        apo.verificar_aportable(_retocar(pdf, meter), recorte)
+
+
+def test_R2_un_recurso_ajeno_en_la_CAPA_DE_TEXTO_para():
+    from pypdf.generic import DictionaryObject, NameObject
+
+    def meter(w):
+        _formulario_de_texto(w)["/Resources"][NameObject("/XObject")] = DictionaryObject()
+
+    _, recorte, pdf = _limpio()
+    with pytest.raises(apo.AportableError, match="recurso «/XObject» en la capa de texto"):
+        apo.verificar_aportable(_retocar(pdf, meter), recorte)
+
+
+def test_R2_una_pagina_SIN_recursos_propios_para():
+    """Sin recursos propios heredaría los del nodo del árbol, que no se miran como los suyos."""
+    def quitar(w):
+        del w.pages[0]["/Resources"]
+
+    _, recorte, pdf = _limpio()
+    with pytest.raises(apo.AportableError, match="sin recursos propios"):
+        apo.verificar_aportable(_retocar(pdf, quitar), recorte)
+
+
+def test_R2_un_recurso_ajeno_en_la_PAGINA_para():
+    """La página solo dibuja objetos (`/XObject`): una fuente o un patrón suyos no tienen qué
+    hacer en ella."""
+    from pypdf.generic import DictionaryObject, NameObject
+
+    def meter(w):
+        w.pages[0]["/Resources"][NameObject("/Pattern")] = DictionaryObject()
+
+    _, recorte, pdf = _limpio()
+    with pytest.raises(apo.AportableError, match="recurso «/Pattern» en la página 1"):
+        apo.verificar_aportable(_retocar(pdf, meter), recorte)
+
+
+def test_R2_un_objeto_DIRECTO_entre_los_de_la_pagina_para():
+    from pypdf.generic import DictionaryObject, NameObject
+
+    def meter(w):
+        w.pages[0]["/Resources"]["/XObject"][NameObject("/Z")] = DictionaryObject()
+
+    _, recorte, pdf = _limpio()
+    with pytest.raises(apo.AportableError, match="objeto directo como «/Z»"):
+        apo.verificar_aportable(_retocar(pdf, meter), recorte)
+
+
+def test_R2_un_objeto_de_OTRO_TIPO_entre_los_de_la_pagina_para():
+    from pypdf.generic import DecodedStreamObject, NameObject
+
+    def meter(w):
+        ps = DecodedStreamObject()
+        ps.set_data(b"% PostScript")
+        ps.update({NameObject("/Type"): NameObject("/XObject"),
+                   NameObject("/Subtype"): NameObject("/PS")})
+        w.pages[0]["/Resources"]["/XObject"][NameObject("/Z")] = w._add_object(ps)
+
+    _, recorte, pdf = _limpio()
+    with pytest.raises(apo.AportableError, match="objeto /PS como «/Z»"):
+        apo.verificar_aportable(_retocar(pdf, meter), recorte)
+
+
+def test_R2_un_Do_a_algo_que_NO_esta_en_la_pagina_para():
+    def dibujar(w):
+        contenido = w.pages[0]["/Contents"].get_object()
+        contenido.set_data(b"q /Nada Do Q\n" + contenido.get_data())
+
+    _, recorte, pdf = _limpio()
+    with pytest.raises(apo.AportableError, match="«Do» a algo que no está"):
+        apo.verificar_aportable(_retocar(pdf, dibujar), recorte)
+
+
+def test_R2_un_aportable_CIFRADO_para():
+    """pypdf abre sin preguntar uno cifrado con contraseña de usuario vacía: se para igual."""
+    def cifrar(w):
+        w.encrypt(user_password="", owner_password="otra", algorithm="AES-128")
+
+    _, recorte, pdf = _limpio()
+    with pytest.raises(apo.AportableError, match="cifrado"):
+        apo.verificar_aportable(_retocar(pdf, cifrar), recorte)
+
+
+def test_R2_un_objeto_SUELTO_que_no_es_un_diccionario_para():
+    from pypdf.generic import ArrayObject, NumberObject
+
+    _, recorte, pdf = _limpio()
+    malo = _retocar(pdf, lambda w: w._add_object(ArrayObject([NumberObject(1)])))
+    with pytest.raises(apo.AportableError, match=r"ArrayObject\), que no cuelga de nada"):
+        apo.verificar_aportable(malo, recorte)
+
+
+def test_R2_rasterizar_un_PDF_roto_es_AportableError():
+    with pytest.raises(apo.AportableError, match="no se puede dibujar"):
+        apo._rasterizar(b"esto no es un PDF", [1])
 
 
 def test_R2_una_pagina_GIRADA_para():

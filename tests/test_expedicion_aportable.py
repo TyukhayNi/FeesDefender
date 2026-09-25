@@ -353,6 +353,10 @@ def test_R2_H06_un_destinatario_que_se_lee_como_UNA_parte_o_como_VARIAS_avisa(tm
     assert exp._atribucion_burofax(ambiguo, [{"nombre": "ANA Y LUIS"}]) is None
     assert exp._atribucion_burofax(ambiguo, [{"nombre": "ANA"}, {"nombre": "LUIS"}]) == \
         exp.AVISO_SOBRE_CONJUNTO
+    # Y una entrega electrónica no tiene sobre: no se le atribuye nada.
+    correo = dataclasses.replace(ambiguo, tipo="c")
+    assert correo.canal == "electronico"
+    assert exp._atribucion_burofax(correo, [{"nombre": "ANA"}, {"nombre": "LUIS"}]) is None
 
 
 def test_R2_H07_la_cobertura_con_nombres_que_SE_SOLAPAN_no_explota(monkeypatch):
@@ -444,6 +448,81 @@ def test_R2_H04_si_el_manifiesto_YA_avisaba_otra_lectura_de_hoy_no_para(tmp_path
     assert r["006b"].estado == exp.YA_ESTABA
     assert any("no se pudo comprobar si el sobre" in a for a in r["006b"].avisos)
     assert any("hoy la comprobación del destinatario" in a for a in r["006b"].avisos)
+
+
+def test_R2_H04_si_el_manifiesto_avisaba_y_HOY_TAMBIEN_avisa_no_para(tmp_path):
+    """Los dos avisan —el manifiesto, porque el CRM no respondió al generarlo; hoy, porque el
+    destinatario no se puede atribuir—: los dos acaban en lo mismo, la entrega en el
+    domicilio. Vale el manifiesto y se cuenta la diferencia."""
+    entorno, _, _ = _escenario(tmp_path, partes=_crm_caido)
+    exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
+    otras = dataclasses.replace(entorno, partes_de=lambda w: [{"nombre": "PEDRO"}])
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=otras))
+    assert r["006b"].estado == exp.YA_ESTABA, r["006b"].motivo
+    assert any("hoy la comprobación del destinatario" in a for a in r["006b"].avisos)
+
+
+def test_R2_si_ESCRIBIR_falla_no_queda_un_fichero_a_medias(tmp_path, monkeypatch):
+    """`_escribir_atomico`: temporal en el mismo directorio y `os.replace`. Si el reemplazo
+    falla, el temporal se borra y el error sube: ni aportable a medias ni basura al lado."""
+    entorno, _, carpeta = _escenario(tmp_path, archivar=("006c",))
+
+    def falla(origen, destino):
+        raise OSError("disco lleno")
+
+    monkeypatch.setattr(exp.os, "replace", falla)
+    with pytest.raises(OSError, match="disco lleno"):
+        exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
+    assert not list(carpeta.glob("*.tmp")) and not list(carpeta.glob("* - APORTABLE.pdf"))
+
+
+def test_un_integro_ILEGIBLE_para_ese_envio(tmp_path):
+    def ilegible(pdf):
+        raise certificado_lectura.CertificadoIlegibleError("no es un certificado")
+
+    entorno, _, _ = _escenario(tmp_path)
+    r = _por_id(exp.preparar_aportables(
+        W, "OVC", entorno_exp=dataclasses.replace(entorno, leer_emisor=ilegible)))
+    assert r["006c"].estado == exp.PARADO and "íntegro ilegible" in r["006c"].motivo
+
+
+def test_R2_un_manifiesto_que_NO_ES_JSON_ni_se_acepta_ni_se_pisa(tmp_path):
+    entorno, _, carpeta = _escenario(tmp_path)
+    exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
+    manifiesto = exp.ruta_manifiesto(_integro_006c(carpeta))
+    manifiesto.write_text("{esto no es json", encoding="utf-8")
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    assert r["006c"].estado == exp.PARADO and "no corresponde" in r["006c"].motivo
+    assert manifiesto.read_text(encoding="utf-8") == "{esto no es json"
+
+
+def test_sin_envios_en_la_ventana_se_para_y_se_dice(tmp_path):
+    """Un censo vacío no es una ausencia (spec §5.2): no se da por hecho que no haya nada."""
+    entorno, t, _ = _escenario(tmp_path)
+    t._envios = []
+    with pytest.raises(exp.ExpedicionError, match="sin envíos"):
+        exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
+
+
+def test_un_acta_electronica_sin_bloque_FICHEROS_para_todo(tmp_path):
+    """Sin la lista del acta no hay contra qué verificar lo que se baja: para, y lo dice."""
+    entorno, t, _ = _escenario(tmp_path)
+    t._c["006c"] = s.pdf(["una página cualquiera, sin acta ni lista"])
+    with pytest.raises(exp.ExpedicionError, match="FICHEROS ADJUNTOS"):
+        exp.preparar_aportables(W, "OVC", entorno_exp=entorno)
+
+
+def test_R2_el_adaptador_de_OCR_dice_el_CODIGO_de_error_y_devuelve_el_stderr(monkeypatch):
+    """Un código distinto de 0 es un fallo, aunque OCRmyPDF no lance nada; y el `stderr` se
+    devuelve también cuando falla."""
+    import sys
+
+    ocrmypdf = pytest.importorskip("ocrmypdf", reason="el adaptador envuelve OCRmyPDF")
+    stderr = sys.stderr
+    monkeypatch.setattr(ocrmypdf, "ocr", lambda *a, **kw: 6)
+    with pytest.raises(RuntimeError, match="código 6"):
+        exp._ocr_aportable(b"%PDF-1.4")
+    assert sys.stderr is stderr
 
 
 def test_R2_sin_el_puerto_de_OCR_se_para(tmp_path):

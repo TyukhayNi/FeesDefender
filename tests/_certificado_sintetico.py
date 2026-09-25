@@ -476,6 +476,9 @@ def con_capa_de_texto(pdf: bytes, textos, *, modo: int = 3, fuente: str = "/Type
         })
         recursos = pagina["/Resources"].get_object()
         recursos["/XObject"].get_object()[NameObject("/OCR")] = escritor._add_object(forma)
+        # Como OCRmyPDF: declara los conjuntos de procedimientos de la página.
+        recursos[NameObject("/ProcSet")] = ArrayObject(
+            [NameObject("/PDF"), NameObject("/ImageC"), NameObject("/Text")])
         # El contenido se reescribe EN SU SITIO: uno nuevo dejaría el viejo huérfano dentro
         # del fichero, y la relectura —con razón— para ante un objeto que no cuelga de nada.
         contenido = pagina["/Contents"].get_object()
