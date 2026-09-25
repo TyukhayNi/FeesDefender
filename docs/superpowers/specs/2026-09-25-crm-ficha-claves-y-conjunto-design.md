@@ -11,7 +11,8 @@ rev: "2"
 Remedio de `MEJORAS #283` y `#288`, las dos medidas en aperturas de este mes. **Pieza de dos
 rondas** por el radio de daño: escribe datos de cliente en el CRM, decide qué partes quedan
 vinculadas a un expediente, y un vínculo de más **da acceso** al expediente a quien no debe
-tenerlo. La primera ronda fue sobre este diseño; la segunda irá sobre el diff.
+tenerlo. La primera ronda fue sobre este diseño, la segunda sobre el plan, y la tercera
+—autorizada por Nikolai sobre el techo de dos— irá sobre el diff (§7).
 
 **Rev. 2 (2026-09-25), tras la R1 de Codex (`gpt-6-astra`·`medium`): `REQUIERE-REVISION`, 4
 hallazgos, 4 confirmados, 0 refutados** (adjudicación en el §8). La rev. 1 cerraba las claves y
@@ -19,7 +20,16 @@ los vínculos y dejaba abierta la misma frontera en tres sitios más: el parser 
 repetidas antes de validar nada, una clave válida no garantiza un valor válido, y un conjunto de
 ids exacto certificaba una ficha **cuyos datos no se habían escrito** —justo el caso de
 W-030A13 al relanzarlo con el YAML corregido—. La rev. 1 no se conserva: no llegó a código.
-**Esta rev. 2 no ha pasado ronda propia**; la segunda ronda del presupuesto es la del diff.
+
+> **Rev. 3 PENDIENTE: la R2 cambia A.4, B.2 y el §6.** La R2 de Codex, sobre el plan y sobre
+> esta rev. 2 (`REQUIERE-REVISION`, 9 hallazgos, 9 confirmados), dio por **reales** los remedios
+> a H-01 y H-02 de la R1 e **incompletos** los de H-03 y H-04: `id_crm` se validaba solo por el
+> nombre, y toda comparación de datos llegaba después de escribir. La decisión —una fase previa de
+> solo lectura que falla, sin escribir nada, ante un dato **distinto** en una ficha que ya existe;
+> `id_crm` dentro de los resolutores del core; y lo que no puede llegar nunca, rechazado al
+> validar— está en la **§9 del plan** (`docs/superpowers/plans/2026-09-25-crm-ficha-claves-y-conjunto.md`).
+> La rev. 3 se escribe al abrir la sesión que implemente; hasta entonces, donde este texto y esa
+> §9 discrepen, **manda la §9**.
 
 ## 0. Lo medido, que es lo que decide el diseño
 
@@ -214,10 +224,13 @@ constructor; que la parcial calcule sobrantes.
 
 ## 7. Rondas y modelo
 
-Dos, por el radio de daño (`CLAUDE.md` §«Cuántas rondas»): la R1 fue sobre la rev. 1 de este
-diseño, con `gpt-6-astra` · `medium`; la segunda irá sobre el diff, en la sesión que lo
-implemente, con la misma fila. **La rev. 2 no tiene ronda propia**, y se declara: su primer
-lector adversarial será el de la R2.
+Dos, por el radio de daño (`CLAUDE.md` §«Cuántas rondas»), **más una tercera autorizada
+expresamente por Nikolai el 2026-09-25** sobre ese techo. La R1 fue sobre la rev. 1 de este
+diseño; la **R2, sobre el plan** de implementación y sobre si la rev. 2 remedia de verdad la R1
+(`docs/superpowers/plans/2026-09-25-crm-ficha-claves-y-conjunto.md`); y la **R3 irá sobre el
+diff**, en la sesión que lo implemente. Las tres con `gpt-6-astra` · `medium`. El tope es por
+pieza y no por fase (la tabla dice «una sobre el diseño (spec/plan) y una sobre el diff»): la R3
+existe porque Nikolai la autorizó, no porque la regla la conceda.
 
 ## 8. Adjudicación de la revisión adversarial del diseño (Codex, 2026-09-25) — REQUIERE-REVISION, remediado
 

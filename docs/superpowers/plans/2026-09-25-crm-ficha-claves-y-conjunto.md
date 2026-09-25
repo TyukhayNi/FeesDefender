@@ -1,5 +1,10 @@
 # `crm_ficha`: el YAML entero y el conjunto verificado — plan de implementación
 
+> **Estado (2026-09-25): rev. 1, con la R2 adjudicada y SIN aplicar.** No se ejecuta tal cual:
+> la §9 enumera los defectos confirmados de estas tareas y lo que cambia en cada una. La sesión
+> que implemente escribe primero el spec rev. 3 y este plan rev. 2 según la §9, y solo entonces
+> empieza la Task 1.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** que `crm_ficha` no pierda nada de lo que el `_ficha_crm.yaml` declara y que su «VERIFICADA» certifique de verdad que el expediente tiene exactamente esas partes con esos datos (`MEJORAS #283` + `#288`).
@@ -528,3 +533,154 @@ def _declara_fichas(monkeypatch, contrarios=None, colaboradores=None):
   alias; y `normalize_es_phone("+34 600 111 222")` devuelve `600111222`, que es el dato de T5.
 - **Lo que queda por fijar al implementar, dicho donde toca:** las propiedades del CRM de
   `clientes_contrarios` (T5, contra el payload y el atlas).
+
+## 9. Adjudicación de la revisión adversarial del plan (Codex, 2026-09-25) — REQUIERE-REVISION, pendiente
+
+- **Objeto revisado:** este plan rev. 1 y, como segundo encargo, si el spec rev. 2 remedia de verdad la R1; los dos en `0177559`
+- **Ronda:** R2 de la pieza (la R1 fue sobre el spec rev. 1; la R3, sobre el diff, la autorizó expresamente Nikolai el 2026-09-25)
+- **Revisor:** Codex CLI `0.155.0-alpha.16.3`, `gpt-6-astra` · `medium` · `default` (modelo y esfuerzo releídos del rollout)
+- **Informe recibido:** `docs/superpowers/plans/2026-09-25-crm-ficha-claves-y-conjunto-r2-adversarial-review.md`
+- **Hallazgos:** 9 — 2 `alta`, 7 `media`; 9 confirmados contra la fuente, 0 refutados
+- **Remediado en:** pendiente — el spec rev. 3 y el plan rev. 2 se escriben al abrir la sesión que implemente, **antes de su Task 1**; esta sección es la lista cerrada de lo que cambia
+
+**Los nueve se reprodujeron contra el código y contra el texto de este plan, no contra el
+informe** (acta §2): el bloque literal de la Task 1 ejecutado tal cual, el DTO y
+`provincia_canonica` reales, `difflib` con la tupla del plan, y la lectura de
+`core/sudespacho_relations.py:1669-1736` y de `scripts/crm_ficha.py:79-163`. **No son nueve
+defectos sueltos: son tres fronteras**, y el remedio es el de la frontera.
+
+**Frontera 1 — ninguna escritura sobre una ficha que el YAML contradice (H-01, H-06, H-08).** El
+plan vinculaba por `id_crm` tras comparar **solo** el nombre y dejaba toda comparación de datos
+para después de escribir; la resolución por NIF completa lo vacío de una ficha cuyo apellido el
+YAML contradice (el revisor lo midió con el completado real: sale un PUT del email); la Task 3
+aceptaba `id_crm` tres commits antes de que nadie lo consumiera, y en ese intervalo esa parte
+seguía el camino de **creación**; y el preflight iba antes del corte de `--dry-run`. Decisión de
+diseño, que entra en el spec rev. 3 (A.4, B.2 y §6):
+
+1. **Una fase previa de solo lectura**, después del `--dry-run` y de la cancelación y antes de
+   `link_ev_mmc`. Para cada parte, la ficha que **ya existe** —por `id_crm` (GET) o por NIF/email
+   (la resolución de hoy, que ya es de solo lectura y ya levanta ante conflicto o ambigüedad)— se
+   compara con lo declarado. Un campo **distinto** —el CRM tiene valor y es otro— es error:
+   **todos juntos y cero writers**. La corrida nunca pisa, así que ese `[DATO]` no lo puede
+   arreglar ella; escribir antes solo dejaría un vínculo y unos completados sobre una ficha que el
+   propio YAML desmiente, y `crm_ficha` no desvincula. Una ficha que no se puede leer, o un
+   `id_crm` que no existe, también es error: no se escribe sobre lo que no se ha podido comparar.
+   Lo **vacío** no es contradicción: si es completable se completa como hoy, y si no, lo dice la
+   lectura final (el caso de W-030A13). **La fase previa es la parte de B.2 que ya está decidida
+   antes de escribir**: lo no vacío del CRM no cambia al completar, así que no puede fallar donde
+   la lectura final no fallaría.
+2. **`id_crm` vive en el core**, en los dos `_resolver_o_crear_*`
+   (`core/sudespacho_relations.py:1669` y `:2436`): con `id_crm`, ni busca ni crea; lee esa
+   ficha, completa lo vacío igual que con una ficha hallada por NIF y devuelve `(id, False)`. El
+   CLI sigue llamando a `ensure_*` para toda parte: **no hay un segundo camino de escritura en la
+   orquestación**, y el vínculo por id hereda el completado sin reescribirlo. El campo del DTO,
+   la aceptación en el validador y esa rama van en **la misma tarea y el mismo commit** (H-06);
+   hasta ese commit, la Task 3 exige NIF o email y rechaza la parte que solo trae `id_crm`, que es
+   el estado intermedio seguro.
+3. **Lo que no puede llegar nunca es propiedad de la declaración, no de la ficha**, y lo rechaza
+   la validación para toda parte, creada o existente: una provincia que `provincia_canonica` no
+   reconoce y un teléfono no vacío que `normalize_es_phone` deja vacío (H-02). Y `auditar_datos`
+   recibe **la declaración** —el mapping validado de la parte—, no el DTO: el DTO normaliza al
+   construirse, y cualquier transformación entre el YAML y la auditoría es un sitio por donde lo
+   declarado se pierde sin que la auditoría lo vea.
+4. **La lectura final (B.2) sigue**, para creadas y completadas, y el spec lo dice sin prometer de
+   más: detectar un dato que no llegó al crear o al completar exige leer después, y esa lectura
+   **no deshace** la creación ni el vínculo. El §6 cambia «dato distinto → `[DATO]` sin PUT» por
+   «dato distinto **preexistente** → error antes del primer writer y **cero** llamadas a writers,
+   con la resolución y el completado reales y el transporte doblado».
+
+**Frontera 2 — lo declarado llega intacto a la auditoría (H-02, H-03, H-04).** El DTO borra
+`'+34'`; la provincia se normalizaba distinto a cada lado (`provincia_canonica` devuelve
+`'Barcelona'` y `_texto` lo pasa a minúsculas: nunca iguales); y el lector dejaba escapar
+`TypeError` y `ParserError` donde prometía `ValueError`, y de varias repetidas solo decía la
+primera. Remedios: el punto 3 de arriba; `_texto(provincia_canonica(yaml))` contra `_texto(crm)`,
+con su control positivo (`barcelona` frente a `Barcelona`); y en la Task 1, el escaneo de eventos
+**dentro** del `try` que traduce `yaml.YAMLError`, una clave no escalar rechazada con su línea, y
+las repetidas **acumuladas** en todo el documento. Límite que se declara en vez de prometerlo: un
+error de sintaxis para el análisis, y solo se puede decir ese.
+
+**Frontera 3 — un test prueba la propiedad que nombra, por el camino que nombra (H-05, H-07,
+H-09).** El doble `_declara_fichas` convertía un id no declarado en `KeyError`, que el CLI tomaría
+por lectura caída —«SIN VERIFICAR» y salida 0—, y tres tests que solo miran la salida 0 seguirían
+verdes; los «PASAN» de las Tasks 2, 3 y 6 eran incompatibles con diecisiete tests existentes y con
+dos literales; y las filas «Convergencia», «GET o PUT de completar fallidos» y «fallar cada
+writer» del spec §6 no tenían tarea. **Y uno que el revisor no citó:**
+`tests/test_crm_ficha_cli.py:283` y `:403` afirman `"VERIFICADA por lectura" not in r.output`;
+con el literal de éxito nuevo pasarían **siempre**, que es un negativo vaciado en silencio y no un
+aserto relajado a la vista.
+
+**Lo que cambia en cada tarea (plan rev. 2):**
+
+- **Task 1.** Lo de la frontera 2, con sus tests: la línea **afirmada** (`línea 2`), no solo la
+  palabra «repetida»; el merge **sin** alias en su propio test —el comentario «un merge necesita
+  un alias» es falso: `{<<: {nombre: A}}` no lo lleva—; la clave lista; la sintaxis rota →
+  `ValueError`; y dos repetidas → las dos.
+- **Task 2.** `id_crm` fuera de las tuplas hasta su tarea. `_sugerencia` da **todas** las cercanas
+  (`apellido` → `apellido1` y `apellido2`), sin convertirlas en alias de entrada, y un control sin
+  sugerencia. El mensaje de cliente desconocido conserva el literal `cliente_propio desconocido`
+  que exige `tests/test_crm_ficha_cli.py:164`. `test_cliente_propio_con_valor_se_respeta` pasa a
+  una clave **real** no predeterminada del catálogo —la propiedad es «lo declarado se respeta», y
+  `OTRO_CLIENTE` ya no es declarable—, dicho en el commit. La matriz de tipos en **cada** escalar
+  de los dos roles y `firmante`, y `cliente_propio: {}`. Y la validación de provincia y teléfonos
+  del punto 3.
+- **Task 3.** Identidad obligatoria **por NIF o email**, sin `id_crm` todavía. La migración de los
+  diecisiete tests se escribe en la tarea —identidades sintéticas—, y
+  `test_se_valida_la_coleccion_ENTERA_antes_de_construir_nada` recibe identidad en su primer
+  elemento y espía la construcción, o su `raises` pasaría aunque se ignorase el segundo.
+- **Task 4.** Sin cambios de fondo; su mutante entra en la Task 9.
+- **Task 5.** `auditar_datos(elemento, id_, declarado: Mapping, ficha_crm)`, con resultado
+  estructurado (campo, tipo `vacio`/`distinto`, CRM, YAML) para que la fase previa filtre
+  `distinto`; la provincia simétrica; la matriz campo × rol × creada/existente, con negativos de
+  colaborador; y los mapas `CAMPOS_*_CRM` anclados a la fuente que el revisor ya encontró (payload
+  en `core/sudespacho_relations.py:872-882`, GET en `:1751-1754`, atlas
+  `docs/CRM_SUDESPACHO_ATLAS.md:1892-1926`, `docs/INTEGRACION_SUDESPACHO.md:746` y `:769-774`).
+  El «por fijar» del Self-review se retira, con la regla de medir antes de codificar si al
+  implementar algo no cuadra.
+- **Task 6 (el CLI, sin la vía `id_crm`).** `_declara_fichas` levanta una excepción de arnés
+  **fuera de `Exception`** ante un id no declarado, como la guarda de red
+  (`tests/test_crm_ficha_cli.py:303-336`). Los controles positivos exigen la certificación
+  completa y la **ausencia** de «SIN VERIFICAR». El literal de éxito es una **constante del
+  módulo** que importan los tests, positivos y negativos, así que un cambio de texto no puede
+  vaciar un negativo. La lectura sintética del test de W-030A13 conserva el móvil de la fixture.
+  Un caso con `[FALTA]` y `[SOBRA]` a la vez, y un fallo conocido que gana a un «SIN VERIFICAR»
+  simultáneo. «Ningún aserto se toca» se sustituye por «los literales del contrato nuevo se
+  adaptan por escrito, enumerados en el commit, y ninguno pierde su propiedad».
+- **Task 7 (nueva): la fase previa y `id_crm`, juntas.** El campo del DTO, la aceptación de
+  `id_crm` en el validador, la rama del core y la fase previa del punto 1, en un commit. Tests: la
+  parte por id que contradice su NIF declarado → error y cero writers; una parte por NIF cuya
+  ficha trae otro apellido → error y cero writers; un id inexistente o un GET caído → error antes
+  de escribir; la **segunda** parte inválida → cero writers también para la primera; un
+  colaborador por id; y `--dry-run` con `id_crm` cuyos GET **revientan el test** si se llaman.
+- **Task 8 (nueva): integración.** `ensure_*`, resolutores y completado **reales**, con el
+  transporte doblado en `core.sudespacho_relations.<nombre>` y un espía de **todos** los writers:
+  un doble **con estado** y dos corridas (la segunda ni crea ni declara sobrante la primera); GET y
+  PUT de completar fallidos → al veredicto; cada writer fallando → código 1, sin «VERIFICADA», sin
+  sobrantes inventados; y cero writers ante cada entrada inválida de las Tasks 1-3 y 7.
+- **Task 9 (la antigua 7, mutantes).** Sobre **copias**: no el patrón de
+  `tests/_mutantes_mejoras_214.py`, que escribe en el árbol real y restaura, justo lo que prohíbe
+  `tests/test_guard_aislamiento_paralelo.py`. Base verde, cada mutante aplicado **una** vez y el
+  test objetivo **ejecutado** y rojo por su aserto —no por colección ni por el arnés—, con el
+  detalle guardado. Mutantes nuevos: desconectar el lector en uno de los dos consumidores; quitar
+  el rechazo del merge sin alias; saltarse un rol o las partes creadas en la auditoría; quitar la
+  fase previa o moverla detrás de un writer; leer el CRM en `--dry-run`. «La parcial calcula
+  sobrantes» pasa a «la parcial **emite** sobrantes», que es lo observable.
+- **Task 10 (la antigua 8).** La ronda del diff es la **R3**, autorizada; su adjudicación va en
+  este plan (§10) y su acta es `…-r3-adversarial-review.md`.
+- **Cabecera.** La línea de Global Constraints que dice «la R2 va sobre este diff» y la fila de
+  File Structure que dice que `core/sudespacho_relations.py` «solo añade `id_crm`», al día: con el
+  punto 2 añade también la rama por id de los dos resolutores, y sin `id_crm` ningún
+  comportamiento cambia.
+
+**Los remedios de la rev. 2 a la R1: el dictamen del revisor se acepta.** H-01 y H-02, **reales**;
+H-03 y H-04, **incompletos**, y lo que les faltaba es exactamente esta R2 (H-01, H-02, H-06 y
+H-09). Ninguno cosmético.
+
+**Lo que el revisor intentó y no pudo, y se conserva:** la igualdad por multiplicidad detecta
+sobrantes y colapsos; la lista completa no necesita revisarse; el lector detecta las repetidas
+**antes** de la pérdida y el `&amp;` de `notas_html` no es un alias; las firmas y propiedades del
+CRM existen; el mutante de mappings muere por su aserto; la parcial que solo informa faltantes no
+abre un falso «VERIFICADA»; y nada obliga a desvincular, a ampliar el completado a los apellidos
+ni a construir C6.
+
+**Lo que NO cambia:** el YAML es la lista completa; `crm_ficha` nunca desvincula ni pisa;
+`_COMPLETABLES_*` no se toca.
