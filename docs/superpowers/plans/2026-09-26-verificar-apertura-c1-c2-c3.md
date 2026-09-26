@@ -8,7 +8,7 @@ objeto: MEJORAS #306, #307 y #287 — tres falsos rojos de `verificar_apertura`:
 # `verificar_apertura`: los tres falsos rojos de las aperturas del 15 al 25 de septiembre
 
 > **Estado (2026-09-26):** construido con TDD; la R1 de Codex sobre el diff (§6) está pendiente.
-> Fila **#44** de `PLAN.md`.
+> Fila **#45** de `PLAN.md`. PR #407.
 
 **Encargo.** Nikolai pidió el 2026-09-26 seguir limpiando el backlog de las últimas aperturas y
 eligió este bloque: `#306` (C1), `#307` (C2) y `#287` (C3). Los tres son la **misma clase de

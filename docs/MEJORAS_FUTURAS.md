@@ -13067,7 +13067,7 @@ es universal: un arreglo que se apoye en la ausencia tiene que contar con esos c
 expediente `plan` había escrito 57 `_segmentacion.json` antes de `apply`; no se ha medido si eso
 decide qué compuestos conservan fila padre.
 
-**CERRADA el 2026-09-26 (PR #NNN, fila #44 de `PLAN.md`).** El remedio cambió al medir los 23
+**CERRADA el 2026-09-26 (PR #407, fila #45 de `PLAN.md`).** El remedio cambió al medir los 23
 expedientes con cobertura y catálogo: acreditar al padre por el slug del hijo —que es estructural en
 el 100 % de las piezas— no bastaba, porque **por cardinalidad no cuadraba ninguno**; los dos lados
 cuentan poblaciones distintas. Las «4 filas con padre» de W-02Y2J6 son filas `duplicado` que
@@ -13601,7 +13601,7 @@ raíz de nombre.
 
 **Disparador de promoción.** La próxima apertura cuyo C1 falle con nombres sin extensión.
 
-**CERRADA el 2026-09-26 (PR #NNN, fila #44 de `PLAN.md`).** El censo guarda el `mimeType` —el
+**CERRADA el 2026-09-26 (PR #407, fila #45 de `PLAN.md`).** El censo guarda el `mimeType` —el
 adaptador lo pedía y lo tiraba— y C1 cruza cada nativo por el nombre con que rclone lo deja en disco:
 los formatos de exportación por defecto (`docx,xlsx,pptx,svg`, comprobados en rclone 1.73.5), que el
 pull no cambia y que un test anti-deriva de `intake_drive` vigila. C2 cruza por la misma clave. Un
@@ -13635,7 +13635,7 @@ probar los prefijos de longitud `tamaño - k` para `k < 512`.
 
 **Disparador de promoción.** El próximo C2 con «sin explicar» sobre un `.zip`, `.docx` o `.xlsx`.
 
-**CERRADA el 2026-09-26 (PR #NNN, fila #44 de `PLAN.md`)** por la segunda vía del remedio: se
+**CERRADA el 2026-09-26 (PR #407, fila #45 de `PLAN.md`)** por la segunda vía del remedio: se
 prueba cada frontera posible dentro de la cola de ceros y el sha256 fija cuál es, sin leer el `size`
 de Drive. El test `n9`, que exigía no confirmar un original que ya acababa en ceros, se reescribió
 —declarado en su docstring y en el plan §3—, y su escenario con el contenido alterado quedó como
@@ -13870,7 +13870,7 @@ próxima vez que se use `health_check` para acreditar una instalación, o una de
 
 ## 316. La sala de lectura no recoge audios, zips ni tarjetas de contacto, y ninguna regla dice que no deba
 
-> **Medido el 2026-09-26** con la C3 por identidad de `verificar_apertura` (`#287`, fila #44 de
+> **Medido el 2026-09-26** con la C3 por identidad de `verificar_apertura` (`#287`, fila #45 de
 > `PLAN.md`), en solo lectura sobre los 23 expedientes con cobertura y catálogo.
 
 En **14 de 23** expedientes hay documentos que la sala de máquina inventarió y que la skill
