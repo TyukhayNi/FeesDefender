@@ -219,13 +219,9 @@ def organizar(case: str = typer.Option(..., "--case")):
     if r.get("sin_material"):
         # No es un exito ni un fallo: es que no habia material catalogable, y decirlo
         # con la frase del exito («Sala de lectura organizada. Acciones: {}») es lo que
-        # hacia indistinguible una sala vacia de una sala que no hacia falta montar.
-        if r.get("motivo") == "sin_extension_relevante":
-            typer.echo(
-                f"Sin material catalogable: {r.get('n_omitidos')} fichero(s) en 00_Input, "
-                "ninguno con extensión relevante. No se ha montado ninguna sala.")
-        else:
-            typer.echo("00_Input está vacío: no hay nada que organizar todavía.")
+        # hacia indistinguible una sala vacia de una sala que no hacia falta montar. Desde
+        # `MEJORAS #316` no hay material «no catalogable»: sin material es un 00_Input vacio.
+        typer.echo("00_Input está vacío: no hay nada que organizar todavía.")
         return
     typer.echo(f"Sala de lectura organizada. Acciones: {r['acciones']}")
     # El pendiente se DICE, pero ya no detiene el montaje (P4, 2026-09-14). Antes esto

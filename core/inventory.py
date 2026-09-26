@@ -36,17 +36,6 @@ class FileEntry:
     source: str  # 'sudespacho', 'drive', 'email', 'whatsapp', 'manual', ...
 
 
-# Tipos relevantes para el pipeline jurídico
-_RELEVANT_EXTS = {
-    ".pdf", ".docx", ".doc", ".odt",
-    ".txt", ".rtf", ".md",
-    ".xlsx", ".xls", ".csv",
-    ".eml", ".msg",
-    ".jpg", ".jpeg", ".png", ".tiff", ".tif",
-    ".html", ".htm",
-}
-
-
 def _source_of(rel_parts: tuple[str, ...]) -> str:
     """Determina la fuente canónica a partir de la ruta relativa al 00_Input/.
 
@@ -75,25 +64,30 @@ def _entry(root: Path, path: Path) -> FileEntry:
 
 
 def scan(case_id: str) -> Path:
-    """Recorre 00_Input/, escribe _inventory.json y devuelve su ruta."""
+    """Recorre 00_Input/, escribe _inventory.json y devuelve su ruta.
+
+    **Entra todo lo que no es protocolo** (`MEJORAS #316`). Hasta el 2026-09-26 una lista
+    blanca de extensiones «relevantes para el pipeline» decidía la población, y lo demás iba a
+    `skipped`, que nadie leía: como el catálogo de la sala se construye con lo inventariado,
+    en W-02Y2J6 siete notas de voz de WhatsApp, zips, vCards y un vídeo no llegaron a la sala
+    de lectura, y en los inventarios reales tampoco un `.pptx`, un `.m4a` ni once documentos
+    sin extensión. Qué sabe leer el extractor lo decide el extractor —salta con
+    `ExtractionError` lo que no conoce, como ya hacía con las fotos—; qué es protocolo, el
+    registro por ubicación. La extensión no decide qué es prueba.
+    """
     from core.casos.case_locator import localizar
     input_dir = localizar(case_id) / "00_Input"
     if not input_dir.exists():
         raise FileNotFoundError("falta 00_Input en el caso")
 
     entries: list[FileEntry] = []
-    skipped: list[str] = []
 
     for path in sorted(input_dir.rglob("*")):
         if not path.is_file():
             continue
         # Protocolo por UBICACIÓN (MEJORAS #149): `_caso.md` y sus temporales `._caso.*`
-        # están en el registro de la raíz; un homónimo dentro de un lote es documento. El
-        # `_caso.md.bak_<ts>` de `migrate_05crm_buckets` cae a `skipped` por extensión.
+        # están en el registro de la raíz; un homónimo dentro de un lote es documento.
         if es_fichero_de_protocolo(path.relative_to(input_dir).as_posix()):
-            continue
-        if path.suffix.lower() not in _RELEVANT_EXTS:
-            skipped.append(path.relative_to(input_dir).as_posix())
             continue
         entries.append(_entry(input_dir, path))
 
@@ -107,7 +101,6 @@ def scan(case_id: str) -> Path:
         "scanned_at": datetime.now().isoformat(timespec="seconds"),
         "count": len(entries),
         "by_source": by_source,
-        "skipped": skipped,
         "files": [asdict(e) for e in entries],
     }
     out = input_dir / "_inventory.json"

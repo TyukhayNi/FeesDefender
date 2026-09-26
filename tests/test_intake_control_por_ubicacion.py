@@ -250,9 +250,11 @@ def test_t1_el_adjunto_homonimo_entra_y_el_de_la_raiz_no(tmp_casos_root):
     (drive / ".pulled").write_text("{}", encoding="utf-8")
 
     adjunto = f"{LOTE}/adjuntos/_ficha_crm.yaml"
-    # inventory.scan: `.yaml` no es extensión relevante → va a `skipped`, pero NO desaparece
+    # inventory.scan: desde `MEJORAS #316` la extensión ya no decide la población, así que el
+    # adjunto `.yaml` entra en `files` —antes iba a `skipped`, que nadie leía, y este test
+    # solo podía exigir que no desapareciera del todo—
     data = json.loads(inventory.scan("EV-149-T1").read_text(encoding="utf-8"))
-    vistos = {f["rel_path"] for f in data["files"]} | set(data["skipped"])
+    vistos = {f["rel_path"] for f in data["files"]}
     assert adjunto in vistos and "_ficha_crm.yaml" not in vistos
     # albarán del lote
     assert "adjuntos/_ficha_crm.yaml" in {i.relpath for i in intake_lotes.items_desde_disco(lote)}
