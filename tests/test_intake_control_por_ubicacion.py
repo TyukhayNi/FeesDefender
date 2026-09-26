@@ -20,6 +20,7 @@ from core.intake_control import (
     ENTREGA,
     PATRON_LOTE,
     RAIZ,
+    RAIZ_PATRONES,
     RAIZ_PREFIJOS,
     es_fichero_de_protocolo,
     nombres_registrados,
@@ -89,6 +90,32 @@ def test_viabilidad_json_y_su_temporal_son_protocolo():
     assert es_fichero_de_protocolo("a/b/_viabilidad.json.ab12cd34.tmp") is False
 
 
+def test_los_ficheros_que_migrate_05crm_buckets_deja_en_la_raiz_son_protocolo():
+    """`MEJORAS #316`: hasta el 2026-09-26 los apartaba del inventario CLI su lista blanca
+    de extensiones, no el registro —lo decía el propio comentario de `inventory.scan`—, y
+    la sala de máquina, que no tiene lista, los inventariaba como documentos. Al quitar la
+    lista, el que lo dice tiene que ser el registro: son la bitácora y las copias de
+    seguridad que la migración escribe junto a lo que migra."""
+    for nombre in ("_migration_05crm_20260610T152854.json",
+                   "_caso.md.bak_20260610T152854", "_intake_hashes.json.bak_20260610T152854"):
+        assert es_fichero_de_protocolo(nombre) is True, nombre
+        assert es_fichero_de_protocolo(f"a/b/{nombre}") is False, nombre
+
+
+def test_los_nombres_de_la_migracion_se_casan_con_su_sello_y_no_por_prefijo():
+    """R1/H-10 del #408: con `startswith`, un fichero del cliente en la raíz que empezara por
+    `_migration_05crm_` o `_caso.md.bak_` pasaba por protocolo, y eso es sacarlo del
+    inventario. El escritor nombra con un sello fijo (`%Y%m%dT%H%M%S`, en
+    `scripts/migrate_05crm_buckets.py`): se casa el nombre entero, no su principio."""
+    for nombre in ("_migration_05crm_contrato.pdf", "_caso.md.bak_prueba.pdf",
+                   "_intake_hashes.json.bak_x.docx",
+                   "_migration_05crm_20260610T152854.json.pdf",
+                   "_caso.md.bak_20260610T152854.pdf"):
+        assert es_fichero_de_protocolo(nombre) is False, nombre
+    # El disco es Windows: la caja no cambia el fichero, tampoco en el sello.
+    assert es_fichero_de_protocolo("_CASO.MD.BAK_20260610t152854") is True
+
+
 def test_t10_los_prefijos_son_los_que_los_escritores_usan_de_verdad():
     """Los prefijos del registro se contrastan con el CÓDIGO de cada escritor, no con
     su docstring (R1/H-05 del diseño)."""
@@ -100,9 +127,9 @@ def test_t10_los_prefijos_son_los_que_los_escritores_usan_de_verdad():
         "_viabilidad.json.": REPO / "core" / "viabilidad_json.py",
     }
     assert set(fuentes) == set(RAIZ_PREFIJOS)
-    # Los dos que no llevan el prefijo LITERAL en el código: se arman con un f-string
-    # sobre un nombre que vive en otra constante, así que se contrasta el patrón fuente
-    # (lo que de verdad hay entre comillas) y no el valor ya interpolado.
+    # Los que no llevan el prefijo LITERAL en el código: se arman con un f-string sobre un
+    # nombre que vive en otra constante, así que se contrasta el patrón fuente (lo que de
+    # verdad hay entre comillas) y no el valor ya interpolado.
     literales_dinamicos = {
         "._ocurrencias_crm.json.": '._{_FILENAME}.',
         "_viabilidad.json.": '{destino.name}.',
@@ -111,6 +138,20 @@ def test_t10_los_prefijos_son_los_que_los_escritores_usan_de_verdad():
         txt = fichero.read_text(encoding="utf-8")
         literal = literales_dinamicos.get(pre, pre)
         assert literal in txt, f"{fichero.name} ya no escribe temporales con prefijo {pre!r}"
+
+
+def test_t10_los_patrones_de_nombre_entero_son_los_de_la_migracion():
+    """Los tres nombres de `scripts/migrate_05crm_buckets.py` van por nombre entero (R1/H-10
+    del #408), con el sello que el script usa. La bitácora sale de
+    `f"_migration_05crm_{ts}.json"` y las dos copias de seguridad de
+    `src.with_suffix(src.suffix + f".bak_{ts}")` sobre dos rutas que el script nombra; la
+    prueba de que casan con lo que de verdad escribe es correrlo
+    (`test_migrate_05crm_buckets.py::test_lo_que_la_migracion_deja_en_la_raiz_…`)."""
+    migracion = (REPO / "scripts" / "migrate_05crm_buckets.py").read_text(encoding="utf-8")
+    for literal in ('strftime("%Y%m%dT%H%M%S")', 'f"_migration_05crm_{ts}.json"',
+                    'f".bak_{ts}"', '"00_Input/_caso.md"', '"00_Input/_intake_hashes.json"'):
+        assert literal in migracion, literal
+    assert len(RAIZ_PATRONES) == 3
 
 
 # ── T11: rutas que no son relativas sanas ──────────────────────────────────────────────────
@@ -229,9 +270,11 @@ def test_t1_el_adjunto_homonimo_entra_y_el_de_la_raiz_no(tmp_casos_root):
     (drive / ".pulled").write_text("{}", encoding="utf-8")
 
     adjunto = f"{LOTE}/adjuntos/_ficha_crm.yaml"
-    # inventory.scan: `.yaml` no es extensión relevante → va a `skipped`, pero NO desaparece
+    # inventory.scan: desde `MEJORAS #316` la extensión ya no decide la población, así que el
+    # adjunto `.yaml` entra en `files` —antes iba a `skipped`, que nadie leía, y este test
+    # solo podía exigir que no desapareciera del todo—
     data = json.loads(inventory.scan("EV-149-T1").read_text(encoding="utf-8"))
-    vistos = {f["rel_path"] for f in data["files"]} | set(data["skipped"])
+    vistos = {f["rel_path"] for f in data["files"]}
     assert adjunto in vistos and "_ficha_crm.yaml" not in vistos
     # albarán del lote
     assert "adjuntos/_ficha_crm.yaml" in {i.relpath for i in intake_lotes.items_desde_disco(lote)}

@@ -102,15 +102,23 @@ _SIN_FECHA = SIN_FECHA   # alias interno histórico
 # con la constante real core.whatsapp_intake._ORIGINAL_ZIP_NAME — sincronía a mano).
 _NOMBRE_EXPORT_CRUDO_WHATSAPP = "_export_original.zip"
 
+#: Dónde deja el intake ese zip: el lote `<AAAA-MM-DD>_whatsapp_NN/` que reserva
+#: `whatsapp_intake.deposit_export` y, antes de los lotes, el cajón legacy `02_Whatsapp/` (hay
+#: cuatro en los casos reales). Fuera de ahí la pareja de nombres no es suya (R1/H-07 del #408).
+_LUGAR_DEL_INTAKE_WHATSAPP = re.compile(r"^(\d{4}-\d{2}-\d{2}_whatsapp_\d{2,}|02_whatsapp)$",
+                                        re.IGNORECASE)
+
 
 def emparejar_exports_whatsapp(rutas: list[str]) -> tuple[list[str], list[dict]]:
     """Separa los exports CRUDOS de WhatsApp de las rutas a clasificar. Un `.zip`
     es crudo SOLO si su basename es exactamente `_export_original.zip` (el que
-    `whatsapp_intake.deposit_export` deja junto al `_chat.txt` extraído) Y en su
-    MISMO directorio hay un `_chat.txt`: es el crudo del chat ya extraído y no
+    `whatsapp_intake.deposit_export` deja junto al `_chat.txt` extraído), en su
+    MISMO directorio hay un `_chat.txt` Y está donde escribe el intake —un lote de
+    WhatsApp o el cajón legacy `02_Whatsapp/`—: es el crudo del chat ya extraído y no
     debe tener fila propia (no tiene fecha ni espejo MD; darle una fabrica basura
     `0000-00-00`). Un `.zip` con OTRO nombre (documentación aportada) se conserva
-    aunque comparta carpeta con un chat. Devuelve `(rutas_sin_crudos, crudos)`;
+    aunque comparta carpeta con un chat, y la misma pareja en otra fuente también: dos
+    nombres no dicen quién escribió el fichero. Devuelve `(rutas_sin_crudos, crudos)`;
     cada crudo se anota `duplicado_de` su `_chat.txt` hermano (trazable, no
     borrado). Determinista, sin releer nada."""
     def _norm(r: str) -> str:
@@ -123,6 +131,12 @@ def emparejar_exports_whatsapp(rutas: list[str]) -> tuple[list[str], list[dict]]
     def _base(r: str) -> str:
         return _norm(r).rsplit("/", 1)[-1].lower()
 
+    def _del_intake(r: str) -> bool:
+        partes = [p for p in _norm(r).split("/") if p]
+        if partes and partes[0].casefold() == "00_input":
+            partes = partes[1:]
+        return len(partes) > 1 and bool(_LUGAR_DEL_INTAKE_WHATSAPP.match(partes[0]))
+
     chat_por_dir: dict[str, str] = {}
     for r in rutas:
         if _base(r) == "_chat.txt":
@@ -131,13 +145,19 @@ def emparejar_exports_whatsapp(rutas: list[str]) -> tuple[list[str], list[dict]]
     limpias: list[str] = []
     crudos: list[dict] = []
     for r in rutas:
-        es_crudo = _base(r) == _NOMBRE_EXPORT_CRUDO_WHATSAPP
+        es_crudo = _base(r) == _NOMBRE_EXPORT_CRUDO_WHATSAPP and _del_intake(r)
         hermano = chat_por_dir.get(_dir(r))
         if es_crudo and hermano:
             crudos.append({"ruta": r, "duplicado_de": hermano, "motivo": "export_crudo_whatsapp"})
         else:
             limpias.append(r)
     return limpias, crudos
+
+
+# La firma `_firma_*` que `core/email_export` deposita NO tiene regla aquí (R1/H-01 del
+# #408): el productor la MARCA y la deja en el expediente —«marca, no esconde», decisión de
+# Nikolai del 2026-09-06—, así que es un adjunto más de su correo. La primera versión de
+# MEJORAS #316 la dispensaba de fila con `es_firma_de_correo`, y eso era descartarla.
 
 
 def fecha_de_nombre(nombre: str) -> str:

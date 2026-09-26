@@ -1252,20 +1252,21 @@ def organizar(case_id: str, *, crm_docs=None) -> dict:
     # la R1 adversarial dejó abierto: con el catálogo encadenado esto ya no puede pasar
     # *por construcción*, y esto es el cinturón que lo comprueba.
     #
-    # Y las tres causas de un catálogo vacío se distinguen, porque confundirlas sería
+    # Y las dos causas de un catálogo vacío se distinguen, porque confundirlas sería
     # repetir en otro sitio el defecto de `residuo_sin_texto`: solo la primera es un fallo.
+    # Hasta el 2026-09-26 había una tercera —ficheros «sin extensión relevante»—, y era la
+    # lista blanca del inventario dejando fuera de la sala audios, zips y planos
+    # (`MEJORAS #316`): desde entonces todo lo que no es protocolo se cataloga.
     if not catalogo_documental.load_catalog(case_id):
         inv = inventory.load(case_id)
-        n_vistos, n_omitidos = int(inv.get("count") or 0), len(inv.get("skipped") or [])
+        n_vistos = int(inv.get("count") or 0)
         if n_vistos:
             raise RuntimeError(
                 f"El inventario vio {n_vistos} fichero(s) y el catálogo quedó VACÍO. "
                 "No se organiza nada sobre un catálogo que se comió el material: "
                 "revisa `catalogo_documental.build_catalog` antes de seguir.")
-        motivo = "sin_extension_relevante" if n_omitidos else "input_vacio"
         return {"case_id": case_id, "n_pendientes": 0,
-                "acciones": {}, "sin_material": True, "motivo": motivo,
-                "n_omitidos": n_omitidos}
+                "acciones": {}, "sin_material": True, "motivo": "input_vacio"}
 
     aplicar_clasificacion(case_id, solo_residuo=True)
     clasif = clasificar_caso(case_id)

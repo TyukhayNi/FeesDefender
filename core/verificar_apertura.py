@@ -185,14 +185,21 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     el productor admite, o una ruta que la cobertura no tiene— se acepta y **se dice**, porque
     no es un cotejo íntegro (R1/H-04).
 
-    **Solo dos cosas no se exigen, y las dos son reglas de sus productores, no criterio
+    **Solo dos cosas no se exigen por regla, y las dos son de sus productores, no criterio
     de este verificador**; la evidencia las cuenta:
 
     - lo que el registro por ubicación declara protocolo (`core/intake_control.py`,
       `MEJORAS #149`): las coberturas antiguas lo inventariaban como documento, y la sala de
       máquina de hoy ya no lo hace;
-    - el `_export_original.zip` que el intake deja junto a su `_chat.txt`: la skill lo aparta
-      por regla (`emparejar_exports_whatsapp`), porque es el crudo del chat.
+    - el `_export_original.zip` que el intake deja junto a su `_chat.txt`, en su lote de
+      WhatsApp o en el cajón legacy `02_Whatsapp/`: la skill lo aparta por regla
+      (`emparejar_exports_whatsapp`), porque es el crudo del chat (R1/H-07 del #408).
+
+    La firma `_firma_*` de `email_export` NO: el productor la marca y la deja, así que se exige
+    como cualquier adjunto (R1/H-01 del #408). Y lo que el manifiesto de la sala declara
+    `excluido` en `## No copiados` tampoco se exige, pero **se enseña**: es una decisión con
+    su motivo, y el `ok` la nombra con los dos para que la vea quien la tiene que juzgar. Una
+    línea `duplicado` no exime: el duplicado se prueba por su sha256 (R1/H-09 del #408).
 
     Lo demás que falte, falta: un audio de WhatsApp o un zip que la sala de lectura no recoge
     son documentos del expediente, y C3 los nombra con su ruta.
@@ -262,6 +269,20 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     catalogo_en = _donde(presentes[0])
     entradas = catalogos[catalogo_en]
 
+    # Lo que la sala declara no copiado, con ruta y motivo (`MEJORAS #316`). Sin manifiesto
+    # no hay declaraciones; con uno que no se puede leer, no se sabe cuáles hay.
+    manifiesto = proc / _SALA_LECTURA / "_MANIFIESTO.md"
+    declaradas: dict[str, str] = {}
+    if manifiesto.exists():
+        try:
+            texto_manifiesto = manifiesto.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
+                             f"el `_MANIFIESTO.md` de la sala no se puede leer "
+                             f"({type(exc).__name__}): no se sabe qué declara no copiado")
+        declaradas = {_clave_de_ruta_de_origen(r): d for m, r, d in _parse_no_copiados(texto_manifiesto)
+                      if m == "excluido"}
+
     # La cobertura, sana y agrupada por fuente.
     slugs = {str(f.get("slug") or "").strip() for f in filas}
     slugs.discard("")
@@ -288,7 +309,7 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
         if not isinstance(rel, str) or not rel.strip():
             sin_ruta.append(repr(f.get("slug")))
             continue
-        clave = _clave_de_ruta_de_origen(rel)
+        clave = _clave_de_cobertura(rel)
         muestra.setdefault(clave, rel)
         # El sha256 de ORIGEN: el del fichero físico. En una pieza de bundle, `sha256` es el
         # de la pieza y `parent_sha256` el del PDF que el catálogo recoge.
@@ -314,9 +335,16 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
         if h:
             con_hash.setdefault(h, []).append(i)
 
-    dirs_con_chat = {k.rsplit("/", 1)[0] if "/" in k else "" for k in fuentes
-                     if k.rsplit("/", 1)[-1].casefold() == "_chat.txt"}
-    por_ruta = por_sha = solo_por_ruta = solo_por_sha = 0
+    crudos = _crudos_de_whatsapp(fuentes)
+    # Los sha256 del catálogo que acreditan: los de las entradas que no contradicen. Una copia
+    # con la cola de ceros del pull (`MEJORAS #225`) tiene otro sha256 y el mismo contenido,
+    # y eso se MIDE —el detector de C2—, no se declara: ocho en W-02UIQU y W-0462E1 salían
+    # sin catalogar cuando la línea `duplicado` dejó de eximir (R1 del #408).
+    hashes_catalogo = {h for i, (_, h) in enumerate(pares)
+                       if i not in contradictorias and _es_sha256(h)}
+    entrada = case_dir / "00_Input"
+    por_ruta = por_sha = solo_por_ruta = solo_por_sha = por_relleno = 0
+    declaradas_usadas: list[str] = []
     excluidas = {"protocolo": 0, "export_crudo_whatsapp": 0}
     sin_catalogar: list[str] = []
     contradicciones: list[str] = []
@@ -340,9 +368,12 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
                 solo_por_sha += 1
         elif es_fichero_de_protocolo(clave):
             excluidas["protocolo"] += 1
-        elif (clave.rsplit("/", 1)[-1].casefold() == _NOMBRE_EXPORT_CRUDO_WHATSAPP
-              and (clave.rsplit("/", 1)[0] if "/" in clave else "") in dirs_con_chat):
+        elif clave in crudos:
             excluidas["export_crudo_whatsapp"] += 1
+        elif _originales_de_relleno_225(entrada / muestra[clave]) & hashes_catalogo:
+            por_relleno += 1
+        elif clave in declaradas:
+            declaradas_usadas.append(f"{muestra[clave]} — {declaradas[clave]}")
         else:
             sin_catalogar.append(muestra[clave])
     shas_cobertura = set().union(*fuentes.values()) if fuentes else set()
@@ -359,6 +390,9 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
           "huerfanos": huerfanos[:8], "catalogo_en": catalogo_en, "catalogos": conteos,
           "por_ruta": por_ruta, "por_sha": por_sha, "excluidas": excluidas,
           "solo_por_ruta": solo_por_ruta, "solo_por_sha": solo_por_sha,
+          "por_relleno_225": por_relleno,
+          "declaradas_no_copiadas": len(declaradas_usadas),
+          "declaradas_muestra": declaradas_usadas[:8],
           "n_contradicciones": len(contradicciones), "contradicciones": contradicciones[:8],
           "n_sin_catalogar": len(sin_catalogar), "sin_catalogar": sin_catalogar[:8],
           "sin_catalogar_por_extension": dict(por_extension.most_common()),
@@ -380,8 +414,8 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     if sin_catalogar:
         tipos = ", ".join(f"{n} {ext}" for ext, n in por_extension.most_common(4))
         partes.append(f"{len(sin_catalogar)} de las {len(fuentes)} fuentes de la cobertura "
-                      f"no están entre las {len(entradas)} entradas del catálogo ({tipos}): "
-                      f"{', '.join(sin_catalogar[:3])}")
+                      f"no están entre las {len(entradas)} entradas del catálogo ni declaradas "
+                      f"`excluido` en «## No copiados» ({tipos}): {', '.join(sin_catalogar[:3])}")
     if catalogo_sin_fuente:
         partes.append(f"{len(catalogo_sin_fuente)} entrada(s) del catálogo cuya fuente no "
                       f"procesó la sala de máquina: {', '.join(catalogo_sin_fuente[:3])}")
@@ -389,14 +423,18 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO, "; ".join(partes), ev)
     # El `ok` dice cuánto se cotejó de verdad: lo no exigido no está en el catálogo, y un cruce
     # por una sola de las dos claves no es un cotejo íntegro (R1/H-04).
-    exigibles = len(fuentes) - sum(excluidas.values())
+    exigibles = len(fuentes) - sum(excluidas.values()) - len(declaradas_usadas)
     cabeza = ("no hay fuentes exigibles en la cobertura" if exigibles == 0 else
               "la única fuente exigible de la cobertura está en el catálogo" if exigibles == 1
               else f"las {exigibles} fuentes exigibles de la cobertura están en el catálogo")
     entradas_ok = ("el catálogo no tiene entradas" if not entradas else
                    "la entrada del catálogo tiene su fuente" if len(entradas) == 1 else
                    f"las {len(entradas)} entradas del catálogo tienen su fuente")
-    notas = [f"{cabeza} ({por_ruta} por ruta y {por_sha} por sha256), y {entradas_ok}"]
+    cruces = [f"{por_ruta} por ruta", f"{por_sha} por sha256"]
+    if por_relleno:
+        cruces.append(f"{por_relleno} por su contenido sin la cola de ceros del pull "
+                      "(MEJORAS #225)")
+    notas = [f"{cabeza} ({', '.join(cruces[:-1])} y {cruces[-1]}), y {entradas_ok}"]
     if solo_por_ruta:
         notas.append(f"{solo_por_ruta} solo por la ruta, sin sha256 que contrastar")
     if solo_por_sha:
@@ -407,6 +445,11 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
                                                     excluidas["export_crudo_whatsapp"])) if n]
     if no_exigidas:
         notas.append(f"no se exigen {' y '.join(no_exigidas)}")
+    if declaradas_usadas:
+        # Se nombran: C3 no juzga la decisión, pero no la esconde tras un número (R1/H-09).
+        mas = (f" y {len(declaradas_usadas) - 3} más" if len(declaradas_usadas) > 3 else "")
+        notas.append(f"{len(declaradas_usadas)} excluida(s) por decisión en «## No copiados», "
+                     f"sin contraste: {'; '.join(declaradas_usadas[:3])}{mas}")
     if len(catalogos) > 1:
         # Los dos catálogos cuadran por sus pares ruta/sha256, y es lo único que se mira
         # (R1/H-03): ningún productor escribe otro `estado` que `original`.
@@ -420,6 +463,63 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
 #: (`preclasificar.emparejar_exports_whatsapp`). Copia, no importación: este módulo no
 #: importa escritores. Un test anti-deriva la compara con las dos.
 _NOMBRE_EXPORT_CRUDO_WHATSAPP = "_export_original.zip"
+#: Donde lo deja el intake: su lote de WhatsApp o el cajón legacy `02_Whatsapp/` (R1/H-07 del
+#: #408). Copia de `preclasificar._LUGAR_DEL_INTAKE_WHATSAPP`.
+_LUGAR_DEL_INTAKE_WHATSAPP = re.compile(r"(\d{4}-\d{2}-\d{2}_whatsapp_\d{2,}|02_whatsapp)",
+                                        re.IGNORECASE)
+
+
+def _crudos_de_whatsapp(rutas) -> set[str]:
+    """Las rutas que son el zip crudo de un chat: el nombre exacto, un `_chat.txt` en su misma
+    carpeta y la carpeta dentro de donde escribe el intake. Copia de
+    `preclasificar.emparejar_exports_whatsapp`; un test compara las dos sobre las mismas rutas.
+    Dos nombres en una carpeta cualquiera no dicen quién escribió el fichero."""
+    def _dir_y_base(r: str) -> tuple[str, str]:
+        d, _, b = r.replace("\\", "/").rpartition("/")
+        return d, b.casefold()
+
+    def _del_intake(r: str) -> bool:
+        partes = [p for p in r.replace("\\", "/").split("/") if p]
+        if partes and partes[0].casefold() == "00_input":
+            partes = partes[1:]
+        return len(partes) > 1 and bool(_LUGAR_DEL_INTAKE_WHATSAPP.fullmatch(partes[0]))
+
+    rutas = list(rutas)
+    con_chat = {_dir_y_base(r)[0] for r in rutas if _dir_y_base(r)[1] == "_chat.txt"}
+    return {r for r in rutas
+            if _dir_y_base(r)[1] == _NOMBRE_EXPORT_CRUDO_WHATSAPP
+            and _dir_y_base(r)[0] in con_chat and _del_intake(r)}
+
+
+#: `## No copiados` del `_MANIFIESTO.md` de la sala, con el formato cerrado de la skill
+#: (`manifiesto_parser.parse_no_copiados`, del que esto es copia sin el modo estricto; un
+#: test compara los dos sobre el mismo texto). Una exclusión con motivo y ruta es una
+#: decisión escrita, no un olvido (`MEJORAS #316`). La sección llega hasta el siguiente
+#: encabezado de nivel 1 o 2 —un `###` es subsección suya— y solo cuentan las viñetas de
+#: formato cerrado: el texto sin viñeta es comentario (R1/H-05 del #408).
+_CABECERA_NO_COPIADOS = re.compile(r"^##\s+No copiados\b", re.IGNORECASE)
+_LINEA_NO_COPIADO = re.compile(
+    r"^\s*-\s+(?P<motivo>duplicado(?:, saltado)?|excluido):\s+`(?P<ruta>[^`]+)`"
+    r"\s+—\s+(?P<detalle>\S.*?)\s*$")
+_DETALLE_DE_DUPLICADO = re.compile(r"de\s+`[^`]+`")
+
+
+def _parse_no_copiados(texto: str) -> list[tuple[str, str, str]]:
+    """`(motivo, ruta, detalle)` de cada línea de formato cerrado; las que no lo tienen, no
+    cuentan. Un `duplicado` tiene que decir de qué: `— de `ruta``."""
+    dentro, fuera = False, []
+    for linea in texto.splitlines():
+        if re.match(r"^#{1,2}\s", linea):
+            dentro = bool(_CABECERA_NO_COPIADOS.match(linea))
+            continue
+        m = _LINEA_NO_COPIADO.match(linea) if dentro else None
+        if not m:
+            continue
+        motivo = "duplicado" if m.group("motivo").startswith("duplicado") else "excluido"
+        if motivo == "duplicado" and not _DETALLE_DE_DUPLICADO.match(m.group("detalle")):
+            continue
+        fuera.append((motivo, m.group("ruta").strip(), m.group("detalle")))
+    return fuera
 
 
 def _clave_de_ruta_de_origen(ruta: str) -> str:
@@ -428,13 +528,22 @@ def _clave_de_ruta_de_origen(ruta: str) -> str:
     Relativa a `00_Input/`, con `/`, y NFC como en `clave_de_cruce`. Tres casos reales
     escriben `00_Input/…` en la `ruta_relativa` del catálogo (W-02Q38C, W-02UDC1,
     W-0462E1), y un Modo de la skill puede dejar `\\`: se quita UN prefijo `00_Input/`, que
-    es lo que la cobertura nunca lleva.
+    es lo que la cobertura nunca lleva. Sin `lstrip("/")` (R1/H-06 del #408): una ruta
+    absoluta no se hace pasar por relativa.
     """
-    r = ruta.strip().replace("\\", "/").lstrip("/")
+    r = ruta.strip().replace("\\", "/")
     primero, _, resto = r.partition("/")
     if resto and primero.casefold() == "00_input":
         r = resto
     return clave_de_cruce(r)
+
+
+def _clave_de_cobertura(rel: str) -> str:
+    """La `rel_path` de la cobertura, que YA es relativa a `00_Input/`: con `/` y NFC, sin
+    quitarle nada. Un primer componente `00_Input` es una carpeta del cliente, y recortarlo
+    convertía `00_Input/_caso.md` en el protocolo de la raíz (R1/H-06 del #408). Ninguna de
+    las 24 coberturas reales lleva el prefijo; 457 entradas de catálogo, sí."""
+    return clave_de_cruce(rel.strip().replace("\\", "/"))
 
 
 def _identidad_de_entrada(e: dict) -> tuple[str, str]:
@@ -1002,8 +1111,11 @@ def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
 _MAX_COLA_RELLENO = 512
 
 
-def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
-    """¿Los bytes de `p` son los del original CON la cola de ceros de `MEJORAS #225` detrás?
+def _originales_de_relleno_225(p: Path) -> set[str]:
+    """Los sha256 que puede tener el original del que `p` es copia CON la cola de ceros de
+    `MEJORAS #225` detrás: el de cada prefijo que acaba dentro de esa cola. Vacío si `p` no
+    tiene la forma del relleno. `_es_el_relleno_de_225` pregunta por uno; C3 cruza el
+    conjunto con el catálogo (R1 del #408), así que el fichero se lee una sola vez.
 
     **Prueba, no parecido**, y esa es la diferencia con el intento anterior. El módulo
     `intake_drive_hash` (2026-09-10) se quedaba en «compatible con el relleno» —tamaño
@@ -1044,7 +1156,7 @@ def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
     try:
         tam = p.stat().st_size
         if tam == 0 or tam % 512 != 0:
-            return False
+            return set()
         # El prefijo que seguro NO es cola (la cola mide < 512), hasheado en bloques; y
         # luego un hash por cada frontera candidata —toda posición desde el primer cero de
         # la cola— sobre los <= 511 bytes finales. `hexdigest` no consume el estado: una
@@ -1056,26 +1168,35 @@ def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
             while leidos < seguro:
                 trozo = f.read(min(1024 * 1024, seguro - leidos))
                 if not trozo:
-                    return False                 # el fichero encogio: no se afirma nada
+                    return set()                 # el fichero encogio: no se afirma nada
                 h.update(trozo)
                 leidos += len(trozo)
             cola = f.read(tam - seguro)
             if len(cola) != tam - seguro or f.read(1):
-                return False                     # encogio o crecio bajo los pies
+                return set()                     # encogio o crecio bajo los pies
         ceros = len(cola) - len(cola.rstrip(bytes([0])))
         if ceros == 0:
-            return False
+            return set()
         frontera = tam - ceros               # primer cero de la cola examinada
-        esperado = sha_remoto.lower()
+        candidatos: set[str] = set()
         for k in range(len(cola)):
             # `h` lleva los `seguro + k` primeros bytes: ese es el original candidato, y
             # desde `frontera` todo lo que queda detrás son ceros.
-            if seguro + k >= frontera and h.hexdigest().lower() == esperado:
-                return True
+            if seguro + k >= frontera:
+                candidatos.add(h.hexdigest().lower())
             h.update(cola[k:k + 1])
-        return False
+        return candidatos
     except OSError:
-        return False                             # no poder mirar no es haber visto
+        return set()                             # no poder mirar no es haber visto
+
+
+def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
+    """¿Los bytes de `p` son los del original CON la cola de ceros de `MEJORAS #225` detrás?
+    Prueba, no parecido: el prefijo tiene que hashear al `sha256` esperado (ver
+    `_originales_de_relleno_225`)."""
+    return sha_remoto.lower() in _originales_de_relleno_225(p)
+
+
 @_de_red
 def c2_hash_contra_drive(case_dir: Path, ctx: "_Contexto") -> Resultado:
     """El sha256 local contra el `sha256Checksum` que declara Drive (`MEJORAS #225`).

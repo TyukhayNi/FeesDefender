@@ -1,5 +1,34 @@
 # Changelog — organizar-sala-lectura
 
+## 1.18 — 2026-09-26
+- **Población: cada fichero de `00_Input` tiene fila o una línea en `## No copiados`, y el
+  verify lo comprueba** (`MEJORAS #316`). Medido con la C3 por identidad de
+  `verificar_apertura`: en 14 de 23 expedientes, documentos que la sala de máquina procesó
+  no llegaron al catálogo, y en varios no figuraban en ninguna parte del manifiesto. La
+  sección `## No copiados` era texto libre —cinco formatos en los manifiestos reales— y
+  nadie podía cruzarla.
+- **Formato cerrado** de `## No copiados`: `` - excluido: `ruta` — motivo `` y, informativa,
+  `` - duplicado: `ruta` — de `ruta conservada` `` (`manifiesto_parser.parse_no_copiados`; se
+  acepta el alias antiguo `duplicado, saltado`). Una viñeta fuera de formato es un error del
+  verify; el texto sin viñeta es comentario.
+- **`verificar_sala.py`** falla si una fuente de la cobertura no da cuenta de sí: por una fila
+  con su ruta que no la contradiga, por su sha256 en otra fila (un duplicado: lo comprueba la
+  verja, no se declara), por su contenido sin la cola de ceros del pull (`MEJORAS #225`, que la
+  verja mide con el `00_Input` del caso) o por una línea `excluido`. Solo no lo piden dos reglas de productor:
+  el protocolo del registro por ubicación (copia exacta de `core/intake_control.py` en
+  `scripts/intake_control.py`) y el zip crudo del intake de WhatsApp junto a su chat, en su
+  lote o en `02_Whatsapp/`. La cobertura se deduce del layout; sin ella el verify falla, y
+  `--sin-cobertura` da un OK que dice PARCIAL.
+- **Antes de publicarse, la R1 adversarial (Codex, 2026-09-26) cambió seis cosas de esta
+  misma versión:** la firma `_firma_*` de `email_export` dejó de estar exenta —el productor
+  la marca, no la descarta—; una fila con la ruta de una fuente y otro sha256 la contradice;
+  una línea `duplicado` no exime; la ruta de la cobertura no pierde un `00_Input/` del
+  cliente; el zip crudo solo se aparta donde escribe el intake; y el verify ya no da 0 sin
+  haber contrastado la población.
+- **Audios, vídeos, zips y vCards son documentos** (Paso 5): fila, con `08` si no se saben
+  leer. En W-02Y2J6 eran siete notas de voz de WhatsApp, transcritas en `03_MD` y ausentes
+  de la sala.
+
 ## 1.17 — 2026-09-10
 - **La desambiguación de nombres pasa de `_2`/`_3` a `__<sha8>`, y en un grupo colisionado
   NADIE conserva el nombre pelado** (Paso 2, y la mención del Paso 4 al abortar por

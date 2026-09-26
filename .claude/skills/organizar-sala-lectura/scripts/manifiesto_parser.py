@@ -62,3 +62,63 @@ def parse_manifiesto(texto: str, *, estricto: bool = False) -> list[dict]:
             "fila(s) malformada(s) en el _MANIFIESTO.md (nº de columnas incorrecto) — "
             "se perderían del catálogo en silencio:\n" + "\n".join(rechazadas))
     return filas
+
+
+# --- `## No copiados` (MEJORAS #316) ------------------------------------------------
+#
+# Cada fichero de `00_Input` da cuenta de sí con una fila —por su ruta, o por su sha256 si es
+# copia de otro— o con una línea `excluido` en esta sección. Las líneas `duplicado` son para
+# quien lee: el duplicado lo prueba el sha256, no la frase (R1/H-04 y H-09 del #408). Hasta el
+# 2026-09-26 la sección era texto libre —cinco formatos distintos en los manifiestos reales, y
+# ficheros enteros que no aparecían en ninguno—, así que nadie podía comprobar que la sala de
+# lectura hubiera dado cuenta de todo.
+_CABECERA_NO_COPIADOS = re.compile(r"^##\s+No copiados\b", re.IGNORECASE)
+_LINEA_NO_COPIADO = re.compile(
+    r"^\s*-\s+(?P<motivo>duplicado(?:, saltado)?|excluido):\s+`(?P<ruta>[^`]+)`"
+    r"\s+—\s+(?P<detalle>\S.*?)\s*$")
+#: Un `duplicado` dice de qué: `— de `lo que se conserva`` (R1/H-05 del #408). Los 47 de los
+#: manifiestos reales lo cumplen.
+_DETALLE_DE_DUPLICADO = re.compile(r"de\s+`[^`]+`")
+
+
+def parse_no_copiados(texto: str, *, estricto: bool = False) -> list[dict]:
+    """Las declaraciones de `## No copiados`: `{motivo, ruta, detalle}` por línea.
+
+    Formato cerrado: ``- duplicado: `ruta_original` — de `lo que se conserva` `` o
+    ``- excluido: `ruta_original` — motivo``. Se acepta el alias ``duplicado, saltado``, que
+    es como lo escribieron los manifiestos anteriores. Una viñeta de la sección que no casa
+    con el formato —prosa que nombra varios ficheros, una línea sin motivo, un `duplicado`
+    que no dice de qué— **no se puede cruzar con nada**: con `estricto=True` es un
+    `ValueError`, y sin él se ignora.
+
+    La sección llega hasta el siguiente encabezado de nivel 1 o 2: un `###` es subsección
+    suya, como en Markdown. El texto sin viñeta es comentario —los manifiestos reales ponen
+    rótulos como «Excluidos:»— y no declara nada, así que no puede sacar a nadie de la verja:
+    la fuente que nombre sigue sin dar cuenta de sí (R1/H-05 del #408).
+    """
+    dentro = False
+    fuera: list[dict] = []
+    rechazadas: list[str] = []
+    for i, linea in enumerate(texto.splitlines(), 1):
+        if re.match(r"^#{1,2}\s", linea):
+            dentro = bool(_CABECERA_NO_COPIADOS.match(linea))
+            continue
+        s = linea.strip()
+        if not dentro or not s.startswith("-"):
+            continue
+        m = _LINEA_NO_COPIADO.match(linea)
+        if not m or (m.group("motivo").startswith("duplicado")
+                     and not _DETALLE_DE_DUPLICADO.match(m.group("detalle"))):
+            rechazadas.append(f"  línea {i}: {s}")
+            continue
+        fuera.append({
+            "motivo": "duplicado" if m.group("motivo").startswith("duplicado") else "excluido",
+            "ruta": m.group("ruta").strip(),
+            "detalle": m.group("detalle"),
+        })
+    if estricto and rechazadas:
+        raise ValueError(
+            "línea(s) de «## No copiados» fuera del formato "
+            "`- duplicado|excluido: `ruta` — motivo` — no se pueden cruzar con nada:\n"
+            + "\n".join(rechazadas))
+    return fuera

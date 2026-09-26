@@ -13870,7 +13870,7 @@ próxima vez que se use `health_check` para acreditar una instalación, o una de
 
 ---
 
-## 316. La sala de lectura no recoge audios, zips ni tarjetas de contacto, y ninguna regla dice que no deba
+## 316. La sala de lectura no recoge audios, zips ni tarjetas de contacto, y ninguna regla dice que no deba  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Medido el 2026-09-26** con la C3 por identidad de `verificar_apertura` (`#287`, fila #45 de
 > `PLAN.md`), en solo lectura sobre los 23 expedientes con cobertura y catálogo.
@@ -13895,3 +13895,18 @@ anti-deriva, como ya hace con el zip crudo.
 
 **Disparador de promoción.** Una decisión de Nikolai sobre qué debe recoger la sala de lectura, o
 la próxima apertura en que uno de estos documentos resulte prueba relevante.
+
+**CERRADA el 2026-09-26 (PR #408, fila #46 de `PLAN.md`).** Promovida por decisión de Nikolai, que
+pidió hacerla en la misma sesión que el #407. Al medir, la causa eran dos productores: la **skill**
+no tenía verja de población —su verify contrastaba el manifiesto con lo copiado, no con lo que
+había— y el **motor CLI**, que montó W-02Y2J6 y W-030TZY, decidía la población con una lista blanca
+de extensiones (`core/inventory.py`) que mandaba lo demás a un `skipped` que nadie leía. Ahora: el
+`SKILL.md` fija el contrato —cada fichero da cuenta de sí por una fila, por su sha256 o su relleno de
+`#225` en otra fila, o por una línea `excluido` en `## No copiados`—, `verificar_sala.py` lo comprueba
+y ya no da 0 sin cobertura, el inventario CLI recoge todo lo que no es protocolo, tres ficheros de la
+migración de 05_CRM entran en el registro por nombre entero, y C3 honra lo declarado `excluido` y lo
+enseña con su motivo. **La firma de `email_export` no quedó exenta**: la R1 de Codex (11 hallazgos, 11
+confirmados, remediados en el mismo PR) recordó que el productor la marca, no la descarta. Las salas
+ya montadas no cambian solas: W-02Y2J6 necesita re-correr su `organizar`, y W-02O7E2 y W-0462E1 salen
+en C3 con lo que la R1 destapó. Plan y adjudicación:
+`docs/superpowers/plans/2026-09-26-sala-lectura-poblacion-316.md`.

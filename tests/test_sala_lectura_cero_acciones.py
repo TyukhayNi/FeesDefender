@@ -4,12 +4,15 @@ Punto que la R1 adversarial dejo abierto (su remedio «(d)»): hoy `organizar` y
 cantar exito sobre una sala vacia, pero **por construccion** —siempre cataloga—, no porque
 nadie lo compruebe. Esto es el cinturon.
 
-Y la parte que importa: un catalogo vacio tiene TRES causas y solo una es un defecto.
+Y la parte que importa: un catalogo vacio tiene DOS causas y solo una es un defecto.
 Confundirlas seria repetir el error del punto 2 en otro sitio.
 
   1. el inventario vio ficheros y el catalogo salio vacio  -> DEFECTO, aborta
-  2. hay ficheros pero ninguno con extension relevante     -> legitimo, se declara
-  3. `00_Input` esta de verdad vacio                        -> legitimo, se declara
+  2. `00_Input` esta de verdad vacio                        -> legitimo, se declara
+
+Hasta el 2026-09-26 habia una tercera, «hay ficheros pero ninguno con extension
+relevante», y era `MEJORAS #316`: la lista blanca de extensiones del inventario dejaba
+fuera de la sala audios, zips, vCards, planos y documentos sin extension.
 """
 from __future__ import annotations
 
@@ -62,19 +65,31 @@ def test_un_00_input_de_verdad_vacio_NO_aborta(tmp_casos_root):
     assert res.get("motivo") == "input_vacio"
 
 
-def test_ficheros_sin_extension_relevante_NO_abortan_pero_se_declaran(tmp_casos_root):
-    """Causa 2: hay material y no es catalogable. No es un defecto, pero tampoco un exito."""
+def test_los_planos_y_lo_que_no_se_sabe_leer_ENTRAN_en_la_sala(tmp_casos_root):
+    """**Este test decía lo contrario hasta el 2026-09-26, y el cambio se declara aquí.**
+
+    Se llamaba `…sin_extension_relevante_NO_abortan_pero_se_declaran` y exigía que un caso con
+    solo planos (`.gml`, `.dxf`) se declarase «sin material catalogable». Era la lista blanca
+    de extensiones del inventario, y es `MEJORAS #316`: W-02JSVZ tiene 54 `.gml` topográficos
+    de E&V que nunca llegaron a la sala, y W-02Y2J6 siete notas de voz. Ahora son documentos:
+    entran con `08. PENDIENTE DE CLASIFICAR` y el aviso de pendientes los cuenta.
+    """
     cm, inv, cat, sl = _reload()
-    case_id, _ = _caso(cm, [
+    case_id, case_dir = _caso(cm, [
         ("01_Drive EV/TOPOGRAFICO", "parcela.gml", b"<gml/>"),
         ("01_Drive EV/TOPOGRAFICO", "planta.dxf", b"dxf"),
     ])
 
     res = sl.organizar(case_id)
 
-    assert res["sin_material"] is True
-    assert res.get("motivo") == "sin_extension_relevante"
-    assert res.get("n_omitidos") == 2, res
+    assert res["sin_material"] is False, res
+    assert res["n_pendientes"] == 2, res
+    # Los DOS, por su contenido: «alguna acción» lo cumplía una sala con uno solo (R1 del
+    # #408). La sala, en el literal del layout, no en la constante del módulo.
+    assert res["acciones"].get("COPY") == 2, res
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    en_sala = {p.read_bytes() for p in sala.rglob("*") if p.is_file()}
+    assert {b"<gml/>", b"dxf"} <= en_sala, sorted(p.name for p in sala.rglob("*"))
 
 
 def test_el_caso_normal_sigue_sin_declarar_sin_material(tmp_casos_root):

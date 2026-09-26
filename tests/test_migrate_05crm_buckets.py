@@ -146,6 +146,32 @@ def test_apply_mueve_a_buckets_y_es_idempotente(mods, tmp_casos_root):
 # 3. Preservación de la cache OCR — extract_all hace skip de todo
 # ---------------------------------------------------------------------------
 
+def test_lo_que_la_migracion_deja_en_la_raiz_de_00_input_es_protocolo(mods, tmp_casos_root):
+    """R1/H-10 del #408: el registro de protocolo se contrasta con lo que el escritor
+    ESCRIBE, no con unos nombres copiados de su código. Se corre la migración, y cada
+    fichero nuevo en la raíz de `00_Input` —su bitácora y las copias de seguridad de
+    `_caso.md` y del manifiesto— tiene que ser protocolo, o la sala de máquina lo inventaría
+    como documento del cliente (`MEJORAS #316`)."""
+    from core.intake_control import es_fichero_de_protocolo
+
+    cm, mig = mods["cm"], mods["mig"]
+    case_id = "MIG-RAIZ"
+    case_dir = cm.ensure_case(case_id)
+    inp = case_dir / "00_Input"
+    (inp / "_intake_hashes.json").write_text("{}", encoding="utf-8")
+    _write_crm_file(case_dir, "General/n.pdf", b"C")
+    antes = {p.name for p in inp.iterdir() if p.is_file()}
+
+    plan = mig.build_move_plan(case_id, {})
+    mig.apply_move_plan(case_id, plan, {})
+
+    nuevos = sorted(p.name for p in inp.iterdir() if p.is_file() and p.name not in antes)
+    assert any(n.startswith("_migration_05crm_") for n in nuevos), nuevos
+    assert any(n.startswith("_intake_hashes.json.bak_") for n in nuevos), nuevos
+    for nombre in nuevos:
+        assert es_fichero_de_protocolo(nombre), nombre
+
+
 def test_apply_preserva_cache_ocr_no_reocr(mods, tmp_casos_root):
     cm, mig, extractor = mods["cm"], mods["mig"], mods["extractor"]
     case_id = "MIG-OCR"
