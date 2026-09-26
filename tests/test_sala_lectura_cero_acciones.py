@@ -75,7 +75,7 @@ def test_los_planos_y_lo_que_no_se_sabe_leer_ENTRAN_en_la_sala(tmp_casos_root):
     entran con `08. PENDIENTE DE CLASIFICAR` y el aviso de pendientes los cuenta.
     """
     cm, inv, cat, sl = _reload()
-    case_id, _ = _caso(cm, [
+    case_id, case_dir = _caso(cm, [
         ("01_Drive EV/TOPOGRAFICO", "parcela.gml", b"<gml/>"),
         ("01_Drive EV/TOPOGRAFICO", "planta.dxf", b"dxf"),
     ])
@@ -84,7 +84,12 @@ def test_los_planos_y_lo_que_no_se_sabe_leer_ENTRAN_en_la_sala(tmp_casos_root):
 
     assert res["sin_material"] is False, res
     assert res["n_pendientes"] == 2, res
-    assert res["acciones"], "los dos planos tienen que estar en la sala"
+    # Los DOS, por su contenido: «alguna acción» lo cumplía una sala con uno solo (R1 del
+    # #408). La sala, en el literal del layout, no en la constante del módulo.
+    assert res["acciones"].get("COPY") == 2, res
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    en_sala = {p.read_bytes() for p in sala.rglob("*") if p.is_file()}
+    assert {b"<gml/>", b"dxf"} <= en_sala, sorted(p.name for p in sala.rglob("*"))
 
 
 def test_el_caso_normal_sigue_sin_declarar_sin_material(tmp_casos_root):

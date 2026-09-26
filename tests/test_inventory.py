@@ -92,6 +92,10 @@ def test_inventory_clasifica_por_fuente(tmp_casos_root):
     # Carpeta de primer nivel no reconocida -> fallback unificado 'manual'
     (inp / "CarpetaRara").mkdir(exist_ok=True)
     (inp / "CarpetaRara" / "x.pdf").write_bytes(b"%PDF-1.4")
+    # Y un marcador homónimo FUERA del sitio de su productor: es un fichero del cliente y
+    # ENTRA (R1 del #408: sin él, este test no distinguía «protocolo por ubicación» de
+    # «todo `.pulled` fuera»).
+    (inp / "CarpetaRara" / ".pulled").write_text("{}", encoding="utf-8")
 
     # Raíz: manual
     (inp / "nota_arrastrada.txt").write_text("manual", encoding="utf-8")
@@ -102,12 +106,13 @@ def test_inventory_clasifica_por_fuente(tmp_casos_root):
     by_source = data["by_source"]
     assert by_source["crm"] == 1
     assert by_source["drive_ev"] == 1
-    assert by_source["manual"] == 2  # nota suelta + CarpetaRara/x.pdf
+    assert by_source["manual"] == 3  # nota suelta + CarpetaRara/x.pdf + CarpetaRara/.pulled
 
     # Los marcadores de los productores no aparecen
     paths = {f["rel_path"] for f in data["files"]}
     assert "sudespacho_591/.pulled" not in paths
     assert "01_Drive EV/.pulled" not in paths
+    assert "CarpetaRara/.pulled" in paths
 
     # Cada entrada lleva el campo source correcto
     for f in data["files"]:
