@@ -19,11 +19,14 @@ import typer
 from core import case_manager
 from core import config
 from core.casos import case_locator
-from core.crm_ficha import auditar_datos, auditar_relaciones, cargar_ficha_yaml
+from core.crm_ficha import (
+    auditar_datos, auditar_relaciones, cargar_ficha_yaml, contradicciones_previas,
+)
 from core.sudespacho_create import get_expediente, update_expediente
 from core.sudespacho_relations import (
     ensure_colaborador_vinculado, ensure_contrario_vinculado, get_cliente_contrario,
-    get_colaborador, get_relaciones, link_ev_mmc,
+    get_colaborador, get_relaciones, link_ev_mmc, resolver_colaborador_existente,
+    resolver_contrario_existente,
 )
 
 app = typer.Typer(add_completion=False, help="Rellenar la ficha CRM completa de un expediente")
@@ -61,6 +64,46 @@ def _exp_id_de(case_id: str) -> str | None:
         if isinstance(e, dict) and e.get("element") == _ELEMENT_EXTRAJUDICIAL:
             return str(e.get("id"))
     return None
+
+
+def _identifica(dto) -> str:
+    return f"id_crm {dto.id_crm}" if dto.id_crm else "dedup NIF/email"
+
+
+def _fase_previa(ficha) -> list[str]:
+    """SOLO LECTURA (spec rev. 3 §3 A.4): cada parte que ya existe, contra lo que el YAML declara.
+
+    Corre después del corte de `--dry-run` y de la confirmación, y **antes del primer writer**.
+    Devuelve TODOS los problemas: un dato distinto en una ficha existente, una ficha que no se
+    puede leer, un `id_crm` que no existe, un conflicto o una ambigüedad de la resolución. Si hay
+    alguno, no se escribe nada: escribir antes dejaría un vínculo y unos completados sobre una
+    ficha que el propio YAML desmiente, y `crm_ficha` no desvincula (R2/H-01).
+    """
+    problemas: list[str] = []
+    for elemento, partes, declarados, resolver, leer in (
+        ("clientes_contrarios", ficha.contrarios, ficha.declarados_contrarios,
+         resolver_contrario_existente, get_cliente_contrario),
+        ("colaboradores", ficha.colaboradores, ficha.declarados_colaboradores,
+         resolver_colaborador_existente, get_colaborador),
+    ):
+        for dto, declarado in zip(partes, declarados, strict=True):
+            try:
+                existente = resolver(dto)
+            except Exception as exc:  # noqa: BLE001 — conflicto, ambigüedad o consulta caída
+                problemas.append(f"{elemento} {dto.nombre!r}: {exc}")
+                continue
+            if not existente:
+                continue                    # se creará: la audita la lectura final
+            try:
+                actual = leer(existente)
+            except Exception as exc:  # noqa: BLE001
+                problemas.append(f"{elemento} id={existente}: no se pudo leer la ficha "
+                                 f"({exc!r}); no se escribe sobre lo que no se ha podido "
+                                 "comparar")
+                continue
+            problemas += contradicciones_previas(elemento, existente, declarado, actual,
+                                                 por_id=bool(dto.id_crm))
+    return problemas
 
 
 @app.command()
@@ -104,8 +147,8 @@ def main(
     plan = [f"cliente propio {ficha.cliente_propio} (id {cliente_propio_id}) → exp {exp_id}"]
     # TODOS los contrarios, no solo el primero ([APER-63]): una reclamación formulada por
     # dos firmantes —un matrimonio— exigía una segunda llamada a mano.
-    plan += [f"contrario: {c.apellido1 or c.nombre} (dedup NIF)" for c in ficha.contrarios]
-    plan += [f"colaborador: {c.email or c.nombre} (dedup email)" for c in ficha.colaboradores]
+    plan += [f"contrario: {c.apellido1 or c.nombre} ({_identifica(c)})" for c in ficha.contrarios]
+    plan += [f"colaborador: {c.email or c.nombre} ({_identifica(c)})" for c in ficha.colaboradores]
     if ficha.notas_html:
         plan.append("Notas (update_expediente)")
     typer.echo("Plan ficha CRM:\n  - " + "\n  - ".join(plan))
@@ -116,6 +159,16 @@ def main(
     if not (yes or typer.confirm("¿Escribir la ficha en el CRM?")):
         typer.echo("Cancelado.")
         raise typer.Exit(code=0)
+
+    # La fase previa, de solo lectura: aquí y no antes (`--dry-run` no lee el CRM, R2/H-08), y
+    # antes del primer writer, para que un «distinto» no deje nada escrito (R2/H-01).
+    previas = _fase_previa(ficha)
+    if previas:
+        typer.echo("[ERROR] El CRM contradice el _ficha_crm.yaml, o no se ha podido comparar, así "
+                   "que no se escribe NADA:\n  - " + "\n  - ".join(previas) + "\n"
+                   "crm_ficha no pisa datos: corrige el YAML o la ficha del CRM y relanza.",
+                   err=True)
+        raise typer.Exit(code=1)
 
     #: Todo lo que la corrida AFIRMA haber escrito, para contrastarlo por lectura. La
     #: frontera es «TODO», no «las relaciones»: R1/H-01 encontró que verificar solo los
@@ -257,7 +310,8 @@ def main(
                 "[ERROR] Hay partes vinculadas que el _ficha_crm.yaml no declara: "
                 + ", ".join(sobran)
                 + ". El YAML es la lista COMPLETA de partes: si alguna es legítima, añádela al "
-                "YAML y relanza; si no, desvincúlala a mano en el CRM. crm_ficha no desvincula.",
+                "YAML (con id_crm si no tiene NIF ni email) y relanza; si no, desvincúlala a "
+                "mano en el CRM. crm_ficha no desvincula.",
                 err=True,
             )
         if datos_mal:

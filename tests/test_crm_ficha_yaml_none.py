@@ -36,19 +36,17 @@ class TestNingunCampoDelColaboradorPuedeValerNone:
         col = ficha.colaboradores[0]
         assert getattr(col, clave) == "", f"{clave} salio {getattr(col, clave)!r}"
 
-    @pytest.mark.parametrize("identidad, vacias", [
-        (_EMAIL, ("movil", "telefono", "nif")),
-        (_NIF, ("email", "movil", "telefono")),
-    ])
-    def test_todas_vacias_a_la_vez(self, tmp_path, identidad, vacias):
-        """Migrado en DOS pasos, y se dice. Sin NIF ni email, la parte no tiene identidad y
-        hasta la Task 7 no hay `id_crm`: aquí van dos casos, y cada campo sale vacío en al menos
-        uno junto a los otros dos que no son la identidad. La Task 7 lo devuelve a las cuatro
-        claves vacías A LA VEZ, con `id_crm`."""
-        ficha = _carga(tmp_path, "colaboradores:\n  - nombre: ANA\n    " + identidad + "\n"
-                       + "".join(f"    {k}:\n" for k in vacias))
+    def test_todas_vacias_a_la_vez(self, tmp_path):
+        """Migrado en DOS pasos, y este es el segundo (Task 7 de crm_ficha): la Task 3 lo partió
+        en dos casos porque sin NIF ni email no había identidad; con `id_crm` vuelve a las cuatro
+        claves vacías A LA VEZ, que es su forma original."""
+        ficha = _carga(
+            tmp_path,
+            "colaboradores:\n  - nombre: ANA\n    id_crm: '776'\n    email:\n    movil:\n"
+            "    telefono:\n    nif:\n",
+        )
         col = ficha.colaboradores[0]
-        assert tuple(getattr(col, k) for k in vacias) == ("", "", "")
+        assert (col.email, col.movil, col.telefono, col.nif) == ("", "", "", "")
 
     def test_el_valor_bueno_sobrevive(self, tmp_path):
         ficha = _carga(
@@ -88,18 +86,15 @@ class TestElMovilDelContrarioTampoco:
         ficha = _carga(tmp_path, f"contrario:\n  nombre: ANA\n  {_NIF}\n  {clave}:\n")
         assert getattr(ficha.contrario, clave) == ""
 
-    @pytest.mark.parametrize("identidad", [_NIF, _EMAIL])
-    def test_NINGUN_campo_de_texto_del_contrario_puede_valer_None(self, tmp_path, identidad):
+    def test_NINGUN_campo_de_texto_del_contrario_puede_valer_None(self, tmp_path):
         """La clase entera, no los campos que alguien se acordo de listar.
 
-        Migrado en DOS pasos, y se dice: sin NIF ni email la parte no tiene identidad y hasta la
-        Task 7 no hay `id_crm`. Aquí, dos casos —identidad por NIF con las otras nueve vacías,
-        el email incluido; por email con las otras nueve vacías, el NIF incluido—; la Task 7 lo
-        devuelve a las diez vacías a la vez, con `id_crm`."""
-        todas = ["apellido1", "apellido2", "email", "movil", "nif", "direccion",
-                 "poblacion", "cp", "provincia", "telefono"]
-        claves = [k for k in todas if not identidad.startswith(f"{k}:")]
-        cuerpo = (f"contrario:\n  nombre: ANA\n  {identidad}\n"
+        Migrado en DOS pasos, y este es el segundo (Task 7 de crm_ficha): la Task 3 lo partió en
+        dos casos porque sin NIF ni email no había identidad; con `id_crm` vuelve a las diez
+        claves vacías a la vez, que es su forma original."""
+        claves = ["apellido1", "apellido2", "email", "movil", "nif", "direccion",
+                  "poblacion", "cp", "provincia", "telefono"]
+        cuerpo = ("contrario:\n  nombre: ANA\n  id_crm: '1128'\n"
                   + "".join(f"  {k}:\n" for k in claves))
         c = _carga(tmp_path, cuerpo).contrario
         malos = [k for k in claves if getattr(c, k) != ""]

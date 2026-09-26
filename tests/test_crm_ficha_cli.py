@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 
 from core import case_manager
 from core.casos import case_locator
+from core.sudespacho_relations import ConflictoDeIdentidad, SudespachoRelationsError
 from scripts import crm_ficha as cli
 
 
@@ -26,6 +27,27 @@ def _declara_fichas(monkeypatch, contrarios=None, colaboradores=None):
             return dict(_t[str(i)])
         monkeypatch.setattr(f"scripts.crm_ficha.{nombre}", _get)
 
+
+def _declara_resolucion(monkeypatch, contrarios=None, colaboradores=None):
+    """Qué ficha EXISTE ya para cada parte: la fase previa (spec rev. 3 §3 A.4). `{clave: id}`,
+    con la clave `id_crm`, `nif` o `email` de la parte, por ese orden; `None` = no existe y se
+    creará; una excepción, la que levanta la resolución (un conflicto, una consulta caída). Una
+    parte no declarada MATA el test, como en `_declara_fichas`."""
+    for nombre, tabla in (("resolver_contrario_existente", dict(contrarios or {})),
+                          ("resolver_colaborador_existente", dict(colaboradores or {}))):
+        def _res(dto, *a, _t=tabla, _n=nombre, **k):
+            clave = dto.id_crm or dto.nif or dto.email
+            if clave not in _t:
+                raise LecturaNoDeclarada(f"{_n}({clave!r}) no está declarado en este test")
+            if isinstance(_t[clave], BaseException):
+                raise _t[clave]
+            return _t[clave]
+        monkeypatch.setattr(f"scripts.crm_ficha.{nombre}", _res)
+
+
+#: Las claves de identidad de la fixture `caso_con_ficha`.
+_JUAN = "00000000T"
+_ANA = "ana@engelvoelkers.example"
 
 #: Las fichas del CRM coherentes con la fixture `caso_con_ficha`, el móvil incluido: sin él, la
 #: lectura añadiría una discrepancia que el test no pretende (R2, §3 de su acta).
@@ -79,6 +101,9 @@ def test_crm_ficha_orquesta_todo(caso_con_ficha, monkeypatch):
                                                 "colaboradores": [{"id": "776"}]}))
     _declara_fichas(monkeypatch, contrarios={"1099": _JUAN_1099},
                     colaboradores={"776": _ANA_776})
+    # La fase previa (Task 7), coherente con lo que dicen los `ensure_*`: JUAN se crea (no
+    # existía), ANA ya existía como 776.
+    _declara_resolucion(monkeypatch, contrarios={_JUAN: None}, colaboradores={_ANA: "776"})
 
     r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
     assert r.exit_code == 0, r.output
@@ -158,6 +183,8 @@ def test_crm_ficha_falla_limpio_si_writer_revienta_mid_run(caso_con_ficha, monke
     # Tras H-03 el CLI audita lo ya escrito antes de rendirse, asi que tambien lee.
     monkeypatch.setattr("scripts.crm_ficha.get_relaciones",
                         MagicMock(return_value={"clientes_propios": [{"id": "2"}]}))
+    # La fase previa (Task 7): las dos partes se crearían, así que no hay ficha que leer.
+    _declara_resolucion(monkeypatch, contrarios={_JUAN: None}, colaboradores={_ANA: None})
     link_ev = MagicMock()
     ensure_c = MagicMock(side_effect=RuntimeError("boom"))
     monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", link_ev)
@@ -258,6 +285,8 @@ class TestVerificacionPorLectura:
                                                     "Notas": "<p>Vuelta</p>"}))
         _declara_fichas(monkeypatch, contrarios={"1099": _JUAN_1099},
                         colaboradores={"776": _ANA_776})
+        _declara_resolucion(monkeypatch, contrarios={_JUAN: "1099"},
+                            colaboradores={_ANA: "776"})
 
     def test_todo_vinculado_dice_VERIFICADA(self, caso_con_ficha, monkeypatch):
         self._escrituras_en_verde(monkeypatch)
@@ -416,6 +445,12 @@ class TestVerificarTODOLoQueLaCorridaEscribe:
         # en vez de fabricar dos (R2, §3 de su acta).
         _declara_fichas(monkeypatch, contrarios={"1099": _JUAN_1099},
                         colaboradores={"776": _ANA_776})
+        # La fase previa (Task 7). BEA —solo en `test_dos_partes_que_colapsan_…`— NO existía:
+        # el colapso lo simula el `ensure_*` doblado, que devuelve el 776 a las dos. Si la fase
+        # previa la resolviera también al 776, la pararía antes de escribir (bien hecho, y es
+        # otra propiedad), y este bloque dejaría de probar la cardinalidad de la verificación.
+        _declara_resolucion(monkeypatch, contrarios={_JUAN: "1099"},
+                            colaboradores={_ANA: "776", "bea@engelvoelkers.example": None})
 
     def test_notas_que_el_CRM_no_guardo_TUMBAN_la_corrida(self, caso_con_ficha, monkeypatch):
         """El PUT devolvio 200 y el contenido no cambio. Manda la lectura."""
@@ -525,6 +560,7 @@ class TestElCRMDesescapaLasEntidadesHTML:
             "colaboradores": [],
         })
         _declara_fichas(monkeypatch, contrarios={"1099": _JUAN_1099})
+        _declara_resolucion(monkeypatch, contrarios={_JUAN: "1099"})
 
     def test_una_entidad_desescapada_por_el_servidor_verifica_ok(
             self, caso_con_ficha, monkeypatch):
@@ -593,6 +629,8 @@ def test_el_cli_vincula_TODOS_los_contrarios_no_solo_el_primero(caso_con_ficha, 
     _declara_fichas(monkeypatch, contrarios={
         "1099": _JUAN_1099,
         "1100": {"nombre": "MARIA", "1apellido": "LOPEZ", "nif_cif": "11111111H"}})
+    # La fase previa (Task 7): las dos se crean, como dice el `ensure_c` doblado.
+    _declara_resolucion(monkeypatch, contrarios={_JUAN: None, "11111111H": None})
 
     r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
     assert r.exit_code == 0, r.output
@@ -621,9 +659,14 @@ def test_el_plan_del_cli_enumera_los_dos_contrarios(caso_con_ficha, monkeypatch)
 # (spec rev. 3 §4 B.1-B.4)
 # ---------------------------------------------------------------------------
 
-def _escrituras(monkeypatch, *, ensure_c=None, ensure_col=None, fichas_c=None, fichas_col=None):
-    """Escrituras en verde sobre `caso_con_ficha` (JUAN → 1099, ANA → 776) y la lectura de fichas
-    declarada. Cada test cambia solo lo que su propiedad necesita."""
+def _escrituras(monkeypatch, *, ensure_c=None, ensure_col=None, fichas_c=None, fichas_col=None,
+                res_c=None, res_col=None):
+    """Escrituras en verde sobre `caso_con_ficha` (JUAN → 1099, ANA → 776), la lectura de fichas
+    y la resolución de la fase previa declaradas. Cada test cambia solo lo que su propiedad
+    necesita."""
+    _declara_resolucion(monkeypatch,
+                        contrarios=res_c if res_c is not None else {_JUAN: "1099"},
+                        colaboradores=res_col if res_col is not None else {_ANA: "776"})
     monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", MagicMock())
     monkeypatch.setattr("scripts.crm_ficha.ensure_contrario_vinculado",
                         ensure_c or MagicMock(return_value=("1099", False)))
@@ -682,7 +725,7 @@ class TestLosDatosDeLaFicha:
         """Relanzar W-030A13 con el YAML corregido: la ficha 1128 se resuelve por NIF, no se
         completa (el apellido no es completable) y los ids cuadran. Antes decía VERIFICADA."""
         _escrituras(monkeypatch, ensure_c=MagicMock(return_value=("1128", False)),
-                    fichas_c={"1128": {**_JUAN_1099, "1apellido": ""}})
+                    fichas_c={"1128": {**_JUAN_1099, "1apellido": ""}}, res_c={_JUAN: "1128"})
         _relaciones(monkeypatch, contrarios=("1128",))
         r = _corre()
         assert r.exit_code == 1, r.output
@@ -692,8 +735,13 @@ class TestLosDatosDeLaFicha:
 
     def test_un_colaborador_con_un_dato_distinto_da_DATO(self, caso_con_ficha, monkeypatch):
         """El rol colaborador también se audita: cerrar una propiedad para un rol no la cierra
-        para los demás."""
+        para los demás.
+
+        Desde la Task 7, un dato distinto en una ficha que YA existía lo para la fase previa,
+        antes de escribir. Para probar la lectura FINAL, ANA se crea aquí (la fase previa no la
+        encuentra) y es el CRM el que guarda otro email: lo que solo se sabe después de escribir."""
         _escrituras(monkeypatch,
+                    ensure_col=MagicMock(return_value=("776", True)), res_col={_ANA: None},
                     fichas_col={"776": {**_ANA_776, "email": "otra@engelvoelkers.example"}})
         _relaciones(monkeypatch)
         r = _corre()
@@ -702,7 +750,10 @@ class TestLosDatosDeLaFicha:
                 "YAML 'ana@engelvoelkers.example')") in r.output
 
     def test_una_ficha_que_no_se_puede_leer_es_SIN_VERIFICAR(self, caso_con_ficha, monkeypatch):
-        _escrituras(monkeypatch)
+        """La lectura FINAL caída. Desde la Task 7, una ficha existente que no se puede leer la
+        para la fase previa, así que JUAN se crea aquí y la fase previa no tiene nada que leer."""
+        _escrituras(monkeypatch, ensure_c=MagicMock(return_value=("1099", True)),
+                    res_c={_JUAN: None})
         _relaciones(monkeypatch)
 
         def _caida(i):
@@ -714,7 +765,9 @@ class TestLosDatosDeLaFicha:
         assert cli.EXITO_VERIFICADA not in r.output
 
     def test_un_fallo_conocido_gana_a_un_SIN_VERIFICAR(self, caso_con_ficha, monkeypatch):
-        _escrituras(monkeypatch)
+        # ANA se crea (Task 7): la lectura caída tiene que ser la FINAL, no la de la fase previa.
+        _escrituras(monkeypatch, ensure_col=MagicMock(return_value=("776", True)),
+                    res_col={_ANA: None})
         _relaciones(monkeypatch, colaboradores=("776", "624"))
 
         def _caida(i):
@@ -752,3 +805,142 @@ class TestLaGuardaDeFichasMuerde:
         _relaciones(monkeypatch)
         with pytest.raises(LecturaNoDeclarada):
             _corre()
+
+
+# ---------------------------------------------------------------------------
+# Task 7 del plan rev. 2 — la fase previa de solo lectura y la vía `id_crm`
+# (spec rev. 3 §3 A.4; R2/H-01, H-06, H-08)
+# ---------------------------------------------------------------------------
+
+def _writers(monkeypatch):
+    """Los cuatro writers del CLI, doblados y espiados."""
+    w = {"link_ev_mmc": MagicMock(),
+         "ensure_contrario_vinculado": MagicMock(return_value=("1099", False)),
+         "ensure_colaborador_vinculado": MagicMock(return_value=("776", False)),
+         "update_expediente": MagicMock(return_value={})}
+    for nombre, doble in w.items():
+        monkeypatch.setattr(f"scripts.crm_ficha.{nombre}", doble)
+    return w
+
+
+def _ningun_writer(w):
+    for nombre, doble in w.items():
+        assert not doble.called, f"{nombre} se llamó: la fase previa tenía que parar ANTES"
+
+
+def _yaml_caso(caso, texto):
+    (case_locator.path_for(caso) / "00_Input" / "_ficha_crm.yaml").write_text(
+        texto, encoding="utf-8")
+
+
+class TestLaFasePrevia:
+    """Ninguna escritura sobre una ficha que el YAML contradice. La corrida nunca pisa, así que
+    ese dato no lo puede arreglar ella, y escribir antes dejaría un vínculo y unos completados
+    sobre una ficha que el propio YAML desmiente —y `crm_ficha` no desvincula—."""
+
+    def test_R2H01_un_dato_distinto_en_una_ficha_existente_no_deja_escribir_NADA(
+            self, caso_con_ficha, monkeypatch):
+        w = _writers(monkeypatch)
+        _declara_resolucion(monkeypatch, contrarios={_JUAN: "1099"}, colaboradores={_ANA: None})
+        _declara_fichas(monkeypatch, contrarios={"1099": {**_JUAN_1099, "1apellido": "LOPEZ"}})
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert "clientes_contrarios id=1099 1apellido: distinto (CRM 'LOPEZ', YAML 'PEREZ')" in r.output
+        assert "no se escribe NADA" in r.output
+        _ningun_writer(w)
+
+    def test_por_id_contradicho_por_su_nif_no_deja_escribir(self, caso_con_ficha, monkeypatch):
+        """R2/H-01: comparar solo el nombre dejaba vincular una ficha cuyo NIF declarado la
+        contradice. Aquí se comparan TODOS los datos declarados."""
+        _yaml_caso(caso_con_ficha, "contrario: {nombre: JUAN, apellido1: PEREZ, "
+                                   "nif: '11111111H', id_crm: '1128'}\n")
+        w = _writers(monkeypatch)
+        _declara_resolucion(monkeypatch, contrarios={"1128": "1128"})
+        _declara_fichas(monkeypatch, contrarios={"1128": {"nombre": "JUAN", "1apellido": "LOPEZ",
+                                                          "nif_cif": "22222222J"}})
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert "clientes_contrarios id=1128 1apellido: distinto" in r.output
+        assert "clientes_contrarios id=1128 nif_cif: distinto" in r.output
+        _ningun_writer(w)
+
+    def test_la_segunda_parte_invalida_para_tambien_la_primera(self, caso_con_ficha,
+                                                               monkeypatch):
+        _yaml_caso(caso_con_ficha, "contrario:\n"
+                                   "  - {nombre: JUAN, apellido1: PEREZ, nif: 00000000T}\n"
+                                   "  - {nombre: MARIA, apellido1: LOPEZ, nif: 11111111H}\n")
+        w = _writers(monkeypatch)
+        _declara_resolucion(monkeypatch, contrarios={_JUAN: None, "11111111H": "1100"})
+        _declara_fichas(monkeypatch, contrarios={"1100": {"nombre": "MARIA", "1apellido": "GOMEZ",
+                                                          "nif_cif": "11111111H"}})
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        _ningun_writer(w)          # tampoco JUAN, que era nuevo y válido
+
+    @pytest.mark.parametrize("caida", [
+        SudespachoRelationsError("REST GET clientes_contrarios/1099 -> HTTP 404"),
+        RuntimeError("red caída"),
+    ])
+    def test_una_ficha_que_no_se_puede_leer_no_deja_escribir(self, caso_con_ficha, monkeypatch,
+                                                             caida):
+        w = _writers(monkeypatch)
+        _declara_resolucion(monkeypatch, contrarios={_JUAN: "1099"}, colaboradores={_ANA: None})
+
+        def _get(i):
+            raise caida
+        monkeypatch.setattr("scripts.crm_ficha.get_cliente_contrario", _get)
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert "no se pudo leer la ficha" in r.output
+        _ningun_writer(w)
+
+    def test_por_id_una_ficha_sin_nombre_no_deja_escribir(self, caso_con_ficha, monkeypatch):
+        _yaml_caso(caso_con_ficha, "contrario: {nombre: JUAN, id_crm: '1128'}\n")
+        w = _writers(monkeypatch)
+        _declara_resolucion(monkeypatch, contrarios={"1128": "1128"})
+        _declara_fichas(monkeypatch, contrarios={"1128": {}})
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert "no existe o no tiene nombre" in r.output
+        _ningun_writer(w)
+
+    def test_un_conflicto_de_identidad_no_deja_escribir(self, caso_con_ficha, monkeypatch):
+        w = _writers(monkeypatch)
+        _declara_resolucion(monkeypatch, colaboradores={_ANA: None}, contrarios={
+            _JUAN: ConflictoDeIdentidad("En clientes_contrarios, el NIF apunta a la ficha 1 y el "
+                                        "email a la 2")})
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert "el NIF apunta a la ficha 1 y el email a la 2" in r.output
+        _ningun_writer(w)
+
+    def test_un_colaborador_por_id_se_vincula_sin_buscar(self, caso_con_ficha, monkeypatch):
+        """La vía `id_crm` en el CLI: la fase previa lee ESA ficha, y `ensure_*` recibe el id en
+        el DTO (la rama del core, que no busca ni crea, la prueba `test_crm_ficha_id_crm.py`)."""
+        _yaml_caso(caso_con_ficha, "contrario: {nombre: JUAN, apellido1: PEREZ, nif: 00000000T}\n"
+                                   "colaboradores:\n  - {nombre: ANA, id_crm: '776'}\n")
+        w = _writers(monkeypatch)
+        monkeypatch.setattr("scripts.crm_ficha.get_expediente",
+                            MagicMock(return_value={"Numero_Expediente": "49"}))
+        _declara_resolucion(monkeypatch, contrarios={_JUAN: "1099"}, colaboradores={"776": "776"})
+        _declara_fichas(monkeypatch, contrarios={"1099": _JUAN_1099},
+                        colaboradores={"776": {"nombre": "ANA"}})
+        _relaciones(monkeypatch)
+        r = _corre()
+        assert r.exit_code == 0, r.output
+        assert cli.EXITO_VERIFICADA in r.output
+        assert w["ensure_colaborador_vinculado"].call_args.args[1].id_crm == "776"
+
+    def test_R2H08_dry_run_con_id_crm_no_lee_el_CRM(self, caso_con_ficha, monkeypatch):
+        """`--dry-run` sigue sin leer el CRM, tampoco para validar un `id_crm` (spec §5)."""
+        _yaml_caso(caso_con_ficha, "contrario: {nombre: JUAN, id_crm: '1128'}\n")
+
+        def _prohibido(*a, **k):
+            raise LecturaNoDeclarada("el --dry-run leyó el CRM")
+        for nombre in ("resolver_contrario_existente", "resolver_colaborador_existente",
+                       "get_cliente_contrario", "get_colaborador", "get_relaciones",
+                       "get_expediente"):
+            monkeypatch.setattr(f"scripts.crm_ficha.{nombre}", _prohibido)
+        r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--dry-run"])
+        assert r.exit_code == 0, r.output
+        assert "id_crm 1128" in r.output

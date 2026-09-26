@@ -140,3 +140,27 @@ def test_R2H03_la_provincia_se_compara_igual_en_los_dos_lados(en_el_crm, esperad
     got = cf.auditar_datos("clientes_contrarios", "1", {"provincia": "barcelona"},
                            {"provincia": en_el_crm})
     assert [d.tipo for d in got] == esperado
+
+
+# ---------------------------------------------------------------------------
+# La fase previa (A.4): lo que no deja pasar
+# ---------------------------------------------------------------------------
+
+def test_la_fase_previa_solo_para_lo_DISTINTO():
+    """Lo vacío no es contradicción: lo completa la corrida, o lo dice la lectura final."""
+    decl = {"nombre": "ANA", "apellido1": "GARCIA", "nif": "00000000T", "email": "ana@x.es"}
+    vacia = {"nombre": "ANA", "1apellido": "", "nif_cif": "00000000T", "email": ""}
+    assert cf.contradicciones_previas("clientes_contrarios", "1128", decl, vacia,
+                                      por_id=False) == []
+    otra = {**vacia, "1apellido": "PEREZ"}
+    assert cf.contradicciones_previas("clientes_contrarios", "1128", decl, otra, por_id=False) == [
+        "clientes_contrarios id=1128 1apellido: distinto (CRM 'PEREZ', YAML 'GARCIA')"]
+
+
+def test_por_id_una_ficha_sin_nombre_es_que_no_existe():
+    decl = {"nombre": "ANA", "email": "a@x.es"}
+    assert cf.contradicciones_previas("colaboradores", "9", decl, {}, por_id=True) == [
+        "colaboradores id=9: la ficha no existe o no tiene nombre; revisa el id_crm"]
+    # Sin `id_crm`, una ficha hallada por NIF o email sin nombre no es contradicción: su nombre
+    # vacío lo dirá la lectura final como `[DATO]`.
+    assert cf.contradicciones_previas("colaboradores", "9", decl, {}, por_id=False) == []

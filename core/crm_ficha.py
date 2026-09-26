@@ -143,16 +143,31 @@ def leer_yaml_ficha(path: Path) -> Any:
 # ---------------------------------------------------------------------------
 
 CLAVES_RAIZ = ("contrario", "colaboradores", "notas_html", "cliente_propio", "firmante")
+#: `id_crm`, al final: no es un dato de la parte sino cómo se llega a su ficha (spec §3 A.4).
 CLAVES_CONTRARIO = ("nombre", "apellido1", "apellido2", "email", "movil", "nif",
-                    "direccion", "poblacion", "cp", "provincia", "telefono")
-CLAVES_COLABORADOR = ("nombre", "email", "movil", "telefono", "nif")
+                    "direccion", "poblacion", "cp", "provincia", "telefono", "id_crm")
+CLAVES_COLABORADOR = ("nombre", "email", "movil", "telefono", "nif", "id_crm")
 
 _TELEFONOS = ("movil", "telefono")
 
 #: El literal del problema de identidad, UNA vez: los tests lo importan, así que el mensaje
-#: puede crecer (la Task 7 le añade `id_crm`) sin vaciar un aserto que lo busque.
+#: puede crecer sin vaciar un aserto que lo busque.
 SIN_IDENTIDAD = "sin identidad estable"
-_IDENTIDAD = ("nif", "email")
+
+
+def _id_crm(v: object) -> str | None:
+    """El `id_crm` canónico (`"01128"` → `"1128"`), o `None` si no es el número de una ficha:
+    un entero positivo o dígitos ASCII. Un booleano no vale, aunque Python lo cuente como
+    entero."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return str(v) if v > 0 else None
+    if isinstance(v, str):
+        t = v.strip()
+        if t.isascii() and t.isdigit() and int(t) > 0:
+            return str(int(t))
+    return None
 
 
 def _forma(valor: object) -> str:
@@ -195,7 +210,10 @@ def _problemas_escalar(valor: object, ruta: str) -> list[str]:
 
 def _problemas_parte(d: dict, ruta: str, validas: tuple[str, ...]) -> list[str]:
     p = [f"{ruta}.{k}: clave desconocida{_sugerencia(k, validas)}" for k in d if k not in validas]
-    p += [x for k in validas if k in d for x in _problemas_escalar(d[k], f"{ruta}.{k}")]
+    p += [x for k in validas if k != "id_crm" and k in d
+          for x in _problemas_escalar(d[k], f"{ruta}.{k}")]
+    if d.get("id_crm") is not None and _id_crm(d["id_crm"]) is None:     # null = no hay dato
+        p.append(f"{ruta}.id_crm: {d['id_crm']!r} no es el número de una ficha del CRM")
     nombre = d.get("nombre")
     if nombre is None or (isinstance(nombre, str) and not nombre.strip()):
         p.append(f"{ruta}.nombre: falta o está vacío")     # ausente, null o solo espacios
@@ -211,10 +229,11 @@ def _problemas_parte(d: dict, ruta: str, validas: tuple[str, ...]) -> list[str]:
         p.append(f"{ruta}.provincia: {v!r} no es ninguna provincia del CRM y el Select la "
                  "descartaría: el dato no puede llegar nunca")
     # Identidad estable (spec §3 A.4, R1/H-04): `resolver_parte` identifica solo por NIF o
-    # email, así que sin ninguno cada relanzamiento crearía otra ficha.
-    if not any(_hay(d.get(k)) for k in _IDENTIDAD):
-        p.append(f"{ruta}: {SIN_IDENTIDAD} —falta NIF o email—: cada corrida crearía otra "
-                 "ficha y la anterior quedaría como sobrante (spec §3 A.4)")
+    # email, así que sin ninguno —ni `id_crm`, la salida para una parte legítima sin ellos—
+    # cada relanzamiento crearía otra ficha.
+    if not (_hay(d.get("nif")) or _hay(d.get("email")) or _id_crm(d.get("id_crm"))):
+        p.append(f"{ruta}: {SIN_IDENTIDAD} —falta NIF, email o id_crm—: cada corrida crearía "
+                 "otra ficha y la anterior quedaría como sobrante (spec §3 A.4)")
     return p
 
 
@@ -291,16 +310,21 @@ def _contrarios_de(raw) -> list[NuevoClienteContrario]:
 def _contrario_de(d: dict) -> NuevoClienteContrario:
     # Leyendo de la tupla, no enumerando a mano: `cp`, `provincia` y `telefono` estuvieron
     # escritos en los YAML sin leerse nunca, porque la lista de aquí no los tenía.
-    return NuevoClienteContrario(**{c: _valor(d.get(c)) for c in CLAVES_CONTRARIO})
+    return NuevoClienteContrario(**{c: _valor(d.get(c)) for c in CLAVES_CONTRARIO
+                                    if c != "id_crm"},
+                                 id_crm=_id_crm(d.get("id_crm")) or "")
 
 
 def _colaborador_de(d: dict) -> NuevoColaborador:
-    return NuevoColaborador(**{c: _valor(d.get(c)) for c in CLAVES_COLABORADOR})
+    return NuevoColaborador(**{c: _valor(d.get(c)) for c in CLAVES_COLABORADOR
+                               if c != "id_crm"},
+                            id_crm=_id_crm(d.get("id_crm")) or "")
 
 
 def _declaracion(d: dict, claves: tuple[str, ...]) -> dict[str, str]:
-    """Las claves PRESENTES en la parte, con su valor validado y sin normalizar."""
-    return {k: _valor(d[k]) for k in claves if k in d}
+    """Las claves PRESENTES en la parte, con su valor validado y sin normalizar. Sin `id_crm`:
+    la declaración es lo que se COMPARA con la ficha, y el id es cómo se llega a ella."""
+    return {k: _valor(d[k]) for k in claves if k in d and k != "id_crm"}
 
 
 def cargar_ficha_yaml(path: Path) -> FichaCRMInput:
@@ -474,4 +498,23 @@ def auditar_datos(elemento: str, id_: str, declarado: Mapping,
             elemento=elemento, id=str(id_), campo=campo, propiedad=propiedad,
             tipo="vacio" if not visto else "distinto",
             crm=str(ficha_crm.get(propiedad) or "").strip(), yaml=str(bruto).strip()))
+    return fuera
+
+
+def contradicciones_previas(elemento: str, id_: str, declarado: Mapping, ficha_crm: Mapping,
+                            *, por_id: bool) -> list[str]:
+    """Lo que la fase previa no deja pasar (spec rev. 3 §3 A.4): un dato DISTINTO en una ficha
+    que ya existe y, si se llegó por `id_crm`, una ficha sin nombre, que es como vuelve un id que
+    no existe.
+
+    Lo VACÍO no es contradicción: si el campo es completable lo completa la corrida, y si no, lo
+    dice la lectura final (el caso de W-030A13). La fase previa es la parte de B.2 que ya está
+    decidida antes de escribir: lo no vacío del CRM no cambia al completar, así que no puede
+    fallar donde la lectura final no fallaría.
+    """
+    fuera = [str(d) for d in auditar_datos(elemento, id_, declarado, ficha_crm)
+             if d.tipo == "distinto"]
+    if por_id and not _n_texto(ficha_crm.get("nombre")):
+        fuera.insert(0, f"{elemento} id={id_}: la ficha no existe o no tiene nombre; revisa el "
+                        "id_crm")
     return fuera

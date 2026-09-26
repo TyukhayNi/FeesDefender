@@ -100,10 +100,11 @@ _INVENTARIO_COLABORADOR = ("nombre", "email", "movil", "telefono", "nif")
 
 
 def test_las_tuplas_son_el_inventario_del_spec():
+    """Los datos de cada parte, y `id_crm` al final (literal del contrato de la Task 7)."""
     assert cf.CLAVES_RAIZ == ("contrario", "colaboradores", "notas_html", "cliente_propio",
                               "firmante")
-    assert cf.CLAVES_CONTRARIO == _INVENTARIO_CONTRARIO
-    assert cf.CLAVES_COLABORADOR == _INVENTARIO_COLABORADOR
+    assert cf.CLAVES_CONTRARIO == _INVENTARIO_CONTRARIO + ("id_crm",)
+    assert cf.CLAVES_COLABORADOR == _INVENTARIO_COLABORADOR + ("id_crm",)
 
 
 def _parte(rol, clave, valor_yaml):
@@ -284,13 +285,53 @@ def test_basta_el_nif_o_el_email(tmp_path, identidad):                # control 
                                       f"contrario: {{nombre: A, {identidad}}}\n")).contrarios
 
 
-def test_R2H06_id_crm_todavia_NO_es_una_clave(tmp_path):
-    """El estado intermedio seguro: hasta la Task 7, que trae su consumidor, `id_crm` es una
-    clave desconocida y la parte sigue sin identidad. Aceptarlo antes la mandaría a CREAR."""
+def test_id_crm_basta_como_identidad(tmp_path):
+    """Sustituye a `test_R2H06_id_crm_todavia_NO_es_una_clave`, que fijaba el estado
+    intermedio seguro de la Task 3 y deja de ser verdad en la Task 7: `id_crm` entra con su
+    consumidor, en el mismo commit (R2/H-06)."""
+    f = cf.cargar_ficha_yaml(_yaml(tmp_path, "contrario: {nombre: A, id_crm: '1128'}\n"))
+    c = f.contrarios[0]
+    assert (c.id_crm, c.nif, c.email) == ("1128", "", "")
+
+
+def test_sin_nif_email_ni_id_crm_el_mensaje_nombra_las_tres(tmp_path):
     with pytest.raises(ValueError) as e:
-        cf.cargar_ficha_yaml(_yaml(tmp_path, "contrario: {nombre: A, id_crm: '1128'}\n"))
-    assert "contrario.id_crm: clave desconocida" in str(e.value)
-    assert f"contrario: {cf.SIN_IDENTIDAD}" in str(e.value)
+        cf.cargar_ficha_yaml(_yaml(tmp_path, "contrario: {nombre: A}\n"))
+    assert "falta NIF, email o id_crm" in str(e.value)
+
+
+@pytest.mark.parametrize("rol", ["contrario", "colaborador"])
+@pytest.mark.parametrize("valor, canonico", [("'1128'", "1128"), ("1128", "1128"),
+                                             ("' 01128 '", "1128")])
+def test_id_crm_admite_entero_o_digitos(tmp_path, rol, valor, canonico):
+    texto = (f"contrario: {{nombre: A, id_crm: {valor}}}\n" if rol == "contrario"
+             else f"colaboradores:\n  - {{nombre: A, id_crm: {valor}}}\n")
+    f = cf.cargar_ficha_yaml(_yaml(tmp_path, texto))
+    parte = f.contrarios[0] if rol == "contrario" else f.colaboradores[0]
+    assert parte.id_crm == canonico
+
+
+@pytest.mark.parametrize("valor", ["'12a'", "true", "[1]", "''", "0", "-3", "1.5"])
+def test_id_crm_que_no_es_el_numero_de_una_ficha_se_rechaza(tmp_path, valor):
+    # El motivo, no solo la ruta: «contrario.id_crm: clave desconocida» también empieza así, y
+    # con él este test pasaba antes de que `id_crm` existiera.
+    with pytest.raises(ValueError,
+                       match=re.escape("contrario.id_crm:") + ".*no es el número de una ficha"):
+        cf.cargar_ficha_yaml(_yaml(tmp_path,
+                                   f"contrario: {{nombre: A, nif: '1', id_crm: {valor}}}\n"))
+
+
+def test_id_crm_null_es_no_hay_dato(tmp_path):                     # control positivo
+    f = cf.cargar_ficha_yaml(_yaml(tmp_path, "contrario: {nombre: A, nif: '1', id_crm: null}\n"))
+    assert f.contrarios[0].id_crm == ""
+
+
+def test_id_crm_no_entra_en_la_declaracion(tmp_path):
+    """La declaración es lo que se COMPARA con la ficha; el id es cómo se llega a ella."""
+    f = cf.cargar_ficha_yaml(_yaml(tmp_path, "contrario: {nombre: A, id_crm: '1128'}\n"
+                                             "colaboradores:\n  - {nombre: B, id_crm: 776}\n"))
+    assert f.declarados_contrarios == [{"nombre": "A"}]
+    assert f.declarados_colaboradores == [{"nombre": "B"}]
 
 
 # ---------------------------------------------------------------------------
