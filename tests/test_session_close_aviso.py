@@ -154,6 +154,86 @@ def test_aviso_plan_coherente_no_alarma(monkeypatch, capsys, tmp_path):
     assert "[!]" not in salida
 
 
+# --- MEJORAS #303: una ruta no es una rama, `claude/` sí lo es, y una fila es un ítem ---
+#
+# Medido el 2026-09-26 sobre el PLAN.md de main: 49 «ramas fantasma» y las 49 eran rutas `docs/…`,
+# porque `docs` era prefijo de rama y la cola entera —una tabla— era un solo bloque que armaba el
+# «sin commitear» de la historia de una fila cerrada. Y ninguna rama `claude/…` —19 de las 22 que
+# git conocía— casaba nunca. El repo sí ha usado ramas `docs/…` (62 de 400 PRs): el prefijo se
+# queda, y lo que cambia es cómo se distingue una rama de una ruta.
+
+
+def test_303_una_ruta_docs_en_un_item_pendiente_no_es_una_rama():
+    texto = ("### [FOO]\nSin commitear aún: `docs/INDICE.md`, "
+             "[plan](docs/superpowers/plans/2026-09-25-x.md) y `docs/bitacora/2026.md`.\n")
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == []
+
+
+def test_303_una_rama_claude_podada_en_un_item_pendiente_si_sale():
+    texto = "### [FOO]\nRama de trabajo: `claude/foo-1a2b3c`. Sin commitear aún.\n"
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == [
+        ("[FOO]", ["claude/foo-1a2b3c"])]
+
+
+def test_303_una_rama_docs_de_verdad_sigue_saliendo():
+    """El repo ha usado 62 ramas `docs/…` (`docs/cierre-117`): quitar el prefijo las perdería."""
+    texto = "### [FOO]\nRama de trabajo: `docs/cierre-117`. Sin commitear aún.\n"
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == [
+        ("[FOO]", ["docs/cierre-117"])]
+
+
+def test_303_un_directorio_que_existe_no_es_una_rama():
+    texto = "### [FOO]\nSin commitear aún, todo bajo `docs/superpowers`.\n"
+    assert sc._plan_items_desfasados(
+        texto, {"main"}, es_ruta=lambda t: t == "docs/superpowers") == []
+
+
+def test_303_una_ruta_con_punto_delante_no_es_una_rama():
+    texto = "### [FOO]\nSin commitear aún: `.claude/skills` y `.claude/settings.local.json`.\n"
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == []
+
+
+_COLA = (
+    "## Cola\n"
+    "\n"
+    "| # | Ítem | Estado |\n"
+    "|---|------|--------|\n"
+    "| 1 | Uno | ✅ CERRADA: 838 líneas sin commitear que se rescataron |\n"
+    "| 2 | Dos | {estado_2} |\n"
+    "\n"
+    "> {nota}\n"
+)
+
+
+def test_303_la_frase_de_una_fila_no_arma_las_ramas_de_otra():
+    texto = _COLA.format(estado_2="en `claude/dos-9f8e7d`, ya mergeada", nota="Una nota.")
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == []
+
+
+def test_303_una_fila_pendiente_con_su_rama_fantasma_sale_con_su_numero():
+    texto = _COLA.format(estado_2="sin commitear en `claude/dos-9f8e7d`", nota="Una nota.")
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == [
+        ("Cola — fila 2", ["claude/dos-9f8e7d"])]
+
+
+def test_303_lo_que_va_fuera_de_la_tabla_no_hereda_la_frase_de_una_fila():
+    texto = _COLA.format(estado_2="pendiente", nota="Se hizo en `claude/nota-1c2d3e`.")
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == []
+
+
+def test_303_lo_que_va_fuera_de_la_tabla_sigue_siendo_el_item_del_encabezado():
+    texto = _COLA.format(estado_2="pendiente",
+                         nota="838 líneas sin commitear en `claude/nota-1c2d3e`.")
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == [
+        ("Cola", ["claude/nota-1c2d3e"])]
+
+
+def test_303_sin_predicado_una_ruta_que_existe_en_el_repo_no_es_una_rama():
+    """El predicado por defecto mira el árbol del repo: `docs/superpowers` existe."""
+    texto = "### [FOO]\nSin commitear aún, todo bajo `docs/superpowers`.\n"
+    assert sc._plan_items_desfasados(texto, {"main"}) == []
+
+
 # --- Higiene de PLAN.md: detectores puros (D3) ---
 
 _PLAN_CON_LEDGER = (

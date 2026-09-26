@@ -13486,7 +13486,7 @@ ejemplar se conserva cuando un suelto y un adjunto son el mismo fichero.
 
 ---
 
-## 303. El aviso «PLAN.md ↔ git» de `session_close` toma las rutas `docs/…` por ramas, y no reconoce las ramas `claude/…`
+## 303. El aviso «PLAN.md ↔ git» de `session_close` toma las rutas `docs/…` por ramas, y no reconoce las ramas `claude/…`  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Medido el 2026-09-25, en el cierre de la sesión de mejoras de las aperturas (PR #397).** Es
 > un aviso y no bloquea nada: el coste es de atención, no de datos.

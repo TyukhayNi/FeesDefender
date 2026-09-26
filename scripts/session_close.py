@@ -45,10 +45,25 @@ _FRASES_PENDIENTE = (
     "a la espera de ok",
     "espera ok de",
 )
-# Tokens con pinta de rama git: prefijo convencional + resto del nombre.
+# Prefijos de rama que este repo ha usado de verdad (medido el 2026-09-26 sobre los 400 PRs de su
+# historia: `claude` 275, `docs` 62, `feat` 26, `fix` 15, `chore` 4, `codex` 1, `test` 1).
+# `claude` es el que pone la app y faltaba (MEJORAS #303); `docs` choca con el directorio del mismo
+# nombre, y por eso una ruta se reconoce aparte (`_RE_EXTENSION` y `es_ruta`), sin quitar el
+# prefijo.
+_PREFIJOS_RAMA = ("claude", "codex", "docs", "feat", "fix", "chore", "refactor", "test",
+                  "hotfix", "release")
+# Tokens con pinta de rama: un prefijo y UN segmento de nombre. No empieza a mitad de una ruta ni
+# de otra palabra (`.claude/skills`, `core/docs/x`), y no sigue en otra ruta: el lookahead incluye
+# los caracteres del nombre para que el backtracking no corte `docs/superpowers/plans/x.md` en
+# `docs/superpower`.
 _RE_RAMA = re.compile(
-    r"\b(?:feat|fix|docs|chore|refactor|test|hotfix|release)/[A-Za-z0-9._\-/]+"
+    r"(?<![\w./\\-])(?:" + "|".join(_PREFIJOS_RAMA) + r")/[A-Za-z0-9._-]+(?![\w./\\-])"
 )
+# Un nombre que acaba en extensión de fichero (`.md`, `.py`) es una ruta. Solo letras: una rama
+# `release/1.2` no lo es.
+_RE_EXTENSION = re.compile(r"\.[A-Za-z]{1,5}$")
+# La línea `|---|:---:|` que separa la cabecera de una tabla Markdown.
+_RE_SEPARADOR_TABLA = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 
 
 def _git_lines(args: list[str]) -> list[str]:
@@ -150,18 +165,28 @@ def _ramas_conocidas() -> set[str]:
     return ramas
 
 
+def _es_ruta_del_repo(token: str) -> bool:
+    """True si `token` nombra algo que existe en el árbol del repo (`docs/superpowers`)."""
+    return (ROOT / token).exists()
+
+
 def _plan_items_desfasados(
-    texto: str, ramas_conocidas: set[str]
+    texto: str, ramas_conocidas: set[str], es_ruta=None
 ) -> list[tuple[str, list[str]]]:
     """Items de PLAN.md que afirman trabajo pendiente en una rama fantasma.
 
-    Puro y testeable. Trocea PLAN.md por encabezados (`#`); para cada bloque que
+    Trocea PLAN.md por encabezados (`#`); para cada bloque que
     contenga una frase de pendiente (`_FRASES_PENDIENTE`), extrae los tokens con
     pinta de rama y devuelve los que git YA NO conoce. Los items completados no
     usan esas frases, asi que no se marcan aunque citen una rama podada.
 
+    Un token que acaba en extensión de fichero, o para el que `es_ruta(token)` es True, es una
+    ruta y no una rama (MEJORAS #303). `es_ruta` por defecto mira el árbol del repo; los tests le
+    pasan uno propio para no depender de él.
+
     Devuelve [(titulo_del_item, [ramas_fantasma_ordenadas]), ...].
     """
+    es_ruta = _es_ruta_del_repo if es_ruta is None else es_ruta
     filas: list[tuple[str, list[str]]] = []
     titulo = ""
     buf: list[str] = []
@@ -171,6 +196,7 @@ def _plan_items_desfasados(
         if not any(frase in low for frase in _FRASES_PENDIENTE):
             return
         ramas = {m.rstrip("./") for m in _RE_RAMA.findall(contenido)}
+        ramas = {r for r in ramas if not _RE_EXTENSION.search(r) and not es_ruta(r)}
         fantasmas = sorted(r for r in ramas if r not in ramas_conocidas)
         if fantasmas:
             filas.append((titulo, fantasmas))
@@ -181,6 +207,13 @@ def _plan_items_desfasados(
                 _cerrar(titulo, "\n".join(buf))
             titulo = ln.lstrip("#").strip()
             buf = [ln]
+        elif ln.lstrip().startswith("|"):
+            # Cada fila de una tabla es su propio ítem (MEJORAS #303): la cola priorizada es UNA
+            # tabla, y como bloque, el «sin commitear» de la historia de una fila cerrada armaba
+            # las rutas de todas las demás. Lo que va fuera de la tabla sigue en el bloque.
+            if not _RE_SEPARADOR_TABLA.match(ln):
+                celda = ln.strip().strip("|").split("|", 1)[0].strip()
+                _cerrar(f"{titulo} — fila {celda}", ln)
         else:
             buf.append(ln)
     if buf:
