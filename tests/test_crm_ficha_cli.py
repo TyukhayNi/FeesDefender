@@ -813,13 +813,22 @@ class TestLaGuardaDeFichasMuerde:
 # ---------------------------------------------------------------------------
 
 def _writers(monkeypatch):
-    """Los cuatro writers del CLI, doblados y espiados."""
+    """Los cuatro writers del CLI, doblados y espiados, y las dos lecturas de la verificación.
+
+    Las lecturas van declaradas aunque la fase previa tenga que parar antes: si una fase previa
+    rota dejara pasar, el camino seguiría hasta la auditoría (parcial o final), y sin ellas el
+    test moriría por la guarda de red en vez de por su aserto —lo que el arnés de mutantes midió
+    con su M19—."""
     w = {"link_ev_mmc": MagicMock(),
          "ensure_contrario_vinculado": MagicMock(return_value=("1099", False)),
          "ensure_colaborador_vinculado": MagicMock(return_value=("776", False)),
          "update_expediente": MagicMock(return_value={})}
     for nombre, doble in w.items():
         monkeypatch.setattr(f"scripts.crm_ficha.{nombre}", doble)
+    monkeypatch.setattr("scripts.crm_ficha.get_expediente",
+                        MagicMock(return_value={"Numero_Expediente": "49",
+                                                "Notas": "<p>Vuelta</p>"}))
+    _relaciones(monkeypatch)
     return w
 
 

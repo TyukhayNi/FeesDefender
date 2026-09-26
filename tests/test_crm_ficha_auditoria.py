@@ -66,12 +66,15 @@ def test_exacto_es_todo_ok_y_los_bloques_ajenos_no_se_miran():     # control pos
 # Datos (B.2)
 # ---------------------------------------------------------------------------
 
+#: Estos tests comparan listas enteras en vez de desempaquetar (`[d] = …`): un mutante que
+#: devolviera `[]` los tumbaría con el `ValueError` del desempaquetado, y el arnés de la Task 9
+#: solo cuenta la muerte por un ASERTO.
 def test_R1H03_la_ficha_de_w030a13_con_el_apellido_vacio_no_pasa():
     decl = {"nombre": "ANA", "apellido1": "GARCIA", "nif": "00000000T"}
-    [d] = cf.auditar_datos("clientes_contrarios", "1128", decl,
+    got = cf.auditar_datos("clientes_contrarios", "1128", decl,
                            {"nombre": "ANA", "1apellido": "", "nif_cif": "00000000T"})
-    assert (d.propiedad, d.tipo) == ("1apellido", "vacio")
-    assert str(d) == "clientes_contrarios id=1128 1apellido: vacío en el CRM"
+    assert [(d.propiedad, d.tipo) for d in got] == [("1apellido", "vacio")]
+    assert [str(d) for d in got] == ["clientes_contrarios id=1128 1apellido: vacío en el CRM"]
 
 
 def test_mayusculas_espacios_y_formato_no_son_diferencia_y_lo_distinto_se_dice():
@@ -81,8 +84,8 @@ def test_mayusculas_espacios_y_formato_no_son_diferencia_y_lo_distinto_se_dice()
              "email": "ana@x.es", "movil": "600111222", "direccion": "calle mayor 1"}
     assert cf.auditar_datos("clientes_contrarios", "1", decl, ficha) == []
     ficha["1apellido"] = "PEREZ"
-    [d] = cf.auditar_datos("clientes_contrarios", "1", decl, ficha)
-    assert str(d) == "clientes_contrarios id=1 1apellido: distinto (CRM 'PEREZ', YAML 'García')"
+    assert [str(d) for d in cf.auditar_datos("clientes_contrarios", "1", decl, ficha)] == [
+        "clientes_contrarios id=1 1apellido: distinto (CRM 'PEREZ', YAML 'García')"]
 
 
 #: (campo del YAML, propiedad del CRM, un valor, otro valor) — fijado aquí, fuera de la tupla
@@ -116,12 +119,14 @@ def test_cada_campo_va_a_su_propiedad_del_CRM():
 @pytest.mark.parametrize("elemento, campo, prop, valor, otro", _MATRIZ)
 def test_la_matriz_campo_por_rol(elemento, campo, prop, valor, otro):
     decl = {campo: valor}
-    assert cf.auditar_datos(elemento, "9", decl, {prop: valor}) == []          # igual
-    [v] = cf.auditar_datos(elemento, "9", decl, {prop: ""})                     # vacío
-    [a] = cf.auditar_datos(elemento, "9", decl, {})                             # ausente = vacío
-    [d] = cf.auditar_datos(elemento, "9", decl, {prop: otro})                   # distinto
-    assert (v.tipo, a.tipo, d.tipo) == ("vacio", "vacio", "distinto")
-    assert v.propiedad == a.propiedad == d.propiedad == prop
+
+    def _tipos(ficha):
+        return [(d.propiedad, d.tipo) for d in cf.auditar_datos(elemento, "9", decl, ficha)]
+
+    assert _tipos({prop: valor}) == []                        # igual
+    assert _tipos({prop: ""}) == [(prop, "vacio")]            # vacío
+    assert _tipos({}) == [(prop, "vacio")]                    # ausente = vacío
+    assert _tipos({prop: otro}) == [(prop, "distinto")]       # distinto
 
 
 def test_lo_que_el_yaml_no_declara_no_se_compara():                     # control positivo
