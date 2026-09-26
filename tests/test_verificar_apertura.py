@@ -2882,20 +2882,26 @@ def test_316_c3_una_declaracion_en_TEXTO_LIBRE_no_cuenta(tmp_path):
     assert r.evidencia["sin_catalogar"] == ["2026-09-23_email_01/c/export.zip"], r.evidencia
 
 
-def test_316_c3_la_firma_de_correo_de_email_export_no_se_exige(tmp_path):
+def test_316_c3_la_firma_de_correo_es_un_adjunto_mas_y_se_exige(tmp_path):
+    """R1/H-01 del #408: `email_export` marca la firma y la deja en el expediente —«marca, no
+    esconde», decisión de Nikolai del 2026-09-06—, así que dispensarla aquí era descartarla.
+    Se exige como cualquier adjunto; una exclusión declarada con su motivo la aparta."""
     c = _caso(tmp_path)
-    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
-                          {"slug": "f", "rel_path": "2026-09-23_email_01/aviso/_firma_image.png"}])
+    firma = "2026-09-23_email_01/aviso/_firma_image.png"
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""}, {"slug": "f", "rel_path": firma}])
     _con_catalogo(c, ["a"])
 
     r = _r(c, "cobertura_vs_catalogo")
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == [firma], r.evidencia
 
+    _manifiesto_sala(c, f"\n## No copiados\n\n- excluido: `{firma}` — logotipo sin texto\n")
+    r = _r(c, "cobertura_vs_catalogo")
     assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
-    assert r.evidencia["firmas_de_correo"] == 1, r.evidencia
 
 
 def test_316_c3_un__firma_FUERA_de_un_lote_de_correo_si_se_exige(tmp_path):
-    """CONTROL POSITIVO: el prefijo solo es de `email_export` donde `email_export` escribe."""
+    """Y fuera de un lote de correo, igual: el prefijo no aparta nada en ningún sitio."""
     c = _caso(tmp_path)
     _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
                           {"slug": "f", "rel_path": "01_Drive EV/Fotos/_firma_image.png"}])
@@ -2905,6 +2911,82 @@ def test_316_c3_un__firma_FUERA_de_un_lote_de_correo_si_se_exige(tmp_path):
 
     assert r.estado == va.FALLO
     assert r.evidencia["sin_catalogar"] == ["01_Drive EV/Fotos/_firma_image.png"], r.evidencia
+
+
+def test_316_c3_una_linea_duplicado_NO_exime_si_su_contenido_no_esta_en_el_catalogo(tmp_path):
+    """R1/H-09 del #408: C3 aceptaba cualquier línea de «No copiados», y un «duplicado» que no
+    lo era sacaba un documento del catálogo con una frase. El duplicado se prueba por su
+    sha256 —el cruce `por_sha`—; la línea no exime."""
+    c = _caso(tmp_path)
+    b = "2026-09-23_email_01/c/b.pdf"
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "b", "rel_path": b, "sha256": "b" * 64}])
+    _con_catalogo(c, ["a"])
+    _manifiesto_sala(c, f"\n## No copiados\n\n- duplicado: `{b}` — de `01_Drive EV/a.pdf`\n")
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == [b], r.evidencia
+
+
+def test_316_c3_una_exclusion_declarada_se_dice_con_su_ruta_y_su_motivo(tmp_path):
+    """R1/H-09 del #408: un `ok` con «1 declarada, con su motivo» no dejaba ver qué se apartó
+    ni por qué, y lo decía igual con un motivo de una letra. C3 no juzga la decisión —es del
+    letrado—, pero la enseña: ruta y motivo, en el detalle y en la evidencia."""
+    c = _caso(tmp_path)
+    z = "2026-09-23_email_01/c/export.zip"
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""}, {"slug": "z", "rel_path": z}])
+    _con_catalogo(c, ["a"])
+    _manifiesto_sala(c, f"\n## No copiados\n\n- excluido: `{z}` — material de otro expediente\n")
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert f"{z} — material de otro expediente" in r.detalle, r.detalle
+    assert r.evidencia["declaradas_muestra"] == [f"{z} — material de otro expediente"], r.evidencia
+
+
+def test_316_c3_la_ruta_de_la_cobertura_no_pierde_un_00_Input_del_cliente(tmp_path):
+    """R1/H-06 del #408: la `rel_path` de la cobertura ya es relativa a `00_Input/`; un primer
+    componente `00_Input` es una carpeta del cliente, y recortarlo convertía `00_Input/_caso.md`
+    en el protocolo de la raíz. El prefijo solo se quita en el lado del catálogo."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "n", "rel_path": "00_Input/_caso.md"}])
+    _con_catalogo(c, ["a"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == ["00_Input/_caso.md"], r.evidencia
+
+
+def test_316_c3_el_zip_crudo_solo_se_aparta_donde_escribe_el_intake(tmp_path):
+    """R1/H-07 del #408: fuera del lote de WhatsApp o de su cajón legacy, la pareja de
+    nombres no es el crudo que deja el intake: el zip es un documento y se exige."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "chat", "rel_path": "04_Manual/_chat.txt"},
+                          {"slug": "zip", "rel_path": "04_Manual/_export_original.zip"}])
+    _catalogo_de(c, {"ruta_relativa": "04_Manual/_chat.txt", "hash": "c" * 64})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == ["04_Manual/_export_original.zip"], r.evidencia
+
+
+def test_316_c3_el_zip_crudo_del_cajon_legacy_02_Whatsapp_no_se_exige(tmp_path):
+    """CONTROL: el intake escribió ahí antes de los lotes, y ahí la regla sigue valiendo."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "chat", "rel_path": "02_Whatsapp/Chat/_chat.txt"},
+                          {"slug": "zip", "rel_path": "02_Whatsapp/Chat/_export_original.zip"}])
+    _catalogo_de(c, {"ruta_relativa": "02_Whatsapp/Chat/_chat.txt", "hash": "c" * 64})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["excluidas"]["export_crudo_whatsapp"] == 1, r.evidencia
 
 
 def test_316_c3_un_manifiesto_que_no_se_puede_leer_es_fallo(tmp_path):
@@ -2941,30 +3023,45 @@ _RUTAS_MUESTRA = [
 ]
 
 
-def test_316_anti_deriva_la_firma_de_C3_es_la_de_email_export_y_la_de_la_skill():
-    from core.email_export import PREFIJO_FIRMA
-
+def test_316_anti_deriva_el_zip_crudo_se_decide_igual_en_C3_y_en_la_skill():
+    """La regla del crudo vive en dos sitios (C3 no importa la skill): mismas rutas, mismo
+    veredicto, dentro y fuera de donde escribe el intake (R1/H-07 del #408)."""
     skill = _skill_modulo("preclasificar")
-    assert va._PREFIJO_FIRMA_CORREO == PREFIJO_FIRMA == skill.PREFIJO_FIRMA_CORREO
-    for r in _RUTAS_MUESTRA:
-        assert va._es_firma_de_correo(va._clave_de_ruta_de_origen(r)) == \
-            skill.es_firma_de_correo(r), r
+    conjuntos = [
+        ["2026-09-23_whatsapp_01/p/Chat/_chat.txt", "2026-09-23_whatsapp_01/p/Chat/_export_original.zip"],
+        ["02_Whatsapp/Chat/_chat.txt", "02_Whatsapp/Chat/_export_original.zip"],
+        ["04_Manual/_chat.txt", "04_Manual/_export_original.zip"],
+        ["2026-09-23_whatsapp_01/p/Chat/_export_original.zip"],
+        ["2026-09-23_email_01/c/_chat.txt", "2026-09-23_email_01/c/_export_original.zip"],
+    ]
+    for rutas in conjuntos:
+        esperado = {c["ruta"] for c in skill.emparejar_exports_whatsapp(rutas)[1]}
+        assert va._crudos_de_whatsapp(rutas) == esperado, rutas
 
 
 def test_316_anti_deriva_las_rutas_se_normalizan_igual_en_C3_y_en_la_skill():
+    """Dos lados, dos claves (R1/H-06 del #408): la ruta del manifiesto o del catálogo pierde
+    un `00_Input/`; la de la cobertura no pierde nada. Igual en C3 y en la skill."""
     skill = _skill_modulo("verificar_sala")
     for r in _RUTAS_MUESTRA:
         assert va._clave_de_ruta_de_origen(r) == skill._clave_ruta(r), r
+        assert va._clave_de_cobertura(r) == skill._clave_cobertura(r), r
+    assert skill._clave_cobertura("00_Input/_caso.md") == "00_Input/_caso.md"
+    assert skill._clave_ruta("00_Input/_caso.md") == "_caso.md"
 
 
 def test_316_anti_deriva_no_copiados_se_lee_igual_en_C3_y_en_la_skill():
     skill = _skill_modulo("manifiesto_parser")
     texto = ("| sha256 | ruta_original |\n|---|---|\n\n## No copiados (pasada del 2026-09-23)\n\n"
+             "Excluidos:\n"
              "- duplicado: `" + _W("00_Input", "a", "b.jpg") + "` — de `SALA:x.jpeg`\n"
              "- duplicado, saltado: `c.pdf` — de `d.pdf`\n"
+             "- duplicado: `h.pdf` — cualquier motivo\n"
              "- excluido: `e.zip` — crudo\n- excluidos: prosa sin ruta\n"
-             "- excluido: `f.pdf` — \n\n## Otra\n\n- excluido: `g.pdf` — fuera de la sección\n")
-    esperado = [(d["motivo"], d["ruta"]) for d in skill.parse_no_copiados(texto)]
+             "- excluido: `f.pdf` — \n### Sub\n- excluido: `i.pdf` — en la subsección\n"
+             "\n## Otra\n\n- excluido: `g.pdf` — fuera de la sección\n")
+    esperado = [(d["motivo"], d["ruta"], d["detalle"]) for d in skill.parse_no_copiados(texto)]
     assert va._parse_no_copiados(texto) == esperado
-    assert esperado == [("duplicado", _W("00_Input", "a", "b.jpg")), ("duplicado", "c.pdf"),
-                        ("excluido", "e.zip")]
+    assert esperado == [("duplicado", _W("00_Input", "a", "b.jpg"), "de `SALA:x.jpeg`"),
+                        ("duplicado", "c.pdf", "de `d.pdf`"), ("excluido", "e.zip", "crudo"),
+                        ("excluido", "i.pdf", "en la subsección")]

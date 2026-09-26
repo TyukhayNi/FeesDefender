@@ -133,3 +133,26 @@ def test_no_copiados_ESTRICTO_rechaza_una_linea_sin_motivo():
     texto = _MANIF_7COL + "\n## No copiados\n\n- excluido: `a.pdf` — \n"
     with pytest.raises(ValueError):
         mp.parse_no_copiados(texto, estricto=True)
+
+
+def test_no_copiados_ESTRICTO_un_duplicado_sin_de_ruta_es_un_error():
+    """R1/H-05 del #408: el formato cerrado de `duplicado` es `— de `lo que se conserva``, y
+    los 47 que hay en los manifiestos reales lo cumplen. Con cualquier otro texto detrás, la
+    línea no dice de qué es duplicado."""
+    texto = _MANIF_7COL + "\n## No copiados\n\n- duplicado: `a.pdf` — cualquier motivo\n"
+    with pytest.raises(ValueError, match="No copiados"):
+        mp.parse_no_copiados(texto, estricto=True)
+    assert mp.parse_no_copiados(texto) == []
+
+
+def test_no_copiados_el_texto_sin_vineta_es_comentario_y_un_nivel_3_sigue_dentro():
+    """Lo que la R1 (H-05) preguntó, con lo que responden los manifiestos reales: las dos
+    secciones que existen escriben rótulos sin viñeta («Excluidos:») y ningún `###`. El texto
+    sin viñeta es comentario: no declara nada, así que no puede sacar a nadie de la verja —la
+    fuente sigue sin dar cuenta de sí—. Un `###` es una subsección de «No copiados», como en
+    Markdown, y la sección acaba en el siguiente encabezado de nivel 1 o 2."""
+    texto = (_MANIF_7COL + "\n## No copiados (pasada del 2026-09-23)\n\nExcluidos:\n"
+             "Se excluye a.pdf\n### Duplicados\n- duplicado: `b.pdf` — de `c.pdf`\n"
+             "## Otra\n- excluido: `d.pdf` — fuera de la sección\n")
+    assert mp.parse_no_copiados(texto, estricto=True) == [
+        {"motivo": "duplicado", "ruta": "b.pdf", "detalle": "de `c.pdf`"}]

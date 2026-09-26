@@ -320,6 +320,25 @@ def test_emparejar_exports_whatsapp_conserva_zip_no_original_junto_a_chat():
     assert crudos == []
 
 
+def test_emparejar_exports_whatsapp_solo_donde_escribe_el_intake():
+    """R1/H-07 del #408: la pareja se decidía por dos nombres en una misma carpeta, en
+    cualquier sitio. `whatsapp_intake.deposit_export` escribe el zip crudo en un lote
+    `<fecha>_whatsapp_NN/`, y antes lo escribió en el cajón legacy `02_Whatsapp/` (hay cuatro
+    en los casos reales): fuera de ahí, un `_export_original.zip` junto a un `_chat.txt` no es
+    del intake y se conserva."""
+    fuera = ["04_Manual/_chat.txt", "04_Manual/_export_original.zip"]
+    limpias, crudos = preclasificar.emparejar_exports_whatsapp(fuera)
+    assert limpias == fuera and crudos == []
+    barra = chr(92)
+    for base, sep in (("2026-07-21_whatsapp_01/propietario/Chat", "/"),
+                      ("02_Whatsapp/Chat", "/"),
+                      ("00_Input/2026-07-21_whatsapp_01/propietario/Chat", "/"),
+                      (barra.join(["00_Input", "02_Whatsapp", "Chat"]), barra)):
+        rutas = [f"{base}{sep}_chat.txt", f"{base}{sep}_export_original.zip"]
+        limpias, crudos = preclasificar.emparejar_exports_whatsapp(rutas)
+        assert [c["ruta"] for c in crudos] == [rutas[1]], base
+
+
 def test_nombre_export_crudo_sin_drift_con_core():
     from core.whatsapp_intake import _ORIGINAL_ZIP_NAME
     assert preclasificar._NOMBRE_EXPORT_CRUDO_WHATSAPP == _ORIGINAL_ZIP_NAME

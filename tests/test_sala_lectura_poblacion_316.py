@@ -8,10 +8,12 @@ expedientes, documentos que la sala de máquina procesó no llegaron al catálog
 Nada lo comprobaba. Ahora el verify de la propia skill lo mira, con la cobertura que ya
 recibía para las fechas.
 
-Las exclusiones automáticas son tres, y las tres son reglas de su productor: el registro de
-protocolo por ubicación (`core/intake_control`), el zip crudo de WhatsApp junto a su chat
-(`emparejar_exports_whatsapp`) y la firma incrustada que `email_export` marca y nombra con
-`_firma_`. Lo demás tiene fila o línea en `## No copiados`.
+Las exclusiones automáticas son dos, y las dos son reglas de su productor: el registro de
+protocolo por ubicación (`core/intake_control`) y el zip crudo que el intake de WhatsApp
+deja junto a su chat (`emparejar_exports_whatsapp`). La firma que `email_export` marca con
+`_firma_` era la tercera y dejó de serlo en la R1 (H-01): el productor la marca, no la
+descarta. Lo demás da cuenta de sí por una fila —su ruta, o su sha256 si es un duplicado—
+o por una línea `excluido` en `## No copiados`.
 
 Ningún test escribe fuera de `tmp_path`.
 """
@@ -21,12 +23,9 @@ import hashlib
 import json
 import sys
 
-import pytest
-
 _SCRIPTS = Path(__file__).parent.parent / ".claude/skills/organizar-sala-lectura/scripts"
 sys.path.insert(0, str(_SCRIPTS))
 verificar_sala = import_module("verificar_sala")
-preclasificar = import_module("preclasificar")
 
 _A, _B = "a" * 64, "b" * 64
 
@@ -43,27 +42,18 @@ def _cob(rel, sha="", **kw):
 # --- Las reglas automáticas ------------------------------------------------------------
 
 
-def test_la_firma_de_correo_es_la_que_email_export_nombra_en_un_lote_de_correo():
-    assert preclasificar.es_firma_de_correo("2026-09-23_email_01/2025-01-02_aviso/_firma_image.png")
-    assert preclasificar.es_firma_de_correo("00_Input\\03_Email\\hilo\\_firma_logo.jpg")
-
-
-@pytest.mark.parametrize("ruta", [
-    "01_Drive EV/Fotos/_firma_image.png",                 # fuera de un lote de correo
-    "2026-09-23_whatsapp_01/chat/_firma_image.png",       # lote de WhatsApp, no de correo
-    "2026-09-23_email_01/2025-01-02_aviso/firma.png",     # sin el prefijo del productor
-    "2026-09-23_email_01/_firma_image.png" + "x",         # sigue siendo firma: prefijo y lote
-])
-def test_la_firma_de_correo_no_se_adivina_por_el_nombre_en_otro_sitio(ruta):
-    """CONTROL POSITIVO: un `_firma_` fuera de un lote de correo es un documento del cliente,
-    y un fichero de correo sin el prefijo es un adjunto que alguien envió."""
-    esperado = ruta.startswith("2026-09-23_email_01/_firma_")
-    assert preclasificar.es_firma_de_correo(ruta) is esperado
-
-
-def test_prefijo_de_firma_sin_deriva_con_email_export():
-    from core.email_export import PREFIJO_FIRMA
-    assert preclasificar.PREFIJO_FIRMA_CORREO == PREFIJO_FIRMA
+def test_la_firma_de_correo_es_un_adjunto_mas_y_pide_fila_o_linea():
+    """R1/H-01 del #408: la primera versión dispensaba de fila al `_firma_*` de un lote de
+    correo. Pero `email_export` lo MARCA, no lo descarta —«marca, no esconde», decisión de
+    Nikolai del 2026-09-06, después de que un revisor colara una aceptación de honorarios
+    escaneada que el filtro de firmas tiraba—, y el prefijo tampoco dice quién puso el nombre.
+    La firma es un adjunto de su correo: fila, o una línea `excluido` con su motivo."""
+    firma = "2026-09-23_email_01/2025-01-02_aviso/_firma_image.png"
+    problemas = verificar_sala.problemas_poblacion([], [_cob(firma, _B)], [])
+    assert len(problemas) == 1 and firma in problemas[0], problemas
+    declarada = [{"motivo": "excluido", "ruta": firma, "detalle": "logotipo sin texto"}]
+    assert verificar_sala.problemas_poblacion([], [_cob(firma, _B)], declarada) == []
+    assert verificar_sala.problemas_poblacion([_fila(firma, _B)], [_cob(firma, _B)], []) == []
 
 
 def test_el_registro_de_protocolo_de_la_skill_es_COPIA_EXACTA_del_de_core():
@@ -88,12 +78,57 @@ def test_una_fuente_SIN_fila_ni_declaracion_es_un_problema():
     assert "No copiados" in problemas[0]
 
 
-def test_una_fuente_con_FILA_por_ruta_o_por_sha256_no_es_problema():
-    """La ruta del manifiesto puede venir con `00_Input\\` y barras invertidas; y una copia
-    en otra carpeta es el `dedup_por_sha`: está en la sala por su contenido."""
-    filas = [_fila("00_Input\\01_Drive EV\\a.pdf", _A)]
-    cob = [_cob("01_Drive EV/a.pdf", _A), _cob("01_Drive EV/OTRA/a.pdf", _A)]
+def test_una_fuente_con_FILA_por_su_ruta_no_es_problema():
+    """La ruta del manifiesto puede venir con `00_Input\\` y barras invertidas. La fila no
+    lleva sha256 a propósito: aquí da cuenta la RUTA, sola."""
+    filas = [_fila("00_Input\\01_Drive EV\\a.pdf")]
+    assert verificar_sala.problemas_poblacion(filas, [_cob("01_Drive EV/a.pdf", _A)], []) == []
+
+
+def test_un_duplicado_por_sha256_no_necesita_fila_ni_linea():
+    """Una copia en otra carpeta es el `dedup_por_sha`: su contenido está en la sala, y eso lo
+    comprueba la verja sola, por el sha256. No se declara: un hecho que se puede medir no se
+    acredita diciéndolo (R1/H-04 del #408)."""
+    filas = [_fila("01_Drive EV/a.pdf", _A)]
+    cob = [_cob("01_Drive EV/a.pdf", _A), _cob("2026-09-23_email_01/c/a.pdf", _A)]
     assert verificar_sala.problemas_poblacion(filas, cob, []) == []
+
+
+def test_una_linea_duplicado_NO_da_cuenta_si_su_contenido_no_esta_en_ninguna_fila():
+    """R1/H-09 del #408: si «duplicado» contara como declaración, bastaría escribirlo para
+    sacar un documento de la sala. Lo que da cuenta de un duplicado es su sha256 en una fila."""
+    declarada = [{"motivo": "duplicado", "ruta": "2026-09-23_email_01/c/b.pdf",
+                  "detalle": "de `01_Drive EV/a.pdf`"}]
+    problemas = verificar_sala.problemas_poblacion(
+        [_fila("01_Drive EV/a.pdf", _A)],
+        [_cob("01_Drive EV/a.pdf", _A), _cob("2026-09-23_email_01/c/b.pdf", _B)], declarada)
+    assert len(problemas) == 1 and "2026-09-23_email_01/c/b.pdf" in problemas[0], problemas
+    assert "duplicado" in problemas[0], problemas
+
+
+def test_una_fila_con_la_ruta_de_la_fuente_y_otro_sha256_la_contradice():
+    """R1/H-03 del #408: la unidad es el PAR ruta/sha256 de cada fila, como en la C3. Partido
+    en dos conjuntos, una fila `a.pdf` con el hash de otro documento daba cuenta de `a.pdf`
+    por su ruta: el sitio era el suyo y el contenido no."""
+    problemas = verificar_sala.problemas_poblacion([_fila("a.pdf", _B)], [_cob("a.pdf", _A)], [])
+    assert len(problemas) == 1 and "a.pdf" in problemas[0], problemas
+    assert "contradice" in problemas[0], problemas
+
+
+def test_una_fila_contradictoria_no_acredita_por_su_hash_a_otra_fuente():
+    """La otra mitad del par: la fila `a.pdf` con el sha256 de `b.pdf` tampoco da cuenta de
+    `b.pdf` por su contenido. Una fila que contradice no acredita a nadie."""
+    problemas = verificar_sala.problemas_poblacion(
+        [_fila("a.pdf", _B)], [_cob("a.pdf", _A), _cob("b.pdf", _B)], [])
+    assert any("b.pdf" in p and "contradice" not in p for p in problemas), problemas
+
+
+def test_una_fila_md5_da_cuenta_de_su_fuente_por_la_ruta():
+    """CONTROL: el Modo 3 admite `md5:<hash>` en la columna sha256 (Paso 4). No es un sha256,
+    así que no contradice nada: da cuenta de su fuente por la ruta, y solo por ella."""
+    filas = [_fila("01_Drive EV/video.mp4", "md5:" + "c" * 32)]
+    assert verificar_sala.problemas_poblacion(filas, [_cob("01_Drive EV/video.mp4", _A)],
+                                              []) == []
 
 
 def test_una_fuente_DECLARADA_en_no_copiados_no_es_problema():
@@ -104,12 +139,29 @@ def test_una_fuente_DECLARADA_en_no_copiados_no_es_problema():
     assert problemas == []
 
 
-def test_las_tres_reglas_de_productor_no_piden_declaracion():
+def test_una_ruta_con_fila_y_declarada_no_copiada_es_una_contradiccion():
+    """La sección se llama «No copiados»: si la ruta tiene fila, se copió, y una de las dos
+    cosas que dice el manifiesto es falsa."""
+    declarada = [{"motivo": "excluido", "ruta": "01_Drive EV/a.pdf", "detalle": "ajeno"}]
+    problemas = verificar_sala.problemas_poblacion(
+        [_fila("01_Drive EV/a.pdf", _A)], [_cob("01_Drive EV/a.pdf", _A)], declarada)
+    assert len(problemas) == 1 and "01_Drive EV/a.pdf" in problemas[0], problemas
+
+
+def test_la_ruta_de_la_cobertura_no_pierde_un_00_Input_del_cliente():
+    """R1/H-06 del #408: la `rel_path` de la cobertura ya es relativa a `00_Input/`, así que su
+    primer componente es del cliente. Si entregó una carpeta llamada `00_Input`, recortarla
+    convertía `00_Input/_caso.md` en el `_caso.md` de la raíz —protocolo— y dejaba de pedir
+    fila. El prefijo solo se le quita a la ruta del MANIFIESTO, que sí lo lleva."""
+    problemas = verificar_sala.problemas_poblacion([], [_cob("00_Input/_caso.md", _A)], [])
+    assert len(problemas) == 1 and "00_Input/_caso.md" in problemas[0], problemas
+
+
+def test_las_dos_reglas_de_productor_no_piden_declaracion():
     cob = [_cob("_caso.md"),                                             # protocolo, raíz
            _cob("2026-09-10_email_01/_manifiesto.yaml"),                 # protocolo, lote
            _cob("2026-09-25_whatsapp_01/Chat/_chat.txt", _A),
-           _cob("2026-09-25_whatsapp_01/Chat/_export_original.zip", _B),  # crudo con su chat
-           _cob("2026-09-23_email_01/aviso/_firma_image.png", _B)]       # firma de email_export
+           _cob("2026-09-25_whatsapp_01/Chat/_export_original.zip", _B)]  # crudo con su chat
     filas = [_fila("2026-09-25_whatsapp_01/Chat/_chat.txt", _A)]
     assert verificar_sala.problemas_poblacion(filas, cob, []) == []
 
@@ -170,8 +222,49 @@ def test_cli_una_declaracion_en_TEXTO_LIBRE_es_un_error(tmp_path, capsys):
     assert "No copiados" in capsys.readouterr().out
 
 
-def test_cli_sin_cobertura_DICE_que_no_ha_contrastado_la_poblacion(tmp_path, capsys):
-    """No poder mirar no es «no hay»: sin `--cobertura`, el OK no puede sonar a completo."""
+def test_cli_sin_cobertura_FALLA_salvo_con_sin_cobertura(tmp_path, capsys):
+    """R1/H-02 del #408: el primer diseño avisaba y devolvía 0, así que quien mirase el código
+    de salida daba por contrastada una población que nadie había mirado. Sin cobertura el
+    verify falla; `--sin-cobertura` —una sala sin sala de máquina— da un OK que dice PARCIAL."""
     sala, _ = _sala(tmp_path, "", [])
-    assert verificar_sala.main(["verificar_sala.py", str(sala)]) == 0
-    assert "sin --cobertura" in capsys.readouterr().out
+    assert verificar_sala.main(["verificar_sala.py", str(sala)]) == 1
+    assert "--sin-cobertura" in capsys.readouterr().out
+    assert verificar_sala.main(["verificar_sala.py", str(sala), "--sin-cobertura"]) == 0
+    assert "PARCIAL" in capsys.readouterr().out
+
+
+def test_cli_una_cobertura_que_no_existe_o_no_es_una_lista_es_un_error_de_uso(tmp_path):
+    sala, cob = _sala(tmp_path, "", [])
+    assert verificar_sala.main(["verificar_sala.py", str(sala), "--cobertura",
+                                str(tmp_path / "no_existe.json")]) == 2
+    cob.write_text('{"no": "es una lista"}', encoding="utf-8")
+    assert verificar_sala.main(["verificar_sala.py", str(sala), "--cobertura", str(cob)]) == 2
+
+
+def _en_su_sitio(tmp_path, cobertura):
+    """La sala y la sala de máquina donde el layout del expediente las pone: hermanas dentro
+    de `01_Procesado/` (`SKILL.md` §estructura)."""
+    proc = tmp_path / "01_Procesado"
+    proc.mkdir()
+    sala, cob = _sala(proc, "", cobertura)
+    sm = proc / "02_Sala de máquina"
+    sm.mkdir()
+    cob.replace(sm / "_cobertura.json")
+    return sala
+
+
+def test_cli_deduce_la_cobertura_de_la_sala_de_maquina_hermana(tmp_path, capsys):
+    """Si la cobertura está donde el layout la pone, se usa sin que nadie tenga que acordarse
+    de pasarla: el paso que se olvida es justo el que la verja no puede permitirse."""
+    audio = "2026-09-25_whatsapp_03/Chat/00000028-AUDIO-2025-03-22-17-11-57.opus"
+    sala = _en_su_sitio(tmp_path, [_cob(audio, _B)])
+    assert verificar_sala.main(["verificar_sala.py", str(sala)]) == 1
+    assert audio in capsys.readouterr().out
+
+
+def test_cli_sin_cobertura_con_una_cobertura_presente_es_un_error(tmp_path, capsys):
+    """Renunciar a contrastar no vale cuando hay con qué: `--sin-cobertura` es para la sala
+    que no tiene sala de máquina, no para saltarse la que sí la tiene."""
+    sala = _en_su_sitio(tmp_path, [])
+    assert verificar_sala.main(["verificar_sala.py", str(sala), "--sin-cobertura"]) == 2
+    assert "--sin-cobertura, pero hay cobertura" in capsys.readouterr().out

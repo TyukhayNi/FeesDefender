@@ -6,6 +6,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / ".claude/skills/organizar-sala-lectura/scripts"))
 verificar_sala = import_module("verificar_sala")
 
+# Estos tests miran el manifiesto contra el disco, no la población: van con `--sin-cobertura`
+# (R1/H-02 del #408). Sin él saldría 1 por la cobertura que falta, y los dos que esperan 1
+# pasarían aunque su comprobación se rompiera.
+
 
 def _sha(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
@@ -40,7 +44,7 @@ def test_main_exit_0_cuando_cuadra(tmp_path):
         "|---|---|---|---|---|---|---|\n"
         f"| {_sha(contenido)} | 00_Input/x.pdf | 2025-01-01_doc.pdf | pdf | 2025-01-01 | propietario |  |\n",
         encoding="utf-8")
-    assert verificar_sala.main(["verificar_sala.py", str(sala)]) == 0
+    assert verificar_sala.main(["verificar_sala.py", str(sala), "--sin-cobertura"]) == 0
 
 
 def test_main_exit_1_cuando_falta_fichero(tmp_path):
@@ -50,7 +54,7 @@ def test_main_exit_1_cuando_falta_fichero(tmp_path):
         "|---|---|---|---|---|---|---|\n"
         "| aaaa | 00_Input/x.pdf | 2025-01-01_doc.pdf | pdf | 2025-01-01 | propietario |  |\n",
         encoding="utf-8")
-    assert verificar_sala.main(["verificar_sala.py", str(sala)]) == 1
+    assert verificar_sala.main(["verificar_sala.py", str(sala), "--sin-cobertura"]) == 1
 
 
 def test_main_hash_completo_detecta_copia_corrupta(tmp_path):
@@ -60,4 +64,5 @@ def test_main_hash_completo_detecta_copia_corrupta(tmp_path):
         "|---|---|---|---|---|---|---|\n"
         f"| {_sha(b'otro contenido esperado')} | 00_Input/x.pdf | 2025-01-01_doc.pdf | pdf | 2025-01-01 | propietario |  |\n",
         encoding="utf-8")
-    assert verificar_sala.main(["verificar_sala.py", str(sala), "--hash", "completo"]) == 1
+    assert verificar_sala.main(["verificar_sala.py", str(sala), "--hash", "completo",
+                                "--sin-cobertura"]) == 1
