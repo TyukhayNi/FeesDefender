@@ -21,7 +21,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.18"
+  version: "1.19"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -377,8 +377,10 @@ tal diálogo.
      corrida interrumpida se **reanuda** sin re-copiar lo ya hecho (ver
      "Corrida interrumpida"). `usar_async=True` no cuenta una copia grande legítima
      (>60s) como fallida.
-   - **exit != 0** (client compartido, o `rclone` no disponible) → copia
-     secuencial server-side con `copy_path`/`cp` (más lenta, sin prerrequisito).
+   - **exit != 0** —3, client compartido; 4, `rclone` no instalado o el remote no
+     existe; 5, `rclone` tardó en responder: el script dice cuál— → copia
+     secuencial server-side con `copy_path`/`cp` (más lenta, sin prerrequisito). Con un
+     5 y otra corrida de rclone en marcha, reintentar el precheck cuando termine.
    - **Modo 3 (nube pura) — binario grande sin filesystem:** si NO puedes calcular
      el sha256 de un binario grande (descargar los bytes es incumplible), admite en
      su fila del `_MANIFIESTO.md` un `md5:<hash>` (el `md5` lo da la API del
