@@ -221,7 +221,7 @@ el lanzador. Un lanzador que herede en silencio **no falla** —corre, produce i
 con el modelo que alguien creyó pedir—, así que la garantía sigue siendo humana. Fichado en
 `MEJORAS #279`. Su disparador era la primera fila de la calibración en que el modelo del acta no
 coincidiera con el releído del rollout, y en las cinco coincidió; cerrada la calibración, es la
-primera **acta** en que no coincida — el acta relee el modelo en cada ronda (contrato, §4).
+primera **acta** en que no coincida — el acta relee el modelo en cada ronda de Codex (contrato, §4).
 
 **Calibración: cerrada el 2026-09-26 con los cinco primeros encargos ordinarios, y Nikolai
 confirmó.** De cada uno se anotó, en la fila #38 de `PLAN.md`: modelo · esfuerzo · velocidad; objeto

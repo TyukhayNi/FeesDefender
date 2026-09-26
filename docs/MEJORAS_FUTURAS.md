@@ -12806,8 +12806,8 @@ encargo, y una pieza así hay que encadenarla o se queda sin llamadores.
 
 **Disparador para promoverlo:** la primera **acta** en la que el modelo anotado **no coincida**
 con el releído del rollout. Hasta el 2026-09-26 se vigilaba en las filas de la calibración (fila
-#38 de `PLAN.md`), y en las cinco coincidió; cerrada la calibración, lo vigila cada acta, que
-relee el modelo (contrato, §4). Hasta entonces es un riesgo declarado, que es lo que lo
+#38 de `PLAN.md`), y en las cinco coincidió; cerrada la calibración, lo vigila cada acta de una
+ronda de Codex, que relee el modelo (contrato, §4). Hasta entonces es un riesgo declarado, que es lo que lo
 distingue de un olvido.
 
 ## 280. `AGENTS.md` dice que Codex no puede usar subagentes, y el 2026-09-23 los usaba  [PROMOVIDO → PLAN.md 2026-09-26]
