@@ -13673,3 +13673,25 @@ recogían (grep de `PROPERTIES S` y `PROPIEDADES S`, vacío).
 `[APER-03]` que en Madrid el código va siempre explícito.
 
 **Disparador de promoción.** La próxima apertura de Madrid.
+
+## 311. El contrato de revisión no prevé redactar un acta
+
+> **Medido el 2026-09-26**, en la ronda 4 del saneado de PII: el móvil de un tercero estaba
+> **dentro del bloque literal** del acta de la R1 del spec de Codicert, en tres sitios.
+
+El acta existe para conservar **la voz literal del revisor**, y el guard G8 recomputa su digest;
+el contrato (`docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md`,
+§4) no dice qué hacer cuando esa voz contiene un dato que no puede quedarse en el repo. Se resolvió
+como **redacción declarada**: sustitución mínima dentro del bloque, `sha256_informe` recomputado,
+nota fuera del bloque con el digest original y el commit donde el original sigue (`6d60187`), y un
+diff contra ese commit que enseña solo eso. Funciona, pero lo inventó quien lo necesitaba, que es
+justo el sesgo que el contrato existe para evitar.
+
+**Remedio probable.** Un apartado en el §4 del contrato con ese procedimiento —qué se puede
+sustituir, qué nota es obligatoria, dónde queda verificable el original— y, si hace falta, que G8
+reconozca la nota de redacción. Tocar el contrato **no se exime nunca** de ronda (`CLAUDE.md`), y
+el modelo es el de su fila.
+
+**Disparador de promoción.** La próxima vez que haya que sacar un dato de dentro de un acta, o una
+decisión de Nikolai de formalizarlo antes.
+
