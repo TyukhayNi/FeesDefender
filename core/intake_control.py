@@ -62,13 +62,23 @@ RAIZ: frozenset[str] = frozenset({
 RAIZ_PREFIJOS: tuple[str, ...] = (
     ".apertura_v1.", "._caso.", "._intake_hashes.", "._ocurrencias_crm.json.",
     "_viabilidad.json.",
-    # Lo que `scripts/migrate_05crm_buckets.py` deja en la raíz: su bitácora
-    # (`_migration_05crm_<ts>.json`) y las copias de seguridad de lo que migra
-    # (`src.with_suffix(src.suffix + f".bak_{ts}")` sobre `_caso.md` y `_intake_hashes.json`).
-    # Hasta el 2026-09-26 los apartaba del inventario CLI su lista blanca de extensiones, no
-    # este registro, y la sala de máquina —que no tiene lista— los inventariaba como
-    # documentos (`MEJORAS #316`).
-    "_migration_05crm_", "_caso.md.bak_", "_intake_hashes.json.bak_",
+)
+
+#: Lo que `scripts/migrate_05crm_buckets.py` deja en la raíz: su bitácora
+#: (`_migration_05crm_<ts>.json`) y las copias de seguridad de lo que migra
+#: (`src.with_suffix(src.suffix + f".bak_{ts}")` sobre `_caso.md` y `_intake_hashes.json`), con
+#: `ts = strftime("%Y%m%dT%H%M%S")`. Hasta el 2026-09-26 los apartaba del inventario CLI su
+#: lista blanca de extensiones, no este registro, y la sala de máquina —que no tiene lista— los
+#: inventariaba como documentos (`MEJORAS #316`).
+#:
+#: **Nombre entero, no prefijo** (R1/H-10 del #408): un temporal de `mkstemp` lleva un sufijo
+#: al azar y solo se puede reconocer por su principio, pero este escritor pone un sello fijo, y
+#: con `startswith` un `_caso.md.bak_prueba.pdf` del cliente en la raíz salía del inventario. Se
+#: casan con el nombre ya en `casefold()`, como el resto del registro.
+RAIZ_PATRONES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"_migration_05crm_\d{8}t\d{6}\.json"),
+    re.compile(r"_caso\.md\.bak_\d{8}t\d{6}"),
+    re.compile(r"_intake_hashes\.json\.bak_\d{8}t\d{6}"),
 )
 
 #: Protocolo a profundidad 2, SOLO en el directorio que su escritor usa (R1/H-04): un
@@ -115,7 +125,8 @@ def es_fichero_de_protocolo(rel_path: str) -> bool:
 
     - Absoluta, vacía o con `..`: False (un documento en un sitio raro se inventaría, no se
       esconde).
-    - Profundidad 1: nombre en `RAIZ`, o prefijo en `RAIZ_PREFIJOS`.
+    - Profundidad 1: nombre en `RAIZ`, prefijo en `RAIZ_PREFIJOS`, o nombre entero en
+      `RAIZ_PATRONES`.
     - Profundidad 2: (directorio, nombre) casa con algún par de `ENTREGA`.
     - Cualquier profundidad: los primeros componentes forman un `DIRECTORIOS` de protocolo.
     - Lo demás: documento.
@@ -131,7 +142,8 @@ def es_fichero_de_protocolo(rel_path: str) -> bool:
         return False
     nombre = partes[-1].casefold()
     if len(partes) == 1:
-        return nombre in RAIZ or any(nombre.startswith(pre) for pre in RAIZ_PREFIJOS)
+        return (nombre in RAIZ or any(nombre.startswith(pre) for pre in RAIZ_PREFIJOS)
+                or any(pat.fullmatch(nombre) for pat in RAIZ_PATRONES))
     partes_cf = [c.casefold() for c in partes]
     for d in DIRECTORIOS:
         dparts = [c.casefold() for c in d.split("/")]
