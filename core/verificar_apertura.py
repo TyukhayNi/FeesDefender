@@ -53,6 +53,10 @@ import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+#: El registro de protocolo por ubicación no importa nada de `core` ni escribe: es la
+#: misma pregunta que se hace la sala de máquina para no inventariar un fichero (C3).
+from core.intake_control import es_fichero_de_protocolo
+
 if TYPE_CHECKING:                                     # pragma: no cover
     from core.verificar_apertura_fuentes import Fuentes
 
@@ -154,27 +158,44 @@ def _de_red(fn: Callable) -> Callable:
 # --- Las comprobaciones -------------------------------------------------------------
 
 
-# El título dice «cuántos», no «cuáles», y eso es deliberado (R1 H-03). La cobertura
-# identifica por `slug` y el catálogo por `id_doc`: **no comparten clave**, así que
-# comparar conjuntos exigiría una correspondencia que los datos no llevan. Lo que esta
-# comprobación acredita es cardinalidad, y el nombre no puede prometer más de lo que
-# mide — que es el defecto que toda esta pieza persigue. Comparar por identidad queda
-# en el inventario de lo no cubierto, con su gate.
-_T_C3 = "Cuántos documentos lógicos hay en la cobertura y cuántas entradas en el catálogo"
+# Hasta el 2026-09-26 el título decía «cuántos», y era deliberado (R1 H-03): la premisa
+# era que la cobertura y el catálogo **no comparten clave**. La premisa era falsa, y se
+# midió sobre los 23 expedientes que tienen los dos (`MEJORAS #287`): la cobertura lleva la
+# ruta de origen de cada fila (`rel_path`) y su sha256, y el catálogo, la misma ruta
+# (`ruta_relativa`) y el mismo sha256 (`hash`). Por cardinalidad, en cambio, no cuadraba
+# ninguno aunque se arreglaran los hijos de bundle: los dos lados cuentan poblaciones
+# distintas —copias por sha256, ficheros de protocolo, el zip crudo de WhatsApp—.
+_T_C3 = "Cada documento de la sala de máquina en el catálogo, y cada entrada con su documento"
 
 
 def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
-    """Filas de `_cobertura.json` menos hijos de bundle, contra entradas del catálogo.
+    """La cobertura contra el catálogo, **documento a documento** (`MEJORAS #287`).
 
-    `[APER-60]`, con la corrección del 102º: los **hijos de bundle** no son entradas del
-    catálogo —el catálogo indexa documentos lógicos— así que restarlos es lo que hace
-    comparables los dos lados. Sin esa resta, un caso con un PDF segmentado en veinte
-    piezas parecería tener veinte documentos sin catalogar.
+    Una fuente de la cobertura —cada `rel_path` distinto: un bundle partido es UNA fuente
+    aunque tenga veinte filas— está catalogada si su ruta es la `ruta_relativa` de alguna
+    entrada o, si no, si su sha256 de origen es el `hash` de alguna: la skill cataloga cada
+    sha256 una vez, y la sala de máquina da fila de custodia a cada copia. Y al revés: cada
+    entrada del catálogo tiene que tener su fuente en la cobertura, o la sala de lectura
+    enseña un documento del que no hay espejo que leer.
 
-    **Un hijo solo cuenta como hijo si su padre existe** (R1 H-02). Antes bastaba
-    cualquier valor verdadero en `parent_slug` —un número, un slug inexistente, el suyo
-    propio— para descontar un documento del conteo, de modo que un documento podía
-    desaparecer del catálogo y el verificador bendecirlo.
+    **Solo dos cosas no se exigen, y las dos son reglas de sus productores, no criterio
+    de este verificador**; la evidencia las cuenta:
+
+    - lo que el registro por ubicación declara protocolo (`core/intake_control.py`,
+      `MEJORAS #149`): las coberturas antiguas lo inventariaban como documento, y la sala de
+      máquina de hoy ya no lo hace;
+    - el `_export_original.zip` que el intake deja junto a su `_chat.txt`: la skill lo aparta
+      por regla (`emparejar_exports_whatsapp`), porque es el crudo del chat.
+
+    Lo demás que falte, falta: un audio de WhatsApp o un zip que la sala de lectura no recoge
+    son documentos del expediente, y C3 los nombra con su ruta.
+
+    **La cobertura tiene que estar sana para cruzarla.** Un hijo de bundle declara un padre
+    que es texto, no es él mismo y existe: en la cobertura o **en su propio slug**, que el
+    split construye como `<padre>__<doc_id>_<TIPO>` (`split_documental._slug_seg`). Hasta el
+    2026-09-26 se exigía la fila del padre, y el split no la escribe por diseño: C3 no podía
+    salir verde en ningún caso con un PDF compuesto (nueve de nueve en Barcelona). Y una fila
+    sin `rel_path` no se puede cruzar: darla por catalogada o por ausente sería inventar.
     """
     cob_path = _ruta_cobertura(case_dir)
     if cob_path is None or not cob_path.is_file():
@@ -206,7 +227,9 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     # Aceptar las dos ubicaciones es MIRAR las dos (R1/H-05): con las dos presentes, la
     # primera versión cogía la de la sala y no leía la otra, así que un catálogo que
     # discrepaba salía `ok` donde antes salía `fallo`. Si no cuadran entre sí, eso es el
-    # hallazgo; si cuadran, se compara una y la evidencia dice que había dos.
+    # hallazgo; si cuadran, se compara una y la evidencia dice que había dos. «Cuadrar» es
+    # tener las MISMAS entradas, no el mismo número: hasta el 2026-09-26 un catálogo con `a`
+    # y otro con `b` cuadraban, y C3 cotejaba solo el de la sala.
     catalogos: dict[str, list[dict]] = {}
     for p in presentes:
         entradas_p, err = _leer_lista_de_mapas(p, _yaml_load)
@@ -214,48 +237,158 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
             return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
                              f"`{p.name}` ({_donde(p)}): {err}")
         catalogos[_donde(p)] = entradas_p
+    from collections import Counter
+
     conteos = {k: len(v) for k, v in catalogos.items()}
-    if len(set(conteos.values())) > 1:
+    identidades = {k: Counter(_identidad_de_entrada(e) for e in v)
+                   for k, v in catalogos.items()}
+    if len(identidades) > 1 and len({frozenset(v.items()) for v in identidades.values()}) > 1:
+        # Con el mismo número y distinto contenido, los dos conteos solos no dicen nada:
+        # se dice cuántas entradas tiene cada uno que el otro no.
+        (ka, a), (kb, b) = identidades.items()
+        solo = {ka: sum((a - b).values()), kb: sum((b - a).values())}
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
                          "hay dos catálogos y no cuadran entre sí: "
-                         + ", ".join(f"{k} {n}" for k, n in conteos.items()),
-                         {"catalogos": conteos})
+                         + ", ".join(f"{k} {n}" for k, n in conteos.items())
+                         + f" ({solo[ka]} entrada(s) solo en {ka}, {solo[kb]} solo en {kb})",
+                         {"catalogos": conteos, "solo_en": solo})
     catalogo_en = _donde(presentes[0])
     entradas = catalogos[catalogo_en]
 
+    # La cobertura, sana y agrupada por fuente.
     slugs = {str(f.get("slug") or "").strip() for f in filas}
     slugs.discard("")
-    huerfanos, logicos = [], []
+    huerfanos: list[str] = []
+    sin_ruta: list[str] = []
+    hijos = 0
+    fuentes: dict[str, set[str]] = {}          # clave de la ruta -> sha256 de origen
+    muestra: dict[str, str] = {}
     for f in filas:
+        slug = str(f.get("slug") or "").strip()
         padre = f.get("parent_slug")
-        if padre is None or (isinstance(padre, str) and not padre.strip()):
-            logicos.append(f)
+        if padre is not None and not (isinstance(padre, str) and not padre.strip()):
+            if not isinstance(padre, str):
+                huerfanos.append(f"{f.get('slug')!r}: parent_slug no es texto ({padre!r})")
+            elif padre.strip() == slug:
+                huerfanos.append(f"{f.get('slug')!r}: se declara hijo de sí mismo")
+            elif padre.strip() not in slugs and not slug.startswith(padre.strip() + "__"):
+                huerfanos.append(f"{f.get('slug')!r}: padre {padre.strip()!r} no está en la "
+                                 "cobertura y su slug no deriva de él")
+            else:
+                hijos += 1
+        rel = f.get("rel_path")
+        if not isinstance(rel, str) or not rel.strip():
+            sin_ruta.append(repr(f.get("slug")))
             continue
-        if not isinstance(padre, str):
-            huerfanos.append(f"{f.get('slug')!r}: parent_slug no es texto ({padre!r})")
-            continue
-        padre = padre.strip()
-        if padre == str(f.get("slug") or "").strip():
-            huerfanos.append(f"{f.get('slug')!r}: se declara hijo de sí mismo")
-        elif padre not in slugs:
-            huerfanos.append(f"{f.get('slug')!r}: padre {padre!r} no está en la cobertura")
+        clave = _clave_de_ruta_de_origen(rel)
+        muestra.setdefault(clave, rel)
+        # El sha256 de ORIGEN: el del fichero físico. En una pieza de bundle, `sha256` es el
+        # de la pieza y `parent_sha256` el del PDF que el catálogo recoge.
+        origen = f.get("parent_sha256") or f.get("sha256")
+        fuentes.setdefault(clave, set()).update(
+            {origen.lower()} if isinstance(origen, str) and origen.strip() else set())
 
-    ev = {"filas_cobertura": len(filas), "hijos_de_bundle": len(filas) - len(logicos) - len(huerfanos),
-          "documentos_logicos": len(logicos), "entradas_catalogo": len(entradas),
-          "huerfanos": huerfanos[:8], "catalogo_en": catalogo_en, "catalogos": conteos}
+    # El catálogo, por las mismas dos claves.
+    rutas_cat: set[str] = set()
+    hashes_cat: set[str] = set()
+    for e in entradas:
+        ruta, h = _identidad_de_entrada(e)
+        rutas_cat.add(ruta)
+        hashes_cat.add(h)
+    rutas_cat.discard("")
+    hashes_cat.discard("")
+
+    dirs_con_chat = {k.rsplit("/", 1)[0] if "/" in k else "" for k in fuentes
+                     if k.rsplit("/", 1)[-1].casefold() == "_chat.txt"}
+    por_ruta = por_sha = 0
+    excluidas = {"protocolo": 0, "export_crudo_whatsapp": 0}
+    sin_catalogar: list[str] = []
+    for clave in sorted(fuentes):
+        if clave in rutas_cat:
+            por_ruta += 1
+        elif fuentes[clave] & hashes_cat:
+            por_sha += 1
+        elif es_fichero_de_protocolo(clave):
+            excluidas["protocolo"] += 1
+        elif (clave.rsplit("/", 1)[-1].casefold() == _NOMBRE_EXPORT_CRUDO_WHATSAPP
+              and (clave.rsplit("/", 1)[0] if "/" in clave else "") in dirs_con_chat):
+            excluidas["export_crudo_whatsapp"] += 1
+        else:
+            sin_catalogar.append(muestra[clave])
+    shas_cobertura = set().union(*fuentes.values()) if fuentes else set()
+    catalogo_sin_fuente = [
+        str(e.get("ruta_relativa") or f"(sin ruta; id_doc {e.get('id_doc')!r})")
+        for e in entradas
+        if _identidad_de_entrada(e)[0] not in fuentes
+        and _identidad_de_entrada(e)[1] not in shas_cobertura]
+
+    por_extension = Counter((Path(r).suffix.lower() or "(sin extensión)")
+                            for r in sin_catalogar)
+    ev = {"filas_cobertura": len(filas), "hijos_de_bundle": hijos,
+          # Fuentes distintas: un bundle partido cuenta una vez, como en el catálogo.
+          "documentos_logicos": len(fuentes), "entradas_catalogo": len(entradas),
+          "huerfanos": huerfanos[:8], "catalogo_en": catalogo_en, "catalogos": conteos,
+          "por_ruta": por_ruta, "por_sha": por_sha, "excluidas": excluidas,
+          "n_sin_catalogar": len(sin_catalogar), "sin_catalogar": sin_catalogar[:8],
+          "sin_catalogar_por_extension": dict(por_extension.most_common()),
+          "n_catalogo_sin_fuente": len(catalogo_sin_fuente),
+          "catalogo_sin_fuente": catalogo_sin_fuente[:8], "filas_sin_rel_path": sin_ruta[:8]}
     if huerfanos:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
                          f"{len(huerfanos)} fila(s) con `parent_slug` que no apunta a "
                          f"un bundle real: {'; '.join(huerfanos[:3])}", ev)
-    if len(logicos) == len(entradas):
-        return Resultado("cobertura_vs_catalogo", _T_C3, OK,
-                         f"{len(logicos)} documentos lógicos y {len(entradas)} "
-                         "entradas del catálogo (solo cardinalidad)", ev)
-    return Resultado(
-        "cobertura_vs_catalogo", _T_C3, FALLO,
-        f"{len(logicos)} documentos lógicos en la cobertura contra "
-        f"{len(entradas)} entradas del catálogo: faltan "
-        f"{abs(len(logicos) - len(entradas))}", ev)
+    if sin_ruta:
+        return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
+                         f"{len(sin_ruta)} fila(s) de la cobertura sin `rel_path`: no se "
+                         f"pueden cruzar con el catálogo ({', '.join(sin_ruta[:3])})", ev)
+    partes = []
+    if sin_catalogar:
+        tipos = ", ".join(f"{n} {ext}" for ext, n in por_extension.most_common(4))
+        partes.append(f"{len(sin_catalogar)} de las {len(fuentes)} fuentes de la cobertura "
+                      f"no están entre las {len(entradas)} entradas del catálogo ({tipos}): "
+                      f"{', '.join(sin_catalogar[:3])}")
+    if catalogo_sin_fuente:
+        partes.append(f"{len(catalogo_sin_fuente)} entrada(s) del catálogo cuya fuente no "
+                      f"procesó la sala de máquina: {', '.join(catalogo_sin_fuente[:3])}")
+    if partes:
+        return Resultado("cobertura_vs_catalogo", _T_C3, FALLO, "; ".join(partes), ev)
+    no_exigidas = [f"{n} de {que}" for que, n in (("protocolo", excluidas["protocolo"]),
+                                                   ("export crudo de WhatsApp",
+                                                    excluidas["export_crudo_whatsapp"])) if n]
+    nota = f"; no se exigen {' y '.join(no_exigidas)}" if no_exigidas else ""
+    return Resultado("cobertura_vs_catalogo", _T_C3, OK,
+                     f"las {len(fuentes)} fuentes de la cobertura están en el catálogo "
+                     f"({por_ruta} por ruta, {por_sha} por sha256) y sus {len(entradas)} "
+                     f"entradas tienen su fuente{nota}", ev)
+
+
+#: El crudo de WhatsApp que el intake deposita junto al `_chat.txt` extraído
+#: (`core/whatsapp_intake._ORIGINAL_ZIP_NAME`) y que la skill aparta del catálogo
+#: (`preclasificar.emparejar_exports_whatsapp`). Copia, no importación: este módulo no
+#: importa escritores. Un test anti-deriva la compara con las dos.
+_NOMBRE_EXPORT_CRUDO_WHATSAPP = "_export_original.zip"
+
+
+def _clave_de_ruta_de_origen(ruta: str) -> str:
+    """La clave con que se cruza una ruta de origen de la cobertura con una del catálogo.
+
+    Relativa a `00_Input/`, con `/`, y NFC como en `clave_de_cruce`. Tres casos reales
+    escriben `00_Input/…` en la `ruta_relativa` del catálogo (W-02Q38C, W-02UDC1,
+    W-0462E1), y un Modo de la skill puede dejar `\\`: se quita UN prefijo `00_Input/`, que
+    es lo que la cobertura nunca lleva.
+    """
+    r = ruta.strip().replace("\\", "/").lstrip("/")
+    primero, _, resto = r.partition("/")
+    if resto and primero.casefold() == "00_input":
+        r = resto
+    return clave_de_cruce(r)
+
+
+def _identidad_de_entrada(e: dict) -> tuple[str, str]:
+    """`(clave de ruta, hash)` de una entrada del catálogo; `""` donde no hay dato."""
+    ruta, h = e.get("ruta_relativa"), e.get("hash")
+    return (_clave_de_ruta_de_origen(ruta) if isinstance(ruta, str) and ruta.strip() else "",
+            h.strip().lower() if isinstance(h, str) else "")
 
 
 def ubicaciones_del_catalogo(proc: Path, sala: Path) -> tuple[Path, ...]:

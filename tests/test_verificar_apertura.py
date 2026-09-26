@@ -2379,3 +2379,242 @@ def test_306_un_nativo_y_un_fichero_que_acaban_en_la_MISMA_ruta_local_colisionan
 
     assert c1.estado == va.FALLO and c1.evidencia["colisiones_de_clave"], c1.evidencia
     assert c2.estado == va.FALLO and c2.evidencia["colisiones_de_clave"], c2.evidencia
+
+
+# --- C3 (MEJORAS #287): la cobertura contra el catálogo, documento a documento -------
+
+
+def _catalogo_de(case_dir, *entradas):
+    proc = case_dir / "01_Procesado"
+    proc.mkdir(parents=True, exist_ok=True)
+    (proc / "indice_documental.yaml").write_text(
+        yaml.dump(list(entradas), allow_unicode=True), encoding="utf-8")
+
+
+def test_287_un_bundle_partido_SIN_fila_padre_cuadra_por_su_ruta_de_origen(tmp_path):
+    """Nueve de nueve casos de Barcelona (2026-09-16) y W-02Y2J6 (2026-09-25): C3 en `fallo`
+    con «N fila(s) con `parent_slug` que no apunta a un bundle real». El split sustituye al
+    padre por sus piezas —el padre no tiene fila, por diseño— y la guarda exigía justo esa
+    fila: con un solo PDF compuesto, C3 no podía salir verde. Las piezas llevan la ruta del
+    PDF de origen, y esa fuente es la que el catálogo recoge."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "bundle__d01_DOC_EMAIL", "parent_slug": "bundle"},
+                          {"slug": "bundle__d02_DOC_PBC", "parent_slug": "bundle"}])
+    _con_catalogo(c, ["a", "bundle"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["hijos_de_bundle"] == 2
+    assert r.evidencia["documentos_logicos"] == 2
+
+
+def test_287_un_documento_procesado_que_no_llega_al_catalogo_se_NOMBRA(tmp_path):
+    """El defecto que C3 existe para cazar —`poblar` pisando por nombre canónico—, ahora con
+    nombre: la cardinalidad decía «faltan 4» y había que buscarlos a mano."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": s, "parent_slug": ""} for s in ("a", "b", "c")])
+    _con_catalogo(c, ["a", "b"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == ["01_Drive EV/c.pdf"], r.evidencia
+    assert "01_Drive EV/c.pdf" in r.detalle
+
+
+def test_287_la_copia_por_sha256_en_otra_carpeta_cuenta_como_catalogada(tmp_path):
+    """W-030A13 (#287): 36 rutas de origen en la cobertura y 34 en el catálogo, y las dos de
+    diferencia eran el mismo PDF subido a dos carpetas. La skill cataloga cada sha256 una vez
+    (`dedup_por_sha`) y la sala de máquina da fila de custodia a cada copia: el contenido está
+    catalogado."""
+    c = _caso(tmp_path)
+    s = "ab" * 32
+    _con_sala_maquina(c, [
+        {"slug": "x", "rel_path": "01_Drive EV/ARRAS/x.pdf", "sha256": s},
+        {"slug": "x2", "rel_path": "01_Drive EV/OFERTAS/x.pdf", "sha256": s,
+         "metodo": "duplicado"}])
+    _catalogo_de(c, {"id_doc": s[:12], "ruta_relativa": "01_Drive EV/ARRAS/x.pdf", "hash": s})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert (r.evidencia["por_ruta"], r.evidencia["por_sha"]) == (1, 1)
+
+
+def test_287_una_pieza_de_bundle_se_cruza_por_el_sha256_del_PDF_de_ORIGEN(tmp_path):
+    """En una pieza, `sha256` es el de la pieza y `parent_sha256` el del PDF compuesto, que
+    es lo que el catálogo recoge. Si el catálogo lo tiene con otra ruta —otra carpeta, o una
+    sala antigua que no guardó la de `00_Input`—, el cruce por contenido tiene que usar el
+    de origen: con el de la pieza, el bundle saldría como no catalogado."""
+    c = _caso(tmp_path)
+    s = "cd" * 32
+    _con_sala_maquina(c, [
+        {"slug": "b__d01_DOC", "parent_slug": "b", "rel_path": "01_Drive EV/b.pdf",
+         "sha256": "01" * 32, "parent_sha256": s},
+        {"slug": "b__d02_DOC", "parent_slug": "b", "rel_path": "01_Drive EV/b.pdf",
+         "sha256": "02" * 32, "parent_sha256": s}])
+    _catalogo_de(c, {"ruta_relativa": "01_Drive EV/OTRA/b.pdf", "hash": s})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["por_sha"] == 1
+
+
+def test_287_el_protocolo_de_una_cobertura_ANTIGUA_no_se_exige_y_se_declara(tmp_path):
+    """Las coberturas de antes del registro por ubicación (`MEJORAS #149`) inventariaban
+    `_caso.md` o el `_manifiesto.yaml` de un lote como documentos, y el catálogo no los
+    recoge porque no lo son. Se descuentan con el MISMO registro que usa hoy la sala de
+    máquina para no inventariarlos, y la evidencia dice cuántos."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "caso", "rel_path": "_caso.md"},
+                          {"slug": "m", "rel_path": "2026-09-10_email_01/_manifiesto.yaml"}])
+    _con_catalogo(c, ["a"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["excluidas"] == {"protocolo": 2, "export_crudo_whatsapp": 0}
+    assert "2" in r.detalle and "protocolo" in r.detalle, r.detalle
+
+
+def test_287_un_homonimo_de_protocolo_FUERA_de_su_sitio_si_se_exige(tmp_path):
+    """CONTROL POSITIVO: el registro es por ubicación. Un `_manifiesto.yaml` en otra carpeta
+    es un documento del cliente y, si no está en el catálogo, falta."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "m", "rel_path": "CarpetaRara/_manifiesto.yaml"}])
+    _con_catalogo(c, ["a"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == ["CarpetaRara/_manifiesto.yaml"], r.evidencia
+
+
+def test_287_el_zip_crudo_de_whatsapp_JUNTO_a_su_chat_no_se_exige(tmp_path):
+    """La skill aparta el `_export_original.zip` que el intake deja junto al `_chat.txt`
+    extraído (`emparejar_exports_whatsapp`): es el crudo del chat y no tiene fila propia en
+    el catálogo. W-02Y2J6 tenía cuatro."""
+    c = _caso(tmp_path)
+    lote = "2026-09-25_whatsapp_01"
+    _con_sala_maquina(c, [{"slug": "chat", "rel_path": f"{lote}/_chat.txt"},
+                          {"slug": "zip", "rel_path": f"{lote}/_export_original.zip"}])
+    _catalogo_de(c, {"ruta_relativa": f"{lote}/_chat.txt", "hash": "c" * 64})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["excluidas"] == {"protocolo": 0, "export_crudo_whatsapp": 1}
+
+
+def test_287_un_zip_crudo_SIN_su_chat_al_lado_si_se_exige(tmp_path):
+    """CONTROL POSITIVO: la regla de la skill pide las dos cosas —el nombre exacto Y el
+    `_chat.txt` en la misma carpeta—. Un `_export_original.zip` suelto es un documento."""
+    c = _caso(tmp_path)
+    zip_suelto = "2026-09-25_whatsapp_01/_export_original.zip"
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "zip", "rel_path": zip_suelto}])
+    _con_catalogo(c, ["a"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == [zip_suelto], r.evidencia
+
+
+def test_287_una_entrada_del_catalogo_SIN_fuente_en_la_cobertura_es_fallo(tmp_path):
+    """La otra dirección, que la cardinalidad también miraba: un documento de la sala de
+    lectura que la sala de máquina no procesó no tiene espejo que leer."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""}])
+    _con_catalogo(c, ["a", "b"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["catalogo_sin_fuente"] == ["01_Drive EV/b.pdf"], r.evidencia
+    assert "01_Drive EV/b.pdf" in r.detalle
+
+
+def test_287_la_ruta_del_catalogo_cruza_con_prefijo_barras_invertidas_y_NFD(tmp_path):
+    """Tres casos reales escriben `00_Input/…` en `ruta_relativa` (W-02Q38C, W-02UDC1,
+    W-0462E1); un Modo de la skill puede dejar `\\`; y la forma Unicode de un nombre con
+    tilde no es la misma en todos los lados (`clave_de_cruce`)."""
+    c = _caso(tmp_path)
+    nfc = unicodedata.normalize("NFC", "01_Drive EV/Álvarez.pdf")
+    _con_sala_maquina(c, [{"slug": "a", "rel_path": nfc}])
+    _catalogo_de(c, {"ruta_relativa": "00_Input\\" + unicodedata.normalize(
+        "NFD", nfc).replace("/", "\\"), "hash": "c" * 64})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+
+
+def test_287_dos_catalogos_con_el_mismo_NUMERO_y_distinto_contenido_es_fallo(tmp_path):
+    """R1/H-05 cotejaba los dos catálogos por su número: uno con `a` y otro con `b` —una
+    entrada cada uno— «cuadraban», y C3 miraba solo el de la sala. Se comparan por
+    identidad."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""}])
+    _con_catalogo(c, ["b"])
+    sala = _con_sala_lectura(c)
+    (sala / "indice_documental.yaml").write_text(yaml.dump([_entrada("a")]),
+                                                 encoding="utf-8")
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO, f"{r.detalle} · {r.evidencia}"
+    assert "no cuadran entre sí" in r.detalle
+    # Con el mismo número, los conteos solos no explican nada: se dice lo que sobra en cada uno.
+    assert r.evidencia["solo_en"] == {"sala": 1, "01_Procesado": 1}, r.evidencia
+    assert "1 entrada(s) solo en sala" in r.detalle, r.detalle
+
+
+def test_287_una_fila_SIN_rel_path_no_se_puede_cruzar_y_es_fallo(tmp_path):
+    """No poder mirar no es «no hay»: una fila sin ruta de origen no se puede cruzar con el
+    catálogo, y darla por catalogada o por ausente sería inventar."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "b", "parent_slug": "", "rel_path": ""}])
+    _con_catalogo(c, ["a", "b"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO, f"{r.detalle} · {r.evidencia}"
+    assert "rel_path" in r.detalle
+
+
+def test_287_un_hijo_cuyo_slug_NO_deriva_del_padre_sigue_siendo_huerfano(tmp_path):
+    """CONTROL POSITIVO de la acreditación estructural: el slug de una pieza es
+    `<padre>__<doc_id>_<TIPO>` (`split_documental._slug_seg`). Un `parent_slug` que no está
+    en la cobertura, y del que el slug no deriva, no es pieza de nada."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "otro", "parent_slug": "bundle"}])
+    _con_catalogo(c, ["bundle"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert "no está en la cobertura" in r.detalle, r.detalle
+
+
+def test_287_el_nombre_del_zip_crudo_es_el_del_intake_y_el_de_la_skill():
+    """Anti-deriva: C3 reconoce el crudo de WhatsApp con una copia del nombre, porque este
+    módulo no importa escritores. Si el intake o la skill lo cambian, esto se pone en rojo."""
+    import importlib.util
+    from pathlib import Path
+
+    from core import whatsapp_intake
+
+    ruta = (Path(__file__).resolve().parents[1] / ".claude" / "skills"
+            / "organizar-sala-lectura" / "scripts" / "preclasificar.py")
+    spec = importlib.util.spec_from_file_location("_preclasificar_c3", ruta)
+    skill = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(skill)
+    assert va._NOMBRE_EXPORT_CRUDO_WHATSAPP == whatsapp_intake._ORIGINAL_ZIP_NAME.casefold()
+    assert va._NOMBRE_EXPORT_CRUDO_WHATSAPP == skill._NOMBRE_EXPORT_CRUDO_WHATSAPP.casefold()
