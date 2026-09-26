@@ -13446,7 +13446,7 @@ vez de quedarse en silencio con el más reciente.
 
 ---
 
-## 301. `parse_ev_folder_name` no reconoce las carpetas de E&V que llevan el W-code delante
+## 301. `parse_ev_folder_name` no reconoce las carpetas de E&V que llevan el W-code delante  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Medido el 2026-09-25 en W-02UIQU (plaza de Santander).**
 
@@ -13460,6 +13460,10 @@ formato existe en la plaza de Santander y la derivación que vino a quitar un te
 
 **Disparador de promoción.** La próxima apertura de Santander, o un censo de nombres de carpeta de
 E&V que diga qué plazas usan cada orden.
+
+**Disparador cumplido el 2026-09-26: el censo** (solo lectura, Drive API, 53 unidades y hasta 50
+carpetas cada una). 231 carpetas con el W-code delante, en muchas plazas y no solo en Santander, y
+331 con el W-code en medio sin guion. Promovida a la fila #47, junto a la #42 (`#296`).
 
 ---
 
