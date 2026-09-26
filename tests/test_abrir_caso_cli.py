@@ -674,6 +674,8 @@ def test_cli_drive_ev_folder_info_none_degrada_limpio(drive_temporal, monkeypatc
     result = CliRunner().invoke(cli.app, _args_b5_autoderivar(crm="skip"))
     assert result.exit_code == 1
     assert "--codigo-caso" in result.output  # error de flags, no traceback
+    # Y dice por qué no pudo leer la carpeta (`MEJORAS #296`): antes, siempre «token/red».
+    assert "motivo de prueba" in result.output and "token/red" not in result.output
 
 
 def test_cli_drive_ev_sufijo_autoderivado_sin_api(drive_temporal, monkeypatch):
