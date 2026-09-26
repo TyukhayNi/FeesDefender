@@ -48,13 +48,14 @@ Barrido **en solo lectura** (`GET /envios` y `GET /envios/{id}/estados`, sin cos
 - **D-1 (Nikolai, 2026-09-26).** El 22 cierra sin entrega **solo si ningún aviso llegó**: si el primero llegó, el requerido aún puede leer y hay que esperar al 40. Se concreta así: los indicios de que un aviso llegó son **17, 19, 20, 21 y 27**. El 27 (entregado en el servidor) entra por la misma razón que el 17: el aviso está donde el requerido puede verlo. Y cuentan **en cualquier punto del histórico**, no solo antes del 22, porque el acuse puede llegar tarde (M-17, sandbox).
 - **Riesgo aceptado con D-1, declarado:** si un 22 cierra, el certificado se cosecha como definitivo; si después llegara un indicio, la cosecha siguiente lo saltaría (`ya_estaba`) y el hecho posterior no entraría solo en el expediente. Medido: 83 días sin cambios tras el 22.
 - **D-2.** Un canal sin clasificar **no se cosecha nunca**, ni con su culminación ni con un cierre, y se declara con ⚠️ como un código sin clasificar.
+- **D-2 bis (encontrado al ejecutar, no estaba en el plan).** Tampoco **pone fechas al requerido**: `Requerido.recibido_en` y `accedido_en` ignoran sus envíos. Salió al pintar un informe con los tres recorridos reales: la línea «accedido … (art. 10.2)» del requerido la ponía el SMS Certificado, cuyo adjunto no tiene por qué ser el requerimiento. Contarla podía adelantar un plazo con un hecho que nadie ha clasificado; no contarla lo retrasa, que es el lado seguro. El envío sigue en la lista del requerido y el aviso de canales lo dice. Es la misma frontera de D-2 —un canal desconocido tratado como conocido—, remediada en su segundo sitio. Commit `c8ae1ad`.
 - **D-3.** **Estancado** = no cosechable, con el canal y los códigos clasificados, y **más de 40 días** sin eventos (el silencio más largo medido es 29,1; M-20). **Es un aviso, no una clasificación**: no hace cosechable nada; deja de prometer que el hecho mejorará y señala la salida que ya existe, `cosechar --incluir-pendientes` (baja el certificado con su estado en el nombre, sin ocupar el sitio del definitivo).
 - **D-4.** `Expedicion.leida_en` es **obligatorio** y con zona horaria. Un valor por defecto `None` callaría lo estancado por falta de hora, que es el silencio que M-21 corrige.
 - **Límite declarado:** F3 prepara el aportable solo sobre el certificado **definitivo**. Un envío estancado puede bajarse como provisional, pero no tendrá aportable. Se ficha en `MEJORAS_FUTURAS.md` con su disparador (el primer estancado que haya que aportar) y no se construye aquí.
 
 ## Lo que NO cambia
 
-`pendientes` sigue siendo **todo** lo no cosechable (un estancado no culminó, y `completa` tiene que seguir diciéndolo); `cosechar` sigue decidiendo solo por `cosechable`; `_CULMINACION`, `CANAL_DE_TIPO`, `recibido_en` y `accedido_en` no se tocan; la regla del 17/21 (rev. 16) tampoco. F1 no se toca.
+`pendientes` sigue siendo **todo** lo no cosechable (un estancado no culminó, y `completa` tiene que seguir diciéndolo); `cosechar` sigue decidiendo solo por `cosechable`; `_CULMINACION`, `CANAL_DE_TIPO` y los `recibido_en`/`accedido_en` de **cada envío** no se tocan (los del **requerido** sí, por D-2 bis); la regla del 17/21 (rev. 16) tampoco. F1 no se toca.
 
 ## Archivos
 
@@ -828,4 +829,4 @@ git commit -m "docs: spec rev. 17 de Codicert: los estados medidos en 117 envios
 
 - [ ] **Step 2: Adjudicación**
 
-Cada hallazgo, contra la fuente. La adjudicación va **embebida en este plan** (§ al final, encabezado canónico y ficha); la voz del revisor, literal, en el acta hermana `docs/superpowers/plans/2026-09-26-codicert-estados-medidos-r1-adversarial-review.md`, con nonce y digest. Los guards G7/G8/G9 de `tests/test_docs_gobernanza.py`, verdes. Si el revisor no corre, la cobertura se declara **AUSENTE**, no parcial.
+Cada hallazgo, contra la fuente. La adjudicación va **embebida en este plan** (§ al final, encabezado canónico y ficha); la voz del revisor, literal, en el acta hermana `…-estados-medidos-r1-adversarial-review.md`, con nonce y digest (nace con la ronda; hasta entonces no se cita por su ruta, porque el guard G2 exige que toda cita resuelva en disco). Los guards G7/G8/G9 de `tests/test_docs_gobernanza.py`, verdes. Si el revisor no corre, la cobertura se declara **AUSENTE**, no parcial.
