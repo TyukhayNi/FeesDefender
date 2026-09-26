@@ -26,6 +26,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from sys import executable as PYTHON
 
@@ -67,6 +68,66 @@ def _git_lines(args: list[str]) -> list[str]:
     if r.returncode != 0:
         return []
     return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+
+
+#: Como empieza la linea de un aviso que NO se ha comprobado porque git no responde. Constante,
+#: para que los tests no copien la frase (un negativo contra un literal se vacia).
+NO_COMPROBADO = "[aviso] NO comprobado:"
+
+#: Los avisos de este cierre que leen git. Si git no responde, cada uno se DECLARA no comprobado
+#: en vez de correr sobre una salida vacia y decir "nada que avisar".
+AVISO_SKILLS = "el chequeo de skills"
+AVISO_COBERTURA = "la cobertura del diff"
+AVISO_PUBLICACION = "el trabajo sin publicar"
+AVISO_PLAN = "la coherencia de PLAN.md con git"
+AVISO_TRAZA = "la trazabilidad de specs/plans"
+AVISOS_QUE_DEPENDEN_DE_GIT = (AVISO_SKILLS, AVISO_COBERTURA, AVISO_PUBLICACION, AVISO_PLAN,
+                              AVISO_TRAZA)
+
+
+def _git_responde() -> str | None:
+    """None si git responde en este arbol; si no, por que.
+
+    `_git_lines` devuelve `[]` ante cualquier fallo, y para una consulta suelta es lo correcto:
+    una rama cuyo remoto ya no existe cuenta cero y no debe tumbar el aviso de las demas. Pero si
+    git no responde EN ABSOLUTO —una copia sin `.git`, sin git en el PATH—, todas las consultas
+    salen vacias, y la verja las leia como "core/anon/ sin tocar" y "nada que avisar" (plan
+    `docs/superpowers/plans/2026-09-26-git-que-falla-en-voz-alta.md`). Esta sonda lo pregunta
+    UNA vez, antes de fiarse de ninguna.
+    """
+    try:
+        r = subprocess.run(["git", "rev-parse", "--git-dir"], cwd=ROOT, capture_output=True,
+                           encoding="utf-8", errors="replace")
+    except OSError as e:
+        return f"no se pudo ejecutar git ({e})"
+    if r.returncode != 0:
+        return (r.stderr or "").strip()[:300] or f"git salio con {r.returncode}"
+    return None
+
+
+def _modo_de_la_verja(force_slow: bool, git_no_responde: str | None) -> tuple[bool, str]:
+    """(¿corren los tests lentos?, por que).
+
+    Sin git no se sabe si `core/anon/` esta tocado, y saltarse los lentos era leer "no" donde
+    habia "no lo se": se corren, y se dice por que.
+    """
+    if force_slow:
+        return True, "forzado (--runslow/RUN_SLOW)"
+    if git_no_responde:
+        return True, (f"git no responde en este arbol ({git_no_responde}): no se sabe si "
+                      "core/anon/ esta tocado, asi que se corren los lentos por si acaso")
+    if _anon_tocado():
+        return True, "core/anon/ tocado"
+    return False, ""
+
+
+def _si_git_responde(git_no_responde: str | None, que: str, aviso: Callable[[], None]) -> None:
+    """Corre `aviso` si git responde; si no, lo DECLARA no comprobado."""
+    if git_no_responde:
+        print(f"\n{NO_COMPROBADO} {que} - git no responde en este arbol ({git_no_responde}). "
+              "Eso no es \"nada que avisar\".")
+        return
+    aviso()
 
 
 def _anon_tocado() -> bool:
@@ -842,12 +903,15 @@ def main() -> None:
         sys.exit(2)
 
     force_slow = "--runslow" in sys.argv or os.getenv("RUN_SLOW") == "1"
-    runslow = force_slow or _anon_tocado()
+    git_no_responde = _git_responde()
+    runslow, motivo = _modo_de_la_verja(force_slow, git_no_responde)
 
     print("FeesDefender - pytest pre-commit")
     print("-" * 40)
+    if git_no_responde:
+        print(f"[!] git no responde en este arbol: {git_no_responde}")
+        print("    Lo que depende de git NO se comprueba en este cierre, y cada aviso lo dice.")
     if runslow:
-        motivo = "forzado (--runslow/RUN_SLOW)" if force_slow else "core/anon/ tocado"
         print(f"Modo: COMPLETO (incluye tests lentos) - {motivo}")
         pytest_args = ["--runslow"]
     else:
@@ -870,7 +934,9 @@ def main() -> None:
 
     # Chequeo de skills (modo AVISO, no bloquea el cierre): CHANGELOG sin
     # actualizar, .skill caducado, drift de helpers, identidad incompleta.
-    try:
+    # Los avisos que leen git pasan por `_si_git_responde`: sin git, cada uno se declara NO
+    # comprobado en vez de correr sobre salidas vacias y decir "nada que avisar".
+    def _check_skills() -> None:
         import importlib.util
         spec = importlib.util.spec_from_file_location(
             "check_skills", ROOT / "scripts" / "check_skills.py"
@@ -879,24 +945,27 @@ def main() -> None:
         spec.loader.exec_module(cs)
         print("\n" + "-" * 40)
         cs.report(repackage=False)
+
+    try:
+        _si_git_responde(git_no_responde, AVISO_SKILLS, _check_skills)
     except Exception as e:  # el chequeo nunca debe romper el cierre
         print(f"[aviso] no se pudo correr check_skills: {e}")
 
     # Aviso de cobertura de las lineas NUEVAS del diff (modo AVISO, no bloquea).
     try:
-        _avisar_cobertura_del_diff()
+        _si_git_responde(git_no_responde, AVISO_COBERTURA, _avisar_cobertura_del_diff)
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo medir la cobertura del diff: {e}")
 
     # Aviso de trabajo sin publicar (modo AVISO, no bloquea el cierre).
     try:
-        _avisar_publicacion()
+        _si_git_responde(git_no_responde, AVISO_PUBLICACION, _avisar_publicacion)
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar trabajo sin publicar: {e}")
 
     # Aviso de PLAN.md desfasado respecto a git (modo AVISO, no bloquea).
     try:
-        _avisar_plan_desfasado()
+        _si_git_responde(git_no_responde, AVISO_PLAN, _avisar_plan_desfasado)
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar coherencia de PLAN.md: {e}")
 
@@ -908,7 +977,7 @@ def main() -> None:
 
     # Aviso de specs/plans recientes sin traza en el ledger (modo AVISO, no bloquea).
     try:
-        _avisar_specs_sin_traza()
+        _si_git_responde(git_no_responde, AVISO_TRAZA, _avisar_specs_sin_traza)
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar trazabilidad de specs/plans: {e}")
 

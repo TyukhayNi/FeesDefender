@@ -84,3 +84,68 @@ def test_control_positivo_con_el_git_real():
     assert len(basetemp._trackeados()) > 1000
     assert isinstance(gobernanza._refs_a_docs_plan_legacy(), list)
     assert ".env" in gitignore._regla(".env")
+
+
+# --- session_close: la sonda ------------------------------------------------------------------
+#
+# Allí el remedio no es que cada llamada lance: `_git_count` usa un fallo por rama como respuesta
+# legítima (una rama cuyo remoto ya no existe cuenta cero), y si lanzara, una sola rama así
+# tumbaría el aviso de todas. Lo que se pregunta es UNA vez: ¿responde git en este árbol?
+
+from scripts import session_close as sc  # noqa: E402
+
+
+def test_la_sonda_dice_por_que_git_no_responde(monkeypatch):
+    monkeypatch.setattr(subprocess, "run", _GitQueFalla())
+    assert "not a git repository" in (sc._git_responde() or "")
+
+
+def test_la_sonda_con_el_git_real_responde():
+    assert sc._git_responde() is None
+
+
+def test_sin_git_la_verja_corre_los_lentos_y_dice_por_que(monkeypatch):
+    """Sin git no se sabe si `core/anon/` está tocado: saltarse los lentos era leer «no» donde
+    había «no lo sé»."""
+    def no_debe_preguntar():
+        raise AssertionError("con git caído no se le pregunta a git por core/anon/")
+
+    monkeypatch.setattr(sc, "_anon_tocado", no_debe_preguntar)
+    corre_lentos, motivo = sc._modo_de_la_verja(False, NO_ES_REPO)
+    assert corre_lentos is True
+    assert "git no responde" in motivo and NO_ES_REPO in motivo
+
+
+@pytest.mark.parametrize("forzado, tocado, esperado", [
+    (True, False, True), (False, True, True), (False, False, False)])
+def test_con_git_sano_el_modo_de_la_verja_no_cambia(monkeypatch, forzado, tocado, esperado):
+    monkeypatch.setattr(sc, "_anon_tocado", lambda: tocado)
+    assert sc._modo_de_la_verja(forzado, None)[0] is esperado
+
+
+def test_un_aviso_que_depende_de_git_sale_como_NO_comprobado(capsys):
+    llamado: list[int] = []
+    sc._si_git_responde(NO_ES_REPO, "el trabajo sin publicar", lambda: llamado.append(1))
+    assert llamado == []
+    salida = capsys.readouterr().out
+    assert sc.NO_COMPROBADO in salida and "el trabajo sin publicar" in salida
+
+
+def test_con_git_sano_el_aviso_corre():
+    llamado: list[int] = []
+    sc._si_git_responde(None, "el trabajo sin publicar", lambda: llamado.append(1))
+    assert llamado == [1]
+
+
+def test_main_sin_git_corre_los_lentos_y_declara_los_avisos_que_no_comprueba(monkeypatch, capsys):
+    """La cadena entera, con la suite puenteada: lo que se lee al cerrar con git caído."""
+    monkeypatch.setattr(sc, "deps_que_faltan", lambda *a, **k: [])
+    monkeypatch.setattr(sc, "_git_responde", lambda: NO_ES_REPO)
+    verjas: list[list[str]] = []
+    monkeypatch.setattr(sc, "correr_la_verja", lambda args: verjas.append(list(args)))
+    monkeypatch.setattr(sc, "_anon_tocado", lambda: pytest.fail("no se pregunta a git"))
+    sc.main()
+    salida = capsys.readouterr().out
+    assert verjas == [["--runslow"]], "sin git, la verja corre los lentos por si acaso"
+    for que in sc.AVISOS_QUE_DEPENDEN_DE_GIT:
+        assert f"{sc.NO_COMPROBADO} {que}" in salida, que
