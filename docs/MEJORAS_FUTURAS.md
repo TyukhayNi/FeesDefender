@@ -13896,7 +13896,7 @@ anti-deriva, como ya hace con el zip crudo.
 **Disparador de promoción.** Una decisión de Nikolai sobre qué debe recoger la sala de lectura, o
 la próxima apertura en que uno de estos documentos resulte prueba relevante.
 
-**CERRADA el 2026-09-26 (PR #NNN, fila #46 de `PLAN.md`).** Promovida por decisión de Nikolai, que
+**CERRADA el 2026-09-26 (PR #408, fila #46 de `PLAN.md`).** Promovida por decisión de Nikolai, que
 pidió hacerla en la misma sesión que el #407. Al medir, la causa eran dos productores: la **skill**
 no tenía verja de población —su verify contrastaba el manifiesto con lo copiado, no con lo que
 había— y el **motor CLI**, que montó W-02Y2J6 y W-030TZY, decidía la población con una lista blanca
