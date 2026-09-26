@@ -112,9 +112,11 @@ spec: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-desi
   últimos retoques —el fallo «mudo» y la raíz leída al llamar, que solo tocan tests—: verde con las
   dos semillas, y su aviso de publicación nombra ya en una línea las diez ramas con el upstream
   desaparecido en vez de contarlas como cero.
-- **Suite:** 6.753 casos, 0 fallos, 96 omitidos, idéntica con las semillas 777 y 31337, sobre el
-  árbol con `main` (`ca250a4`) ya mezclado. **+58 sobre los 6.695 que colecciona `main`, y cuadran
-  al test**: los 53 de `tests/test_guard_git_falla_en_voz_alta.py` (eran 18) y los 5 nuevos de
+- **Suite:** 6.771 casos, 0 fallos, 96 omitidos, idéntica con las semillas 777 y 31337, sobre el
+  árbol con `main` (`e25a707`) ya mezclado —el #404, que también toca `session_close`, entró en
+  `main` durante la remediación; mezcla sin conflictos, y la suite corre sobre el árbol
+  combinado—. **+58 sobre los 6.713 que colecciona `main`, y cuadran al test**: los 53 de
+  `tests/test_guard_git_falla_en_voz_alta.py` (eran 18) y los 5 nuevos de
   `tests/test_precommit_leak_guard.py`; ningún otro fichero cambia su recuento.
 - **Mutantes: 46 de 46 muertos**: los 11 vivos de la primera tanda con las anclas al día —el 12,
   «CI sin pipefail», ya no aplica: no hay tubería—, los 33 del remedio y los dos del revisor, el de
