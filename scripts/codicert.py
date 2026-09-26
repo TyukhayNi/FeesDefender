@@ -128,6 +128,18 @@ def _fecha(f) -> str:
     return f.strftime("%d/%m/%Y %H:%M") if f else "—"
 
 
+#: La salida de un estancado CON eventos: la descarga provisional existe (R1/H-01).
+SALIDA_DEL_ESTANCADO = (
+    "      Si el certificado de hoy te sirve, `cosechar --incluir-pendientes`",
+    "      lo baja con su estado en el nombre, sin ocupar el sitio del",
+    "      definitivo. El aportable, solo sobre el definitivo.")
+
+#: Lo que se dice de un estancado SIN ningún evento. No hay estado con que nombrar un
+#: provisional y la cosecha lo salta, así que ofrecerle la descarga era mandar a repetir algo
+#: que no hace nada (R1/H-01).
+SIN_EVENTOS = "sin ningún evento: no hay estado con que bajar un provisional; míralo en el portal"
+
+
 def _dias(n: int) -> str:
     return f"{n} día" if n == 1 else f"{n} días"
 
@@ -143,12 +155,13 @@ def _no_cosechables(expedicion: exp.Expedicion, titulo: str) -> list[str]:
     for motivo, envios in grupos.items():
         alerta = "" if motivo == exp.PUEDE_MEJORAR else "⚠️ "
         lineas.append(f"    {alerta}{exp.ETIQUETA[motivo]} — {exp.QUE_SIGNIFICA[motivo]}")
-        lineas += [f"      · {e.id_envio} ({e.canal}), "
-                   f"{_dias(e.dias_quieto(expedicion.leida_en))} sin moverse" for e in envios]
-        if motivo == exp.ESTANCADO:
-            lineas += ["      Si el certificado de hoy te sirve, `cosechar --incluir-pendientes`",
-                       "      lo baja con su estado en el nombre, sin ocupar el sitio del",
-                       "      definitivo. El aportable, solo sobre el definitivo."]
+        for e in envios:
+            vacio = motivo == exp.ESTANCADO and not e.historico
+            lineas.append(f"      · {e.id_envio} ({e.canal}), "
+                          f"{_dias(e.dias_quieto(expedicion.leida_en))} sin moverse"
+                          + (f" — {SIN_EVENTOS}" if vacio else ""))
+        if motivo == exp.ESTANCADO and any(e.historico for e in envios):
+            lineas += list(SALIDA_DEL_ESTANCADO)
     return lineas
 
 
@@ -234,7 +247,9 @@ def render_cosecha(cosechados, expedicion: exp.Expedicion) -> str:
         falta = "" if c.local_presente else "   ⚠️ NO ESTÁ (solo en el CRM)"
         lineas.append(f"      local .... {c.ruta_local}{falta}")
         lineas.append(f"      sha256 ... {c.sha256 or '(de una cosecha anterior)'}")
-    lineas += _no_cosechables(expedicion, "NO COSECHADOS, y por qué:")
+    # «SIN CERTIFICADO DEFINITIVO» y no «NO COSECHADOS»: lo que se bajó como provisional
+    # sale arriba y sale también aquí (límite (a) de la R1).
+    lineas += _no_cosechables(expedicion, "SIN CERTIFICADO DEFINITIVO, y por qué:")
     if not cosechados:
         lineas.append("  Nada que cosechar todavía.")
     return "\n".join(lineas)
@@ -296,8 +311,9 @@ def main(argv: list[str] | None = None) -> int:
             s.add_argument("--incluir-pendientes", action="store_true",
                            dest="incluir_pendientes",
                            help="baja también el certificado de lo no cosechable (en "
-                                "curso, estancado o sin clasificar); su nombre lleva el "
-                                "estado, así que no ocupa el sitio del definitivo")
+                                "curso, estancado o sin clasificar) que tenga algún evento; "
+                                "su nombre lleva el estado, así que no ocupa el sitio del "
+                                "definitivo")
     args = parser.parse_args(argv)
 
     entorno = entorno_de(argumento=args.entorno)

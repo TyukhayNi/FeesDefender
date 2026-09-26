@@ -113,3 +113,29 @@ def test_la_expedicion_exige_saber_cuando_se_leyo():
 def test_cada_motivo_tiene_su_nombre_y_su_explicacion():
     assert set(exp.QUE_SIGNIFICA) == set(exp.ETIQUETA) == set(exp.MOTIVOS_PENDIENTE)
     assert len(exp.MOTIVOS_PENDIENTE) == len(set(exp.MOTIVOS_PENDIENTE)) == 4
+
+
+def test_con_canal_y_codigo_sin_clasificar_a_la_vez_se_dice_el_canal():
+    """R1/H-02: el orden se prueba donde los dos motivos concurren; si no, preguntar antes por
+    el código daría lo mismo y ningún test lo vería."""
+    e = _envio("006s", "s", (999, _hace(5)))
+    assert e.pendiente_por(LEIDA) == exp.CANAL_SIN_CLASIFICAR
+
+
+def test_el_orden_de_los_motivos_esta_fijado_aqui_y_no_en_la_constante():
+    """R1/H-02: comparar con `MOTIVOS_PENDIENTE` no prueba el orden si la constante cambia."""
+    assert exp.MOTIVOS_PENDIENTE == (exp.CANAL_SIN_CLASIFICAR, exp.CODIGO_SIN_CLASIFICAR,
+                                     exp.ESTANCADO, exp.PUEDE_MEJORAR)
+
+
+def test_la_hora_de_la_lectura_exige_un_desfase_no_solo_un_tzinfo():
+    """Un `tzinfo` cuyo `utcoffset()` devuelve None es tan ingenuo como no tener zona."""
+    from datetime import tzinfo
+
+    class SinDesfase(tzinfo):
+        def utcoffset(self, dt):
+            return None
+
+    with pytest.raises(exp.ExpedicionError, match="zona"):
+        exp.Expedicion(id_personalizado="W-1 - OVC", entorno="produccion",
+                       leida_en=datetime(2026, 9, 26, tzinfo=SinDesfase()))

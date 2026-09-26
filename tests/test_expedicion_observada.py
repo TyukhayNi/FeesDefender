@@ -163,3 +163,26 @@ def test_un_canal_sin_clasificar_no_se_cosecha_ni_con_su_culminacion():
     assert not leido.cosechable and not fallido.cosechable
     # el canal no borra lo que el histórico acredita
     assert leido.accedido_en == datetime.fromisoformat("2026-07-07T12:59:56+02:00")
+
+
+@pytest.mark.parametrize("codigo", [3, 5, 8, 11, 12, 14, 31])
+def test_el_22_cierra_si_lo_que_hay_delante_no_es_un_indicio(codigo):
+    """R1/H-02: los indicios son EXACTAMENTE {17, 19, 20, 21, 27} (D-1). Los códigos en curso
+    —el 5 «Procesado» incluido— no dicen que el aviso llegara y no impiden el cierre. La lista
+    va escrita aquí a mano, no sacada de la constante que se prueba."""
+    e = _envio(historico=_historico((codigo, "2026-07-01T12:05:33+02:00"),
+                                    (22, "2026-07-04T13:00:50+02:00")))
+    assert e.cerrado_en == datetime.fromisoformat("2026-07-04T13:00:50+02:00")
+    assert e.cosechable
+
+
+@pytest.mark.parametrize("tipo, codigos", [
+    ("c", (20, 999)), ("b", (19, 999)), ("c", (3, 14, 22, 999)), ("c", (42, 999))])
+def test_un_codigo_desconocido_bloquea_la_culminacion_y_el_cierre(tipo, codigos):
+    """R1/H-02: sin la guarda de `desconocidos`, un 999 detrás de un 20, un 19, un 22 que
+    cierra o un 42 dejaría cosechar. El test de antes usaba un 999 solo, que tampoco culmina
+    sin la guarda, y no la probaba."""
+    fechas = [f"2026-07-0{i + 1}T10:00:00+02:00" for i in range(len(codigos))]
+    e = _envio(tipo=tipo, historico=_historico(*zip(codigos, fechas)))
+    assert not e.cosechable
+    assert e.desconocidos == (999,)

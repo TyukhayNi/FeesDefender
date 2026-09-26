@@ -1113,7 +1113,10 @@ ETIQUETA: dict[str, str] = {
 QUE_SIGNIFICA: dict[str, str] = {
     CANAL_SIN_CLASIFICAR: "su canal no está clasificado; no se sabe en qué culmina",
     CODIGO_SIN_CLASIFICAR: "tiene un código de estado sin clasificar; no se sabe si culmina",
-    ESTANCADO: f"lleva más de {DIAS_ESTANCADO} días sin moverse y no se cerrará solo",
+    # «No se cerrará solo» era una predicción que ninguna medición sostiene (R1): lo medido es
+    # que ningún silencio anterior a un cambio duró tanto, y eso es lo que se dice.
+    ESTANCADO: (f"lleva más de {DIAS_ESTANCADO} días sin moverse, más que ningún silencio "
+                "medido antes de un cambio: no cuentes con que se cierre solo"),
     PUEDE_MEJORAR: "el hecho aún puede mejorar; se cosecha cuando culmine",
 }
 
@@ -1258,7 +1261,7 @@ class Expedicion:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "envios", tuple(self.envios))
-        if self.leida_en.tzinfo is None:
+        if self.leida_en.utcoffset() is None:   # sin tzinfo, o con uno que no da desfase
             raise ExpedicionError(
                 f"{self.id_personalizado}: la hora de la lectura {self.leida_en!r} no trae "
                 "zona horaria. No se asume UTC: con ella se mide qué está estancado.")
@@ -1459,8 +1462,11 @@ def refrescar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
             fecha_envio=_fecha_exigida(crudo.get("fecha"), que=f"envío {id_envio}"),
             historico=tuple(estado_de(e)
                             for e in entorno_exp.codicert.estados(id_envio))))
+    # La hora de la lectura es la del FINAL (propio, A-01 de la R1): tomada al principio, un
+    # evento que llegara mientras se leen los históricos quedaba en su futuro, y el informe
+    # decía «-1 días sin moverse».
     return Expedicion(id_personalizado=id_personalizado, entorno=entorno_exp.entorno,
-                      envios=tuple(envios), leida_en=ahora)
+                      envios=tuple(envios), leida_en=entorno_exp.ahora())
 
 
 @dataclass(frozen=True)

@@ -265,3 +265,30 @@ def test_render_cosecha_dice_por_que_no_cosecho():
     texto = cli.render_cosecha([], e)
     assert exp.QUE_SIGNIFICA[exp.ESTANCADO] in texto and "· 006e" in texto
     assert exp.QUE_SIGNIFICA[exp.PUEDE_MEJORAR] not in texto
+    # R1, límite (a): un provisional bajado sale ARRIBA como PROVISIONAL; el bloque de abajo
+    # no puede llamarlo «no cosechado».
+    assert "SIN CERTIFICADO DEFINITIVO" in texto and "NO COSECHADOS" not in texto
+
+
+def test_al_estancado_SIN_eventos_no_se_le_ofrece_una_descarga_que_no_existe():
+    """R1/H-01: sin ningún evento no hay estado con que nombrar el provisional y `cosechar
+    --incluir-pendientes` lo salta. Ofrecérselo era mandar a repetir algo que no hace nada."""
+    vacio = _envio("006v", tipo="b", historico=(),   # enviado hace más de 40 días
+                   fecha_envio=datetime.fromisoformat("2026-06-01T10:00:00+02:00"))
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(vacio,), leida_en=LEIDA)
+    for texto in (cli.render_estado(e, []), cli.render_cosecha([], e)):
+        assert exp.QUE_SIGNIFICA[exp.ESTANCADO] in texto and "· 006v" in texto
+        assert cli.SIN_EVENTOS in texto
+        assert cli.SALIDA_DEL_ESTANCADO[0] not in texto
+
+
+def test_al_estancado_CON_eventos_si_se_le_ofrece_la_descarga():
+    """El control positivo del de arriba: la misma frase, cuando la descarga existe."""
+    quieto = _envio("006e", tipo="b", historico=(exp.EstadoCertificado(
+        codigo=17, titulo="Entregado",
+        fecha=datetime.fromisoformat("2026-06-17T10:00:00+02:00")),))
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(quieto,), leida_en=LEIDA)
+    for texto in (cli.render_estado(e, []), cli.render_cosecha([], e)):
+        assert cli.SALIDA_DEL_ESTANCADO[0] in texto and cli.SIN_EVENTOS not in texto

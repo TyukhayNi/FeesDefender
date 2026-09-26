@@ -201,3 +201,26 @@ def test_un_canal_sin_clasificar_no_pone_fechas_al_requerido(tmp_path):
     assert [x.id_envio for x in req["ANA LÓPEZ"].envios] == ["006s"]
     assert req["ANA LÓPEZ"].recibido_en is None
     assert req["ANA LÓPEZ"].accedido_en is None
+
+
+def test_la_hora_de_la_lectura_es_la_del_FINAL_de_la_lectura(tmp_path):
+    """Propio, A-01: tomada al principio, un evento que llegara mientras se leen los
+    históricos quedaba en su futuro y el informe decía «-1 días sin moverse». Con un reloj
+    que avanza en cada consulta, la hora de la lectura tiene que ser la última."""
+    from datetime import timedelta
+
+    vistas: list[datetime] = []
+
+    def reloj():
+        vistas.append(datetime(2026, 9, 21, tzinfo=timezone.utc) + timedelta(minutes=len(vistas)))
+        return vistas[-1]
+
+    t = FakeTransporte([_ev("006a", "c", "x@y.es")],
+                       {"006a": _h((21, "2026-09-11T19:00:23+02:00"))})
+    entorno = _entorno(tmp_path, t)
+    entorno = exp.EntornoExpedicion(
+        codicert=entorno.codicert, partes_de=entorno.partes_de, ahora=reloj,
+        raiz=entorno.raiz, plaza=entorno.plaza, entorno=entorno.entorno,
+        usuario=entorno.usuario)
+    e = exp.refrescar("W-04AKM2", "OVC", entorno_exp=entorno)
+    assert len(vistas) >= 2 and e.leida_en == vistas[-1]
