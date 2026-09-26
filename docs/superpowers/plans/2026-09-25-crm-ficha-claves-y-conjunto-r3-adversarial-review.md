@@ -369,11 +369,15 @@ REQUIERE-REVISION
   2.827 ficheros de `base/` y `head/` (fuera del directorio del revisor); al cerrar, **cero
   diferencias**. Coincide con su comparación (1.411 + 1.416, idénticos).
 - **La incidencia de temporales que declara, localizada.** Su primer intento del arnés, interrumpido,
-  dejó una copia en **mi** `%TEMP%`: `C:\Users\tnm33\AppData\Local\Temp\mutantes_crm_ficha_4r3tdb0d`
-  (creada a las 09:11:07, la hora de su `mutantes.log` vacío). Es una copia de código del repo, sin
-  datos de cliente, y es exactamente lo que él dijo no poder acreditar: una escritura fuera de su
-  directorio. No la borro sin que Nikolai lo pida; la repetición del arnés sí fijó `tempfile` dentro
-  de su directorio (`tmp/mutantes_crm_ficha_00e36lap` y `…7or4q4pn`).
+  dejó un directorio en **mi** `%TEMP%`: `C:\Users\tnm33\AppData\Local\Temp\mutantes_crm_ficha_4r3tdb0d`
+  (creado a las 09:11:07, la hora de su `mutantes.log` vacío), y es exactamente lo que él dijo no
+  poder acreditar: una escritura fuera de su directorio. **Su contenido no lo he podido leer**:
+  lo creó el proceso aislado del revisor y mi sesión no puede listarlo ni leer sus permisos
+  (comprobado el 2026-09-26, al revisar los temporales antes de borrarlos). Por cómo lo crea el
+  arnés —`tempfile.mkdtemp` y una copia de `core/`, `scripts/` y `tests/` del objeto— solo puede
+  contener código del repo, que no tiene datos de cliente; **eso es deducción, no lectura**. La
+  repetición del arnés sí fijó `tempfile` dentro de su directorio (`tmp/mutantes_crm_ficha_00e36lap`
+  y `…7or4q4pn`).
 - **Los cuatro hallazgos, reproducidos contra la fuente y no contra el informe:**
   - **H-01.** `core/crm_ficha.py` construía los DTO con el NIF tal como viene (`_valor`), y los
     `_rest_post_*` y `_completar_colaborador_existente` lo escriben así en `nif_cif`; la búsqueda de

@@ -1635,9 +1635,13 @@ writers no tenía y que entra en ella. Los otros seis, **reales**. Y la salvedad
 M19 original —muere primero por el diagnóstico, no por el aserto de cero writers— es cierta y la
 cubre su variante discriminante, que él mismo corrió: la propiedad tiene defensa.
 
-**La incidencia del revisor, localizada:** su primer intento del arnés, interrumpido, dejó una copia
-del código en `%TEMP%` de esta máquina, fuera de su directorio (acta §2). Sin datos de cliente; no se
-borra sin que Nikolai lo pida.
+**La incidencia del revisor, localizada:** su primer intento del arnés, interrumpido, dejó un
+directorio en `%TEMP%` de esta máquina, fuera de su directorio (acta §2), que esta sesión **no puede
+leer**: lo creó su proceso aislado. Nikolai pidió el 2026-09-26 borrar los temporales revisándolos
+antes. Las seis copias del arnés propio fueron a la Papelera tras comprobar, fichero a fichero, que
+todo su contenido está en git o es una versión superada —saltos de línea, borradores del arnés—; los
+dos informes de hoy (34 de 34, y M27-M28) se conservan junto al lanzador de la R3. El directorio del
+revisor queda para Nikolai: sin poder leerlo no se puede revisar antes de borrar.
 
 **Lo que NO cambia:** el YAML es la lista completa; `crm_ficha` nunca desvincula ni pisa;
 `_COMPLETABLES_*` no se toca; y no se buscan duplicados históricos escritos con separadores.
