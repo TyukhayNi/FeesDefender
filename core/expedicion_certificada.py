@@ -1082,6 +1082,41 @@ _CULMINACION: dict[str, int] = {"burofax": 19, "electronico": 20}
 #: tiene el aviso y aún puede leer, y la plataforma cerrará sola con el 40 (M-20).
 _INDICIOS_DE_ENTREGA = frozenset({17, 19, 20, 21, 27})
 
+#: Por qué un envío no es cosechable. Cuatro motivos y no uno (M-21): los tres sitios que
+#: se lo explican al abogado decían de todos lo mismo —«el hecho aún puede mejorar»—, y
+#: medido sobre 117 envíos reales, de tres no es verdad.
+CANAL_SIN_CLASIFICAR = "canal_sin_clasificar"    #: no se sabe en qué culmina su canal
+CODIGO_SIN_CLASIFICAR = "codigo_sin_clasificar"  #: tiene un código que nadie ha medido
+ESTANCADO = "estancado"                          #: en curso, quieto más de DIAS_ESTANCADO
+PUEDE_MEJORAR = "puede_mejorar"                  #: en curso: le falta su culminación
+
+#: El orden en que se enseñan, que es el de lo que hay que hacer: lo que nadie clasificó
+#: se arregla en el código; lo estancado lo decide el abogado; lo que puede mejorar
+#: solo pide esperar.
+MOTIVOS_PENDIENTE = (CANAL_SIN_CLASIFICAR, CODIGO_SIN_CLASIFICAR, ESTANCADO, PUEDE_MEJORAR)
+
+#: Días sin eventos a partir de los cuales un envío en curso se da por estancado (M-20,
+#: D-3): el silencio más largo medido antes de un cambio es de 29,1 días —un burofax del
+#: 17 al 19— y la entrega electrónica caduca a los 30 exactos (30 de 30). **Es un aviso,
+#: no una clasificación**: no hace cosechable nada; solo deja de prometer que mejorará.
+DIAS_ESTANCADO = 40
+
+#: Cómo se llama cada motivo y qué significa, en una línea. Lo leen los dos informes de
+#: `scripts/codicert.py` y el aportable de F3: una sola redacción para los tres, que es
+#: justo lo que faltaba (M-21).
+ETIQUETA: dict[str, str] = {
+    CANAL_SIN_CLASIFICAR: "CANAL SIN CLASIFICAR",
+    CODIGO_SIN_CLASIFICAR: "CÓDIGO SIN CLASIFICAR",
+    ESTANCADO: "ESTANCADO",
+    PUEDE_MEJORAR: "EN CURSO",
+}
+QUE_SIGNIFICA: dict[str, str] = {
+    CANAL_SIN_CLASIFICAR: "su canal no está clasificado; no se sabe en qué culmina",
+    CODIGO_SIN_CLASIFICAR: "tiene un código de estado sin clasificar; no se sabe si culmina",
+    ESTANCADO: f"lleva más de {DIAS_ESTANCADO} días sin moverse y no se cerrará solo",
+    PUEDE_MEJORAR: "el hecho aún puede mejorar; se cosecha cuando culmine",
+}
+
 
 @dataclass(frozen=True)
 class EnvioObservado:
@@ -1176,6 +1211,31 @@ class EnvioObservado:
             return True
         return self.cerrado_en is not None
 
+    def ultimo_evento(self) -> datetime:
+        """La fecha del último evento del histórico; sin histórico, la del envío."""
+        return max((e.fecha for e in self.historico), default=self.fecha_envio)
+
+    def dias_quieto(self, ahora: datetime) -> int:
+        """Días enteros desde el último evento hasta `ahora`."""
+        return (ahora - self.ultimo_evento()).days
+
+    def pendiente_por(self, ahora: datetime) -> str | None:
+        """Por qué no es cosechable —uno de `MOTIVOS_PENDIENTE`—, o `None` si lo es.
+
+        Las preguntas van en el orden de `MOTIVOS_PENDIENTE`: con el canal o un código
+        sin clasificar no se puede razonar nada más, y lo quieto se dice antes de
+        prometer que mejorará.
+        """
+        if self.cosechable:
+            return None
+        if not self.canal_clasificado:
+            return CANAL_SIN_CLASIFICAR
+        if self.desconocidos:
+            return CODIGO_SIN_CLASIFICAR
+        if ahora - self.ultimo_evento() > timedelta(days=DIAS_ESTANCADO):
+            return ESTANCADO
+        return PUEDE_MEJORAR
+
 
 @dataclass(frozen=True)
 class Expedicion:
@@ -1184,14 +1244,24 @@ class Expedicion:
     El nivel de expedición es **comodidad de informe y no tiene efecto jurídico**
     (spec §6.1): aquí no se calcula ninguna fecha agregada, justamente para que
     nadie la use. El nivel que manda es el requerido, y lo arma `por_requerido`.
+
+    `leida_en` es **cuándo se leyó** de la plataforma, y es obligatoria (D-4): sin ella no
+    se sabe qué lleva semanas quieto, y un «estancado» que se callara por falta de hora
+    sería el mismo silencio que M-21 corrige. La pone `refrescar` con el reloj del
+    entorno, y exige zona horaria por lo mismo que `estado_de`.
     """
 
     id_personalizado: str
     entorno: str
     envios: tuple[EnvioObservado, ...] = ()
+    leida_en: datetime = field(kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "envios", tuple(self.envios))
+        if self.leida_en.tzinfo is None:
+            raise ExpedicionError(
+                f"{self.id_personalizado}: la hora de la lectura {self.leida_en!r} no trae "
+                "zona horaria. No se asume UTC: con ella se mide qué está estancado.")
 
     @property
     def cosechables(self) -> tuple[EnvioObservado, ...]:
@@ -1210,6 +1280,17 @@ class Expedicion:
         prohíbe — «no encuentro envíos» no es «la expedición terminó».
         """
         return bool(self.envios) and not self.pendientes
+
+    def pendientes_por(self) -> dict[str, tuple[EnvioObservado, ...]]:
+        """Lo no cosechable, agrupado por su motivo en el orden de `MOTIVOS_PENDIENTE`.
+
+        Solo salen los motivos con algún envío. `pendientes` sigue siendo la lista entera:
+        un estancado NO culminó, y `completa` tiene que seguir diciéndolo.
+        """
+        grupos: dict[str, list[EnvioObservado]] = {m: [] for m in MOTIVOS_PENDIENTE}
+        for envio in self.pendientes:
+            grupos[envio.pendiente_por(self.leida_en)].append(envio)
+        return {m: tuple(v) for m, v in grupos.items() if v}
 
     def por_requerido(self, partes: list[dict]) -> tuple[Requerido, ...]:
         """Agrupa los envíos por requerido, casando `destinatarios` con las partes.
@@ -1375,7 +1456,7 @@ def refrescar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
             historico=tuple(estado_de(e)
                             for e in entorno_exp.codicert.estados(id_envio))))
     return Expedicion(id_personalizado=id_personalizado, entorno=entorno_exp.entorno,
-                      envios=tuple(envios))
+                      envios=tuple(envios), leida_en=ahora)
 
 
 @dataclass(frozen=True)

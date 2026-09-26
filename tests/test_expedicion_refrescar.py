@@ -175,3 +175,12 @@ def test_el_movil_casa_con_prefijo_y_sin_el(tmp_path):
     e = exp.refrescar("W-04AKM2", "OVC", entorno_exp=_entorno(tmp_path, t, partes))
     req = {r.etiqueta: r for r in e.por_requerido(partes)}
     assert req["ANA LÓPEZ"].recibido_en is not None
+
+
+def test_la_expedicion_anota_cuando_se_leyo(tmp_path):
+    """La hora de la lectura sale del reloj del ENTORNO, no del sistema: es lo que hace
+    reproducible saber qué está estancado (D-4)."""
+    t = FakeTransporte([_ev("006a", "c", "x@y.es")],
+                       {"006a": _h((21, "2026-09-11T19:00:23+02:00"))})
+    e = exp.refrescar("W-04AKM2", "OVC", entorno_exp=_entorno(tmp_path, t))
+    assert e.leida_en == datetime(2026, 9, 21, tzinfo=timezone.utc)

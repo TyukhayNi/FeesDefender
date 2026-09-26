@@ -8,6 +8,10 @@ import pytest
 from core import expedicion_certificada as exp
 from scripts import codicert as cli
 
+#: Cuándo se «leyó» la expedición de los tests (D-4: la hora de la lectura es
+#: obligatoria). Cerca de las fechas de sus históricos, para que nada salga estancado.
+LEIDA = datetime.fromisoformat("2026-09-13T10:00:00+02:00")
+
 
 def _envio(id_envio, tipo="c", **kw):
     base = dict(id_envio=id_envio, tipo=tipo, asunto="REQUERIMIENTO",
@@ -22,7 +26,7 @@ def _envio(id_envio, tipo="c", **kw):
 
 def test_render_estado_ensena_los_dos_relojes():
     e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
-                       envios=(_envio("006a"),))
+                       envios=(_envio("006a"),), leida_en=LEIDA)
     partes = [{"nombre": "ANA", "1apellido": "LÓPEZ", "email": "x@y.es"}]
     texto = cli.render_estado(e, partes)
     assert "W-04AKM2 - OVC" in texto and "PRODUCCION" in texto
@@ -35,7 +39,7 @@ def test_render_estado_declara_los_codigos_desconocidos():
         codigo=999, titulo="?",
         fecha=datetime.fromisoformat("2026-09-12T23:03:43+02:00")),))
     e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
-                       envios=(raro,))
+                       envios=(raro,), leida_en=LEIDA)
     assert "999" in cli.render_estado(e, [])
 
 
@@ -44,14 +48,15 @@ def test_render_estado_avisa_de_lo_que_aun_puede_mejorar():
         codigo=21, titulo="Recordatorio lectura entregado",
         fecha=datetime.fromisoformat("2026-09-11T19:00:23+02:00")),))
     e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
-                       envios=(pendiente,))
+                       envios=(pendiente,), leida_en=LEIDA)
     texto = cli.render_estado(e, [])
     assert "006p" in texto and "PENDIENTES" in texto
 
 
 def test_render_estado_sobre_el_VACIO_no_dice_que_este_terminada():
     """§5.2: un censo negativo no prueba ausencia, y el frontal lo escribe."""
-    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion")
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       leida_en=LEIDA)
     texto = cli.render_estado(e, [])
     assert "no prueba" in texto.lower() or "censo" in texto.lower()
 
@@ -112,7 +117,7 @@ def test_estado_SIGUE_dando_los_envios_aunque_el_caso_no_este_en_LOCAL():
         raise exp.ExpedicionError("el caso no está indexado en el catálogo local")
 
     e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
-                       envios=(_envio("006a"),))
+                       envios=(_envio("006a"),), leida_en=LEIDA)
     texto = cli.render_estado(e, sin_caso)
     assert "006a" in texto                        # los envíos se ven igual
     assert "no está indexado" in texto            # y se dice POR QUÉ falta el resto

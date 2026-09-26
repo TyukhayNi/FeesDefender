@@ -7,6 +7,10 @@ import pytest
 
 from core import expedicion_certificada as exp
 
+#: Cuándo se «leyó» la expedición de los tests (D-4: la hora de la lectura es
+#: obligatoria). Cerca de las fechas de sus históricos, para que nada salga estancado.
+LEIDA = datetime.fromisoformat("2026-09-13T10:00:00+02:00")
+
 
 def _historico(*pares):
     return [exp.estado_de({"codigo": c, "titulo": "", "fecha": f, "detalle": None})
@@ -91,7 +95,7 @@ def test_la_expedicion_agrega_sin_inventar_un_reloj_comun():
     a = _envio(id_envio="006a", historico=_historico((20, "2026-09-12T23:03:43+02:00")))
     b = _envio(id_envio="006b", historico=_historico((21, "2026-09-11T19:00:23+02:00")))
     e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
-                       envios=(a, b))
+                       envios=(a, b), leida_en=LEIDA)
     assert e.completa is False           # b aún puede mejorar
     assert {x.id_envio for x in e.pendientes} == {"006b"}
     assert {x.id_envio for x in e.cosechables} == {"006a"}
@@ -99,8 +103,8 @@ def test_la_expedicion_agrega_sin_inventar_un_reloj_comun():
 
 def test_una_expedicion_VACIA_no_esta_completa():
     """Un censo vacío no es una expedición terminada (spec §5.2)."""
-    assert exp.Expedicion(id_personalizado="W-1 - OVC",
-                          entorno="produccion").completa is False
+    assert exp.Expedicion(id_personalizado="W-1 - OVC", entorno="produccion",
+                          leida_en=LEIDA).completa is False
 
 
 def test_el_22_sin_ningun_aviso_entregado_cierra_sin_entrega():
