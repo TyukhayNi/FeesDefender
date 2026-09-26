@@ -172,11 +172,18 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     """La cobertura contra el catálogo, **documento a documento** (`MEJORAS #287`).
 
     Una fuente de la cobertura —cada `rel_path` distinto: un bundle partido es UNA fuente
-    aunque tenga veinte filas— está catalogada si su ruta es la `ruta_relativa` de alguna
-    entrada o, si no, si su sha256 de origen es el `hash` de alguna: la skill cataloga cada
-    sha256 una vez, y la sala de máquina da fila de custodia a cada copia. Y al revés: cada
-    entrada del catálogo tiene que tener su fuente en la cobertura, o la sala de lectura
-    enseña un documento del que no hay espejo que leer.
+    aunque tenga veinte filas— está catalogada si hay una entrada en su ruta o, si no, una
+    entrada con su sha256 de origen: la skill cataloga cada sha256 una vez, y la sala de
+    máquina da fila de custodia a cada copia. Y al revés: cada entrada del catálogo tiene que
+    tener su fuente en la cobertura, o la sala de lectura enseña un documento del que no hay
+    espejo que leer.
+
+    **La unidad del catálogo es la ENTRADA, un par ruta/sha256** (R1/H-01). Una entrada cuya
+    ruta es la de una fuente y cuyo sha256 no es el de esa fuente **contradice** —el sitio es
+    el suyo y el contenido catalogado no— y no acredita a nadie: ni a la fuente de su ruta ni,
+    por su hash, a otra. Lo que casa por una sola de las dos claves —una entrada sin hash, que
+    el productor admite, o una ruta que la cobertura no tiene— se acepta y **se dice**, porque
+    no es un cotejo íntegro (R1/H-04).
 
     **Solo dos cosas no se exigen, y las dos son reglas de sus productores, no criterio
     de este verificador**; la evidencia las cuenta:
@@ -271,7 +278,8 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
                 huerfanos.append(f"{f.get('slug')!r}: parent_slug no es texto ({padre!r})")
             elif padre.strip() == slug:
                 huerfanos.append(f"{f.get('slug')!r}: se declara hijo de sí mismo")
-            elif padre.strip() not in slugs and not slug.startswith(padre.strip() + "__"):
+            elif (padre.strip() not in slugs
+                  and not _slug_deriva_del_padre(slug, padre.strip(), f.get("doc_id"))):
                 huerfanos.append(f"{f.get('slug')!r}: padre {padre.strip()!r} no está en la "
                                  "cobertura y su slug no deriva de él")
             else:
@@ -288,26 +296,48 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
         fuentes.setdefault(clave, set()).update(
             {origen.lower()} if isinstance(origen, str) and origen.strip() else set())
 
-    # El catálogo, por las mismas dos claves.
-    rutas_cat: set[str] = set()
-    hashes_cat: set[str] = set()
-    for e in entradas:
-        ruta, h = _identidad_de_entrada(e)
-        rutas_cat.add(ruta)
-        hashes_cat.add(h)
-    rutas_cat.discard("")
-    hashes_cat.discard("")
+    # El catálogo, ENTRADA a entrada. La unidad es el par (ruta, sha256): partido en dos
+    # conjuntos globales, una mitad acreditaba una fuente mientras la otra contradecía a otra
+    # (R1/H-01). Una entrada es CONTRADICTORIA si su ruta es la de una fuente y su sha256 no es
+    # el de esa fuente, con los dos lados en sha256 de verdad: un hash vacío no contradice
+    # nada, solo no contrasta. Y una contradictoria no acredita a nadie.
+    pares = [_identidad_de_entrada(e) for e in entradas]
+    contradictorias = {
+        i for i, (ruta, h) in enumerate(pares)
+        if ruta in fuentes and _es_sha256(h) and h not in fuentes[ruta]
+        and any(_es_sha256(s) for s in fuentes[ruta])}
+    en_ruta: dict[str, list[int]] = {}
+    con_hash: dict[str, list[int]] = {}
+    for i, (ruta, h) in enumerate(pares):
+        if ruta:
+            en_ruta.setdefault(ruta, []).append(i)
+        if h:
+            con_hash.setdefault(h, []).append(i)
 
     dirs_con_chat = {k.rsplit("/", 1)[0] if "/" in k else "" for k in fuentes
                      if k.rsplit("/", 1)[-1].casefold() == "_chat.txt"}
-    por_ruta = por_sha = 0
+    por_ruta = por_sha = solo_por_ruta = solo_por_sha = 0
     excluidas = {"protocolo": 0, "export_crudo_whatsapp": 0}
     sin_catalogar: list[str] = []
+    contradicciones: list[str] = []
     for clave in sorted(fuentes):
-        if clave in rutas_cat:
+        coherentes = [i for i in en_ruta.get(clave, []) if i not in contradictorias]
+        por_contenido = [i for s in sorted(fuentes[clave]) for i in con_hash.get(s, [])
+                         if i not in contradictorias]
+        if coherentes:
             por_ruta += 1
-        elif fuentes[clave] & hashes_cat:
+            # Por la ruta y sin un sha256 que case: el productor admite `hash` vacío (R1/H-04).
+            if not any(pares[i][1] in fuentes[clave] for i in coherentes):
+                solo_por_ruta += 1
+        elif en_ruta.get(clave):
+            contradicciones.append(muestra[clave])
+        elif por_contenido:
             por_sha += 1
+            # La copia en otra carpeta es el `dedup_por_sha` de la skill: la entrada lleva la
+            # ruta de OTRA fuente con ese mismo contenido. Sin eso, la ruta que anuncia la
+            # entrada —ajena o vacía— no se acredita, y se dice (R1/H-04).
+            if not any(pares[i][0] in fuentes for i in por_contenido):
+                solo_por_sha += 1
         elif es_fichero_de_protocolo(clave):
             excluidas["protocolo"] += 1
         elif (clave.rsplit("/", 1)[-1].casefold() == _NOMBRE_EXPORT_CRUDO_WHATSAPP
@@ -318,9 +348,8 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     shas_cobertura = set().union(*fuentes.values()) if fuentes else set()
     catalogo_sin_fuente = [
         str(e.get("ruta_relativa") or f"(sin ruta; id_doc {e.get('id_doc')!r})")
-        for e in entradas
-        if _identidad_de_entrada(e)[0] not in fuentes
-        and _identidad_de_entrada(e)[1] not in shas_cobertura]
+        for (ruta, h), e in zip(pares, entradas)
+        if ruta not in fuentes and h not in shas_cobertura]
 
     por_extension = Counter((Path(r).suffix.lower() or "(sin extensión)")
                             for r in sin_catalogar)
@@ -329,6 +358,8 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
           "documentos_logicos": len(fuentes), "entradas_catalogo": len(entradas),
           "huerfanos": huerfanos[:8], "catalogo_en": catalogo_en, "catalogos": conteos,
           "por_ruta": por_ruta, "por_sha": por_sha, "excluidas": excluidas,
+          "solo_por_ruta": solo_por_ruta, "solo_por_sha": solo_por_sha,
+          "n_contradicciones": len(contradicciones), "contradicciones": contradicciones[:8],
           "n_sin_catalogar": len(sin_catalogar), "sin_catalogar": sin_catalogar[:8],
           "sin_catalogar_por_extension": dict(por_extension.most_common()),
           "n_catalogo_sin_fuente": len(catalogo_sin_fuente),
@@ -342,6 +373,10 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
                          f"{len(sin_ruta)} fila(s) de la cobertura sin `rel_path`: no se "
                          f"pueden cruzar con el catálogo ({', '.join(sin_ruta[:3])})", ev)
     partes = []
+    if contradicciones:
+        partes.append(f"{len(contradicciones)} fuente(s) cuya entrada del catálogo contradice "
+                      f"su sha256 —la ruta es la suya y el contenido catalogado no—: "
+                      f"{', '.join(contradicciones[:3])}")
     if sin_catalogar:
         tipos = ", ".join(f"{n} {ext}" for ext, n in por_extension.most_common(4))
         partes.append(f"{len(sin_catalogar)} de las {len(fuentes)} fuentes de la cobertura "
@@ -352,14 +387,32 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
                       f"procesó la sala de máquina: {', '.join(catalogo_sin_fuente[:3])}")
     if partes:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO, "; ".join(partes), ev)
+    # El `ok` dice cuánto se cotejó de verdad: lo no exigido no está en el catálogo, y un cruce
+    # por una sola de las dos claves no es un cotejo íntegro (R1/H-04).
+    exigibles = len(fuentes) - sum(excluidas.values())
+    cabeza = ("no hay fuentes exigibles en la cobertura" if exigibles == 0 else
+              "la única fuente exigible de la cobertura está en el catálogo" if exigibles == 1
+              else f"las {exigibles} fuentes exigibles de la cobertura están en el catálogo")
+    entradas_ok = ("el catálogo no tiene entradas" if not entradas else
+                   "la entrada del catálogo tiene su fuente" if len(entradas) == 1 else
+                   f"las {len(entradas)} entradas del catálogo tienen su fuente")
+    notas = [f"{cabeza} ({por_ruta} por ruta y {por_sha} por sha256), y {entradas_ok}"]
+    if solo_por_ruta:
+        notas.append(f"{solo_por_ruta} solo por la ruta, sin sha256 que contrastar")
+    if solo_por_sha:
+        notas.append(f"{solo_por_sha} solo por sha256, con una ruta que la cobertura no tiene "
+                     "o sin ruta: el sitio que anuncia la entrada no se acredita")
     no_exigidas = [f"{n} de {que}" for que, n in (("protocolo", excluidas["protocolo"]),
                                                    ("export crudo de WhatsApp",
                                                     excluidas["export_crudo_whatsapp"])) if n]
-    nota = f"; no se exigen {' y '.join(no_exigidas)}" if no_exigidas else ""
-    return Resultado("cobertura_vs_catalogo", _T_C3, OK,
-                     f"las {len(fuentes)} fuentes de la cobertura están en el catálogo "
-                     f"({por_ruta} por ruta, {por_sha} por sha256) y sus {len(entradas)} "
-                     f"entradas tienen su fuente{nota}", ev)
+    if no_exigidas:
+        notas.append(f"no se exigen {' y '.join(no_exigidas)}")
+    if len(catalogos) > 1:
+        # Los dos catálogos cuadran por sus pares ruta/sha256, y es lo único que se mira
+        # (R1/H-03): ningún productor escribe otro `estado` que `original`.
+        notas.append("los dos catálogos recogen las mismas fuentes; sus demás campos no se "
+                     "cotejan")
+    return Resultado("cobertura_vs_catalogo", _T_C3, OK, "; ".join(notas), ev)
 
 
 #: El crudo de WhatsApp que el intake deposita junto al `_chat.txt` extraído
@@ -389,6 +442,29 @@ def _identidad_de_entrada(e: dict) -> tuple[str, str]:
     ruta, h = e.get("ruta_relativa"), e.get("hash")
     return (_clave_de_ruta_de_origen(ruta) if isinstance(ruta, str) and ruta.strip() else "",
             h.strip().lower() if isinstance(h, str) else "")
+
+
+_RE_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def _es_sha256(h: str) -> bool:
+    """¿Es un sha256 de verdad? El `_MANIFIESTO.md` admite también `md5:<32 hex>` y vacío
+    (`manifiesto_parser.sha_valido`): esos no contradicen nada, solo no contrastan."""
+    return bool(_RE_SHA256.fullmatch(h or ""))
+
+
+def _slug_deriva_del_padre(slug: str, padre: str, doc_id: Any) -> bool:
+    """¿El slug de esta pieza lo construyó el split desde ese padre?
+
+    Con `doc_id`, el split escribe `<padre>__<doc_id>_<TIPO>` (`split_documental._slug_seg`), y
+    así lo llevan las 668 piezas con `doc_id` de los 23 casos medidos el 2026-09-26. Sin él
+    —splits anteriores a la identidad persistente: W-02VND1, W-02ZIIF, W-02VUDR— solo se puede
+    exigir el prefijo `<padre>__`. Hasta la R1 (H-05) se exigía el prefijo siempre, y
+    `bundle__basura` pasaba por pieza de `bundle`.
+    """
+    if doc_id is not None and str(doc_id).strip():
+        return slug.startswith(f"{padre}__{str(doc_id).strip()}_")
+    return slug.startswith(f"{padre}__") and len(slug) > len(padre) + 2
 
 
 def ubicaciones_del_catalogo(proc: Path, sala: Path) -> tuple[Path, ...]:
@@ -809,6 +885,13 @@ _EXPORTACION_NATIVOS_RCLONE: dict[str, str] = {
 }
 
 
+#: Lo que el `ok` de C1 dice de los nativos, y lo que NO puede decir (R1/H-02). C1 es un censo
+#: de NOMBRES —para ningún fichero mira el contenido— y el contenido de un nativo tampoco lo
+#: mira C2, porque Drive no publica su hash: un `x.docx` cualquiera casa con el nativo `x`.
+_AVISO_NATIVOS_SIN_CONTRASTE = ("cruzados por el nombre de su exportación: su contenido no se "
+                                "contrasta, Drive no publica el hash de un nativo")
+
+
 def ruta_local_esperada(f: Any) -> str:
     """El nombre con que el pull deja en disco ese objeto del remoto (`MEJORAS #306`).
 
@@ -817,6 +900,9 @@ def ruta_local_esperada(f: Any) -> str:
     tal cual daba el mismo fichero como faltante y como sobrante a la vez. La extensión se
     añade siempre —rclone no mira si el nombre ya acababa en `.docx`— y solo por el tipo:
     un PDF subido sin extensión se descarga tal cual.
+
+    **Es una correspondencia de nombre, no de procedencia** (R1/H-02): no acredita que el
+    fichero de disco salga de ese objeto.
     """
     return f.ruta + _EXPORTACION_NATIVOS_RCLONE.get(getattr(f, "mime_type", "") or "", "")
 
@@ -904,7 +990,7 @@ def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
         return Resultado("censo_remoto", titulo, FALLO,
                          f"{len(faltan)} fichero(s) del remoto que no están en local y "
                          f"{len(sobran)} en local que no están en el remoto{pista}", ev)
-    exportados = (f" ({nativos} nativos de Google, cruzados con su exportación)"
+    exportados = (f" ({nativos} nativos de Google, {_AVISO_NATIVOS_SIN_CONTRASTE})"
                   if nativos else "")
     return Resultado("censo_remoto", titulo, OK,
                      f"los {sum(c_remoto.values())} ficheros del remoto están en local"

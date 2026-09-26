@@ -2618,3 +2618,207 @@ def test_287_el_nombre_del_zip_crudo_es_el_del_intake_y_el_de_la_skill():
     spec.loader.exec_module(skill)
     assert va._NOMBRE_EXPORT_CRUDO_WHATSAPP == whatsapp_intake._ORIGINAL_ZIP_NAME.casefold()
     assert va._NOMBRE_EXPORT_CRUDO_WHATSAPP == skill._NOMBRE_EXPORT_CRUDO_WHATSAPP.casefold()
+
+
+# ===========================================================================
+# La R1 de Codex sobre este diff (2026-09-26): NO-SHIP, 6 hallazgos, 6 confirmados
+#
+# Acta: docs/superpowers/plans/2026-09-26-verificar-apertura-c1-c2-c3-r1-adversarial-review.md
+#
+# Tres de ellos eran la misma frontera: la unidad del catálogo es la ENTRADA —un par ruta y
+# sha256—, y el cruce la partía en dos conjuntos globales, de modo que cada mitad podía
+# acreditar una fuente distinta (H-01), una entrada coja pasaba sin decirlo (H-04) y la
+# comparación de dos catálogos prometía más de lo que miraba (H-03).
+# ===========================================================================
+
+_SHA_A, _SHA_B, _SHA_X = "a" * 64, "b" * 64, "e" * 64
+
+
+def test_287_R1H01_una_entrada_no_acredita_DOS_fuentes_con_sus_dos_mitades(tmp_path):
+    """H-01 (ALTA), el falso verde que bloqueaba: cobertura `A.pdf` (sha A) y `B.pdf` (sha B),
+    catálogo con UNA entrada `(A.pdf, sha B)`. Con dos conjuntos globales, la ruta acreditaba
+    `A.pdf` y el hash acreditaba `B.pdf`, y C3 decía `ok` sin que `B.pdf` tuviera entrada. La
+    entrada contradice a la fuente de su propia ruta: es `fallo`, y su hash no acredita a otra."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "rel_path": "A.pdf", "sha256": _SHA_A},
+                          {"slug": "b", "rel_path": "B.pdf", "sha256": _SHA_B}])
+    _catalogo_de(c, {"ruta_relativa": "A.pdf", "hash": _SHA_B})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["contradicciones"] == ["A.pdf"], r.evidencia
+    assert r.evidencia["sin_catalogar"] == ["B.pdf"], r.evidencia
+    assert "contradice" in r.detalle, r.detalle
+
+
+def test_287_R1H01_la_ruta_del_catalogo_con_OTRO_sha256_es_contradiccion(tmp_path):
+    """H-01, la versión mínima: la ruta cuadra y el contenido catalogado no es el procesado."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "rel_path": "A.pdf", "sha256": _SHA_A}])
+    _catalogo_de(c, {"ruta_relativa": "A.pdf", "hash": _SHA_X})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["contradicciones"] == ["A.pdf"], r.evidencia
+
+
+def test_287_R1H04_una_entrada_SIN_hash_cruza_por_ruta_y_se_declara(tmp_path):
+    """H-04: el productor admite un `hash` vacío (`manifiesto_parser.sha_valido`). Cruzar por la
+    ruta es lo único posible, y no es un cotejo íntegro: la salida lo dice."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "rel_path": "A.pdf", "sha256": _SHA_A}])
+    _catalogo_de(c, {"ruta_relativa": "A.pdf", "hash": ""})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["solo_por_ruta"] == 1, r.evidencia
+    assert "sin sha256 que contrastar" in r.detalle, r.detalle
+
+
+def test_287_R1H04_una_entrada_SIN_ruta_cruza_por_sha_y_se_declara(tmp_path):
+    """H-04: sin ruta, la entrada no dice dónde está lo que presenta; el contenido sí casa."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "rel_path": "A.pdf", "sha256": _SHA_A}])
+    _catalogo_de(c, {"hash": _SHA_A})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["solo_por_sha"] == 1, r.evidencia
+    assert "solo por sha256" in r.detalle, r.detalle
+
+
+def test_287_R1H04_una_ruta_AJENA_con_el_sha256_de_una_fuente_se_declara(tmp_path):
+    """H-04: la entrada apunta a una ruta que la cobertura no tiene y su hash es el de otra
+    fuente. Es la copia en otra carpeta o la sala antigua sin la ruta de `00_Input` (W-02JSVZ,
+    147 entradas; W-02X1WJ, 3): el contenido está, y el sitio que anuncia no se acredita."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "rel_path": "A.pdf", "sha256": _SHA_A}])
+    _catalogo_de(c, {"ruta_relativa": "OTRA/A.pdf", "hash": _SHA_A})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["solo_por_sha"] == 1, r.evidencia
+    assert "solo por sha256" in r.detalle, r.detalle
+
+
+def test_287_R1H04_la_COPIA_por_sha256_no_se_declara_como_ruta_no_acreditada(tmp_path):
+    """Control positivo de los dos anteriores: la copia en otra carpeta es el `dedup_por_sha`
+    de la skill —la entrada lleva la ruta de OTRA fuente con el mismo contenido— y no es una
+    ruta sin acreditar. Declararla como tal volvería ruido el aviso."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "x", "rel_path": "ARRAS/x.pdf", "sha256": _SHA_A},
+                          {"slug": "x2", "rel_path": "OFERTAS/x.pdf", "sha256": _SHA_A}])
+    _catalogo_de(c, {"ruta_relativa": "ARRAS/x.pdf", "hash": _SHA_A})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert (r.evidencia["por_sha"], r.evidencia["solo_por_sha"]) == (1, 0), r.evidencia
+
+
+def test_287_R1H03_dos_catalogos_con_las_mismas_fuentes_cuadran_y_se_dice_que_solo_por_eso(tmp_path):
+    """H-03: el plan prometía «las mismas entradas» y se comparaban los pares ruta/sha256. El
+    contrato es ese —ningún productor escribe otro `estado` que `original`—, y la salida dice
+    que es lo único que se coteja."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "rel_path": "A.pdf", "sha256": _SHA_A}])
+    _catalogo_de(c, {"id_doc": "1", "ruta_relativa": "A.pdf", "hash": _SHA_A})
+    sala = _con_sala_lectura(c)
+    (sala / "indice_documental.yaml").write_text(
+        yaml.dump([{"id_doc": "2", "ruta_relativa": "A.pdf", "hash": _SHA_A}]), encoding="utf-8")
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert "sus demás campos no se cotejan" in r.detalle, r.detalle
+
+
+def test_287_R1H05_un_hijo_con_doc_id_cuyo_slug_NO_lo_lleva_es_huerfano(tmp_path):
+    """H-05: la guarda aceptaba cualquier sufijo tras `<padre>__`. Con `doc_id`, el split
+    construye `<padre>__<doc_id>_<TIPO>` (`split_documental._slug_seg`), y así lo llevan las 668
+    piezas con `doc_id` de los 23 casos reales."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "bundle__basura", "parent_slug": "bundle",
+                           "doc_id": "d01"}])
+    _con_catalogo(c, ["bundle"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO, f"{r.detalle} · {r.evidencia}"
+    assert "no está en la cobertura" in r.detalle, r.detalle
+
+
+def test_287_R1H05_el_doc_id_se_casa_ENTERO_en_el_slug(tmp_path):
+    """El `_` tras el `doc_id` es parte de la forma: sin él, la pieza `d01` aceptaría el slug de
+    una `d010`."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "bundle__d010_DOC", "parent_slug": "bundle",
+                           "doc_id": "d01"}])
+    _con_catalogo(c, ["bundle"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO, f"{r.detalle} · {r.evidencia}"
+
+
+def test_287_R1H05_un_hijo_con_doc_id_y_su_slug_canonico_cuadra(tmp_path):
+    """Control positivo del anterior."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "bundle__d01_DOC_PBC", "parent_slug": "bundle",
+                           "doc_id": "d01"}])
+    _con_catalogo(c, ["bundle"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+
+
+def test_287_R1H06_un_zip_crudo_con_el_chat_en_OTRA_carpeta_si_se_exige(tmp_path):
+    """H-06: el control de la suite no ponía ningún otro chat en el expediente, así que el
+    mutante «hay algún `_chat.txt` en la cobertura» sobrevivía. La regla de la skill es la
+    MISMA carpeta."""
+    c = _caso(tmp_path)
+    zip_otro = "2026-09-25_whatsapp_02/_export_original.zip"
+    _con_sala_maquina(c, [{"slug": "chat", "rel_path": "2026-09-25_whatsapp_01/_chat.txt",
+                           "sha256": _SHA_A},
+                          {"slug": "zip", "rel_path": zip_otro, "sha256": _SHA_B}])
+    _catalogo_de(c, {"ruta_relativa": "2026-09-25_whatsapp_01/_chat.txt", "hash": _SHA_A})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == [zip_otro], r.evidencia
+
+
+def test_287_el_ok_no_cuenta_como_catalogado_lo_que_NO_se_exige(tmp_path):
+    """Visto al esperar la ronda, no por ella: el `ok` decía «las 3 fuentes de la cobertura
+    están en el catálogo» con dos de ellas descontadas como protocolo, que no están."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "caso", "rel_path": "_caso.md"},
+                          {"slug": "m", "rel_path": "2026-09-10_email_01/_manifiesto.yaml"}])
+    _con_catalogo(c, ["a"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert "la única fuente exigible" in r.detalle, r.detalle
+
+
+def test_306_R1H02_el_ok_de_C1_dice_que_el_contenido_de_un_nativo_NO_se_contrasta(tmp_path):
+    """H-02: con el nativo `x` en el remoto y un `x.docx` cualquiera en disco, C1 decía
+    «cruzados con su exportación», que suena a procedencia acreditada. C1 es un censo de
+    NOMBRES —para ningún fichero mira el contenido— y el de un nativo tampoco lo mira C2,
+    porque Drive no publica su hash: la salida tiene que decirlo."""
+    c = _caso_drive(tmp_path, {"x.docx": b"bytes cualesquiera"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("x", mime_type=_DOC)])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.OK, r.detalle
+    assert va._AVISO_NATIVOS_SIN_CONTRASTE in r.detalle, r.detalle
