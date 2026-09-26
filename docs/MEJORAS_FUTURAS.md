@@ -13026,7 +13026,7 @@ fichero contra la que cotejarlo.
 **Disparador de promoción.** El primer expediente real cuyos requeridos no tengan ni correo ni
 móvil y necesite aportar el certificado del burofax.
 
-## 287. C3 de `verificar_apertura` no puede pasar en NINGÚN caso con bundles partidos: falla en los nueve del repo
+## 287. C3 de `verificar_apertura` no puede pasar en NINGÚN caso con bundles partidos: falla en los nueve del repo  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Rescatada el 2026-09-25 del PR #387**, donde llevaba el número 277 desde el 2026-09-16
 > (apertura de W-030A13). Ese PR no se mergeó y otra entrada ocupó el 277 en `main`; la nota de
@@ -13066,6 +13066,17 @@ distintos. Pero **4** filas sí tienen su padre en la cobertura, así que «el s
 es universal: un arreglo que se apoye en la ausencia tiene que contar con esos casos. En este
 expediente `plan` había escrito 57 `_segmentacion.json` antes de `apply`; no se ha medido si eso
 decide qué compuestos conservan fila padre.
+
+**CERRADA el 2026-09-26 (PR #NNN, fila #44 de `PLAN.md`).** El remedio cambió al medir los 23
+expedientes con cobertura y catálogo: acreditar al padre por el slug del hijo —que es estructural en
+el 100 % de las piezas— no bastaba, porque **por cardinalidad no cuadraba ninguno**; los dos lados
+cuentan poblaciones distintas. Las «4 filas con padre» de W-02Y2J6 son filas `duplicado` que
+llevan ese slug. C3 compara ahora **por identidad**, que era lo que esta entrada señalaba como «el
+contraste que sí funciona»: cada ruta de origen de la cobertura contra el catálogo por ruta y, si no,
+por sha256, y al revés. Solo no se exige el protocolo del registro por ubicación y el zip crudo de
+WhatsApp junto a su chat. Sobre los 23: 5 en `ok` (W-030A13 entre ellos), 14 que nombran lo no
+catalogado —ver `#316`— y 4 con dos catálogos que no cuadran, que ya fallaban. Plan y
+adjudicación: `docs/superpowers/plans/2026-09-26-verificar-apertura-c1-c2-c3.md`.
 
 ---
 
@@ -13566,7 +13577,7 @@ diciendo que el hecho acreditado es el de ese estado.
 
 ---
 
-## 306. `verificar_apertura` C1: los ficheros nativos de Google salen a la vez como faltantes y como sobrantes
+## 306. `verificar_apertura` C1: los ficheros nativos de Google salen a la vez como faltantes y como sobrantes  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Medido el 2026-09-25, abriendo W-02Y2J6.** Falso positivo: el espejo estaba completo.
 
@@ -13590,9 +13601,16 @@ raíz de nombre.
 
 **Disparador de promoción.** La próxima apertura cuyo C1 falle con nombres sin extensión.
 
+**CERRADA el 2026-09-26 (PR #NNN, fila #44 de `PLAN.md`).** El censo guarda el `mimeType` —el
+adaptador lo pedía y lo tiraba— y C1 cruza cada nativo por el nombre con que rclone lo deja en disco:
+los formatos de exportación por defecto (`docx,xlsx,pptx,svg`, comprobados en rclone 1.73.5), que el
+pull no cambia y que un test anti-deriva de `intake_drive` vigila. C2 cruza por la misma clave. Un
+nativo sin formato de exportación sigue saliendo faltante. Sin corrida de red todavía: el primer
+`--con-red` de una apertura es el control.
+
 ---
 
-## 307. `verificar_apertura` C2: todo fichero con formato ZIP sale «sin explicar» aunque sea el relleno de `#225`
+## 307. `verificar_apertura` C2: todo fichero con formato ZIP sale «sin explicar» aunque sea el relleno de `#225`  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Medido el 2026-09-25, abriendo W-02Y2J6.** Cinco «sin explicar» que eran el defecto conocido.
 
@@ -13616,6 +13634,12 @@ formatos, es el caso seguro.
 probar los prefijos de longitud `tamaño - k` para `k < 512`.
 
 **Disparador de promoción.** El próximo C2 con «sin explicar» sobre un `.zip`, `.docx` o `.xlsx`.
+
+**CERRADA el 2026-09-26 (PR #NNN, fila #44 de `PLAN.md`)** por la segunda vía del remedio: se
+prueba cada frontera posible dentro de la cola de ceros y el sha256 fija cuál es, sin leer el `size`
+de Drive. El test `n9`, que exigía no confirmar un original que ya acababa en ceros, se reescribió
+—declarado en su docstring y en el plan §3—, y su escenario con el contenido alterado quedó como
+control (`n9b`).
 
 ---
 
@@ -13841,3 +13865,31 @@ con 0 o 1. Coste acotado: dos funciones cortas y un test por cada una con el com
 
 **Disparador de promoción.** La próxima campaña de mutantes con uno de esos tres arneses, la
 próxima vez que se use `health_check` para acreditar una instalación, o una decisión de Nikolai.
+
+---
+
+## 316. La sala de lectura no recoge audios, zips ni tarjetas de contacto, y ninguna regla dice que no deba
+
+> **Medido el 2026-09-26** con la C3 por identidad de `verificar_apertura` (`#287`, fila #44 de
+> `PLAN.md`), en solo lectura sobre los 23 expedientes con cobertura y catálogo.
+
+En **14 de 23** expedientes hay documentos que la sala de máquina inventarió y que la skill
+`organizar-sala-lectura` no llevó al catálogo. Casi todos son lo que la sala de máquina no extrae
+(`sin_soporte`): W-02Y2J6, 8 `.opus` —audios de WhatsApp—, 7 `.zip`, 2 `.vcf` y un `.mp4`; W-030TZY,
+3 `.vcf`, 2 `.zip`, un `.opus` y un `.gif`; W-02VEKE, 3 `.zip`. Pero no solo: W-0462E1 tiene 10
+`.pdf` sin catalogar, W-02V48N 4 y W-02UIQU 3, y W-02O7E2 12 `.png` de correo (10 de ellos copias).
+
+**Por qué importa.** La sala de lectura es lo que se lee para el análisis del caso; un audio de
+WhatsApp o un PDF que no llega allí no se lee. Hasta hoy nadie lo veía: C3 contaba y no nombraba.
+
+**La frontera:** la población del catálogo es implícita —lo que la skill lista y decide clasificar—,
+y la única exclusión escrita es el zip crudo de WhatsApp (`emparejar_exports_whatsapp`). Lo demás se
+queda fuera sin regla, y un verificador no puede distinguir un olvido de una decisión.
+
+**Remedio probable.** Una de dos, y es decisión del contrato de la skill: que catalogue todo lo que
+lista —`08. PENDIENTE DE CLASIFICAR` para lo que no sepa leer—, o que declare por escrito qué familias
+excluye (las imágenes incrustadas de un correo, por ejemplo) y C3 adopte la misma regla con un test
+anti-deriva, como ya hace con el zip crudo.
+
+**Disparador de promoción.** Una decisión de Nikolai sobre qué debe recoger la sala de lectura, o
+la próxima apertura en que uno de estos documentos resulte prueba relevante.
