@@ -1561,10 +1561,12 @@ ni a construir C6.
 - **Hallazgos:** 4 — 1 `alta`, 1 `media`, 2 `baja`; 4 confirmados contra la fuente, 0 refutados; y una observación que el revisor no eleva a hallazgo, confirmada también
 - **Remediado en:** este mismo PR, sobre `93c1907`: `core/crm_ficha.py` y `scripts/crm_ficha.py` con sus tests (`cc5a241`), los dos arneses, el spec rev. 4 y `MEJORAS #306`/`#307`. **Ninguna ronda revisa el remedio**: esta era la última autorizada
 
-**Los cuatro se reprodujeron contra la fuente, no contra el informe** (acta §2), y cada test del
-remedio se vio en rojo antes de su código —los del H-01 en la integración, por su mutante—. Antes
-de remediar, la pregunta de siempre: **¿de qué frontera es esto un ejemplo?** No son cuatro defectos
-sueltos, son dos fronteras y una ventana.
+**Los cuatro se reprodujeron contra la fuente, no contra el informe** (acta §2). Los tests de las
+reglas nuevas se vieron en rojo antes de su código; los de integración del H-01, escritos con el
+core ya corregido, acreditan su sensibilidad por sus mutantes (M21, M22); y la creación fallida de
+colaborador cubre un comportamiento que ya existía, así que pasó a la primera. Antes de remediar,
+la pregunta de siempre: **¿de qué frontera es esto un ejemplo?** No son cuatro defectos sueltos,
+son dos fronteras y una ventana.
 
 **Frontera 1 — lo que se compara tiene que ser lo que se escribe, y lo que se busca (H-01, H-02).**
 
@@ -1606,7 +1608,7 @@ sueltos, son dos fronteras y una ventana.
   la pérdida que el test existe para detectar—, que muere por `DID NOT RAISE`. La acredita el arnés
   estricto de esta pieza, cuyo M34 es la misma sustitución.
 
-**La ventana — la abre la propia corrida, no solo el despacho (la observación).** Cada parte se
+**La ventana — la abre la propia corrida, no solo otra sesión (la observación).** Cada parte se
 compara con el CRM de **antes** de la corrida, así que dos declaraciones que acaban en la misma ficha
 pasaban las dos y la primera completaba lo que la segunda contradice. **Remedio:** lo que se decide
 sin el CRM, al validar —el mismo `id_crm` o el mismo NIF canónico en dos partes de un rol, y un email

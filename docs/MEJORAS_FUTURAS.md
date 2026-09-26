@@ -12897,7 +12897,7 @@ repos necesita una sesión, no una por repo.**
 
 ---
 
-## 283. `_ficha_crm.yaml`: una clave que el loader no conoce se descarta en silencio, y el dato no llega al CRM  [PROMOVIDO → PLAN.md 2026-09-25]
+## 283. `_ficha_crm.yaml`: una clave que el loader no conoce se descarta en silencio, y el dato no llega al CRM  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-25]
 
 > **Medido el 2026-09-23 por GET** sobre el extrajudicial 653 (W-030A13), desde la sesión de
 > W-0462E1.
@@ -12927,6 +12927,14 @@ W-030A13.
 rechazar en vez de avisar: de los 14 `_ficha_crm.yaml` reales, la única clave desconocida es esta
 misma `apellido`, dos veces y las dos en W-030A13. Y el daño llega al burofax: Codicert compone el
 nombre del requerido desde los campos del CRM que esta clave dejó vacíos.
+
+**CERRADA el 2026-09-26 (PR #400, fila #40 de `PLAN.md`), junto con `#288`.** El
+`_ficha_crm.yaml` se lee con un lector sin pérdida —claves repetidas, alias, merge y claves que no
+son texto, todo con su línea— que comparten `cargar_ficha_yaml` y `crm_colaboradores_firmas.apply`,
+y se valida entero antes de tocar el CRM: una clave desconocida sale con su ruta y **todas** las
+sugerencias cercanas (`apellido` → `apellido1` o `apellido2`), sin convertirse en alias. W-030A13
+se rechaza ahora por sus dos `apellido`, que es exactamente este defecto. Lo que no cierra, porque
+es otra decisión: reparar las fichas 1128 y 1129 (`#305`).
 
 ---
 
@@ -13027,7 +13035,7 @@ el padre existe —es el PDF de `00_Input`—; lo que no existe es su fila en la
 
 ---
 
-## 288. La verificación de `crm_ficha` comprueba INCLUSIÓN, no igualdad: dos colaboradores ajenos pasaron por delante de un «VERIFICADA por lectura»  [PROMOVIDO → PLAN.md 2026-09-25]
+## 288. La verificación de `crm_ficha` comprueba INCLUSIÓN, no igualdad: dos colaboradores ajenos pasaron por delante de un «VERIFICADA por lectura»  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-25]
 
 > **Rescatada el 2026-09-25 del PR #387** (allí, número 279; apertura de W-030A13, 2026-09-16),
 > por la misma causa que `#287`. El texto es el del PR.
@@ -13084,6 +13092,14 @@ expediente, y un error suyo da acceso a quien no debe tenerlo.
 ese día: el `_ficha_crm.yaml` es la lista **completa** de partes, así que un vínculo que no
 declara es un **fallo** de la verificación, no un aviso, y `crm_ficha` no desvincula nunca. Diseño
 en `docs/superpowers/specs/2026-09-25-crm-ficha-claves-y-conjunto-design.md`.
+
+**CERRADA el 2026-09-26 (PR #400, fila #40 de `PLAN.md`), junto con `#283`.** La verificación
+compara por **igualdad**: los vínculos de los tres bloques con multiplicidad —un vínculo de más
+sale como `[SOBRA]` y la corrida falla, el 653 reproducido da dos— y los **datos** declarados de
+cada parte, creada o existente, contra su ficha (`[DATO]` vacío o distinto). «VERIFICADA: vínculos
+y datos de la ficha» solo sale con todo leído y todo igual. Antes de escribir, una fase previa de
+solo lectura no deja escribir nada sobre una ficha que el YAML contradice. Tres rondas de Codex, la
+última sobre el diff y remediada sin otra ronda (plan §10).
 
 ---
 

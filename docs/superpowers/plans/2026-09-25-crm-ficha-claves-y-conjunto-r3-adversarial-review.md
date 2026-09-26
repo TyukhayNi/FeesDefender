@@ -392,6 +392,6 @@ REQUIERE-REVISION
 - **La observación que no eleva a hallazgo, también reproducida:** dos declaraciones que resuelven a
   la misma ficha —el mismo `id_crm`, o dos partes nuevas con el mismo NIF— pasan cada una la fase
   previa contra el estado **anterior** a la corrida, y la primera completa lo que la segunda
-  contradice. El spec rev. 3 §5 decía que esa ventana solo la abre la concurrencia del despacho: es
-  inexacto, la abre la propia corrida.
+  contradice. El spec rev. 3 §5 decía que esa ventana solo la abre otra sesión trabajando a la vez:
+  es inexacto, la abre la propia corrida.
 - **Adjudicación:** `docs/superpowers/plans/2026-09-25-crm-ficha-claves-y-conjunto.md` §10.

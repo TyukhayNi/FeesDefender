@@ -1034,7 +1034,7 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
 > hay helper cableado; para el juzgado, ver el punto 7 de la checklist.
 
 > **El contrato del `_ficha_crm.yaml`** (fila #40 de `PLAN.md`, `MEJORAS #283` + `#288`; diseño en
-> `docs/superpowers/specs/2026-09-25-crm-ficha-claves-y-conjunto-design.md`, rev. 3):
+> `docs/superpowers/specs/2026-09-25-crm-ficha-claves-y-conjunto-design.md`, rev. 4):
 > 1. **Claves:** en la raíz, `contrario`, `colaboradores`, `notas_html`, `cliente_propio` y
 >    `firmante`; en un contrario, `nombre`, `apellido1`, `apellido2`, `email`, `movil`, `nif`,
 >    `direccion`, `poblacion`, `cp`, `provincia`, `telefono` e `id_crm`; en un colaborador,
@@ -1042,15 +1042,19 @@ posición). El resto va **aparte**, todo **REST con `x-api-key`, sin PHPSESSID**
 >    sugerencia: `apellido` → `apellido1` o `apellido2`), igual que una clave repetida, un alias o
 >    un merge. Todos los problemas salen juntos, **antes de tocar el CRM**.
 > 2. **Tipos:** cada dato es un texto —entre comillas si empieza por cero— o `null`; la
->    `provincia` tiene que ser una del CRM, y un teléfono no puede quedarse vacío al normalizarse
->    (`'+34'`).
+>    `provincia` tiene que ser una del CRM, y ni un teléfono (`'+34'`) ni un NIF (`'-- .'`) pueden
+>    quedarse vacíos al normalizarse.
 > 3. **Identidad:** toda parte lleva **NIF, email o `id_crm`** —el número de su ficha en el CRM,
->    para una parte sin identificadores o que alguien vinculó a mano—.
+>    para una parte sin identificadores o que alguien vinculó a mano—. Dos partes del mismo rol no
+>    pueden llevar el mismo NIF ni el mismo `id_crm`, y si comparten email —un matrimonio con un
+>    solo correo— las dos llevan su NIF, o las dos su `id_crm`: el CRM solo las distingue por el
+>    documento.
 > 4. **El YAML es la lista COMPLETA de partes:** una parte vinculada que no declara sale como
 >    `[SOBRA]` y la corrida falla. Si es legítima, añádela (con `id_crm` si no tiene NIF ni email)
 >    y relanza; si no, desvincúlala a mano. `crm_ficha` no desvincula.
-> 5. **Datos:** si una ficha que ya existe tiene un dato **distinto** del YAML, la corrida **no
->    escribe nada** y lo lista; un dato que no llegó sale como `[DATO]` después de escribir. Los
+> 5. **Datos:** si una ficha que ya existe tiene un dato **distinto** del YAML, o dos partes
+>    resuelven a la misma ficha, la corrida **no escribe nada** y lo lista; un dato que no llegó
+>    sale como `[DATO]` después de escribir. Los
 >    dos se corrigen a mano, en el CRM o en el YAML: `crm_ficha` no pisa datos. «VERIFICADA:
 >    vínculos y datos de la ficha» certifica exactamente eso, y nada más.
 

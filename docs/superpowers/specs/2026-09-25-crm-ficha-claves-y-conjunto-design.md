@@ -296,7 +296,7 @@ sobrantes sin serlo. El código de salida sigue siendo 1 (la R1 lo comprobó: no
   una ficha **histórica** cuyo NIF se guardó con separadores, que la búsqueda canónica no encuentra:
   buscar duplicados escritos de cualquier forma es otra ampliación. Cerrarlo del todo es buscar
   también por los identificadores declarados, que es otra decisión sobre A.4 (`MEJORAS #306`).
-- **Entre la comparación y la escritura el CRM puede cambiar, y no solo por el despacho: también
+- **Entre la comparación y la escritura el CRM puede cambiar, y no solo por otra sesión: también
   por la propia corrida** (R3, observación). Las dos resuelven por separado —la fase previa lee y
   `ensure_*` vuelve a resolver—, y lo que la corrida escribe entre una parte y la siguiente cambia
   lo que la siguiente encuentra. Lo que eso tenía de **silencioso** —dos partes que acaban en una
@@ -305,7 +305,7 @@ sobrantes sin serlo. El código de salida sigue siendo 1 (la R1 lo comprobó: no
   resolución de una parte posterior **pare** a mitad —un contrario por id cuya ficha no tiene NIF
   recibe el email que otra parte comparte, y el buzón de esa otra ya no tiene documento con que
   descartarla—; la corrida sale con 1 y una escritura parcial, que la lectura parcial dice. Y la
-  ventana frente a **otra sesión**, como estaba: nada en el despacho la hace probable —tres
+  ventana frente a **otra sesión**, como estaba: nada en el equipo la hace probable —tres
   abogados que no trabajan a la vez sobre el mismo expediente—, aunque nada la impide: `crm_ficha`
   tampoco toma el mutex (fila #17 de `PLAN.md`). No se construye un bloqueo para esto.
 - **`_resolver_colaborador` ignora el `motivo` de `resolver_parte`**, anterior a esta pieza: ante un
