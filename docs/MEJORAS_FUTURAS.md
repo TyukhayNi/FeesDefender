@@ -13814,3 +13814,30 @@ persona).
 
 **Disparador de promoción.** Un colaborador ajeno a E&V que comparta correo con otra ficha, o el
 primer `[SOBRA]` o `[DATO]` de un colaborador que se explique por esto.
+
+---
+
+## 315. `health_check` y los `_corre` de tres arneses leen un comando que falla como resultado bueno
+
+> **Medido el 2026-09-26** por la R1 de Codex sobre «git que falla en voz alta»
+> (`docs/superpowers/plans/2026-09-26-git-que-falla-en-voz-alta.md` §4), como observación aparte:
+> la misma propiedad que esa pieza cerró para git, con otras herramientas.
+
+- **`scripts/health_check.py`** (`_check_system_binaries`, l. 104-118): cuenta cero errores y
+  muestra tres marcas positivas aunque todos los comandos de versión devuelvan un código de error;
+  el stderr con el mensaje de error acaba impreso como si fuera la versión. Falta mirar el código
+  antes de `_ok`.
+- **Los `_corre` de `tests/_mutantes_accion_6a.py`, `_mutantes_mejoras_136.py` y
+  `_mutantes_renovacion_mutex.py`** buscan líneas `FAILED` en la salida de pytest sin mirar su
+  código: un pytest que no arranca (rc=4, error de uso) devuelve `set()`, y el llamador lo lee como
+  línea base verde. No acredita por sí solo una campaña falsamente verde —los mutantes esperados
+  saldrían supervivientes después—, pero un arnés que no distingue «corrida inválida» de «ningún
+  fallo» es el mismo «no pude mirar» leído como «nada».
+
+**Remedio probable.** En los dos, separar el fallo de la herramienta del resultado vacío, como ya
+hacen los arneses más robustos (`_mutantes_particion_124.py` para en «NO SE PUDO CONSULTAR GIT»):
+`health_check` cuenta como error un código distinto de 0, y cada `_corre` para si pytest no sale
+con 0 o 1. Coste acotado: dos funciones cortas y un test por cada una con el comando que falla.
+
+**Disparador de promoción.** La próxima campaña de mutantes con uno de esos tres arneses, la
+próxima vez que se use `health_check` para acreditar una instalación, o una decisión de Nikolai.

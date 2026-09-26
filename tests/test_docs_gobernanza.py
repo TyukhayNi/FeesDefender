@@ -2,9 +2,10 @@
 
 import hashlib
 import re
-import subprocess
 import unicodedata
 from pathlib import Path
+
+from tests import _git
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -37,16 +38,24 @@ def test_estado_frontmatter_valido():
     assert not malos, f"docs con estado: ausente o invalido: {malos}"
 
 
-def test_sin_refs_a_docs_plan_legacy():
-    """Tras la reubicacion, ningun fichero trackeado debe citar docs/PLAN_*.md
-    en la raiz de docs/ (ahora viven en docs/superpowers/plans/)."""
-    r = subprocess.run(
-        ["git", "grep", "-l", "-E", r"docs/PLAN_[A-Za-z]"],
-        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    # git grep devuelve 1 (sin match) => vacio => OK.
-    ofensores = [
-        ln for ln in r.stdout.splitlines()
+def _refs_a_docs_plan_legacy(repo: Path | None = None) -> list[str]:
+    """Ficheros trackeados que citan `docs/PLAN_*.md` en la raiz de docs/.
+
+    `git grep` devuelve 1 cuando no encuentra nada, que aqui es la respuesta buena; cualquier
+    otro codigo es que no ha podido mirar, y eso PARA (plan 2026-09-26, git que falla en voz
+    alta): antes se leia como «sin coincidencias» y el guard daba verde sin haber buscado.
+    `repo` se inyecta para poder probarlo contra un ofensor de laboratorio (R1/H-06); sin el,
+    `ROOT` se lee AL LLAMAR, para que quien redirija el guard parcheandolo lo siga redirigiendo.
+    """
+    repo = repo or ROOT
+    r = _git.git("grep", "-l", "-E", r"docs/PLAN_[A-Za-z]", cwd=repo, rc_validos=(0, 1))
+    return [ln for ln in r.stdout.splitlines() if ln]
+
+
+def _ofensores_plan_legacy(lineas: list[str]) -> list[str]:
+    """Las referencias que el guard acusa: todas menos las excepciones documentadas."""
+    return [
+        ln for ln in lineas
         if ln and "test_docs_gobernanza.py" not in ln
         and "docs/superpowers/plans/2026-07-18-gobernanza-planificacion.md" not in ln
         # Excepcion documentada (D5, 2026-07-18): esta linea cita
@@ -55,7 +64,18 @@ def test_sin_refs_a_docs_plan_legacy():
         # aqui. Coincide con el patron por casualidad (mismo prefijo
         # "docs/PLAN_"); no existe en este repo y no se reubica.
         and "docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md" not in ln
+        # Excepcion documentada (2026-09-26): el acta de la R1 de «git que falla en voz alta»
+        # conserva LITERAL el informe del revisor, que cita el plan heredado SINTETICO de su
+        # laboratorio —no existe en este repo—. El bloque literal no se puede tocar: lo sella G8.
+        and "docs/superpowers/plans/2026-09-26-git-que-falla-en-voz-alta-r1-adversarial-review.md"
+        not in ln
     ]
+
+
+def test_sin_refs_a_docs_plan_legacy():
+    """Tras la reubicacion, ningun fichero trackeado debe citar docs/PLAN_*.md
+    en la raiz de docs/ (ahora viven en docs/superpowers/plans/)."""
+    ofensores = _ofensores_plan_legacy(_refs_a_docs_plan_legacy())
     assert not ofensores, f"referencias a docs/PLAN_* sin actualizar: {ofensores}"
 
 
@@ -138,9 +158,10 @@ def _expandir_llaves(token: str) -> list[str]:
 
 
 def _md_trackeados() -> list[Path]:
-    r = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
-                       capture_output=True, text=True, encoding="utf-8", errors="replace")
-    return [ROOT / ln for ln in r.stdout.splitlines() if ln]
+    """Los `.md` trackeados. Si `git` no puede enumerarlos, PARA: una lista vacia haria pasar
+    en verde, sin mirar nada, a todos los guards que la recorren (R1 de los estados medidos,
+    2026-09-26: en la copia sin `.git` de los revisores, eso es lo que pasaba)."""
+    return [ROOT / ln for ln in _git.trackeados(ROOT, "*.md")]
 
 
 def test_citas_a_specs_y_plans_existen():

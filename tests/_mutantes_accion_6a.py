@@ -184,7 +184,9 @@ def _restaura() -> None:
 
 
 def main() -> int:
-    sucio = subprocess.run(["git", "status", "--porcelain"], cwd=RAIZ,
+    # check=True: si git falla, `sucio` saldria vacio y el arnes mutaria creyendo el arbol
+    # limpio (plan 2026-09-26, git que falla en voz alta).
+    sucio = subprocess.run(["git", "status", "--porcelain"], cwd=RAIZ, check=True,
                            capture_output=True, encoding="utf-8").stdout.strip()
     if sucio:
         print("ARBOL SUCIO: se restaura con `git checkout` desde el INDICE y perderias\n"

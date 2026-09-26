@@ -350,3 +350,91 @@ def test_hook_leak_guard_es_verbose_para_que_el_aviso_se_vea():
     hooks = [h for r in cfg["repos"] for h in r.get("hooks", []) if h.get("id") == "leak-guard"]
     assert len(hooks) == 1
     assert hooks[0].get("verbose") is True
+
+
+# --- (P3) la lista PARCIAL también se declara (R1/H-01 de «git que falla en voz alta») ------------
+#
+# Con términos en el árbol que se commitea y el principal SIN determinar, el aviso de lista VACÍA no
+# salta —la lista no está vacía— y el guard escaneaba con la mitad sin decirlo: devolvía 0 con
+# stdout y stderr vacíos. El revisor lo reprodujo inyectando el fallo SOLO en `git worktree list`,
+# con el resto de git corriendo de verdad; aquí se hace igual.
+
+import scripts.precommit_leak_guard as plg
+
+
+def _falla_solo_worktree_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = plg._git
+
+    def _git_con_fallo(repo, *args):
+        if args[:2] == ("worktree", "list"):
+            return None  # lo que `_git` devuelve cuando git sale con un código distinto de 0
+        return original(repo, *args)
+
+    monkeypatch.setattr(plg, "_git", _git_con_fallo)
+
+
+@pytest.fixture
+def worktree_con_lista_propia(repo_con_worktree):
+    """El worktree con UN término propio; «Fulano Menganez» vive SOLO en el principal."""
+    raiz, wt = repo_con_worktree
+    cfg = wt / "data" / "_config"
+    cfg.mkdir(parents=True)
+    (cfg / "pii_blocklist.txt").write_text("Canario Local\n", encoding="utf-8")
+    return raiz, wt
+
+
+def test_con_git_sano_el_termino_del_principal_bloquea_y_no_hay_aviso_de_parcial(
+        worktree_con_lista_propia, capsys):
+    _, wt = worktree_con_lista_propia
+    r = _crea(wt, "nota.md", "Reunión con Fulano Menganez.")
+    assert main(["guard", r], repo=wt) == 1
+    assert plg.AVISO_PARCIAL not in capsys.readouterr().err
+
+
+def test_principal_sin_determinar_con_terminos_propios_se_declara_parcial(
+        worktree_con_lista_propia, monkeypatch, capsys):
+    _, wt = worktree_con_lista_propia
+    _falla_solo_worktree_list(monkeypatch)
+    r = _crea(wt, "nota.md", "Reunión con Fulano Menganez.")
+    # No falla cerrado —la política del docstring no cambia—, pero ya no calla.
+    assert main(["guard", r], repo=wt) == 0
+    err = capsys.readouterr().err
+    assert plg.AVISO_PARCIAL in err
+    assert "git worktree list falló" in err
+    assert "1 término(s)" in err  # dice con cuántos escaneó
+    assert plg.AVISO_VACIA not in err  # la lista no está vacía: es el otro aviso
+
+
+def test_en_el_propio_principal_con_lista_no_hay_aviso(repo_con_worktree, capsys):
+    """El caso de CI y de quien commitea en el principal: nada que declarar."""
+    raiz, _ = repo_con_worktree
+    r = _crea(raiz, "nota.md", "Texto limpio.")
+    assert main(["guard", r], repo=raiz) == 0
+    err = capsys.readouterr().err
+    assert plg.AVISO_PARCIAL not in err and plg.AVISO_VACIA not in err
+
+
+def test_la_resolucion_distingue_lo_determinado_de_lo_que_no_se_pudo_saber(
+        repo_con_worktree, git_aislado, fuera_de_git, monkeypatch):
+    raiz, wt = repo_con_worktree
+    bare = git_aislado / "bare.git"
+    bare.mkdir()
+    _git(bare, "init", "-q", "--bare")
+    determinados = {"resuelto": wt, "es el principal": raiz, "bare": bare}
+    for que, arbol in determinados.items():
+        assert resolver_blocklist(arbol).principal_determinado is True, que
+    assert resolver_blocklist(fuera_de_git).principal_determinado is False
+    _falla_solo_worktree_list(monkeypatch)
+    bl = resolver_blocklist(wt)
+    assert bl.principal_determinado is False
+    assert bl.principal == "git worktree list falló"
+
+
+def test_git_dir_separado_deja_el_principal_sin_determinar(git_aislado: Path):
+    sep = git_aislado / "separate"
+    sep.mkdir()
+    _git(sep, "init", "-q", "-b", "main", "--separate-git-dir", str(git_aislado / "meta"))
+    _git(sep, "commit", "-q", "--allow-empty", "-m", "init")
+    wt = git_aislado / "sep_wt"
+    _git(sep, "worktree", "add", "-q", str(wt), "-b", "rama")
+    assert resolver_blocklist(wt).principal_determinado is False
