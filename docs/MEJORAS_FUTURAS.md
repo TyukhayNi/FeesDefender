@@ -13486,7 +13486,7 @@ ejemplar se conserva cuando un suelto y un adjunto son el mismo fichero.
 
 ---
 
-## 303. El aviso «PLAN.md ↔ git» de `session_close` toma las rutas `docs/…` por ramas, y no reconoce las ramas `claude/…`
+## 303. El aviso «PLAN.md ↔ git» de `session_close` toma las rutas `docs/…` por ramas, y no reconoce las ramas `claude/…`  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Medido el 2026-09-25, en el cierre de la sesión de mejoras de las aperturas (PR #397).** Es
 > un aviso y no bloquea nada: el coste es de atención, no de datos.
@@ -13514,6 +13514,14 @@ sale; una `claude/x` podada, sí. Una ronda: toca `scripts/`, no datos de client
 
 **Disparador de promoción.** El próximo cierre que tenga que explicar el aviso en vez de leerlo, o
 antes si se toca `session_close` por otra cosa.
+
+**CERRADA el 2026-09-26 (PR #404, fila #43 de `PLAN.md`).** El remedio cambió al medir: el repo sí
+ha usado ramas `docs/…` —62 de 400 PRs—, así que el prefijo se queda y lo que distingue una rama de
+una ruta es la extensión o que exista en el árbol. `claude` y `codex` entran en los prefijos, y cada
+fila de una tabla —también citada o sangrada— es su propio ítem. Sobre el `PLAN.md` real, el aviso
+pasó de 49 falsos avisos a uno verdadero —una nota que conservaba el nombre de una rama podada— y a
+cero al retirarlo. Una ronda de Codex (`gpt-6-sol`·`high`), `LISTA-CON-CAMBIOS`, con sus cuatro
+hallazgos remediados en el mismo PR (plan §7).
 
 ---
 
