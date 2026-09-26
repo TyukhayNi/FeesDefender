@@ -20,8 +20,11 @@ certificados** y producir la versión **aportable** como prueba.
 > requerida]», «[persona requerida]», «[mercantil requerida]») aquí, en el acta de la R1
 > —redacción declarada, con su digest recomputado—, en los planes de F1 y F2 y en dos docstrings
 > de `core/`. Lo que el dato probaba —que el destinatario SMS real lleva el prefijo `34`— se
-> conserva. **El historial de git conserva el dato**: purgarlo exige reescribirlo y recrear el
-> repo, y eso lo decide Nikolai.
+> conserva. **El historial de git conserva el dato**, y así se queda: purgarlo exige reescribirlo
+> y recrear el repo, y **Nikolai decidió no hacerlo** (2026-09-26), como en las rondas 2 y 3 del
+> saneado. La revisión adversarial de este diff —toca dos docstrings de `core/`— **la dispensó él**:
+> revisarlo le habría enseñado el dato otra vez al revisor. Los términos entran en la blocklist
+> local; el secret de CI, después del merge (el escaneo de CI recorre el árbol entero).
 >
 > **Rev. 17 (2026-09-26).** Los estados, **medidos sobre todos los envíos reales**: los 117 de
 > `madrid.bd` (del 2026-06-03 al 2026-09-23) y los 2 del sandbox, leídos en solo lectura (plan
