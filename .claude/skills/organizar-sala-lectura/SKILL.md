@@ -378,7 +378,7 @@ tal diálogo.
      "Corrida interrumpida"). `usar_async=True` no cuenta una copia grande legítima
      (>60s) como fallida.
    - **exit != 0** —3, client compartido; 4, `rclone` no instalado o el remote no
-     existe; 5, `rclone` tardó en responder: el script dice cuál— → copia
+     existe o no trae `type`; 5, `rclone` tardó en responder: el script dice cuál— → copia
      secuencial server-side con `copy_path`/`cp` (más lenta, sin prerrequisito). Con un
      5 y otra corrida de rclone en marcha, reintentar el precheck cuando termine.
    - **Modo 3 (nube pura) — binario grande sin filesystem:** si NO puedes calcular

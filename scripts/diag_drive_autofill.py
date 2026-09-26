@@ -8,11 +8,15 @@ Uso:
 
 Si no se pasa argumento, usa la URL del caso que está dando problemas:
     https://drive.google.com/drive/u/2/folders/1ARbjPzfix-RbYi2o2ZgoZ8W5FMBkP9Oa
+
+**No imprime nada del token** (R1/H-06 de la fila #42, `MEJORAS #296`): hasta el 2026-09-26
+escribía los primeros 30 caracteres del access_token, antes y después de renovarlo, y lo leía con
+su propia copia de `rclone config show` (5 s; un remote inexistente pasaba por existente, porque
+rclone sale con 0). Ahora usa el lector único, `obtener_token_drive`, y dice su motivo.
 """
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -22,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 
 from core.config import DRIVE_EV_TEAM_IDS  # noqa: E402
 from core.intake_drive import (  # noqa: E402
+    obtener_token_drive,
     parse_drive_url,
     parse_ev_folder_name,
 )
@@ -52,73 +57,15 @@ def main() -> int:
         print(f"  ❌ {e}")
         return 1
 
-    # ── 2. rclone config show gdrive_ev ────────────────────────────────────
-    step("2. rclone config show gdrive_ev — ¿está configurado el remote?")
-    try:
-        r = subprocess.run(
-            ["rclone", "config", "show", "gdrive_ev"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if r.returncode != 0:
-            print(f"  ❌ rclone returncode={r.returncode}")
-            print(f"     stderr: {r.stderr.strip()}")
-            return 1
-        print("  ✅ remote gdrive_ev existe")
-        # Extraer el campo token
-        token_line = next(
-            (l for l in r.stdout.splitlines() if l.strip().startswith("token")),
-            None,
-        )
-        if not token_line:
-            print("  ❌ no se encontró el campo 'token' en la config")
-            return 1
-        token_json_str = token_line.split("=", 1)[1].strip()
-        token_blob = json.loads(token_json_str)
-        access_token = token_blob.get("access_token", "")
-        expiry = token_blob.get("expiry", "")
-        print(f"     access_token  (primeros 30) = {access_token[:30]}…")
-        print(f"     expiry                       = {expiry}")
-    except FileNotFoundError:
-        print("  ❌ rclone no está en PATH")
+    # ── 2-3. El token de gdrive_ev, con el lector de la pieza (renueva si hace falta) ──
+    step("2. Token de gdrive_ev (obtener_token_drive: lee, y renueva si caduca)")
+    lectura = obtener_token_drive()
+    if not lectura.token:
+        print(f"  ❌ sin token: {lectura.motivo}")
         return 1
-    except Exception as e:  # noqa: BLE001
-        print(f"  ❌ excepción inesperada: {e!r}")
-        return 1
-
-    # ── 3. Forzar refresh del access_token: ejecutar un comando rclone ─────
-    step("3. Forzando refresh del access_token (rclone about gdrive_ev:)")
-    try:
-        r = subprocess.run(
-            ["rclone", "about", "gdrive_ev:", "--json"],
-            capture_output=True, text=True, timeout=20,
-        )
-        if r.returncode == 0:
-            print("  ✅ rclone refrescó el token (about OK)")
-        else:
-            print(f"  ⚠️ rclone about devolvió {r.returncode}")
-            print(f"     stderr (tail): {r.stderr[-500:]}")
-    except Exception as e:  # noqa: BLE001
-        print(f"  ⚠️ excepción: {e!r}")
-
-    # Releer token después del refresh
-    try:
-        r = subprocess.run(
-            ["rclone", "config", "show", "gdrive_ev"],
-            capture_output=True, text=True, timeout=5,
-        )
-        token_line = next(
-            (l for l in r.stdout.splitlines() if l.strip().startswith("token")),
-            None,
-        )
-        if token_line:
-            token_json_str = token_line.split("=", 1)[1].strip()
-            token_blob = json.loads(token_json_str)
-            access_token = token_blob.get("access_token", "")
-            expiry = token_blob.get("expiry", "")
-            print(f"     access_token POST-refresh (primeros 30) = {access_token[:30]}…")
-            print(f"     expiry POST-refresh                      = {expiry}")
-    except Exception:  # noqa: BLE001
-        pass
+    # Solo que lo hay: ni un carácter del token, que es una credencial.
+    print("  ✅ hay access_token vigente")
+    access_token = lectura.token
 
     # ── 4. Llamada a la Drive API v3 ───────────────────────────────────────
     step("4. GET https://www.googleapis.com/drive/v3/files/{folder_id}")
@@ -157,9 +104,9 @@ def main() -> int:
     print(f"  → ID GO        : {mls!r}")
     if not direccion and not mls:
         print(
-            "  ⚠️ El nombre de la carpeta NO encaja con el patrón\n"
-            "     ^<dirección>\\s*[-–]\\s*W-XXXXXX$ — el auto-fill de\n"
-            "     dirección/ID GO no se aplicará."
+            "  ⚠️ El nombre de la carpeta NO encaja con ninguno de los dos patrones\n"
+            "     «<dirección> - W-XXXXXX[ - consultor]» ni «W-XXXXXX - <dirección>[ - consultor]»\n"
+            "     — el auto-fill de dirección/ID GO no se aplicará."
         )
 
     # ── 6. Resolución de equipo a partir del driveId ───────────────────────

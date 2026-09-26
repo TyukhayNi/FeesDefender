@@ -62,8 +62,8 @@ MUTANTES: list[tuple[str, str, list[tuple[str, str]], str]] = [
      f"{_TOK}::test_si_el_remote_no_existe_lo_dice"),
 
     ("T04 la renovación que tarda pierde su causa", ID,
-     [('        return TokenDrive(None, ("el token estaba caducado y renovarlo (`rclone about gdrive_ev:`) "\n',
-       '        return TokenDrive(None, ("renovación fallida "\n')],
+     [('        return TokenDrive(None, (f"{_CADUCADO}, y renovarlo (`rclone about gdrive_ev:`) tardó "\n',
+       '        return TokenDrive(None, (f"renovación fallida, "\n')],
      f"{_TOK}::test_si_RENOVAR_tarda_lo_dice"),
 
     # El mutante deja el programa funcionando y arrastra la salida de rclone al motivo: es la
@@ -80,7 +80,7 @@ MUTANTES: list[tuple[str, str, list[tuple[str, str]], str]] = [
      f"{_CAR}::test_sin_token_devuelve_el_motivo_del_token"),
 
     ("T07 el HTTP que no es 200 no se dice", ID,
-     [('            return None, f"la Drive API respondió HTTP {r.status_code}{pista}"\n',
+     [('            return None, f"la Drive API respondió HTTP {r.status_code}{con_razon}{pista}"\n',
        '            return None, "la Drive API falló"\n')],
      f"{_CAR}::test_un_http_que_no_es_200_se_dice"),
 
@@ -106,10 +106,17 @@ MUTANTES: list[tuple[str, str, list[tuple[str, str]], str]] = [
        "    except subprocess.TimeoutExpired:\n        return 4\n")],
      f"{T_PRE}::test_exit_5_si_rclone_TARDA_y_el_veredicto_lo_dice"),
 
+    # Tras la R1/H-05 el precheck mira la línea `type` y no el comentario inglés: un mutante
+    # por cada caso que esa línea tiene que cubrir.
     ("P02 el precheck no reconoce el remote inexistente", PRE,
-     [('    if r.returncode != 0 or _REMOTE_INEXISTENTE in (r.stdout or ""):\n',
+     [("    if r.returncode != 0 or not _LINEA_TYPE.search(salida):\n",
        "    if r.returncode != 0:\n")],
      f"{T_PRE}::test_exit_4_si_el_remote_NO_EXISTE_aunque_rclone_salga_con_0"),
+
+    ("P03 el precheck clasifica una config sin `type`", PRE,
+     [("    if r.returncode != 0 or not _LINEA_TYPE.search(salida):\n",
+       "    if r.returncode != 0 or \"couldn't find type of fs\" in salida:\n")],
+     f"{T_PRE}::test_exit_4_si_la_config_NO_TRAE_type"),
 
     # --- #301: el parser ---------------------------------------------------------------------
     ("W01 el W-code delante no se reconoce", ID,
@@ -117,7 +124,7 @@ MUTANTES: list[tuple[str, str, list[tuple[str, str]], str]] = [
      f"{T_ID}::test_parse_folder_w_code_DELANTE"),
 
     ("W02 el consultor se queda en la dirección", ID,
-     [('        direccion = " - ".join(tramos[:-1]) if len(tramos) >= 2 else "".join(tramos)\n',
+     [('        direccion = " - ".join(tramos[:-1])\n',
        '        direccion = " - ".join(tramos)\n')],
      f"{T_ID}::test_parse_folder_w_code_DELANTE"),
 
@@ -131,9 +138,62 @@ MUTANTES: list[tuple[str, str, list[tuple[str, str]], str]] = [
        r'    r"^(.*?)\s*[-–]?\s*(W-[A-Z0-9]{5,8})\b",' + "\n")],
      f"{T_ID}::test_parse_folder_w_code_en_medio_SIN_guion_no_se_adivina"),
 
+    # --- La remediación de la R1 (H-01 a H-07) ------------------------------------------------
+    ("R01 un tramo sin número se toma por dirección", ID,
+     [('        return tramos[0] if con_numero(tramos[0]) else ""\n',
+       '        return tramos[0]\n')],
+     f"{T_ID}::test_parse_folder_w_code_delante_AMBIGUO_no_deriva"),
+
+    ("R02 un último tramo con número se toma por consultor", ID,
+     [("        if con_numero(direccion) and not con_numero(tramos[-1]):\n",
+       "        if con_numero(direccion):\n")],
+     f"{T_ID}::test_parse_folder_w_code_delante_AMBIGUO_no_deriva"),
+
+    ("R03 una dirección sin número se deriva", ID,
+     [("        if con_numero(direccion) and not con_numero(tramos[-1]):\n",
+       "        if not con_numero(tramos[-1]):\n")],
+     f"{T_ID}::test_parse_folder_w_code_delante_AMBIGUO_no_deriva"),
+
+    ("R04 el alta no dice que la carpeta ambigua lleva el W-code", AC,
+     [("    if not derivada and w_carpeta:\n", "    if False:\n")],
+     f"{T_AC}::test_cli_drive_ev_carpeta_W_delante_AMBIGUA_pide_el_flag"),
+
+    ("R05 todo 403 se llama «sin permiso»", ID,
+     [("            elif r.status_code == 403 and razon in _RAZONES_DE_PERMISO:\n",
+       "            elif r.status_code == 403:\n")],
+     f"{_CAR}::test_un_403_que_NO_es_de_permisos_no_se_llama_sin_permiso"),
+
+    ("R06 la cuota agotada no dice la razón que vio", ID,
+     [("                  f\"({ultima_razon or 'sin razón legible'})\")\n",
+       "                  \"(rateLimitExceeded)\")\n")],
+     f"{_CAR}::test_la_cuota_agotada_dice_la_razon_que_vio"),
+
+    ("R07 la ciudad se quita también en el formato de siempre", AC,
+     [("    sin_ciudad = _sin_la_ciudad_delante(derivada, ciudad) if w_delante else derivada\n",
+       "    sin_ciudad = _sin_la_ciudad_delante(derivada, ciudad)\n")],
+     f"{T_AC}::test_cli_drive_ev_la_ciudad_del_formato_DE_SIEMPRE_se_conserva"),
+
+    ("R08 el token a punto de caducar se llama caducado", ID,
+     [('_CADUCADO = "el token estaba caducado o a punto de caducar"\n',
+       '_CADUCADO = "el token estaba caducado"\n')],
+     f"{_TOK}::test_un_token_A_PUNTO_de_caducar_no_se_llama_caducado"),
+
+    ("R09 una config sin `type` pasa por remote", ID,
+     [("    if not _LINEA_TYPE.search(salida):\n", "    if False:\n")],
+     f"{_TOK}::test_una_config_sin_type_no_se_toma_por_un_remote"),
+
+    ("R10 el diagnóstico vuelve a imprimir parte del token", "scripts/diag_drive_autofill.py",
+     [('    print("  ✅ hay access_token vigente")\n',
+       '    print(f"  ✅ hay access_token vigente: {lectura.token[:30]}")\n')],
+     "tests/test_diag_drive_autofill.py::test_no_imprime_nada_del_token"),
+
+    ("R11 el timeout sube sin techo", ID,
+     [("_TIMEOUT_RCLONE_TOKEN = 30\n", "_TIMEOUT_RCLONE_TOKEN = 3000\n")],
+     f"{_TOK}::test_el_timeout_de_las_dos_ordenes_es_holgado"),
+
     # --- #301: la ciudad que SaRS1 pone delante ---------------------------------------------
     ("C01 la ciudad del caso no se quita", AC,
-     [("    sin_ciudad = _sin_la_ciudad_delante(derivada, ciudad)\n",
+     [("    sin_ciudad = _sin_la_ciudad_delante(derivada, ciudad) if w_delante else derivada\n",
        "    sin_ciudad = derivada\n")],
      f"{T_AC}::test_cli_drive_ev_direccion_de_una_carpeta_con_el_W_CODE_DELANTE_y_su_ciudad"),
 

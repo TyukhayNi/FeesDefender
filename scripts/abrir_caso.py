@@ -27,6 +27,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 from collections import namedtuple
 import stat
 import zipfile
@@ -1846,6 +1847,12 @@ def _direccion_de_la_carpeta(nombre_carpeta, w_code, ciudad=None):
     «AVDA.» también es una palabra en mayúsculas con punto, y es parte de la dirección.
     """
     derivada, w_carpeta = intake_drive.parse_ev_folder_name(nombre_carpeta or "")
+    if not derivada and w_carpeta:
+        # El W-code está; lo que no se sabe es qué tramo es la dirección (R1/H-01).
+        typer.echo(f"[auto] No derivo --direccion de la carpeta {nombre_carpeta!r}: lleva el "
+                   f"W-code {w_carpeta}, pero su nombre no dice qué tramo es la dirección "
+                   "(la dirección lleva número y el consultor no). Pásalo explícito.")
+        return None
     if not derivada:
         typer.echo(f"[auto] No pude derivar --direccion del nombre de la carpeta "
                    f"{nombre_carpeta!r}: no encuentro un W-code separado por guiones, "
@@ -1865,7 +1872,10 @@ def _direccion_de_la_carpeta(nombre_carpeta, w_code, ciudad=None):
                    "dice ser de otro expediente. Pásalo explícito (y comprueba "
                    "--folder-id).")
         return None
-    sin_ciudad = _sin_la_ciudad_delante(derivada, ciudad)
+    # Solo con el W-code delante, que es donde se midió la convención (R1/H-03): en el orden de
+    # siempre, el prefijo se conserva como antes de este cambio.
+    w_delante = bool(re.match(r"\s*W-[A-Z0-9]{5,8}\b", nombre_carpeta or "", re.IGNORECASE))
+    sin_ciudad = _sin_la_ciudad_delante(derivada, ciudad) if w_delante else derivada
     if sin_ciudad != derivada:
         typer.echo(f"[auto] --direccion del nombre de la carpeta, sin la ciudad que la "
                    f"precede: {sin_ciudad!r}")

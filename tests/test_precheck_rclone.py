@@ -70,6 +70,14 @@ def test_exit_4_si_el_remote_NO_EXISTE_aunque_rclone_salga_con_0(capsys):
     assert "no existe" in capsys.readouterr().out
 
 
+def test_exit_4_si_la_config_NO_TRAE_type(capsys):
+    """R1/H-05: el comentario inglés es la única pista de un remote inexistente, y si otra
+    versión de rclone escribe otro, salía 3 («client compartido»). Sin `type =` no hay remote
+    que clasificar."""
+    with patch("subprocess.run", return_value=_run("[gdrive_tl]\n# remote not found\n")):
+        assert pr.main(["precheck_rclone.py", "gdrive_tl:"]) == 4
+
+
 def test_main_nunca_imprime_secretos(capsys):
     with patch("subprocess.run", return_value=_run(_CONFIG_PROPIO)):
         pr.main(["precheck_rclone.py", "gdrive_tl:"])

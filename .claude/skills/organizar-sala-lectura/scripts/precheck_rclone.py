@@ -11,7 +11,7 @@ regex y deriva de ella el project number; jamás imprime `stdout` de rclone.
 
 exit 0 → client propio (project != 202264815644): rcd puede ser ruta primaria.
 exit 3 → remote sin client propio (usa el compartido) → copia secuencial.
-exit 4 → `rclone` no instalado, o el remote no existe en su configuración.
+exit 4 → `rclone` no instalado, o el remote no existe o no tiene `type` en su configuración.
 exit 5 → `rclone` TARDÓ más de lo que se le da: no se sabe qué client tiene.
 exit 2 → uso incorrecto.
 
@@ -27,9 +27,11 @@ import subprocess
 import sys
 
 _CLIENT_COMPARTIDO_PROJECT = "202264815644"
-#: Lo que `rclone config show` escribe, con código 0, cuando el remote no existe (medido con
-#: rclone real el 2026-09-26).
-_REMOTE_INEXISTENTE = "couldn't find type of fs"
+#: Lo que trae un remote de verdad: sin esa línea no hay client que clasificar. Un remote
+#: inexistente sale con código 0 y un comentario inglés (`# couldn't find type of fs`, medido
+#: con rclone real el 2026-09-26), sin `type`; mirar la línea y no el comentario vale también
+#: para otra versión que escriba otro texto (R1/H-05 de la fila #42).
+_LINEA_TYPE = re.compile(r"(?m)^\s*type\s*=")
 _CLIENT_ID_RE = re.compile(r"^\s*client_id\s*=\s*(\S+)", re.M)
 
 
@@ -55,7 +57,8 @@ def precheck(remote: str) -> int:
         return 5
     except FileNotFoundError:
         return 4
-    if r.returncode != 0 or _REMOTE_INEXISTENTE in (r.stdout or ""):
+    salida = r.stdout or ""
+    if r.returncode != 0 or not _LINEA_TYPE.search(salida):
         return 4
     cid = client_id_de_config(r.stdout)
     if not cid:

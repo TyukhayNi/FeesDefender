@@ -888,6 +888,33 @@ def test_cli_drive_ev_direccion_de_una_carpeta_con_el_W_CODE_DELANTE_y_su_ciudad
     assert "BARCELONA." not in captura["case_id"] and "Ana P" not in captura["case_id"]
 
 
+def test_cli_drive_ev_carpeta_W_delante_AMBIGUA_pide_el_flag(drive_temporal, monkeypatch):
+    """R1/H-01: «W-… - Passeig Marítim 30 - Portal 2» no dice si «Portal 2» es el consultor
+    o la dirección. No se deriva, y se dice por qué: el operador tiene que saber que el CLI
+    encontró el W-code y no supo qué tramo era la dirección."""
+    _carpeta_llamada(monkeypatch, "W-02Z2NR - Passeig Marítim 30 - Portal 2")
+    _no_debe_pullear(monkeypatch, "no debe llegar al pull sin direccion")
+
+    result = CliRunner().invoke(cli.app, _args_sin_direccion(crm="skip"))
+
+    assert result.exit_code == 1
+    assert "--direccion" in result.output and "Portal 2" in result.output, result.output
+    assert "qué tramo" in result.output, result.output
+
+
+def test_cli_drive_ev_la_ciudad_del_formato_DE_SIEMPRE_se_conserva(drive_temporal, monkeypatch):
+    """R1/H-03: la ciudad se quita donde se midió la convención —el W-code delante, SaRS1—;
+    en el formato de siempre, el prefijo se conserva como antes de este cambio."""
+    _carpeta_llamada(monkeypatch, "BARCELONA. Passeig Marítim 30 - W-02Z2NR - Ana P")
+    captura = {}
+    _pull_espia(monkeypatch, captura)
+
+    result = CliRunner().invoke(cli.app, _args_sin_direccion(crm="skip"))
+
+    assert result.exit_code == 0, result.output
+    assert "BARCELONA. Passeig Marítim 30 (W-02Z2NR)" in captura["case_id"]
+
+
 def test_cli_drive_ev_un_prefijo_que_NO_es_la_ciudad_se_conserva(drive_temporal, monkeypatch):
     """CONTROL: «AVDA.» también es una palabra en mayúsculas con punto, y es la dirección."""
     _carpeta_llamada(monkeypatch, "W-02Z2NR - AVDA. Diagonal 5 - Ana P")

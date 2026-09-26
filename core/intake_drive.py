@@ -97,10 +97,15 @@ _TOKEN_EXPIRY_MARGIN = timedelta(minutes=5)
 #: como «no hay token» y el alta abortaba diciendo «token/red» con el token vigente
 #: (`MEJORAS #296`). Un rclone colgado de verdad cuesta ahora 30 s, y se dice.
 _TIMEOUT_RCLONE_TOKEN = 30
+#: Cómo se nombra, en los motivos, el token que se renueva: puede estar dentro del margen.
+_CADUCADO = "el token estaba caducado o a punto de caducar"
 
 #: Lo que `rclone config show` escribe, con código 0, si el remote no existe (medido con rclone
 #: real el 2026-09-26): el código de salida no lo dice.
 _REMOTE_INEXISTENTE = "couldn't find type of fs"
+#: Y lo que sí trae un remote de verdad. El comentario de arriba es inglés y de una versión
+#: concreta: sin esta línea no se afirma que haya remote, diga lo que diga (R1/H-05).
+_LINEA_TYPE = re.compile(r"(?m)^\s*type\s*=")
 
 # Regex que cubre los formatos habituales de URL de carpeta Google Drive:
 #   https://drive.google.com/drive/folders/{id}
@@ -373,6 +378,14 @@ _EV_FOLDER_RE = re.compile(
 # parseaba. La dirección es lo que queda hasta el ÚLTIMO « - », que es el consultor si lo hay:
 # la misma convención que en el orden de siempre. Solo separa el guion rodeado de espacios —el
 # «1-2» de un piso no—.
+#
+# **Y solo cuando el nombre cumple la convención que lo hace inequívoco** (R1/H-01): la
+# dirección lleva número y el consultor no. En el otro orden el W-code delimita la dirección;
+# aquí, el último « - » solo por convención, y «W-… - Calle Mayor 5 - Portal 2» o «W-… - Ana
+# P» se derivaban mal —un tramo perdido, un consultor por dirección— hacia el `case_id`. Medido
+# el 2026-09-26: de 229 carpetas con el W-code delante, 219 la cumplen (161 «dirección con
+# número - consultor», 57 «dirección con número», 1 con la dirección partida). Las otras 10 no
+# se derivan: se pide el flag.
 _EV_FOLDER_W_DELANTE_RE = re.compile(
     r"^(W-[A-Z0-9]{5,8})\b\s*(?:[-–]\s+|\s+|$)(.*)$",
     re.IGNORECASE,
@@ -413,9 +426,24 @@ def parse_ev_folder_name(folder_name: str) -> tuple[str, str]:
     m = _EV_FOLDER_W_DELANTE_RE.match(nombre)
     if m:
         tramos = [x.strip() for x in _SEPARADOR_DE_TRAMO_RE.split(m.group(2).strip()) if x.strip()]
-        direccion = " - ".join(tramos[:-1]) if len(tramos) >= 2 else "".join(tramos)
-        return direccion, m.group(1).upper()
+        return _direccion_con_w_delante(tramos), m.group(1).upper()
     return "", ""
+
+
+def _direccion_con_w_delante(tramos: list[str]) -> str:
+    """La dirección de un nombre con el W-code delante, o \"\" si el nombre no cumple la
+    convención que la hace inequívoca: la dirección lleva número y el consultor —el último
+    tramo, si hay más de uno— no (R1/H-01)."""
+    def con_numero(texto: str) -> bool:
+        return bool(re.search(r"\d", texto))
+
+    if len(tramos) == 1:
+        return tramos[0] if con_numero(tramos[0]) else ""
+    if len(tramos) >= 2:
+        direccion = " - ".join(tramos[:-1])
+        if con_numero(direccion) and not con_numero(tramos[-1]):
+            return direccion
+    return ""
 
 
 @dataclass
@@ -527,6 +555,9 @@ def _leer_bloque_token(remote: str = "gdrive_ev") -> tuple[dict | None, str]:
         return None, f"{orden} salió con código {r.returncode}"
     if _REMOTE_INEXISTENTE in salida:
         return None, f"el remote `{remote}` no existe en la configuración de rclone"
+    if not _LINEA_TYPE.search(salida):
+        return None, (f"el remote `{remote}` no tiene `type` en la configuración de rclone "
+                      "(¿no existe, o está incompleto?)")
     datos = _parse_rclone_token_block(salida)
     if not datos:
         return None, f"el remote `{remote}` no tiene un bloque `token` legible (¿falta el login?)"
@@ -570,7 +601,8 @@ def obtener_token_drive() -> TokenDrive:
     if expiry_dt - datetime.now(timezone.utc) > _TOKEN_EXPIRY_MARGIN:
         return TokenDrive(access, "" if access else sin_access)
 
-    # Caducado o a punto: forzar la renovación.
+    # Caducado o a punto: forzar la renovación. Dentro del margen aún vale, así que el motivo
+    # no puede decir «caducado» a secas (R1/H-04).
     try:
         refresh = subprocess.run(
             ["rclone", "about", "gdrive_ev:"],
@@ -582,13 +614,13 @@ def obtener_token_drive() -> TokenDrive:
     except FileNotFoundError:
         return TokenDrive(None, "rclone no está instalado o no está en el PATH")
     except subprocess.TimeoutExpired:
-        return TokenDrive(None, ("el token estaba caducado y renovarlo (`rclone about gdrive_ev:`) "
-                                 f"tardó más de {_TIMEOUT_RCLONE_TOKEN} s"))
+        return TokenDrive(None, (f"{_CADUCADO}, y renovarlo (`rclone about gdrive_ev:`) tardó "
+                                 f"más de {_TIMEOUT_RCLONE_TOKEN} s"))
     except Exception as exc:                                   # noqa: BLE001
-        return TokenDrive(None, f"el token estaba caducado y renovarlo falló ({type(exc).__name__})")
+        return TokenDrive(None, f"{_CADUCADO}, y renovarlo falló ({type(exc).__name__})")
     if refresh.returncode != 0:
-        return TokenDrive(None, ("el token estaba caducado y la renovación (`rclone about "
-                                 f"gdrive_ev:`) salió con código {refresh.returncode}"))
+        return TokenDrive(None, (f"{_CADUCADO}, y la renovación (`rclone about gdrive_ev:`) "
+                                 f"salió con código {refresh.returncode}"))
 
     datos2, motivo2 = _leer_bloque_token()
     if datos2 is None:
@@ -628,6 +660,30 @@ def _is_rate_limit_response(resp) -> bool:
     return False
 
 
+#: Los `reason` de un 403 que SÍ son de permisos. Cualquier otro 403 —cuota diaria, una política
+#: del dominio…— se dice con su código y su razón, sin atribuirle «sin permiso» (R1/H-02).
+_RAZONES_DE_PERMISO = frozenset({"insufficientPermissions", "forbidden",
+                                 "insufficientFilePermissions", "appNotAuthorizedToFile"})
+
+
+def _razon_de_error(resp) -> str:
+    """El `reason` del primer error de una respuesta de la Drive API, o \"\".
+
+    Solo el identificador —letras, como `dailyLimitExceeded`—, nunca el cuerpo: un mensaje de
+    error puede citar lo que se pidió."""
+    try:
+        body = resp.json()
+    except Exception:                                          # noqa: BLE001
+        return ""
+    error = body.get("error") if isinstance(body, dict) else None
+    errores = error.get("errors") if isinstance(error, dict) else None
+    for err in errores if isinstance(errores, list) else []:
+        razon = err.get("reason") if isinstance(err, dict) else None
+        if isinstance(razon, str) and re.fullmatch(r"[A-Za-z]{1,60}", razon):
+            return razon
+    return ""
+
+
 def leer_carpeta_drive(folder_id: str) -> tuple[DriveFolderInfo | None, str]:
     """Nombre y Shared Drive ID de una carpeta del Drive E&V, **o por qué no se pudo leer**.
 
@@ -653,6 +709,7 @@ def leer_carpeta_drive(folder_id: str) -> tuple[DriveFolderInfo | None, str]:
     except ImportError:
         return None, "falta el paquete httpx"
 
+    ultima_razon = ""
     for delay in attempts:
         if delay > 0:
             time.sleep(delay)
@@ -682,13 +739,22 @@ def leer_carpeta_drive(folder_id: str) -> tuple[DriveFolderInfo | None, str]:
 
         # No-200: si es rate-limit, reintentar; cualquier otro fallo (401, 404, 500…) es
         # no-recuperable y termina aquí.
+        razon = _razon_de_error(r)
         if not _is_rate_limit_response(r):
-            pista = {401: ": el token no vale", 403: ": sin permiso sobre la carpeta",
-                     404: ": la carpeta no existe o esta cuenta no la ve"}.get(r.status_code, "")
-            return None, f"la Drive API respondió HTTP {r.status_code}{pista}"
+            if r.status_code == 401:
+                pista = ": el token no vale"
+            elif r.status_code == 404:
+                pista = ": la carpeta no existe o esta cuenta no la ve"
+            elif r.status_code == 403 and razon in _RAZONES_DE_PERMISO:
+                pista = ": sin permiso sobre la carpeta"
+            else:
+                pista = ""
+            con_razon = f" ({razon})" if razon else ""
+            return None, f"la Drive API respondió HTTP {r.status_code}{con_razon}{pista}"
+        ultima_razon = razon
 
     return None, (f"la Drive API siguió limitando por cuota tras {len(attempts)} intentos "
-                  "(rateLimitExceeded)")
+                  f"({ultima_razon or 'sin razón legible'})")
 
 
 def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
