@@ -183,7 +183,7 @@ tal cual. **La elección de la entrega electrónica sigue en pie por otra razón
 ese matiz: el SMS Certificado admite **un** fichero, y el requerimiento sale con las condiciones
 económicas **en adjunto aparte** (§7), que es lo que hace posible el aportable. El motor no manda
 SMS Certificado; si aparece uno con la referencia de una expedición —se puede mandar desde el
-portal—, **no se cosecha y sus fechas no cuentan** para el requerido (§7.1).
+portal—, **no se cosecha como definitivo y sus fechas no cuentan** para el requerido (§7.1).
 
 Consecuencia operativa que gobierna todo el motor: **el burofax admite un destinatario por
 llamada**. Dos domicilios son dos llamadas, siempre.
@@ -708,7 +708,8 @@ después del 22, porque el acuse puede llegar tarde—, el envío queda **cerrad
 fecha del 22 y su certificado se cosecha como
 prueba del intento. **Riesgo aceptado, dicho:** si después llegara un indicio, la cosecha siguiente
 saltaría el certificado ya archivado (`ya_estaba`) y el hecho posterior no entraría solo en el
-expediente. Medido: 83 días sin cambios tras el 22.
+expediente; un 17, 21 o 27 tardío, además, saca el envío de lo cosechable hasta que culmine (lo
+reprodujo la R1). Medido: 83 días sin cambios tras el 22 —una observación, no una garantía—.
 
 **El año del art. 7.3 tiene dos *dies a quo*** unidos por «respectivamente»: desde la recepción si
 la solicitud quedó sin respuesta, desde la terminación sin acuerdo si hubo negociación. El motor no
@@ -795,8 +796,8 @@ lo subido y se compara el `sha256`.
 `cosechar` y el aportable de F3— dice el de cada envío en vez de «el hecho aún puede mejorar», que
 de tres de los 117 envíos reales era falso:
 
-- **canal sin clasificar** — no se sabe en qué culmina; no se cosecha nunca, ni con un cierre, y
-  **sus fechas no cuentan** en el reloj del requerido;
+- **canal sin clasificar** — no se sabe en qué culmina; no se cosecha nunca **como definitivo**, ni
+  con un cierre, y **sus fechas no cuentan** en el reloj del requerido;
 - **código sin clasificar** — se arregla en el código, no esperando;
 - **estancado** — en curso pero **más de 40 días sin moverse** (el silencio más largo medido antes de
   un cambio es de 29,1 días);
@@ -804,7 +805,9 @@ de tres de los 117 envíos reales era falso:
 
 El estancado es un **aviso**, no una clasificación: no hace cosechable nada, y señala la salida que
 ya existe, `cosechar --incluir-pendientes`, que baja el certificado con su estado en el nombre sin
-ocupar el sitio del definitivo. **Límite declarado:** el aportable se prepara solo sobre el
+ocupar el sitio del definitivo — **salvo al que no tiene ningún evento**, que no tiene estado con
+que nombrar un provisional: a ese el informe le dice que lo mire en el portal (R1/H-01).
+**Límite declarado:** el aportable se prepara solo sobre el
 definitivo, así que un estancado no tiene aportable (`MEJORAS_FUTURAS.md`, con su disparador).
 El motivo se mide contra la **hora de la lectura**, que la expedición lleva siempre.
 
@@ -1352,3 +1355,12 @@ aparece cuando la otra parte lo lee en el juzgado.
 - **La remediación de la R3 NO ha pasado ronda: su cobertura independiente es AUSENTE.** La
   composición y la recomposición vuelven a ser una pieza nueva. Una cuarta ronda solo la autoriza
   Nikolai.
+
+### 12.5 La cobertura de los estados medidos (2026-09-26)
+
+**Una ronda, la que la tabla asigna.** La R1 de Codex sobre el diff —`gpt-6-astra`·`medium`, fila
+«escritura sobre datos de cliente»— volvió **LISTA-CON-CAMBIOS** con **dos hallazgos `baja`**, los
+dos confirmados contra la fuente y remediados en `b5c39ee`, más uno propio (la hora de la lectura).
+Acta: [`2026-09-26-codicert-estados-medidos-r1-adversarial-review.md`](../plans/2026-09-26-codicert-estados-medidos-r1-adversarial-review.md);
+adjudicación, en el §6 del plan. **La remediación no ha pasado ronda: cobertura AUSENTE**, y una R2
+solo la autoriza Nikolai.

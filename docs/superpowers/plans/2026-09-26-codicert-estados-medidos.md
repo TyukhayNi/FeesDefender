@@ -27,7 +27,7 @@ spec: docs/superpowers/specs/2026-09-17-envio-certificado-codicert-design.md
 
 ---
 
-## Mediciones del 2026-09-26 que gobiernan este plan
+## 1. Mediciones del 2026-09-26 que gobiernan este plan
 
 Barrido **en solo lectura** (`GET /envios` y `GET /envios/{id}/estados`, sin coste) de **todos** los envíos de `madrid.bd` del 2026-06-03 al 2026-09-23 —117: 72 entregas electrónicas por correo, 20 por SMS, 24 burofax y 1 SMS Certificado— y de los 2 del sandbox. Autorizado por Nikolai en la sesión. Los scripts (`sondear_sms.py`, `barrido_estados.py`, `tiempos_estados.py`) quedan en el scratchpad de la sesión, fuera del repo: imprimen códigos, títulos y fechas, y nada de terceros.
 
@@ -43,21 +43,21 @@ Barrido **en solo lectura** (`GET /envios` y `GET /envios/{id}/estados`, sin cos
 
 **Lo que el barrido NO encontró, dicho también:** en el correo (72) no hay códigos sin clasificar ni envíos parados; todo termina en 20, 40 o 42, o sigue dentro de sus 30 días. 45 de esos 72 pasan por el 27 (servidor) y no por el 17. En el burofax, 7 culminan en 19, 12 cierran en 42 tras varias incidencias (31) y 4 siguen en curso.
 
-## Decisiones
+## 2. Decisiones
 
 - **D-1 (Nikolai, 2026-09-26).** El 22 cierra sin entrega **solo si ningún aviso llegó**: si el primero llegó, el requerido aún puede leer y hay que esperar al 40. Lo que aprobó —mi recomendación— nombraba el 17, el 20 y el 21; **la concreción que sigue es mía**, en la dirección segura (más indicios = menos cierres), y se le dice: los indicios de que un aviso llegó son **17, 19, 20, 21 y 27**. El 27 (entregado en el servidor) entra por la misma razón que el 17: el aviso está donde el requerido puede verlo. Y cuentan **en cualquier punto del histórico**, no solo antes del 22, porque el acuse puede llegar tarde (M-17, sandbox).
-- **Riesgo aceptado con D-1, declarado:** si un 22 cierra, el certificado se cosecha como definitivo; si después llegara un indicio, la cosecha siguiente lo saltaría (`ya_estaba`) y el hecho posterior no entraría solo en el expediente. Medido: 83 días sin cambios tras el 22.
-- **D-2.** Un canal sin clasificar **no se cosecha nunca**, ni con su culminación ni con un cierre, y se declara con ⚠️ como un código sin clasificar.
+- **Riesgo aceptado con D-1, declarado:** si un 22 cierra, el certificado se cosecha como definitivo; si después llegara un indicio, la cosecha siguiente lo saltaría (`ya_estaba`) y el hecho posterior no entraría solo en el expediente. Lo precisó la R1, reproduciéndolo: un 17, 21 o 27 tardío saca además el envío de lo cosechable, así que la cosecha por defecto ni lo mira hasta que culmine, y entonces lo da por ya archivado; el resultado material es el mismo. Medido: 83 días sin cambios tras el 22, que es una observación, no un límite que el motor garantice.
+- **D-2.** Un canal sin clasificar **no se cosecha nunca como definitivo**, ni con su culminación ni con un cierre, y se declara con ⚠️ como un código sin clasificar. (Con `--incluir-pendientes` sí se baja, como **provisional** y con su estado en el nombre, igual que cualquier pendiente con eventos: el «nunca» a secas era demasiado absoluto, R1.)
 - **D-2 bis (encontrado al ejecutar, no estaba en el plan).** Tampoco **pone fechas al requerido**: `Requerido.recibido_en` y `accedido_en` ignoran sus envíos. Salió al pintar un informe con los tres recorridos reales: la línea «accedido … (art. 10.2)» del requerido la ponía el SMS Certificado, cuyo adjunto no tiene por qué ser el requerimiento. Contarla podía adelantar un plazo con un hecho que nadie ha clasificado; no contarla lo retrasa, que es el lado seguro. El envío sigue en la lista del requerido y el aviso de canales lo dice. Es la misma frontera de D-2 —un canal desconocido tratado como conocido—, remediada en su segundo sitio. Commit `c8ae1ad`.
-- **D-3.** **Estancado** = no cosechable, con el canal y los códigos clasificados, y **más de 40 días** sin eventos (el silencio más largo medido es 29,1; M-20). **Es un aviso, no una clasificación**: no hace cosechable nada; deja de prometer que el hecho mejorará y señala la salida que ya existe, `cosechar --incluir-pendientes` (baja el certificado con su estado en el nombre, sin ocupar el sitio del definitivo).
+- **D-3.** **Estancado** = no cosechable, con el canal y los códigos clasificados, y **más de 40 días** sin eventos (el silencio más largo medido es 29,1; M-20). **Es un aviso, no una clasificación**: no hace cosechable nada; deja de prometer que el hecho mejorará y señala la salida que ya existe, `cosechar --incluir-pendientes` (baja el certificado con su estado en el nombre, sin ocupar el sitio del definitivo) — **salvo al estancado sin ningún evento**, que no tiene estado con que nombrar un provisional y la cosecha salta; a ese el informe le dice que lo mire en el portal (R1/H-01).
 - **D-4.** `Expedicion.leida_en` es **obligatorio** y con zona horaria. Un valor por defecto `None` callaría lo estancado por falta de hora, que es el silencio que M-21 corrige.
 - **Límite declarado:** F3 prepara el aportable solo sobre el certificado **definitivo**. Un envío estancado puede bajarse como provisional, pero no tendrá aportable. Se ficha en `MEJORAS_FUTURAS.md` con su disparador (el primer estancado que haya que aportar) y no se construye aquí.
 
-## Lo que NO cambia
+## 3. Lo que NO cambia
 
 `pendientes` sigue siendo **todo** lo no cosechable (un estancado no culminó, y `completa` tiene que seguir diciéndolo); `cosechar` sigue decidiendo solo por `cosechable`; `_CULMINACION`, `CANAL_DE_TIPO` y los `recibido_en`/`accedido_en` de **cada envío** no se tocan (los del **requerido** sí, por D-2 bis); la regla del 17/21 (rev. 16) tampoco. F1 no se toca.
 
-## Archivos
+## 4. Archivos
 
 - Modificar: `core/expedicion_certificada.py` — familias y `_FAMILIA_DE` (~l. 968-1000), `EnvioObservado` (~l. 1075-1148), `Expedicion` (~l. 1150-1182), `refrescar` (~l. 1346), el motivo del aportable en `_preparar_bajo_candado` (~l. 2877).
 - Modificar: `scripts/codicert.py` — `render_estado` (~l. 131-191), `render_cosecha` (~l. 194-212), la ayuda de `--incluir-pendientes` (~l. 268-272) y la llamada a `render_cosecha` (~l. 310).
@@ -833,7 +833,7 @@ Cada hallazgo, contra la fuente. La adjudicación va **embebida en este plan** (
 
 ---
 
-## Ejecución (2026-09-26)
+## 5. Ejecución (2026-09-26)
 
 - **Commits:** `979d41a` (Task 1), `aad3765` (Task 2), `4e24233` (Task 3), `c8ae1ad` (Task 4, con
   D-2 bis), `98f6530` (el plan: D-2 bis y la cita del acta) y el de la documentación de la Task 6.
@@ -854,4 +854,63 @@ Cada hallazgo, contra la fuente. La adjudicación va **embebida en este plan** (
   `cosechable`** —`006bij47xan`, de no a sí—; `006bkxe0q63` → canal sin clasificar;
   `006bgjupt2a` → estancado (88 días); el resto de lo no cosechable, en curso (4 burofax, 11
   correos, 6 SMS). Es exactamente lo que la Task 5 esperaba.
+- **Remediación de la R1** (`b5c39ee`, §6): suite **6.483 casos, 0 fallos, 0 errores, 96 omitidos, idéntica con las dos semillas (+18 sobre los 6.465, los tests de la remediación)**; **26 de 26 mutantes**, los tres del
+  revisor dentro; su arnés y sus sondas, corridos contra el árbol remediado.
+
+---
+
+## 6. Adjudicación de la revisión adversarial (Codex, 2026-09-26) — LISTA-CON-CAMBIOS, remediado
+
+- **Objeto revisado:** la pieza entera, `73ba288` → `eb8691a` —código, tests, plan y spec rev. 17—, 11 ficheros
+- **Ronda:** 1, sobre el diff — la única que la tabla de `CLAUDE.md` da a esta pieza; no es una R4 de F3
+- **Revisor:** Codex CLI `0.155.0-alpha.16.4`, `gpt-6-astra`·`medium` releídos del log; `service_tier="default"` afirmado desde el lanzador conservado
+- **Informe recibido:** `2026-09-26-codicert-estados-medidos-r1-adversarial-review.md`, `sha256` del bloque literal `7ce0423af02786832f37ec12d5d1dc971568c8e91ba911b8d668b586c53a1240`
+- **Hallazgos:** 2 — 0 `alta`, 0 `media`, 2 `baja` —, más uno propio (A-01). **Los dos confirmados contra la fuente, ninguno refutado**
+- **Remediado en:** `b5c39ee` (los dos y el propio, con sus tests) y el commit de documentación que trae esta adjudicación
+
+**Por qué `gpt-6-astra` y no la fila ordinaria, dicho como la política pide.** La regla del 22
+decide si `cosechar` escribe un certificado **como definitivo** en el expediente del cliente:
+fila «escritura sobre datos de cliente». La frontera, nombrada: un 22 que cerrara de más archivaría
+un «sin entrega» que la cosecha siguiente ya no reemplaza. **Una ronda y no dos**: la pieza no
+decide quién escribe sobre qué copia ni destruye ni altera lo que ya hay.
+
+**Lo que el revisor dejó en pie, y conviene no perderlo:** un oráculo independiente sobre **29.172
+combinaciones** de hasta tres códigos en los tres tipos dio la regla del 22 y `cosechable`
+conformes; el rastreo de consumidores no encontró ningún cambio de fechas o de clasificación fuera
+de lo declarado; y el canal sin clasificar no adelanta plazos ni se vuelve definitivo por ninguna
+vía.
+
+| # | Hallazgo | Sev. · coste | Adjudicación y remedio |
+|---|---|---|---|
+| **H-01** | La salida ofrecida al estancado **sin histórico** no descarga nada | baja · trivial | **Confirmado** en la fuente: `_cosechar_bajo_candado` salta el provisional sin histórico (l. 2433), y `_no_cosechables` ofrecía `--incluir-pendientes` a todo estancado, también al que no tiene eventos —que mi propio test declara estancado—. La frontera es **una promesa por grupo sobre un efecto que depende de cada envío**. Remedio: la salida se ofrece solo si algún estancado del grupo tiene eventos (`SALIDA_DEL_ESTANCADO`), y el que no tiene ninguno lleva su propia línea (`SIN_EVENTOS`: no hay estado con que bajar un provisional; que lo mire en el portal). La ayuda del flag dice ya «que tenga algún evento». Tests: los dos informes con y sin eventos, y uno que ata el mensaje al efecto (`cosechar --incluir-pendientes` sobre un envío sin eventos no pide ni sube nada). Mutantes 22 y 23. |
+| **H-02** | Faltan controles de exclusión y de motivos concurrentes | baja · acotado | **Confirmado**, y con sus tres mutantes: sobrevivían a los ocho ficheros del ámbito. (1) Nada fijaba el conjunto **exacto** de indicios: añadir el 5 no rompía nada. (2) El orden canal/código nunca se probaba con los dos a la vez. (3) La guarda de `desconocidos` en `cosechable` no la probaba nadie: el test antiguo usaba un 999 solo, que tampoco culmina sin ella. Remedio, solo tests: el 22 cierra detrás de cada código en curso —3, 5, 8, 11, 12, 14 y 31, escritos a mano y no sacados de la constante—; canal y código sin clasificar a la vez dan el canal; un 999 detrás de un 20, un 19, un 22 que cierra o un 42 bloquea la cosecha; y el orden de los motivos fijado en el test, no en la constante. **Sus tres mutantes, con su propio arnés, mueren sobre `b5c39ee`.** |
+| **A-01** (propio) | La hora de la lectura era la del **principio** | baja · trivial | Lo anoté antes de recibir el informe, y el revisor lo describe en su §3 sin elevarlo a hallazgo: un evento que llegara mientras se leen los históricos quedaba en el futuro de `leida_en` y el informe decía «-1 días sin moverse». Remedio: `refrescar` toma la hora al **final** de la lectura. Test con un reloj que avanza en cada consulta; mutante 24. Con un desfase real de reloj entre el prestador y nosotros la edad aún puede salir negativa, y se deja ver: esconderla sería callar el desfase. |
+
+**Las observaciones que no son hallazgos, adjudicadas una a una:**
+
+- **«No se cosecha nunca» (D-2, §7.1) era demasiado absoluto.** Con `--incluir-pendientes`, un
+  envío de canal sin clasificar se baja como provisional. Corregido a «nunca como definitivo» en el
+  plan y en el spec.
+- **«No se cerrará solo» era una predicción** que ninguna medición sostiene. `QUE_SIGNIFICA` dice
+  ahora lo medido: más que ningún silencio anterior a un cambio, «no cuentes con que se cierre
+  solo».
+- **Límite (a), heredado:** `render_cosecha` podía listar un envío como `PROVISIONAL` arriba y
+  como «NO COSECHADOS» abajo. Es la misma frontera del M-21 —un texto que dice algo falso de lo no
+  cosechable—, y cuesta una línea: el bloque se titula ahora «SIN CERTIFICADO DEFINITIVO».
+  Mutante 26.
+- **Límite (b), declarado y no cambiado:** con una expedición hecha **solo** de envíos de un canal
+  sin clasificar, el aportable para antes, con «ninguna entrega electrónica», y no llega a dar el
+  motivo. Es un error explícito —no un texto falso— y es el requisito de F3 de bajar los adjuntos
+  de una entrega electrónica.
+- **El `tzinfo` sin desfase:** no hay productor real, pero el remedio es una línea —exigir
+  `utcoffset()`, no `tzinfo`— y va con su test. Mutante 25.
+- **Fuera de la pieza:** los guards de gobernanza enumeran con `git ls-files` sin mirar si git
+  falló, así que en una copia sin `.git` dan verde sin mirar nada. Confirmado en `_md_trackeados`
+  (l. 140) y derivado a una tarea aparte: un guard no se exime nunca de su ronda.
+
+**Cobertura, dicha sin maquillar.** La R1 cubrió `eb8691a`. **La remediación (`b5c39ee`) no ha
+pasado ronda**: la tabla de `CLAUDE.md` da una sola a esta pieza, así que su cobertura
+independiente queda **AUSENTE, no parcial**. Lo que la sostiene es propio: la suite con las dos
+semillas, los 26 mutantes —los tres del revisor dentro— y sus sondas y su arnés corridos contra el
+árbol remediado. Una R2 solo con autorización expresa de Nikolai.
 
