@@ -610,10 +610,12 @@ def _args_b5_autoderivar(**over):
 
 
 def _mock_drive_info(monkeypatch, *, drive_id="DRIVEID", unidad="Barcelona - S3 "):
+    """El alta lee la carpeta con `leer_carpeta_drive`, que devuelve `(info, motivo)`
+    (`MEJORAS #296`); hasta el 2026-09-26 esta costura era `get_drive_folder_info`."""
     from core.intake_drive import DriveFolderInfo
     monkeypatch.setattr(
-        "core.intake_drive.get_drive_folder_info",
-        lambda fid: DriveFolderInfo(name="carpeta", drive_id=drive_id),
+        "core.intake_drive.leer_carpeta_drive",
+        lambda fid: (DriveFolderInfo(name="carpeta", drive_id=drive_id), ""),
     )
     monkeypatch.setattr(
         "core.intake_drive.get_shared_drive_name",
@@ -648,6 +650,7 @@ def test_cli_drive_ev_autoderiva_codigo_team_sufijo(drive_temporal, monkeypatch)
 def test_cli_drive_ev_flags_explicitos_ganan(drive_temporal, monkeypatch):
     def boom(*a, **kw):
         raise AssertionError("no debe llamar a la Drive API con todo explícito")
+    monkeypatch.setattr("core.intake_drive.leer_carpeta_drive", boom)
     monkeypatch.setattr("core.intake_drive.get_drive_folder_info", boom)
     monkeypatch.setattr("core.intake_drive.get_shared_drive_name", boom)
     # _args() trae los 3 flags explícitos (BaRS11 / Vuelta / TID)
@@ -666,16 +669,20 @@ def test_cli_drive_ev_codigo_no_derivable_error(drive_temporal, monkeypatch):
 
 
 def test_cli_drive_ev_folder_info_none_degrada_limpio(drive_temporal, monkeypatch):
-    monkeypatch.setattr("core.intake_drive.get_drive_folder_info", lambda fid: None)
+    monkeypatch.setattr("core.intake_drive.leer_carpeta_drive",
+                        lambda fid: (None, "motivo de prueba"))
     result = CliRunner().invoke(cli.app, _args_b5_autoderivar(crm="skip"))
     assert result.exit_code == 1
     assert "--codigo-caso" in result.output  # error de flags, no traceback
+    # Y dice por qué no pudo leer la carpeta (`MEJORAS #296`): antes, siempre «token/red».
+    assert "motivo de prueba" in result.output and "token/red" not in result.output
 
 
 def test_cli_drive_ev_sufijo_autoderivado_sin_api(drive_temporal, monkeypatch):
     # codigo y team explícitos -> no se toca la Drive API; solo se deriva sufijo
     def boom(*a, **kw):
         raise AssertionError("no debe llamar a la Drive API")
+    monkeypatch.setattr("core.intake_drive.leer_carpeta_drive", boom)
     monkeypatch.setattr("core.intake_drive.get_drive_folder_info", boom)
     monkeypatch.setattr("core.intake_drive.get_shared_drive_name", boom)
     result = CliRunner().invoke(
@@ -697,8 +704,8 @@ def test_cli_case_id_drive_ev_autoderiva_team_id(drive_temporal, monkeypatch):
     # 2) Re-pull con --case-id y SIN --team-id: se auto-deriva del driveId.
     from core.intake_drive import DriveFolderInfo
     monkeypatch.setattr(
-        "core.intake_drive.get_drive_folder_info",
-        lambda fid: DriveFolderInfo(name="x", drive_id="DRIVEID2"),
+        "core.intake_drive.leer_carpeta_drive",
+        lambda fid: (DriveFolderInfo(name="x", drive_id="DRIVEID2"), ""),
     )
     captura = {}
     def fake_pull(case_id, folder_id, team_id, *, force=False):
@@ -723,13 +730,14 @@ def test_cli_case_id_drive_ev_autoderiva_team_id(drive_temporal, monkeypatch):
 def test_cli_drive_ev_team_id_no_derivable_error_limpio(drive_temporal, monkeypatch):
     """B5 invariante: si --team-id se omite y no se puede derivar (token/red),
     error LIMPIO (exit 1 + menciona --team-id), NUNCA un TypeError de rclone."""
-    monkeypatch.setattr("core.intake_drive.get_drive_folder_info", lambda fid: None)
+    monkeypatch.setattr("core.intake_drive.leer_carpeta_drive",
+                        lambda fid: (None, "motivo de prueba"))
     def boom(*a, **kw):
         raise AssertionError("no debe llegar al pull con team_id=None")
     monkeypatch.setattr("core.intake_drive.pull_drive_ev", boom)
 
     # 6 flags con --codigo-caso explícito (faltan pasa), pero --team-id omitido
-    # y get_drive_folder_info=None -> no se deriva -> error limpio en 5.1.b.
+    # y leer_carpeta_drive sin carpeta -> no se deriva -> error limpio en 5.1.b.
     result = CliRunner().invoke(
         cli.app, _args_b5_autoderivar(**{"codigo-caso": "BaRS11", "crm": "skip"}))
     assert result.exit_code == 1
@@ -763,8 +771,8 @@ def _args_sin_direccion(**over):
 def _carpeta_llamada(monkeypatch, nombre, *, drive_id="DRIVEID"):
     """Mockea la Drive API para que la carpeta de E&V se llame `nombre`."""
     monkeypatch.setattr(
-        "core.intake_drive.get_drive_folder_info",
-        lambda fid: _DriveFolderInfo(name=nombre, drive_id=drive_id))
+        "core.intake_drive.leer_carpeta_drive",
+        lambda fid: (_DriveFolderInfo(name=nombre, drive_id=drive_id), ""))
     monkeypatch.setattr(
         "core.intake_drive.get_shared_drive_name", lambda did: "Barcelona - S3 ")
 
@@ -848,6 +856,77 @@ def test_cli_drive_ev_direccion_explicita_gana(drive_temporal, monkeypatch):
     assert "La que trae la carpeta" not in captura["case_id"]
 
 
+def test_cli_drive_ev_team_id_no_derivable_DICE_POR_QUE(drive_temporal, monkeypatch):
+    """`MEJORAS #296`: dos aperturas (W-02UIQU, W-02Y2J6) abortaron con «token/red» teniendo
+    el token vigente: era `rclone config show` tardando más que su timeout. El error lleva
+    ahora el motivo que da la lectura, y no una causa elegida al pintarlo."""
+    motivo = ("no hay token de `gdrive_ev`: `rclone config show gdrive_ev` tardó más de 30 s "
+              "(¿otra corrida de rclone en marcha?)")
+    monkeypatch.setattr("core.intake_drive.leer_carpeta_drive", lambda fid: (None, motivo))
+    _no_debe_pullear(monkeypatch, "no debe llegar al pull con team_id=None")
+
+    result = CliRunner().invoke(
+        cli.app, _args_b5_autoderivar(**{"codigo-caso": "BaRS11", "crm": "skip"}))
+
+    assert result.exit_code == 1
+    assert "--team-id" in result.output and "tardó más de 30 s" in result.output, result.output
+    assert "token/red" not in result.output
+
+
+def test_cli_drive_ev_direccion_de_una_carpeta_con_el_W_CODE_DELANTE_y_su_ciudad(
+        drive_temporal, monkeypatch):
+    """`MEJORAS #301`: SaRS1 nombra «W-… - SANTANDER. <dirección> - <consultor>», y la carpeta
+    del expediente no lleva la ciudad. Aquí con Barcelona, que es la ciudad del caso."""
+    _carpeta_llamada(monkeypatch, "W-02Z2NR - BARCELONA. Passeig Marítim 30 - Ana P")
+    captura = {}
+    _pull_espia(monkeypatch, captura)
+
+    result = CliRunner().invoke(cli.app, _args_sin_direccion(crm="skip"))
+
+    assert result.exit_code == 0, result.output
+    assert "BaRS3 - Passeig Marítim 30 (W-02Z2NR) - Vuelta" in captura["case_id"]
+    assert "BARCELONA." not in captura["case_id"] and "Ana P" not in captura["case_id"]
+
+
+def test_cli_drive_ev_carpeta_W_delante_AMBIGUA_pide_el_flag(drive_temporal, monkeypatch):
+    """R1/H-01: «W-… - Passeig Marítim 30 - Portal 2» no dice si «Portal 2» es el consultor
+    o la dirección. No se deriva, y se dice por qué: el operador tiene que saber que el CLI
+    encontró el W-code y no supo qué tramo era la dirección."""
+    _carpeta_llamada(monkeypatch, "W-02Z2NR - Passeig Marítim 30 - Portal 2")
+    _no_debe_pullear(monkeypatch, "no debe llegar al pull sin direccion")
+
+    result = CliRunner().invoke(cli.app, _args_sin_direccion(crm="skip"))
+
+    assert result.exit_code == 1
+    assert "--direccion" in result.output and "Portal 2" in result.output, result.output
+    assert "qué tramo" in result.output, result.output
+
+
+def test_cli_drive_ev_la_ciudad_del_formato_DE_SIEMPRE_se_conserva(drive_temporal, monkeypatch):
+    """R1/H-03: la ciudad se quita donde se midió la convención —el W-code delante, SaRS1—;
+    en el formato de siempre, el prefijo se conserva como antes de este cambio."""
+    _carpeta_llamada(monkeypatch, "BARCELONA. Passeig Marítim 30 - W-02Z2NR - Ana P")
+    captura = {}
+    _pull_espia(monkeypatch, captura)
+
+    result = CliRunner().invoke(cli.app, _args_sin_direccion(crm="skip"))
+
+    assert result.exit_code == 0, result.output
+    assert "BARCELONA. Passeig Marítim 30 (W-02Z2NR)" in captura["case_id"]
+
+
+def test_cli_drive_ev_un_prefijo_que_NO_es_la_ciudad_se_conserva(drive_temporal, monkeypatch):
+    """CONTROL: «AVDA.» también es una palabra en mayúsculas con punto, y es la dirección."""
+    _carpeta_llamada(monkeypatch, "W-02Z2NR - AVDA. Diagonal 5 - Ana P")
+    captura = {}
+    _pull_espia(monkeypatch, captura)
+
+    result = CliRunner().invoke(cli.app, _args_sin_direccion(crm="skip"))
+
+    assert result.exit_code == 0, result.output
+    assert "BaRS3 - AVDA. Diagonal 5 (W-02Z2NR) - Vuelta" in captura["case_id"]
+
+
 def test_cli_drive_ev_carpeta_de_otro_w_code_no_deriva(drive_temporal, monkeypatch):
     """La frontera: el nombre de la carpeta tiene que hablar del MISMO expediente.
 
@@ -872,6 +951,7 @@ def test_cli_drive_ev_sin_folder_id_no_intenta_derivar(drive_temporal, monkeypat
     """Sin `--folder-id` no hay nombre de carpeta: el error es el de siempre."""
     def boom(*a, **kw):
         raise AssertionError("no debe llamar a la Drive API sin --folder-id")
+    monkeypatch.setattr("core.intake_drive.leer_carpeta_drive", boom)
     monkeypatch.setattr("core.intake_drive.get_drive_folder_info", boom)
 
     result = CliRunner().invoke(cli.app, [
@@ -1010,9 +1090,9 @@ def test_cli_v1_fuente_email_sin_team_id_lo_deriva_del_folder_id(drive_temporal,
     recibía team_id=None. Aquí se omite --team-id y se mockea la Drive API que lo
     deriva, para confirmar que el pull YA lo recibe resuelto."""
     monkeypatch.setattr(
-        "core.intake_drive.get_drive_folder_info",
-        lambda fid: _DriveFolderInfo(name="393. Hacienda Vadillo - W-02Z2NR - Natalia T",
-                                     drive_id="TID-DERIVADO"))
+        "core.intake_drive.leer_carpeta_drive",
+        lambda fid: (_DriveFolderInfo(name="393. Hacienda Vadillo - W-02Z2NR - Natalia T",
+                                      drive_id="TID-DERIVADO"), ""))
     monkeypatch.setattr(cli.email_export, "export_label",
                         lambda *a, **k: type(
                             "R", (), {"written": 0, "total_in_label": 0, "errors": []})())

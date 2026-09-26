@@ -11,8 +11,14 @@ regex y deriva de ella el project number; jamás imprime `stdout` de rclone.
 
 exit 0 → client propio (project != 202264815644): rcd puede ser ruta primaria.
 exit 3 → remote sin client propio (usa el compartido) → copia secuencial.
-exit 4 → `rclone` no instalado / remote inexistente / timeout.
+exit 4 → `rclone` no instalado, o el remote no existe o no tiene `type` en su configuración.
+exit 5 → `rclone` TARDÓ más de lo que se le da: no se sabe qué client tiene.
 exit 2 → uso incorrecto.
+
+Cualquier exit distinto de 0 lleva a la copia secuencial; el veredicto dice cuál fue la
+causa (`MEJORAS #296`). Hasta el 2026-09-26 el timeout salía como 4, junto a «no
+instalado», y un remote inexistente como 3 —«client compartido»—: `rclone config show
+<remote inexistente>` sale con 0 y solo lo dice en un comentario de su salida.
 """
 from __future__ import annotations
 
@@ -21,6 +27,11 @@ import subprocess
 import sys
 
 _CLIENT_COMPARTIDO_PROJECT = "202264815644"
+#: Lo que trae un remote de verdad: sin esa línea no hay client que clasificar. Un remote
+#: inexistente sale con código 0 y un comentario inglés (`# couldn't find type of fs`, medido
+#: con rclone real el 2026-09-26), sin `type`; mirar la línea y no el comentario vale también
+#: para otra versión que escriba otro texto (R1/H-05 de la fila #42).
+_LINEA_TYPE = re.compile(r"(?m)^\s*type\s*=")
 _CLIENT_ID_RE = re.compile(r"^\s*client_id\s*=\s*(\S+)", re.M)
 
 
@@ -42,9 +53,12 @@ def precheck(remote: str) -> int:
             ["rclone", "config", "show", nombre],
             capture_output=True, encoding="utf-8", errors="replace", timeout=15,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        return 5
+    except FileNotFoundError:
         return 4
-    if r.returncode != 0:
+    salida = r.stdout or ""
+    if r.returncode != 0 or not _LINEA_TYPE.search(salida):
         return 4
     cid = client_id_de_config(r.stdout)
     if not cid:
@@ -62,7 +76,9 @@ def main(argv: list[str]) -> int:
     code = precheck(argv[1])
     # Solo un veredicto legible; JAMÁS el stdout de rclone (secretos en claro).
     print({0: "client propio: rcd primario", 3: "client compartido: copia secuencial",
-           4: "rclone/remote no disponible"}.get(code, "uso incorrecto"))
+           4: "rclone no instalado o el remote no existe: copia secuencial",
+           5: "rclone tardó demasiado en responder: copia secuencial (reintenta si otra "
+              "corrida de rclone estaba en marcha)"}.get(code, "uso incorrecto"))
     return code
 
 

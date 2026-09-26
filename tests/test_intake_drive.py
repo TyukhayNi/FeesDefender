@@ -585,6 +585,52 @@ def test_parse_folder_sufijo_con_guion_largo():
     assert m == "W-04ABCD"
 
 
+@pytest.mark.parametrize("nombre, direccion", [
+    # `MEJORAS #301`: la plaza de Santander, y no solo ella. Censo del 2026-09-26 sobre 53
+    # unidades de E&V (hasta 50 carpetas cada una): 231 carpetas con el W-code DELANTE, 185 de
+    # ellas con guion detrás y 46 con un espacio. Ninguna parseaba.
+    ("W-02UIQU - Calle Mayor 5 - Ana P", "Calle Mayor 5"),          # con consultor
+    ("W-02UIQU - Calle Mayor 5", "Calle Mayor 5"),                   # sin consultor
+    ("W-02UIQU Calle Mayor 5 - Ana P", "Calle Mayor 5"),             # espacio tras el W-code
+    ("W-02UIQU – Calle Mayor 5, 1-2 – Ana P", "Calle Mayor 5, 1-2"),  # «1-2» no es separador
+    ("w-02uiqu - Calle Mayor 5 - Ana P", "Calle Mayor 5"),
+    ("W-02UIQU - Calle A 5 - Portal 2 - Ana P", "Calle A 5 - Portal 2"),
+    # La ciudad que pone SaRS1 delante se conserva AQUÍ: el parser no sabe de qué ciudad es el
+    # caso. La quita el alta, que sí lo sabe (`abrir_caso._direccion_de_la_carpeta`).
+    ("W-02UIQU - SANTANDER. Calle Mayor 5 - Ana P", "SANTANDER. Calle Mayor 5"),
+])
+def test_parse_folder_w_code_DELANTE(nombre, direccion):
+    d, m = parse_ev_folder_name(nombre)
+    assert (d, m) == (direccion, "W-02UIQU")
+
+
+@pytest.mark.parametrize("nombre", [
+    "W-02UIQU - Calle Mayor 5 - Portal 2",   # el último tramo lleva número: no es un consultor
+    "W-02UIQU - Ana P",                       # un tramo sin número: ¿dirección o consultor?
+    "W-02UIQU - Finca Los Olivos - Ana P",    # la «dirección» sin número
+])
+def test_parse_folder_w_code_delante_AMBIGUO_no_deriva(nombre):
+    """R1/H-01 de la fila #47: con el W-code delante, el último « - » separa el consultor
+    solo por convención, y un nombre que no la cumple se deriva mal —se pierde un tramo de la
+    dirección, o el consultor pasa por dirección—, y esa dirección acaba en el `case_id`. La
+    convención medida (229 carpetas): la dirección lleva número y el consultor no; 219 la
+    cumplen. Lo que no la cumple no se deriva: se pide el flag."""
+    assert parse_ev_folder_name(nombre) == ("", "W-02UIQU")
+
+
+def test_parse_folder_solo_el_w_code_delante():
+    """Como `- W-030LFT`: el W-code sin dirección da la dirección vacía."""
+    assert parse_ev_folder_name("W-02UIQU") == ("", "W-02UIQU")
+
+
+def test_parse_folder_w_code_en_medio_SIN_guion_no_se_adivina():
+    """CONTROL. El censo contó 331 carpetas con el W-code en medio sin guion delante, en
+    formas heterogéneas —paréntesis, `_`, fechas y números delante—: el prefijo no es una
+    dirección limpia, y derivar adivinando es peor que teclear. Sigue sin derivarse."""
+    assert parse_ev_folder_name("2023_04 Calle Mayor 5 (Madrid)W-02UIQU Ana") == ("", "")
+    assert parse_ev_folder_name("Calle Mayor 5 W-02UIQU") == ("", "")
+
+
 # ---------------------------------------------------------------------------
 # get_drive_folder_info
 # ---------------------------------------------------------------------------
@@ -594,7 +640,8 @@ def _mock_rclone_token(monkeypatch, token: str | None = "fake_access_token"):
     token_json = f'{{"access_token": "{token}"}}' if token else "{}"
     mock = MagicMock()
     mock.returncode = 0
-    mock.stdout = f"[gdrive_ev]\ntoken = {token_json}\n"
+    # Fiel a la salida real, que trae `type = drive` (R1/H-05 de la fila #42).
+    mock.stdout = f"[gdrive_ev]\ntype = drive\ntoken = {token_json}\n"
     mock.stderr = ""
     monkeypatch.setattr("subprocess.run", lambda *a, **kw: mock)
 
@@ -807,7 +854,8 @@ def _show_token_resp(token_data: dict) -> MagicMock:
     """Mock de `rclone config show gdrive_ev` que devuelve el bloque indicado."""
     mock = MagicMock()
     mock.returncode = 0
-    mock.stdout = f"[gdrive_ev]\ntoken = {json.dumps(token_data)}\n"
+    # Fiel a la salida real, que trae `type = drive` (R1/H-05 de la fila #42).
+    mock.stdout = f"[gdrive_ev]\ntype = drive\ntoken = {json.dumps(token_data)}\n"
     mock.stderr = ""
     return mock
 
@@ -970,6 +1018,226 @@ class TestGetDriveAccessToken:
         monkeypatch.setattr("subprocess.run", MagicMock(side_effect=[mock]))
 
         assert _get_drive_access_token() is None
+
+
+class TestObtenerTokenDrive:
+    """`MEJORAS #296`: el token O EL MOTIVO de que no lo haya.
+
+    Medido en las aperturas de W-02UIQU y W-02Y2J6 (2026-09-25): `rclone config show
+    gdrive_ev` tardó 3,9-6,7 s con otra corrida de rclone en marcha, el lector tenía 5 s, el
+    `TimeoutExpired` se tragaba como `None` y el alta abortaba diciendo «token/red» con el
+    token vigente. Las dos veces la salida fue teclear `--team-id`.
+    """
+
+    def test_si_config_show_TARDA_lo_dice(self, monkeypatch):
+        from core.intake_drive import obtener_token_drive
+
+        def _lento(cmd, *a, **kw):
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=kw.get("timeout"))
+        monkeypatch.setattr("subprocess.run", _lento)
+
+        t = obtener_token_drive()
+
+        assert t.token is None
+        assert "tardó" in t.motivo and "config show" in t.motivo, t.motivo
+
+    def test_el_timeout_de_las_dos_ordenes_es_holgado(self, monkeypatch):
+        """Holgado respecto a lo medido (6,7 s el peor): con 5 s, un rclone ocupado era un
+        token inexistente. Vale para la lectura y para la renovación (`rclone about`), que
+        en W-02Y2J6 tardó 6,7 s con un timeout de 10."""
+        from core import intake_drive
+        expired = {"access_token": "viejo",
+                   "expiry": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()}
+        fresh = {"access_token": "nuevo",
+                 "expiry": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}
+        timeouts = []
+
+        def _runner(cmd, *a, **kw):
+            timeouts.append((cmd[1], kw.get("timeout")))
+            if cmd[:3] == ["rclone", "config", "show"]:
+                return _show_token_resp(expired if len(timeouts) == 1 else fresh)
+            return _rclone_about_resp(0)
+        monkeypatch.setattr("subprocess.run", _runner)
+
+        assert intake_drive.obtener_token_drive().token == "nuevo"
+        assert [c for c, _ in timeouts] == ["config", "about", "config"]
+        assert all(t == intake_drive._TIMEOUT_RCLONE_TOKEN for _, t in timeouts), timeouts
+        # Con techo (R1/H-07): 3.000 s también pasaba «>= 20». En el peor caso son tres
+        # órdenes seguidas —leer, renovar, releer—, así que 60 s ya serían tres minutos.
+        assert 20 <= intake_drive._TIMEOUT_RCLONE_TOKEN <= 60
+
+    def test_si_el_remote_no_existe_lo_dice(self, monkeypatch):
+        """rclone real (medido el 2026-09-26): código 0 y un comentario en la salida."""
+        from core.intake_drive import obtener_token_drive
+        mock = MagicMock(returncode=0, stderr="",
+                         stdout='[gdrive_ev]\n# couldn\'t find type of fs for "gdrive_ev"\n')
+        monkeypatch.setattr("subprocess.run", MagicMock(side_effect=[mock]))
+
+        t = obtener_token_drive()
+
+        # El motivo definitivo, no el de la config sin `type` (que también cubre este caso).
+        assert t.token is None and "no existe" in t.motivo, t.motivo
+        assert "type" not in t.motivo, t.motivo
+
+    def test_si_falta_rclone_lo_dice(self, monkeypatch):
+        from core.intake_drive import obtener_token_drive
+
+        def _boom(*a, **kw):
+            raise FileNotFoundError("rclone")
+        monkeypatch.setattr("subprocess.run", _boom)
+
+        t = obtener_token_drive()
+
+        assert t.token is None and "rclone" in t.motivo and "instalado" in t.motivo, t.motivo
+
+    def test_si_RENOVAR_tarda_lo_dice(self, monkeypatch):
+        from core.intake_drive import obtener_token_drive
+        expired = {"access_token": "viejo",
+                   "expiry": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()}
+
+        def _runner(cmd, *a, **kw):
+            if cmd[:3] == ["rclone", "config", "show"]:
+                return _show_token_resp(expired)
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=kw.get("timeout"))
+        monkeypatch.setattr("subprocess.run", _runner)
+
+        t = obtener_token_drive()
+
+        assert t.token is None
+        assert "caducado" in t.motivo and "tardó" in t.motivo, t.motivo
+
+    def test_un_token_A_PUNTO_de_caducar_no_se_llama_caducado(self, monkeypatch):
+        """R1/H-04: dentro del margen de 5 min se renueva aunque aún valga; si la renovación
+        falla, el motivo no puede decir que estaba caducado."""
+        from core.intake_drive import obtener_token_drive
+        casi = {"access_token": "casi",
+                "expiry": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()}
+        monkeypatch.setattr("subprocess.run", MagicMock(side_effect=[
+            _show_token_resp(casi), _rclone_about_resp(returncode=1)]))
+
+        t = obtener_token_drive()
+
+        assert t.token is None and "a punto de caducar" in t.motivo, t.motivo
+
+    def test_una_config_sin_type_no_se_toma_por_un_remote(self, monkeypatch):
+        """R1/H-05: el remote inexistente se reconocía solo por el comentario inglés de
+        rclone. Sin él —otra versión, otro texto— salía «sin bloque token». Un remote de verdad
+        trae `type =`: sin esa línea, no se afirma que lo haya."""
+        from core.intake_drive import obtener_token_drive
+        mock = MagicMock(returncode=0, stderr="",
+                         stdout="[gdrive_ev]\n# remote gdrive_ev not found\n")
+        monkeypatch.setattr("subprocess.run", MagicMock(side_effect=[mock]))
+
+        t = obtener_token_drive()
+
+        assert t.token is None and "type" in t.motivo, t.motivo
+        assert "bloque" not in t.motivo, t.motivo
+
+    def test_con_token_vigente_no_hay_motivo(self, monkeypatch):
+        from core.intake_drive import obtener_token_drive
+        token = {"access_token": "vigente",
+                 "expiry": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}
+        monkeypatch.setattr("subprocess.run", MagicMock(side_effect=[_show_token_resp(token)]))
+
+        t = obtener_token_drive()
+
+        assert (t.token, t.motivo) == ("vigente", "")
+
+    def test_el_motivo_nunca_lleva_la_salida_de_rclone(self, monkeypatch):
+        """`rclone config show` escribe el token y el `client_secret` en claro: el motivo es
+        una frase para el operador y no puede arrastrar nada de esa salida."""
+        from core.intake_drive import obtener_token_drive
+        mock = MagicMock(returncode=0, stderr="",
+                         stdout="[gdrive_ev]\ntype = drive\nclient_secret = GOCSPX-secreto\n"
+                                "token = {esto no es json ya29.secreto}\n")
+        monkeypatch.setattr("subprocess.run", MagicMock(side_effect=[mock]))
+
+        t = obtener_token_drive()
+
+        assert t.token is None and t.motivo
+        assert "GOCSPX" not in t.motivo and "ya29" not in t.motivo, t.motivo
+
+
+class TestLeerCarpetaDrive:
+    """La carpeta de E&V, o por qué no se pudo leer (`MEJORAS #296`)."""
+
+    def test_sin_token_devuelve_el_motivo_del_token(self, monkeypatch):
+        from core import intake_drive
+        monkeypatch.setattr(intake_drive, "obtener_token_drive",
+                            lambda: intake_drive.TokenDrive(None, "rclone tardó"))
+
+        info, motivo = intake_drive.leer_carpeta_drive("FID")
+
+        assert info is None and "rclone tardó" in motivo and "token" in motivo, motivo
+
+    def test_un_http_que_no_es_200_se_dice(self, monkeypatch):
+        from core import intake_drive
+        monkeypatch.setattr(intake_drive, "obtener_token_drive",
+                            lambda: intake_drive.TokenDrive("ya29.secreto", ""))
+        resp = MagicMock(status_code=404, text="not found")
+        resp.json.return_value = {}
+        monkeypatch.setattr("httpx.get", MagicMock(return_value=resp))
+
+        info, motivo = intake_drive.leer_carpeta_drive("FID")
+
+        assert info is None and "404" in motivo, motivo
+        assert "ya29" not in motivo
+
+    @staticmethod
+    def _respuesta(status, razon):
+        resp = MagicMock(status_code=status, text="...")
+        resp.json.return_value = {"error": {"errors": [{"reason": razon}]}}
+        return resp
+
+    def test_un_403_que_NO_es_de_permisos_no_se_llama_sin_permiso(self, monkeypatch):
+        """R1/H-02: un 403 de cuota diaria salía como «sin permiso sobre la carpeta»."""
+        from core import intake_drive
+        monkeypatch.setattr(intake_drive, "obtener_token_drive",
+                            lambda: intake_drive.TokenDrive("tok", ""))
+        monkeypatch.setattr("httpx.get", MagicMock(
+            return_value=self._respuesta(403, "dailyLimitExceeded")))
+
+        info, motivo = intake_drive.leer_carpeta_drive("FID")
+
+        assert info is None and "403" in motivo and "dailyLimitExceeded" in motivo, motivo
+        assert "sin permiso" not in motivo, motivo
+
+    def test_un_403_de_permisos_si_se_dice(self, monkeypatch):
+        from core import intake_drive
+        monkeypatch.setattr(intake_drive, "obtener_token_drive",
+                            lambda: intake_drive.TokenDrive("tok", ""))
+        monkeypatch.setattr("httpx.get", MagicMock(
+            return_value=self._respuesta(403, "insufficientPermissions")))
+
+        info, motivo = intake_drive.leer_carpeta_drive("FID")
+
+        assert info is None and "sin permiso" in motivo, motivo
+
+    def test_la_cuota_agotada_dice_la_razon_que_vio(self, monkeypatch):
+        """R1/H-02: con `userRateLimitExceeded`, el mensaje decía `rateLimitExceeded`."""
+        from core import intake_drive
+        monkeypatch.setattr(intake_drive, "obtener_token_drive",
+                            lambda: intake_drive.TokenDrive("tok", ""))
+        monkeypatch.setattr(intake_drive.time, "sleep", lambda s: None)
+        monkeypatch.setattr("httpx.get", MagicMock(
+            return_value=self._respuesta(403, "userRateLimitExceeded")))
+
+        info, motivo = intake_drive.leer_carpeta_drive("FID")
+
+        assert info is None and "userRateLimitExceeded" in motivo, motivo
+
+    def test_la_carpeta_leida_no_trae_motivo(self, monkeypatch):
+        from core import intake_drive
+        monkeypatch.setattr(intake_drive, "obtener_token_drive",
+                            lambda: intake_drive.TokenDrive("tok", ""))
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"name": "Calle Mayor 5 - W-02Z2NR", "driveId": "D1"}
+        monkeypatch.setattr("httpx.get", MagicMock(return_value=resp))
+
+        info, motivo = intake_drive.leer_carpeta_drive("FID")
+
+        assert (info.name, info.drive_id, motivo) == ("Calle Mayor 5 - W-02Z2NR", "D1", "")
+        assert intake_drive.get_drive_folder_info("FID") == info
 
 
 class TestParseIsoExpiry:

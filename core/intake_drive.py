@@ -87,9 +87,25 @@ _RATE_LIMIT_BACKOFF_SECONDS: tuple[float, ...] = (2.0, 5.0, 10.0)
 
 # Margen de seguridad antes de la expiración nominal del access_token de
 # `gdrive_ev`. Si el token vence en menos de este intervalo (o ya está
-# vencido), `_get_drive_access_token` fuerza un refresh proactivo vía
+# vencido), `obtener_token_drive` fuerza un refresh proactivo vía
 # `rclone about gdrive_ev:` (que usa el refresh_token y reescribe la conf).
 _TOKEN_EXPIRY_MARGIN = timedelta(minutes=5)
+
+#: Lo que se le da a `rclone config show` y a `rclone about` para leer y renovar el token. No
+#: tardan lo mismo siempre: 0,1 s en reposo y 3,9-6,7 s con otra corrida de rclone en marcha
+#: (medido en las aperturas de W-02UIQU y W-02Y2J6, 2026-09-25). Con 5 s el timeout se tragaba
+#: como «no hay token» y el alta abortaba diciendo «token/red» con el token vigente
+#: (`MEJORAS #296`). Un rclone colgado de verdad cuesta ahora 30 s, y se dice.
+_TIMEOUT_RCLONE_TOKEN = 30
+#: Cómo se nombra, en los motivos, el token que se renueva: puede estar dentro del margen.
+_CADUCADO = "el token estaba caducado o a punto de caducar"
+
+#: Lo que `rclone config show` escribe, con código 0, si el remote no existe (medido con rclone
+#: real el 2026-09-26): el código de salida no lo dice.
+_REMOTE_INEXISTENTE = "couldn't find type of fs"
+#: Y lo que sí trae un remote de verdad. El comentario de arriba es inglés y de una versión
+#: concreta: sin esta línea no se afirma que haya remote, diga lo que diga (R1/H-05).
+_LINEA_TYPE = re.compile(r"(?m)^\s*type\s*=")
 
 # Regex que cubre los formatos habituales de URL de carpeta Google Drive:
 #   https://drive.google.com/drive/folders/{id}
@@ -356,11 +372,34 @@ _EV_FOLDER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# El W-code DELANTE (`MEJORAS #301`): «W-02UIQU - <dirección> - <consultor>», con guion o con un
+# espacio tras el código. Lo usa la plaza de Santander y no solo ella: el censo del 2026-09-26
+# sobre 53 unidades contó 231 carpetas así (185 con guion detrás, 46 con espacio), y ninguna
+# parseaba. La dirección es lo que queda hasta el ÚLTIMO « - », que es el consultor si lo hay:
+# la misma convención que en el orden de siempre. Solo separa el guion rodeado de espacios —el
+# «1-2» de un piso no—.
+#
+# **Y solo cuando el nombre cumple la convención que lo hace inequívoco** (R1/H-01): la
+# dirección lleva número y el consultor no. En el otro orden el W-code delimita la dirección;
+# aquí, el último « - » solo por convención, y «W-… - Calle Mayor 5 - Portal 2» o «W-… - Ana
+# P» se derivaban mal —un tramo perdido, un consultor por dirección— hacia el `case_id`. Medido
+# el 2026-09-26: de 229 carpetas con el W-code delante, 219 la cumplen (161 «dirección con
+# número - consultor», 57 «dirección con número», 1 con la dirección partida). Las otras 10 no
+# se derivan: se pide el flag.
+_EV_FOLDER_W_DELANTE_RE = re.compile(
+    r"^(W-[A-Z0-9]{5,8})\b\s*(?:[-–]\s+|\s+|$)(.*)$",
+    re.IGNORECASE,
+)
+_SEPARADOR_DE_TRAMO_RE = re.compile(r"\s+[-–]\s+")
+
 
 def parse_ev_folder_name(folder_name: str) -> tuple[str, str]:
     """Extrae dirección e ID GO del nombre de carpeta W-XXXXXX de E&V.
 
-    Formato esperado: «Dirección del inmueble - W-XXXXXX»
+    Formatos: «Dirección del inmueble - W-XXXXXX[ - consultor]» y, con el W-code delante,
+    «W-XXXXXX - Dirección[ - consultor]» (`MEJORAS #301`). Un W-code en medio sin guion delante
+    no se interpreta: el censo los encontró con paréntesis, `_` y fechas alrededor, y ahí el
+    prefijo no es una dirección, así que se pide el flag.
 
     Returns:
         Tupla (direccion, mls_id). Cadenas vacías si el formato no coincide.
@@ -376,11 +415,35 @@ def parse_ev_folder_name(folder_name: str) -> tuple[str, str]:
         parse_ev_folder_name("393. Hacienda Vadillo - W-02RRO3 - Natalia Trujillano")
         # → ("393. Hacienda Vadillo", "W-02RRO3")
         # (el sufijo "Natalia Trujillano" es el consultor captador, no el cliente; se descarta)
+
+        parse_ev_folder_name("W-02UIQU - Calle Mayor 5 - Ana P")
+        # → ("Calle Mayor 5", "W-02UIQU")
     """
-    m = _EV_FOLDER_RE.match(folder_name.strip())
+    nombre = folder_name.strip()
+    m = _EV_FOLDER_RE.match(nombre)
     if m:
         return m.group(1).strip(), m.group(2).upper()
+    m = _EV_FOLDER_W_DELANTE_RE.match(nombre)
+    if m:
+        tramos = [x.strip() for x in _SEPARADOR_DE_TRAMO_RE.split(m.group(2).strip()) if x.strip()]
+        return _direccion_con_w_delante(tramos), m.group(1).upper()
     return "", ""
+
+
+def _direccion_con_w_delante(tramos: list[str]) -> str:
+    """La dirección de un nombre con el W-code delante, o \"\" si el nombre no cumple la
+    convención que la hace inequívoca: la dirección lleva número y el consultor —el último
+    tramo, si hay más de uno— no (R1/H-01)."""
+    def con_numero(texto: str) -> bool:
+        return bool(re.search(r"\d", texto))
+
+    if len(tramos) == 1:
+        return tramos[0] if con_numero(tramos[0]) else ""
+    if len(tramos) >= 2:
+        direccion = " - ".join(tramos[:-1])
+        if con_numero(direccion) and not con_numero(tramos[-1]):
+            return direccion
+    return ""
 
 
 @dataclass
@@ -454,92 +517,123 @@ def _parse_iso_expiry(value: str) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
-def _get_drive_access_token() -> str | None:
-    """Devuelve un access_token OAuth vigente del remote ``gdrive_ev``.
+@dataclass(frozen=True)
+class TokenDrive:
+    """El access_token de `gdrive_ev`, o el motivo de que no lo haya.
 
-    Lee el bloque ``token = {...}`` que rclone almacena en ``rclone.conf``
-    para el remote ``gdrive_ev`` y, si el campo ``expiry`` indica que el
-    access_token está caducado o vence dentro de :data:`_TOKEN_EXPIRY_MARGIN`,
-    fuerza un refresh proactivo ejecutando ``rclone about gdrive_ev:``. Esta
-    operación trivial obliga a rclone a usar el ``refresh_token`` para emitir
-    un nuevo access_token y reescribir la conf. Tras el refresh, releemos el
-    bloque y devolvemos el nuevo access_token.
-
-    Comportamiento defensivo:
-
-    - ``expiry`` ausente o malformado → devuelve el access_token tal cual
-      (preserva el comportamiento previo a la renovación proactiva; el
-      keep-alive diario mitiga el riesgo en producción).
-    - Refresh falla (rclone devuelve != 0 o lanza excepción) → ``None``.
-      No devolvemos el access_token caducado: sabemos que dará 401.
-    - Lectura inicial falla → ``None``.
-
-    Esta función NO lanza excepciones — todos los fallos se silencian y se
-    devuelve ``None`` para que el auto-fill (callers como
-    :func:`get_drive_folder_info`) degrade limpiamente.
+    `motivo` es una frase para el operador —vacía cuando hay token— y **nunca** lleva nada de la
+    salida de rclone, que escribe el token y el `client_secret` en claro.
     """
-    # --- 1ª lectura del bloque token ---------------------------------------
+    token: str | None
+    motivo: str = ""
+
+
+def _leer_bloque_token(remote: str = "gdrive_ev") -> tuple[dict | None, str]:
+    """El bloque `token = {...}` de `rclone config show <remote>`, o por qué no se pudo leer.
+
+    El único sitio que lanza esa orden: sirve a la lectura inicial y a la de después de
+    renovar, que hasta `MEJORAS #296` eran dos copias con su propio timeout de 5 s.
+    """
+    orden = f"`rclone config show {remote}`"
     try:
-        result = subprocess.run(
-            ["rclone", "config", "show", "gdrive_ev"],
+        r = subprocess.run(
+            ["rclone", "config", "show", remote],
             capture_output=True,
             encoding="utf-8",
             errors="replace",
-            timeout=5,
+            timeout=_TIMEOUT_RCLONE_TOKEN,
         )
-    except Exception:
-        return None
+    except FileNotFoundError:
+        return None, "rclone no está instalado o no está en el PATH"
+    except subprocess.TimeoutExpired:
+        return None, (f"{orden} tardó más de {_TIMEOUT_RCLONE_TOKEN} s (¿otra corrida de rclone "
+                      "en marcha?)")
+    except Exception as exc:                                   # noqa: BLE001
+        return None, f"{orden} falló ({type(exc).__name__})"
+    salida = r.stdout or ""
+    if r.returncode != 0:
+        return None, f"{orden} salió con código {r.returncode}"
+    if _REMOTE_INEXISTENTE in salida:
+        return None, f"el remote `{remote}` no existe en la configuración de rclone"
+    if not _LINEA_TYPE.search(salida):
+        return None, (f"el remote `{remote}` no tiene `type` en la configuración de rclone "
+                      "(¿no existe, o está incompleto?)")
+    datos = _parse_rclone_token_block(salida)
+    if not datos:
+        return None, f"el remote `{remote}` no tiene un bloque `token` legible (¿falta el login?)"
+    return datos, ""
 
-    token_data = _parse_rclone_token_block(result.stdout or "")
-    if not token_data:
-        return None
 
-    access_token = token_data.get("access_token") or None
-    expiry_raw = token_data.get("expiry")
+def obtener_token_drive() -> TokenDrive:
+    """Un access_token OAuth vigente del remote ``gdrive_ev``, o el motivo de que no lo haya.
 
-    # --- Sin expiry o malformado: comportamiento legado --------------------
+    Lee el bloque ``token = {...}`` que rclone guarda en ``rclone.conf`` y, si ``expiry`` dice
+    que está caducado o vence dentro de :data:`_TOKEN_EXPIRY_MARGIN`, fuerza una renovación con
+    ``rclone about gdrive_ev:`` —una orden trivial que obliga a rclone a usar el
+    ``refresh_token`` y reescribir la conf— y lo relee.
+
+    Comportamiento defensivo, el de siempre:
+
+    - ``expiry`` ausente o malformado → el access_token tal cual (el keep-alive diario mitiga
+      el riesgo).
+    - La renovación falla → sin token: el caducado daría 401.
+
+    **Lo que añade `MEJORAS #296`: el motivo.** Hasta el 2026-09-26 todo fallo —rclone lento,
+    ausente, un remote inexistente, un token sin bloque— era el mismo ``None``, y quien lo pintaba
+    elegía una causa: el alta decía «token/red». Ahora cada salida sin token dice cuál fue.
+    """
+    datos, motivo = _leer_bloque_token()
+    if datos is None:
+        return TokenDrive(None, motivo)
+    access = datos.get("access_token") or None
+    sin_access = "el bloque `token` de `gdrive_ev` no trae access_token"
+    expiry_raw = datos.get("expiry")
+
+    # Sin expiry o malformado: comportamiento legado.
     if not expiry_raw:
-        return access_token
+        return TokenDrive(access, "" if access else sin_access)
     try:
         expiry_dt = _parse_iso_expiry(expiry_raw)
-    except Exception:
-        return access_token
+    except Exception:                                          # noqa: BLE001
+        return TokenDrive(access, "" if access else sin_access)
 
-    # --- Vigente con margen suficiente -------------------------------------
-    now = datetime.now(timezone.utc)
-    if expiry_dt - now > _TOKEN_EXPIRY_MARGIN:
-        return access_token
+    # Vigente con margen suficiente.
+    if expiry_dt - datetime.now(timezone.utc) > _TOKEN_EXPIRY_MARGIN:
+        return TokenDrive(access, "" if access else sin_access)
 
-    # --- Caducado o a punto de caducar: forzar refresh ---------------------
+    # Caducado o a punto: forzar la renovación. Dentro del margen aún vale, así que el motivo
+    # no puede decir «caducado» a secas (R1/H-04).
     try:
         refresh = subprocess.run(
             ["rclone", "about", "gdrive_ev:"],
             capture_output=True,
             encoding="utf-8",
             errors="replace",
-            timeout=10,
+            timeout=_TIMEOUT_RCLONE_TOKEN,
         )
-    except Exception:
-        return None
+    except FileNotFoundError:
+        return TokenDrive(None, "rclone no está instalado o no está en el PATH")
+    except subprocess.TimeoutExpired:
+        return TokenDrive(None, (f"{_CADUCADO}, y renovarlo (`rclone about gdrive_ev:`) tardó "
+                                 f"más de {_TIMEOUT_RCLONE_TOKEN} s"))
+    except Exception as exc:                                   # noqa: BLE001
+        return TokenDrive(None, f"{_CADUCADO}, y renovarlo falló ({type(exc).__name__})")
     if refresh.returncode != 0:
-        return None
+        return TokenDrive(None, (f"{_CADUCADO}, y la renovación (`rclone about gdrive_ev:`) "
+                                 f"salió con código {refresh.returncode}"))
 
-    # --- Releer el bloque tras el refresh ----------------------------------
-    try:
-        result2 = subprocess.run(
-            ["rclone", "config", "show", "gdrive_ev"],
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=5,
-        )
-    except Exception:
-        return None
+    datos2, motivo2 = _leer_bloque_token()
+    if datos2 is None:
+        return TokenDrive(None, f"tras renovar el token, {motivo2}")
+    access2 = datos2.get("access_token") or None
+    return TokenDrive(access2, "" if access2 else f"tras renovar el token, {sin_access}")
 
-    token_data2 = _parse_rclone_token_block(result2.stdout or "")
-    if not token_data2:
-        return None
-    return token_data2.get("access_token") or None
+
+def _get_drive_access_token() -> str | None:
+    """El access_token vigente de ``gdrive_ev``, o ``None``: :func:`obtener_token_drive` sin el
+    motivo. Se conserva para quien solo necesita el token; quien vaya a decirle al operador por
+    qué no lo hay, que llame a :func:`obtener_token_drive` (`MEJORAS #296`). No lanza."""
+    return obtener_token_drive().token
 
 
 def _is_rate_limit_response(resp) -> bool:
@@ -566,32 +660,46 @@ def _is_rate_limit_response(resp) -> bool:
     return False
 
 
-def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
-    """Obtiene nombre y Shared Drive ID de una carpeta del Drive E&V.
+#: Los `reason` de un 403 que SÍ son de permisos. Cualquier otro 403 —cuota diaria, una política
+#: del dominio…— se dice con su código y su razón, sin atribuirle «sin permiso» (R1/H-02).
+_RAZONES_DE_PERMISO = frozenset({"insufficientPermissions", "forbidden",
+                                 "insufficientFilePermissions", "appNotAuthorizedToFile"})
 
-    Usa la API REST de Google Drive (v3) con el access_token del remote
-    ``gdrive_ev`` almacenado en rclone.conf. Devuelve None si el token
-    está expirado, la carpeta no existe o cualquier error de red.
 
-    El token se renueva automáticamente cada vez que rclone hace un pull;
-    si ha caducado, el auto-fill simplemente no se activa (no es un error
-    bloqueante).
+def _razon_de_error(resp) -> str:
+    """El `reason` del primer error de una respuesta de la Drive API, o \"\".
+
+    Solo el identificador —letras, como `dailyLimitExceeded`—, nunca el cuerpo: un mensaje de
+    error puede citar lo que se pidió."""
+    try:
+        body = resp.json()
+    except Exception:                                          # noqa: BLE001
+        return ""
+    error = body.get("error") if isinstance(body, dict) else None
+    errores = error.get("errors") if isinstance(error, dict) else None
+    for err in errores if isinstance(errores, list) else []:
+        razon = err.get("reason") if isinstance(err, dict) else None
+        if isinstance(razon, str) and re.fullmatch(r"[A-Za-z]{1,60}", razon):
+            return razon
+    return ""
+
+
+def leer_carpeta_drive(folder_id: str) -> tuple[DriveFolderInfo | None, str]:
+    """Nombre y Shared Drive ID de una carpeta del Drive E&V, **o por qué no se pudo leer**.
+
+    Usa la API REST de Google Drive (v3) con el access_token del remote ``gdrive_ev``
+    (:func:`obtener_token_drive`). El motivo, vacío si hay carpeta, distingue el token —con su
+    causa—, la red, un HTTP que no es 200 y la cuota agotada: el alta decía «token/red» ante
+    cualquiera de ellos (`MEJORAS #296`).
 
     **Retry on rate-limit**: cuando la Drive API devuelve 403/429 con
-    ``reason == rateLimitExceeded`` (síntoma típico de la cuota global
-    compartida del OAuth client de rclone), reintenta con backoff exponencial
-    según ``_RATE_LIMIT_BACKOFF_SECONDS``. Si tras agotar los reintentos
-    sigue rate-limited, devuelve None.
-
-    Args:
-        folder_id: ID de la carpeta Google Drive (extraído de la URL).
-
-    Returns:
-        DriveFolderInfo(name, drive_id), o None si no se pudo obtener.
+    ``reason == rateLimitExceeded`` (la cuota global compartida del OAuth client de rclone),
+    reintenta con backoff exponencial según ``_RATE_LIMIT_BACKOFF_SECONDS``.
     """
-    access_token = _get_drive_access_token()
-    if not access_token:
-        return None
+    token = obtener_token_drive()
+    if not token.token:
+        return None, f"no hay token de `gdrive_ev`: {token.motivo}"
+    access_token = token.token
 
     # Secuencia de esperas: 0 (primer intento, sin sleep) + backoffs.
     attempts = (0.0,) + _RATE_LIMIT_BACKOFF_SECONDS
@@ -599,9 +707,9 @@ def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
     try:
         import httpx
     except ImportError:
-        return None
+        return None, "falta el paquete httpx"
 
-    last_resp = None
+    ultima_razon = ""
     for delay in attempts:
         if delay > 0:
             time.sleep(delay)
@@ -616,29 +724,47 @@ def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
                 headers={"Authorization": f"Bearer {access_token}"},
                 timeout=5,
             )
-        except Exception:
-            return None
+        except Exception as exc:                               # noqa: BLE001
+            return None, f"la Drive API no respondió ({type(exc).__name__})"
 
-        last_resp = r
         if r.status_code == 200:
             try:
                 data = r.json()
-            except Exception:
-                return None
+            except Exception:                                  # noqa: BLE001
+                return None, "la Drive API devolvió una respuesta ilegible"
             name = data.get("name", "")
-            drive_id = data.get("driveId", "")
             if name:
-                return DriveFolderInfo(name=name, drive_id=drive_id)
-            return None
+                return DriveFolderInfo(name=name, drive_id=data.get("driveId", "")), ""
+            return None, "la Drive API devolvió la carpeta sin nombre"
 
-        # No-200: si es rate-limit, reintentar; cualquier otro fallo (401, 404,
-        # 500…) es no-recuperable y termina inmediatamente con None.
+        # No-200: si es rate-limit, reintentar; cualquier otro fallo (401, 404, 500…) es
+        # no-recuperable y termina aquí.
+        razon = _razon_de_error(r)
         if not _is_rate_limit_response(r):
-            return None
-        # Es rate-limit → seguir al siguiente backoff.
+            if r.status_code == 401:
+                pista = ": el token no vale"
+            elif r.status_code == 404:
+                pista = ": la carpeta no existe o esta cuenta no la ve"
+            elif r.status_code == 403 and razon in _RAZONES_DE_PERMISO:
+                pista = ": sin permiso sobre la carpeta"
+            else:
+                pista = ""
+            con_razon = f" ({razon})" if razon else ""
+            return None, f"la Drive API respondió HTTP {r.status_code}{con_razon}{pista}"
+        ultima_razon = razon
 
-    # Agotados los reintentos sin obtener 200.
-    return None
+    return None, (f"la Drive API siguió limitando por cuota tras {len(attempts)} intentos "
+                  f"({ultima_razon or 'sin razón legible'})")
+
+
+def get_drive_folder_info(folder_id: str) -> DriveFolderInfo | None:
+    """:func:`leer_carpeta_drive` sin el motivo: la carpeta o ``None``.
+
+    Se conserva para quien solo necesita el dato —el auto-fill de Streamlit, el cache de
+    ``_caso.md``—; quien vaya a decirle al operador por qué no hay carpeta, que llame a
+    :func:`leer_carpeta_drive` (`MEJORAS #296`).
+    """
+    return leer_carpeta_drive(folder_id)[0]
 
 
 def get_shared_drive_name(drive_id: str) -> str | None:

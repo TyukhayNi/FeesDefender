@@ -1,5 +1,15 @@
 # Changelog — organizar-sala-lectura
 
+## 1.19 — 2026-09-26
+- **`precheck_rclone.py` dice por qué no hay ruta primaria** (`MEJORAS #296`): un
+  `rclone` que tarda sale con su propio código, 5, en vez del 4 de «no instalado»; y un
+  remote inexistente sale con 4 y no con 3 —«client compartido»—, porque `rclone config
+  show <remote inexistente>` sale con 0 y solo lo dice en un comentario (medido con rclone
+  real). La ruta no cambia: cualquier código distinto de 0 lleva a la copia secuencial.
+- **Tras la R1 adversarial (Codex, 2026-09-26):** el remote se reconoce por su línea `type`, que
+  todo remote de verdad trae, y no por el comentario inglés de una versión de rclone; una config
+  sin `type` también sale con 4.
+
 ## 1.18 — 2026-09-26
 - **Población: cada fichero de `00_Input` tiene fila o una línea en `## No copiados`, y el
   verify lo comprueba** (`MEJORAS #316`). Medido con la C3 por identidad de
