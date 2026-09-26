@@ -2822,3 +2822,149 @@ def test_306_R1H02_el_ok_de_C1_dice_que_el_contenido_de_un_nativo_NO_se_contrast
 
     assert r.estado == va.OK, r.detalle
     assert va._AVISO_NATIVOS_SIN_CONTRASTE in r.detalle, r.detalle
+
+
+# ===========================================================================
+# MEJORAS #316: lo que la sala de lectura DECLARA no copiado, y la firma de correo
+#
+# Plan: docs/superpowers/plans/2026-09-26-sala-lectura-poblacion-316.md
+#
+# C3 nombra lo que la sala de máquina procesó y el catálogo no recoge. Pero una exclusión
+# con motivo, escrita en `## No copiados` del manifiesto con su formato cerrado, es una
+# decisión, no un olvido; y la firma que `email_export` marca con `_firma_` es una regla de
+# su productor. C3 las cuenta aparte y no las exige.
+# ===========================================================================
+
+
+def _W(*partes):
+    """Una ruta con barras invertidas, armada con `chr(92)`: la barra tecleada en el fuente
+    se la comieron las herramientas al escribir estos tests, y `\\2026` se leía como
+    un escape octal."""
+    return chr(92).join(partes)
+
+
+def _manifiesto_sala(case_dir, no_copiados: str):
+    sala = case_dir / "01_Procesado" / "Sala lectura"
+    sala.mkdir(parents=True, exist_ok=True)
+    (sala / "_MANIFIESTO.md").write_text(
+        "| sha256 | ruta_original | nombre_canonico | tipo | fecha | parte | parent_id |\n"
+        "|---|---|---|---|---|---|---|\n" + no_copiados, encoding="utf-8")
+
+
+def test_316_c3_una_fuente_DECLARADA_en_no_copiados_no_se_exige(tmp_path):
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "z", "rel_path": "2026-09-23_email_01/c/export.zip"}])
+    _con_catalogo(c, ["a"])
+    _manifiesto_sala(c, "\n## No copiados\n\n- excluido: `"
+                        + _W("00_Input", "2026-09-23_email_01", "c", "export.zip")
+                        + "` — crudo de un chat que ya está en su bundle\n")
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["declaradas_no_copiadas"] == 1, r.evidencia
+    assert "No copiados" in r.detalle, r.detalle
+
+
+def test_316_c3_una_declaracion_en_TEXTO_LIBRE_no_cuenta(tmp_path):
+    """CONTROL POSITIVO: «excluidos: los zips del correo» no dice qué fichero es, y no se
+    puede cruzar con ninguno. El zip sigue sin catalogar."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "z", "rel_path": "2026-09-23_email_01/c/export.zip"}])
+    _con_catalogo(c, ["a"])
+    _manifiesto_sala(c, "\n## No copiados\n\n- excluidos: los `.zip` crudos del correo\n")
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == ["2026-09-23_email_01/c/export.zip"], r.evidencia
+
+
+def test_316_c3_la_firma_de_correo_de_email_export_no_se_exige(tmp_path):
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "f", "rel_path": "2026-09-23_email_01/aviso/_firma_image.png"}])
+    _con_catalogo(c, ["a"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["firmas_de_correo"] == 1, r.evidencia
+
+
+def test_316_c3_un__firma_FUERA_de_un_lote_de_correo_si_se_exige(tmp_path):
+    """CONTROL POSITIVO: el prefijo solo es de `email_export` donde `email_export` escribe."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
+                          {"slug": "f", "rel_path": "01_Drive EV/Fotos/_firma_image.png"}])
+    _con_catalogo(c, ["a"])
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == ["01_Drive EV/Fotos/_firma_image.png"], r.evidencia
+
+
+def test_316_c3_un_manifiesto_que_no_se_puede_leer_es_fallo(tmp_path):
+    """No poder mirar no es «no hay declaraciones»."""
+    c = _caso(tmp_path)
+    _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""}])
+    _con_catalogo(c, ["a"])
+    (c / "01_Procesado" / "Sala lectura" / "_MANIFIESTO.md").mkdir(parents=True)
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO and "_MANIFIESTO.md" in r.detalle, r.detalle
+
+
+def _skill_modulo(nombre):
+    import importlib.util
+    from pathlib import Path
+
+    ruta = (Path(__file__).resolve().parents[1] / ".claude" / "skills"
+            / "organizar-sala-lectura" / "scripts" / f"{nombre}.py")
+    import sys
+    sys.path.insert(0, str(ruta.parent))
+    spec = importlib.util.spec_from_file_location(f"_skill_{nombre}_c3", ruta)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_RUTAS_MUESTRA = [
+    "2026-09-23_email_01/aviso/_firma_image.png", _W("00_Input", "03_Email", "hilo", "_firma_x.jpg"),
+    "01_Drive EV/Fotos/_firma_image.png", "2026-09-23_whatsapp_01/c/_firma_a.png",
+    "2026-09-23_email_01/aviso/firma.png", "_firma_raiz.png", "00_Input/01_Drive EV/a.pdf",
+    "/01_Drive EV/Álvarez.pdf", "00_INPUT/x/y.pdf",
+]
+
+
+def test_316_anti_deriva_la_firma_de_C3_es_la_de_email_export_y_la_de_la_skill():
+    from core.email_export import PREFIJO_FIRMA
+
+    skill = _skill_modulo("preclasificar")
+    assert va._PREFIJO_FIRMA_CORREO == PREFIJO_FIRMA == skill.PREFIJO_FIRMA_CORREO
+    for r in _RUTAS_MUESTRA:
+        assert va._es_firma_de_correo(va._clave_de_ruta_de_origen(r)) == \
+            skill.es_firma_de_correo(r), r
+
+
+def test_316_anti_deriva_las_rutas_se_normalizan_igual_en_C3_y_en_la_skill():
+    skill = _skill_modulo("verificar_sala")
+    for r in _RUTAS_MUESTRA:
+        assert va._clave_de_ruta_de_origen(r) == skill._clave_ruta(r), r
+
+
+def test_316_anti_deriva_no_copiados_se_lee_igual_en_C3_y_en_la_skill():
+    skill = _skill_modulo("manifiesto_parser")
+    texto = ("| sha256 | ruta_original |\n|---|---|\n\n## No copiados (pasada del 2026-09-23)\n\n"
+             "- duplicado: `" + _W("00_Input", "a", "b.jpg") + "` — de `SALA:x.jpeg`\n"
+             "- duplicado, saltado: `c.pdf` — de `d.pdf`\n"
+             "- excluido: `e.zip` — crudo\n- excluidos: prosa sin ruta\n"
+             "- excluido: `f.pdf` — \n\n## Otra\n\n- excluido: `g.pdf` — fuera de la sección\n")
+    esperado = [(d["motivo"], d["ruta"]) for d in skill.parse_no_copiados(texto)]
+    assert va._parse_no_copiados(texto) == esperado
+    assert esperado == [("duplicado", _W("00_Input", "a", "b.jpg")), ("duplicado", "c.pdf"),
+                        ("excluido", "e.zip")]

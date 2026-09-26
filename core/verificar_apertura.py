@@ -262,6 +262,19 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     catalogo_en = _donde(presentes[0])
     entradas = catalogos[catalogo_en]
 
+    # Lo que la sala declara no copiado, con ruta y motivo (`MEJORAS #316`). Sin manifiesto
+    # no hay declaraciones; con uno que no se puede leer, no se sabe cuáles hay.
+    manifiesto = proc / _SALA_LECTURA / "_MANIFIESTO.md"
+    declaradas: set[str] = set()
+    if manifiesto.exists():
+        try:
+            texto_manifiesto = manifiesto.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            return Resultado("cobertura_vs_catalogo", _T_C3, FALLO,
+                             f"el `_MANIFIESTO.md` de la sala no se puede leer "
+                             f"({type(exc).__name__}): no se sabe qué declara no copiado")
+        declaradas = {_clave_de_ruta_de_origen(r) for _, r in _parse_no_copiados(texto_manifiesto)}
+
     # La cobertura, sana y agrupada por fuente.
     slugs = {str(f.get("slug") or "").strip() for f in filas}
     slugs.discard("")
@@ -316,7 +329,7 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
 
     dirs_con_chat = {k.rsplit("/", 1)[0] if "/" in k else "" for k in fuentes
                      if k.rsplit("/", 1)[-1].casefold() == "_chat.txt"}
-    por_ruta = por_sha = solo_por_ruta = solo_por_sha = 0
+    por_ruta = por_sha = solo_por_ruta = solo_por_sha = firmas = declaradas_usadas = 0
     excluidas = {"protocolo": 0, "export_crudo_whatsapp": 0}
     sin_catalogar: list[str] = []
     contradicciones: list[str] = []
@@ -343,6 +356,10 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
         elif (clave.rsplit("/", 1)[-1].casefold() == _NOMBRE_EXPORT_CRUDO_WHATSAPP
               and (clave.rsplit("/", 1)[0] if "/" in clave else "") in dirs_con_chat):
             excluidas["export_crudo_whatsapp"] += 1
+        elif _es_firma_de_correo(clave):
+            firmas += 1
+        elif clave in declaradas:
+            declaradas_usadas += 1
         else:
             sin_catalogar.append(muestra[clave])
     shas_cobertura = set().union(*fuentes.values()) if fuentes else set()
@@ -359,6 +376,7 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
           "huerfanos": huerfanos[:8], "catalogo_en": catalogo_en, "catalogos": conteos,
           "por_ruta": por_ruta, "por_sha": por_sha, "excluidas": excluidas,
           "solo_por_ruta": solo_por_ruta, "solo_por_sha": solo_por_sha,
+          "firmas_de_correo": firmas, "declaradas_no_copiadas": declaradas_usadas,
           "n_contradicciones": len(contradicciones), "contradicciones": contradicciones[:8],
           "n_sin_catalogar": len(sin_catalogar), "sin_catalogar": sin_catalogar[:8],
           "sin_catalogar_por_extension": dict(por_extension.most_common()),
@@ -380,8 +398,8 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     if sin_catalogar:
         tipos = ", ".join(f"{n} {ext}" for ext, n in por_extension.most_common(4))
         partes.append(f"{len(sin_catalogar)} de las {len(fuentes)} fuentes de la cobertura "
-                      f"no están entre las {len(entradas)} entradas del catálogo ({tipos}): "
-                      f"{', '.join(sin_catalogar[:3])}")
+                      f"no están entre las {len(entradas)} entradas del catálogo ni declaradas "
+                      f"en «## No copiados» ({tipos}): {', '.join(sin_catalogar[:3])}")
     if catalogo_sin_fuente:
         partes.append(f"{len(catalogo_sin_fuente)} entrada(s) del catálogo cuya fuente no "
                       f"procesó la sala de máquina: {', '.join(catalogo_sin_fuente[:3])}")
@@ -389,7 +407,7 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
         return Resultado("cobertura_vs_catalogo", _T_C3, FALLO, "; ".join(partes), ev)
     # El `ok` dice cuánto se cotejó de verdad: lo no exigido no está en el catálogo, y un cruce
     # por una sola de las dos claves no es un cotejo íntegro (R1/H-04).
-    exigibles = len(fuentes) - sum(excluidas.values())
+    exigibles = len(fuentes) - sum(excluidas.values()) - firmas - declaradas_usadas
     cabeza = ("no hay fuentes exigibles en la cobertura" if exigibles == 0 else
               "la única fuente exigible de la cobertura está en el catálogo" if exigibles == 1
               else f"las {exigibles} fuentes exigibles de la cobertura están en el catálogo")
@@ -404,9 +422,13 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
                      "o sin ruta: el sitio que anuncia la entrada no se acredita")
     no_exigidas = [f"{n} de {que}" for que, n in (("protocolo", excluidas["protocolo"]),
                                                    ("export crudo de WhatsApp",
-                                                    excluidas["export_crudo_whatsapp"])) if n]
+                                                    excluidas["export_crudo_whatsapp"]),
+                                                   ("firma de correo", firmas)) if n]
     if no_exigidas:
         notas.append(f"no se exigen {' y '.join(no_exigidas)}")
+    if declaradas_usadas:
+        notas.append(f"{declaradas_usadas} declarada(s) en «## No copiados» del manifiesto, "
+                     "con su motivo")
     if len(catalogos) > 1:
         # Los dos catálogos cuadran por sus pares ruta/sha256, y es lo único que se mira
         # (R1/H-03): ningún productor escribe otro `estado` que `original`.
@@ -420,6 +442,45 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
 #: (`preclasificar.emparejar_exports_whatsapp`). Copia, no importación: este módulo no
 #: importa escritores. Un test anti-deriva la compara con las dos.
 _NOMBRE_EXPORT_CRUDO_WHATSAPP = "_export_original.zip"
+
+#: La firma incrustada del remitente que `core/email_export` marca al exportar y deposita
+#: con este prefijo (`PREFIJO_FIRMA`), dentro de su lote de correo. Copia, no importación:
+#: un test la compara con la de `email_export` y con la de la skill (`MEJORAS #316`).
+_PREFIJO_FIRMA_CORREO = "_firma_"
+_LOTE_EMAIL = re.compile(r"^\d{4}-\d{2}-\d{2}_email_\d{2,}$")
+
+
+def _es_firma_de_correo(clave: str) -> bool:
+    """¿Es la firma que `email_export` dejó junto a su correo? Solo en un lote de correo (o
+    en el cajón legacy `03_Email/`): un `_firma_…` en otra carpeta es un documento."""
+    partes = [p for p in clave.split("/") if p]
+    return len(partes) >= 2 and bool(
+        (_LOTE_EMAIL.match(partes[0]) or partes[0].casefold() == "03_email")
+        and partes[-1].startswith(_PREFIJO_FIRMA_CORREO))
+
+
+#: `## No copiados` del `_MANIFIESTO.md` de la sala, con el formato cerrado de la skill
+#: (`manifiesto_parser.parse_no_copiados`, del que esto es copia sin el modo estricto; un
+#: test compara los dos sobre el mismo texto). Una exclusión con motivo y ruta es una
+#: decisión escrita, no un olvido (`MEJORAS #316`).
+_CABECERA_NO_COPIADOS = re.compile(r"^##\s+No copiados\b", re.IGNORECASE)
+_LINEA_NO_COPIADO = re.compile(
+    r"^\s*-\s+(?P<motivo>duplicado(?:, saltado)?|excluido):\s+`(?P<ruta>[^`]+)`"
+    r"\s+—\s+(?P<detalle>\S.*?)\s*$")
+
+
+def _parse_no_copiados(texto: str) -> list[tuple[str, str]]:
+    """`(motivo, ruta)` de cada línea de formato cerrado; las que no lo tienen, no cuentan."""
+    dentro, fuera = False, []
+    for linea in texto.splitlines():
+        if re.match(r"^#{1,2}\s", linea):
+            dentro = bool(_CABECERA_NO_COPIADOS.match(linea))
+            continue
+        m = _LINEA_NO_COPIADO.match(linea) if dentro else None
+        if m:
+            fuera.append(("duplicado" if m.group("motivo").startswith("duplicado")
+                          else "excluido", m.group("ruta").strip()))
+    return fuera
 
 
 def _clave_de_ruta_de_origen(ruta: str) -> str:

@@ -87,10 +87,14 @@ def test_sha_valido_acepta_sha256_md5_y_vacio():
 # texto libre —cinco formatos distintos en los manifiestos reales— que ninguna herramienta
 # podía leer. El formato cerrado es `- duplicado|excluido: `ruta` — motivo`.
 
-_MANIF_NO_COPIADOS = _MANIF_7COL + """
+#: Una ruta con barras invertidas, como la escribe el manifiesto en Windows. Se arma con
+#: `chr(92)` para que ninguna herramienta se coma la barra al escribir este fichero.
+_RUTA_WIN = chr(92).join(["00_Input", "2026-09-23_whatsapp_02", "Chat", "IMG-1.jpg"])
+
+_MANIF_NO_COPIADOS = _MANIF_7COL + f"""
 ## No copiados
 
-- duplicado: `00_Input\2026-09-23_whatsapp_02\Chat\IMG-1.jpg` — de `SALA:2025-03-01_hoja_visita.jpeg`
+- duplicado: `{_RUTA_WIN}` — de `SALA:2025-03-01_hoja_visita.jpeg`
 - excluido: `2026-09-23_email_01/corr/aviso.png` — imagen de publicidad incrustada
 - duplicado, saltado: `01_Drive EV/copia.pdf` — de `2024-04-26_catastro.pdf`
 
@@ -103,7 +107,7 @@ _MANIF_NO_COPIADOS = _MANIF_7COL + """
 def test_no_copiados_lee_las_lineas_de_formato_cerrado():
     lineas = mp.parse_no_copiados(_MANIF_NO_COPIADOS, estricto=True)
     assert [(d["motivo"], d["ruta"]) for d in lineas] == [
-        ("duplicado", "00_Input\2026-09-23_whatsapp_02\Chat\IMG-1.jpg"),
+        ("duplicado", _RUTA_WIN),
         ("excluido", "2026-09-23_email_01/corr/aviso.png"),
         ("duplicado", "01_Drive EV/copia.pdf"),
     ]
