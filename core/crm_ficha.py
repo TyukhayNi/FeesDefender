@@ -6,13 +6,17 @@ orquestador (``scripts/crm_ficha.py``) ejecuta los efectos contra el CRM.
 """
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from core.sudespacho_relations import NuevoClienteContrario, NuevoColaborador
+from core.config import CLIENTES_PROPIOS_EV
+from core.sudespacho_relations import (NuevoClienteContrario, NuevoColaborador,
+                                       provincia_canonica)
+from core.utils import normalize_es_phone
 
 CLIENTE_PROPIO_DEFAULT = "EV_MMC_SPAIN"
 
@@ -128,11 +132,129 @@ def leer_yaml_ficha(path: Path) -> Any:
     return {} if data is None else data
 
 
-def _contrarios_de(raw) -> list[NuevoClienteContrario]:
-    """`contrario:` como mapping, como lista, o ausente. **Valida TODO antes de construir.**
+# ---------------------------------------------------------------------------
+# Claves, tipos y lo que no puede llegar nunca (spec rev. 3 §3 A.2, A.3, A.5)
+# ---------------------------------------------------------------------------
 
-    La semántica entera, porque la ambigüedad estaba justo en los bordes (R1/H-08): el lector
-    anterior devolvía `None` por igual para `null`, `[]` y `[«esto no es un mapping»]`.
+CLAVES_RAIZ = ("contrario", "colaboradores", "notas_html", "cliente_propio", "firmante")
+CLAVES_CONTRARIO = ("nombre", "apellido1", "apellido2", "email", "movil", "nif",
+                    "direccion", "poblacion", "cp", "provincia", "telefono")
+CLAVES_COLABORADOR = ("nombre", "email", "movil", "telefono", "nif")
+
+_TELEFONOS = ("movil", "telefono")
+
+
+def _forma(valor: object) -> str:
+    if isinstance(valor, dict):
+        return "un mapping"
+    if isinstance(valor, list):
+        return "una lista"
+    return type(valor).__name__
+
+
+def _hay(valor: object) -> bool:
+    return isinstance(valor, str) and bool(valor.strip())
+
+
+def _sugerencia(clave: object, validas: tuple[str, ...]) -> str:
+    """TODAS las válidas cercanas, en el orden de la tupla (R2/H-07): `apellido` casa igual con
+    `apellido1` que con `apellido2`, y elegir una sería adivinar. No es un alias de entrada: la
+    clave sigue rechazada."""
+    cerca = set(difflib.get_close_matches(str(clave), validas, n=len(validas), cutoff=0.6))
+    elegidas = [repr(v) for v in validas if v in cerca]
+    return f"; ¿querías {' o '.join(elegidas)}?" if elegidas else ""
+
+
+def _problemas_escalar(valor: object, ruta: str) -> list[str]:
+    """Un escalar de la ficha: un texto, o `null` (= «no hay dato»). Nada más.
+
+    Los números conservan la explicación que ya daba `_escalar` (R1/H-08 del PR #275): `cp:
+    01001` sin comillas lo resuelve PyYAML como el **entero octal 513**, y el dato original ya no
+    se puede recuperar. Un mapping o una lista pasaban como su representación de Python (R1/H-02
+    del diseño de esta pieza), y eso tampoco es un dato.
+    """
+    if valor is None or isinstance(valor, str):
+        return []
+    if isinstance(valor, (bool, int, float)):
+        return [f"{ruta}: vino del YAML como {type(valor).__name__} ({valor!r}). Un valor con "
+                "ceros a la izquierda lo reinterpreta YAML (`01001` es el octal 513) y el dato "
+                "original ya no se puede recuperar. Escríbelo entre comillas: `cp: '01001'`"]
+    return [f"{ruta}: tiene que ser un texto o null, y es {_forma(valor)}"]
+
+
+def _problemas_parte(d: dict, ruta: str, validas: tuple[str, ...]) -> list[str]:
+    p = [f"{ruta}.{k}: clave desconocida{_sugerencia(k, validas)}" for k in d if k not in validas]
+    p += [x for k in validas if k in d for x in _problemas_escalar(d[k], f"{ruta}.{k}")]
+    nombre = d.get("nombre")
+    if nombre is None or (isinstance(nombre, str) and not nombre.strip()):
+        p.append(f"{ruta}.nombre: falta o está vacío")     # ausente, null o solo espacios
+    # Lo que no puede llegar NUNCA es propiedad de la declaración, no de la ficha: vale igual
+    # para una parte que se va a crear que para una que ya existe (spec §3 A.3, R2/H-02).
+    for k in _TELEFONOS:
+        v = d.get(k)
+        if _hay(v) and not normalize_es_phone(v.strip()):
+            p.append(f"{ruta}.{k}: {v!r} se queda vacío al normalizarlo, y la parte se "
+                     "escribiría sin él")
+    v = d.get("provincia")
+    if "provincia" in validas and _hay(v) and provincia_canonica(v) is None:
+        p.append(f"{ruta}.provincia: {v!r} no es ninguna provincia del CRM y el Select la "
+                 "descartaría: el dato no puede llegar nunca")
+    return p
+
+
+def validar_ficha(data: object) -> list[str]:
+    """Todos los problemas de forma, claves y tipos, con su ruta (spec §3 A.2-A.5).
+
+    Lista vacía = la ficha se puede construir. Se valida la colección ENTERA antes de construir
+    nada (R1/H-08 de P6): validar mientras se itera escribiría la primera parte antes de
+    descubrir que la segunda está mal. Y **un elemento inválido no es una parte ausente**:
+    filtrarlo convertiría una lista de un elemento roto en «cero contrarios» en silencio.
+    """
+    if not isinstance(data, dict):
+        return [f"la raíz del _ficha_crm.yaml tiene que ser un mapping, y es {_forma(data)}"]
+    p = [f"{k}: clave desconocida{_sugerencia(k, CLAVES_RAIZ)}" for k in data
+         if k not in CLAVES_RAIZ]
+    for k in ("notas_html", "firmante"):
+        p += _problemas_escalar(data.get(k), k)
+    cp = data.get("cliente_propio")
+    if cp is not None and not (isinstance(cp, str) and cp.strip() in CLIENTES_PROPIOS_EV):
+        # Hoy `false` caía al defecto por el `or` (R1/H-02): lo declarado se respeta o se
+        # rechaza, nunca se sustituye en silencio.
+        p.append(f"cliente_propio desconocido: {cp!r} (tiene que ser uno de "
+                 f"{sorted(CLIENTES_PROPIOS_EV)}; ver core.config.CLIENTES_PROPIOS_EV)")
+    contr = data.get("contrario")
+    if isinstance(contr, dict):
+        p += _problemas_parte(contr, "contrario", CLAVES_CONTRARIO)
+    elif isinstance(contr, list):
+        for i, e in enumerate(contr):
+            p += (_problemas_parte(e, f"contrario[{i}]", CLAVES_CONTRARIO) if isinstance(e, dict)
+                  else [f"contrario[{i}]: tiene que ser un mapping, y es {_forma(e)}"])
+    elif contr is not None:
+        p.append("contrario: tiene que ser un mapping o una lista de mappings, y es "
+                 f"{_forma(contr)}")
+    cols = data.get("colaboradores")
+    if isinstance(cols, list):
+        for i, e in enumerate(cols):
+            p += (_problemas_parte(e, f"colaboradores[{i}]", CLAVES_COLABORADOR)
+                  if isinstance(e, dict)
+                  else [f"colaboradores[{i}]: tiene que ser un mapping, y es {_forma(e)}"])
+    elif cols is not None:
+        p.append(f"colaboradores: tiene que ser una lista de mappings, y es {_forma(cols)}")
+    return p
+
+
+# ---------------------------------------------------------------------------
+# Construcción, sobre lo YA validado
+# ---------------------------------------------------------------------------
+
+def _valor(v: object) -> str:
+    """Un escalar YA VALIDADO, como texto. `null` es «no hay dato» (R1/H-09 del PR #275):
+    `str(None)` es "None", que es *truthy*, y viajaba al CRM tal cual."""
+    return "" if v is None else str(v).strip()
+
+
+def _contrarios_de(raw) -> list[NuevoClienteContrario]:
+    """`contrario:` ya validado, en el orden del fichero.
 
     | Forma | Significado |
     |---|---|
@@ -140,118 +262,41 @@ def _contrarios_de(raw) -> list[NuevoClienteContrario]:
     | mapping | uno (compatibilidad: no se migra ningún `_ficha_crm.yaml`) |
     | lista de mappings | N, **en el orden del fichero** |
     | lista vacía | no hay contrario, igual que ausente |
-    | elemento que no es mapping | **error con su índice**, y cero escrituras |
 
-    **Un elemento inválido no es una parte ausente.** Filtrar lo que no sea `dict` —el patrón
-    que usa `colaboradores`— convertiría una lista de un elemento roto en «cero contrarios» en
-    silencio, y la ficha se completaría dejando fuera a una parte sin decirlo. Y validar
-    mientras se itera escribiría el primero antes de descubrir que el segundo está mal.
+    Un elemento que no es un mapping ya lo ha rechazado `validar_ficha`, con su índice.
     """
     if raw is None:
         return []
     if isinstance(raw, dict):
         return [_contrario_de(raw)]
-    if not isinstance(raw, list):
-        raise ValueError(
-            f"'contrario' tiene que ser un mapping o una lista de mappings, y es "
-            f"{type(raw).__name__}")
-    fuera = [str(i) for i, e in enumerate(raw) if not isinstance(e, dict)]
-    if fuera:
-        raise ValueError(
-            f"'contrario' tiene elementos que no son mappings en las posiciones "
-            f"{', '.join(fuera)}: corrígelos. No se escribe nada.")
     return [_contrario_de(e) for e in raw]
 
 
 def _contrario_de(d: dict) -> NuevoClienteContrario:
-    if not d.get("nombre"):
-        raise ValueError("contrario sin 'nombre' en _ficha_crm.yaml")
-    return NuevoClienteContrario(
-        nombre=_escalar(d.get("nombre"), "contrario.nombre"),
-        apellido1=_escalar(d.get("apellido1"), "contrario.apellido1"),
-        apellido2=_escalar(d.get("apellido2"), "contrario.apellido2"),
-        email=_escalar(d.get("email"), "contrario.email"),
-        movil=_escalar(d.get("movil"), "contrario.movil"),
-        nif=_escalar(d.get("nif"), "contrario.nif"),
-        direccion=_escalar(d.get("direccion"), "contrario.direccion"),
-        poblacion=_escalar(d.get("poblacion"), "contrario.poblacion"),
-        # Estos tres no se leian del YAML, y por eso nunca llegaban al CRM aunque
-        # estuvieran escritos.
-        cp=_escalar(d.get("cp"), "contrario.cp"),
-        provincia=_escalar(d.get("provincia"), "contrario.provincia"),
-        telefono=_escalar(d.get("telefono"), "contrario.telefono"),
-    )
-
-
-def _escalar(valor: object, campo: str) -> str:
-    """Un escalar del YAML como cadena, sin corromperlo ni inventarlo.
-
-    Dos defectos que R1 midio y que `str(...)` producia por si solo:
-
-    - **H-08, el codigo postal en octal.** `cp: 01001` sin comillas lo resuelve PyYAML
-      como el **entero octal 513**, y `str()` lo manda al CRM como `"513"`. El caso
-      concreto de `08019` se salvaba solo porque tiene un `8` y un `9`, que no son
-      digitos octales validos — o sea, por suerte. Un `int` en un campo que es una
-      cadena con ceros a la izquierda **no se puede recuperar**: se rechaza y se dice.
-    - **H-09, el nulo que viaja como texto.** `cp:` sin valor da `None`, y `str(None)`
-      es `"None"`, que es *truthy* y viajaba al CRM tal cual. Una clave preparada y
-      vacia significa «no hay dato».
-    """
-    if valor is None:
-        return ""
-    if isinstance(valor, bool) or isinstance(valor, int) or isinstance(valor, float):
-        raise ValueError(
-            f"{campo} vino del YAML como {type(valor).__name__} ({valor!r}). Un valor "
-            "con ceros a la izquierda lo reinterpreta YAML (por ejemplo `01001` es el "
-            "octal 513) y el dato original ya no se puede recuperar. Escribelo entre "
-            "comillas: por ejemplo `cp: \'01001\'`."
-        )
-    return str(valor).strip()
+    # Leyendo de la tupla, no enumerando a mano: `cp`, `provincia` y `telefono` estuvieron
+    # escritos en los YAML sin leerse nunca, porque la lista de aquí no los tenía.
+    return NuevoClienteContrario(**{c: _valor(d.get(c)) for c in CLAVES_CONTRARIO})
 
 
 def _colaborador_de(d: dict) -> NuevoColaborador:
-    """El colaborador del YAML, sin que una clave vacia se convierta en un dato.
-
-    Los cinco campos van por `_escalar` por la misma razon que los tres del contrario
-    (H-09 del PR #275): `str(None)` es "None", que es *truthy*, y `normalize_es_phone`
-    no quita letras, asi que esa cadena viajaba al CRM tal cual. Aqui se quedo abierto
-    porque el arreglo se hizo campo a campo en el contrario en vez de cerrar la clase:
-    cerrar una propiedad para un rol no la cierra para los demas.
-    """
-    if not d.get("nombre"):
-        raise ValueError("colaborador sin 'nombre' en _ficha_crm.yaml")
-    return NuevoColaborador(
-        nombre=_escalar(d.get("nombre"), "colaborador.nombre"),
-        email=_escalar(d.get("email"), "colaborador.email"),
-        movil=_escalar(d.get("movil"), "colaborador.movil"),
-        telefono=_escalar(d.get("telefono"), "colaborador.telefono"),
-        nif=_escalar(d.get("nif"), "colaborador.nif"),
-    )
+    return NuevoColaborador(**{c: _valor(d.get(c)) for c in CLAVES_COLABORADOR})
 
 
 def cargar_ficha_yaml(path: Path) -> FichaCRMInput:
-    """Carga ``_ficha_crm.yaml`` → ``FichaCRMInput``.
+    """Carga ``_ficha_crm.yaml`` → ``FichaCRMInput``: se lee entero o no se construye nada.
 
-    Lanza ``FileNotFoundError`` si no existe y ``ValueError`` si el YAML no es un
-    mapping o un contrario/colaborador no tiene ``nombre``.
+    Lanza ``FileNotFoundError`` si no existe y ``ValueError`` con TODOS los problemas —de la
+    lectura (`leer_yaml_ficha`) o de la forma, las claves y los tipos (`validar_ficha`)—.
     """
-    path = Path(path)
-    if not path.is_file():
-        raise FileNotFoundError(f"No existe _ficha_crm.yaml: {path}")
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        raise ValueError(f"_ficha_crm.yaml inválido: {exc}") from exc
-    if not isinstance(data, dict):
-        raise ValueError("_ficha_crm.yaml debe ser un mapping YAML")
-
-    colaboradores = [
-        _colaborador_de(c) for c in (data.get("colaboradores") or []) if isinstance(c, dict)
-    ]
+    data = leer_yaml_ficha(path)
+    problemas = validar_ficha(data)
+    if problemas:
+        raise ValueError("_ficha_crm.yaml no se puede usar:\n  - " + "\n  - ".join(problemas))
+    cp = data.get("cliente_propio")
     return FichaCRMInput(
         contrarios=_contrarios_de(data.get("contrario")),
-        colaboradores=colaboradores,
-        notas_html=_escalar(data.get("notas_html"), "notas_html"),
-        cliente_propio=_escalar(data.get("cliente_propio") or CLIENTE_PROPIO_DEFAULT, "cliente_propio"),
-        firmante=_escalar(data.get("firmante"), "firmante"),
+        colaboradores=[_colaborador_de(c) for c in data.get("colaboradores") or []],
+        notas_html=_valor(data.get("notas_html")),
+        cliente_propio=CLIENTE_PROPIO_DEFAULT if cp is None else _valor(cp),
+        firmante=_valor(data.get("firmante")),
     )

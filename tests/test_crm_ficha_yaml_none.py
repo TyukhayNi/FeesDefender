@@ -111,5 +111,8 @@ class TestClientePropioConPorDefecto:
         assert ficha.cliente_propio == CLIENTE_PROPIO_DEFAULT
 
     def test_cliente_propio_con_valor_se_respeta(self, tmp_path):
-        ficha = _carga(tmp_path, "cliente_propio: 'OTRO_CLIENTE'\n")
-        assert ficha.cliente_propio == "OTRO_CLIENTE"
+        """Migrado en la Task 2 de crm_ficha (plan rev. 2): `OTRO_CLIENTE` ya no es declarable
+        —el catálogo `CLIENTES_PROPIOS_EV` es cerrado—, así que la propiedad «lo declarado se
+        respeta y no cae al defecto» se prueba con la clave real que no es la predeterminada."""
+        ficha = _carga(tmp_path, "cliente_propio: 'ENGEL_VOLKERS_SPAIN'\n")
+        assert ficha.cliente_propio == "ENGEL_VOLKERS_SPAIN"
