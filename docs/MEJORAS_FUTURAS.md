@@ -12991,6 +12991,24 @@ copia de la regla necesita edición de skill y re-importación en Cowork), y `zi
 
 ---
 
+## 286. F3 no prepara el aportable de una expedición solo de burofax
+
+> **Declarado al construir F3, el 2026-09-25** (plan `docs/superpowers/plans/2026-09-25-codicert-f3.md`).
+
+`core/expedicion_certificada.documentos_enviados` saca los documentos que salieron de la **entrega
+electrónica** de la expedición, porque es la única cuyo acta lista los adjuntos uno a uno con su
+huella. El burofax los funde en un PDF de nombre UUID y no dice dónde acaba cada documento (M-4),
+así que una expedición **sin correo ni SMS** —requeridos sin email ni móvil— para con «ninguna
+entrega electrónica en esta expedición» y no produce aportable. No es un fallo silencioso: para y
+lo dice.
+
+**Remedio probable.** Admitir `--doc` en `codicert aportable`, como en `plan`, y verificar cada
+documento **por casado de texto** contra la reproducción del burofax, ya que no hay huella por
+fichero contra la que cotejarlo.
+
+**Disparador de promoción.** El primer expediente real cuyos requeridos no tengan ni correo ni
+móvil y necesite aportar el certificado del burofax.
+
 ## 287. C3 de `verificar_apertura` no puede pasar en NINGÚN caso con bundles partidos: falla en los nueve del repo
 
 > **Rescatada el 2026-09-25 del PR #387**, donde llevaba el número 277 desde el 2026-09-16
@@ -13159,6 +13177,65 @@ las altas ya hechas: es escritura en el CRM.
 **Disparador.** La medición del paso (1), que es barata y no escribe nada.
 
 ---
+
+## 292. El test del OCR real del aportable no lo corre ninguna verja  [PROMOVIDO → PLAN.md 2026-09-25]
+
+> **Declarado en la R2 de F3, el 2026-09-25** (plan `docs/superpowers/plans/2026-09-25-codicert-f3.md` §13).
+>
+> **[PROMOVIDO → PLAN.md, fila 41] 2026-09-25.** Disparador cumplido: la remediación de la R3 cambió
+> `core/certificado_aportable.py` y el adaptador. Desde la R3 son **dos** tests lentos —
+> `test_R3_el_OCR_REAL_deja_un_aportable_que_la_relectura_admite` y
+> `test_R3_el_OCR_REAL_lee_un_ESCANEO_con_las_condiciones_y_AVISA`— y el adaptador es
+> `_ocr_tesseract` (Tesseract directo); OCRmyPDF ya no está en el camino del aportable. Corridos a
+> mano con `--runslow`: 2 verdes, unos 52 s.
+
+`test_R2_el_OCR_REAL_deja_un_aportable_que_la_relectura_admite` es el único que ejerce el adaptador
+de verdad (`core/expedicion_certificada._ocr_aportable`: OCRmyPDF + Tesseract) y lleva `slow`, así
+que solo corre con `--runslow`. `scripts/session_close` activa `--runslow` **solo cuando el commit
+toca `core/anon/`**. Es exactamente el test que encontró los dos defectos que el sintético no
+enseñaba —la linealización por encima de 1 MB y el `stderr` secuestrado—, y un cambio en el
+aportable o en el adaptador puede entrar sin que nadie lo corra. El resto de la suite usa un OCR de
+mentira, y el guard de `entorno_real` solo comprueba que el puerto está cableado.
+
+**Remedio probable.** Que `session_close` active `--runslow` también cuando el diff toque
+`core/certificado_aportable.py` o el adaptador —unos 30 s más—, o un marcador propio para el OCR
+del aportable.
+
+**Disparador de promoción.** El próximo cambio en `core/certificado_aportable.py` o en
+`_ocr_aportable`.
+
+## 293. `ocrmypdf.ocr()` deja `sys.stderr` sustituido por un `StringIO`, también en `core/anon/`
+
+> **Medido en la R2 de F3, el 2026-09-25**, con OCRmyPDF 17.11: antes de la llamada `sys.stderr` es
+> el `TextIOWrapper` de siempre; después, un `io.StringIO` que nadie devuelve.
+
+Desde ahí se pierde en silencio todo lo que vaya al `stderr` —avisos, `logging` y la traza de
+cualquier excepción—: el proceso sale con 1 **sin decir por qué**. Así se presentó en F3, y el
+adaptador del aportable ya lo devuelve como estaba. **`core/anon/ocr.py` llama al mismo
+`ocrmypdf.ocr()` y no lo devuelve**, así que el pipeline de anonimización tiene el mismo agujero.
+Por la regla de `core/anon/` (cero pérdida de lógica; las mejoras, aquí), no se toca en este diff.
+
+**Remedio probable.** Guardar `sys.stderr` antes de la llamada y devolverlo en un `finally`, como
+hace `_ocr_aportable`, con un test que lo compruebe tras un OCR real.
+
+**Disparador de promoción.** Una corrida de la anonimización que falle después del OCR sin dejar
+traza, o la próxima vez que se toque `core/anon/ocr.py`.
+
+## 294. El aportable en imagen pesa ~545 KB por página
+
+> **Medido en la R2 de F3, el 2026-09-25**, sobre los dos certificados reales: 3,8 MB para 7 páginas
+> y 4,8 MB para 9, a 200 ppp en JPEG de calidad 85.
+
+Es el precio de que el aportable sea la imagen de lo conservado (R2/H-01) y de que las huellas del
+acta se lean a ojo. Para los envíos medidos —7 a 10 páginas— no es un problema, pero un burofax
+admite 200 páginas (spec §1.4), y eso daría unos 110 MB, que ningún canal de presentación
+admitiría. A 150 ppp el OCR lee lo mismo (medido) y pesa ~362 KB por página; en escala de grises,
+menos aún, a cambio de perder el color de membretes y logotipos.
+
+**Remedio probable.** Bajar la resolución o pasar a grises solo por encima de un número de páginas,
+declarándolo en el manifiesto; o partir el aportable.
+
+**Disparador de promoción.** El primer aportable que no se pueda presentar por su tamaño.
 
 ## 295. `abrir_caso --modo v1 --fuente email` no deriva la identidad, y el comando del runbook que trae correo no pasa esos flags
 
@@ -13390,3 +13467,43 @@ sale; una `claude/x` podada, sí. Una ronda: toca `scripts/`, no datos de client
 
 **Disparador de promoción.** El próximo cierre que tenga que explicar el aviso en vez de leerlo, o
 antes si se toca `session_close` por otra cosa.
+
+## 304. El recorte dibuja dos veces cada página que se conserva
+
+> **Medido en la R3 de F3, el 2026-09-25**, sobre los dos certificados reales: el recorte tarda
+> **12 s** con 8 páginas y **35 s** con 10, a 200 ppp, antes de pasar el OCR.
+
+Desde la R3, `recortar` dibuja cada página conservada **dos veces**: una para su imagen
+(`_rasterizar`) y otra, con todas las del íntegro, para las miniaturas contra las que la relectura
+casa lo que el aportable dibuja (`_miniaturas`). Es a propósito: las miniaturas son el instrumento
+independiente de la imagen, y si salieran del mismo dibujo un error de índices en `_rasterizar` se
+llevaría las dos a la vez. El coste es lineal: un burofax de 200 páginas (spec §1.4) serían del
+orden de diez minutos de dibujo, además del OCR (de 1,4 a 10,9 s por página, M-13).
+
+**Remedio probable.** Dibujar cada página una sola vez y sacar de ese dibujo la miniatura de TODAS
+y la imagen de las conservadas, con el índice resuelto en un solo sitio y un test que fuerce el
+error de índices en ese sitio; o bajar la resolución de las miniaturas midiendo antes que siguen
+separando (la propia a ≤ 0,52 y la más cercana a ≥ 4,22 a 200 ppp).
+
+**Disparador de promoción.** El primer envío real de más de 50 páginas, o una queja por el tiempo
+de `codicert aportable`.
+
+## 305. El aportable de un certificado provisional
+
+> **Medido el 2026-09-26**, en el barrido de los 117 envíos reales de `madrid.bd` (plan
+> `2026-09-26-codicert-estados-medidos.md`, M-19): **1 de 117** se queda estancado —el burofax
+> `006bgjupt2a`, 88 días en 17 sin el 19—.
+
+F3 prepara el aportable **solo sobre el certificado definitivo**: en `_preparar_bajo_candado`, un
+envío que no es cosechable sale `PENDIENTE` y no se toca. Desde el plan de los estados, un envío
+**estancado** se declara como tal y el informe ofrece la salida que ya existía,
+`cosechar --incluir-pendientes`, que baja el certificado **provisional** con su estado en el nombre.
+Pero ese provisional no tendrá aportable, y sin aportable no se puede presentar sin exponer las
+condiciones económicas.
+
+**Remedio probable.** Que `aportable` admita el íntegro provisional de un envío **estancado** —no
+de cualquier pendiente—, con el estado en el nombre del aportable y del manifiesto, y el manifiesto
+diciendo que el hecho acreditado es el de ese estado.
+
+**Disparador de promoción.** El primer envío estancado cuyo certificado haya que aportar.
+

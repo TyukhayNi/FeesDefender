@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "12"
+rev: "18"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,53 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 18 (2026-09-26).** **Saneado de los datos de un tercero**, a petición de Nikolai: el
+> móvil y el email del requerido de la referencia de producción del §2 —y, con ellos, su nombre y
+> la razón social de su empresa— pasan a marcadores (`34XXXXXXXXX`, «[email de la persona
+> requerida]», «[persona requerida]», «[mercantil requerida]») aquí, en el acta de la R1
+> —redacción declarada, con su digest recomputado—, en los planes de F1 y F2 y en dos docstrings
+> de `core/`. Lo que el dato probaba —que el destinatario SMS real lleva el prefijo `34`— se
+> conserva. **El historial de git conserva el dato**, y así se queda: purgarlo exige reescribirlo
+> y recrear el repo, y **Nikolai decidió no hacerlo** (2026-09-26), como en las rondas 2 y 3 del
+> saneado. La revisión adversarial de este diff —toca dos docstrings de `core/`— **la dispensó él**:
+> revisarlo le habría enseñado el dato otra vez al revisor. Los términos entran en la blocklist
+> local; el secret de CI, después del merge (el escaneo de CI recorre el árbol entero).
+>
+> **Rev. 17 (2026-09-26).** Los estados, **medidos sobre todos los envíos reales**: los 117 de
+> `madrid.bd` (del 2026-06-03 al 2026-09-23) y los 2 del sandbox, leídos en solo lectura (plan
+> [`2026-09-26-codicert-estados-medidos.md`](../plans/2026-09-26-codicert-estados-medidos.md),
+> M-17 a M-22). El SMS **no tiene estados propios** —ni 29, ni 30, ni 39 en 22 SMS— y el **22**
+> dejaba un envío sin cerrar para siempre: **Nikolai decidió** que cierra sin entrega cuando ningún
+> aviso llegó (§1.3, §6.3). El SMS Certificado **sí registró un acceso**, y la razón para no usarlo
+> cambia (§1.1). Y lo que no se cosecha tiene **cuatro motivos**, no uno (§7.1).
+>
+> **Rev. 16 (2026-09-25).** Los **plazos del servicio**, leídos en la Declaración de Prácticas del
+> prestador (v2.5): la entrega electrónica queda a disposición **30 días naturales desde el envío**
+> y, vencidos sin lectura, pasa a **40 «Caducado»** (§1.3). Y una decisión de Nikolai: el **17 y el
+> 21 acreditan la recepción, no la lectura**, aunque el prestador solo llame «entregada» a la leída
+> (§6.2). El motor ya clasificaba así; no cambia.
+>
+> **Rev. 15 (2026-09-25).** La R3 de Codex sobre F3 (§12.4): el aportable **lo compone el
+> motor** —el OCR solo devuelve líneas— y la relectura lo **recompone** y exige los mismos bytes;
+> cada página tiene que dibujar su imagen y parecerse más a la suya que a cualquier otra del
+> íntegro; el título de las condiciones no admite minúsculas detrás, y una mención antes de él
+> para (§7.4).
+>
+> **Rev. 14 (2026-09-25).** La R2 de Codex sobre F3 (§12.4): el aportable pasa a ser la **imagen**
+> de las páginas que se conservan, con una capa de texto de OCR (§7.4).
+>
+> **Rev. 13 (2026-09-25).** Actualizada al construir **F3**, con diez mediciones sobre tres
+> certificados reales y los adjuntos de dos envíos (plan
+> [`2026-09-25-codicert-f3.md`](../plans/2026-09-25-codicert-f3.md), M-1 a M-10; lectura de
+> producción autorizada por Nikolai en la sesión, 0,00 € gastados). **Dos premisas del §7 no se
+> sostenían en lo construido:** el motor **no compone** las condiciones —las trae el operador—, así
+> que su texto se lee de los adjuntos que salieron, verificados contra la huella del acta (§7.3); y
+> el requerimiento **sí lleva importes** —la deuda reclamada—, así que el aviso de «sin cifras»
+> habría saltado en todo envío real y se rehace sobre las frases propias de las condiciones (§7.4).
+> Además, la reproducción real es el refundido **más la factura**, y el burofax se recorta con los
+> adjuntos del correo de la misma expedición, porque su fichero fundido es la concatenación exacta
+> de estos (§7.3).
+>
 > **Rev. 12 (2026-09-21).** Actualizada al construir **F2**, con diez mediciones de producción
 > en solo lectura (0,00 € gastados). Tres cambian el diseño: el **§1.3** gana **seis códigos de
 > estado vivos** que no clasificaba —y la regla de que lo no clasificado se declara, nunca se
@@ -122,7 +169,7 @@ la observación de Nikolai, medido en la UI de producción el 2026-09-17):
 | Vía | Texto del SMS | Adjunto | Qué acredita |
 |---|---|---|---|
 | **EEC con `tipo_entrega: "sms"`** | **Lo compone la plataforma.** No hay campo | 6 ficheros | Entrega **y acceso al contenido** (estado 20) |
-| **SMS Certificado** (`/envios/sms-certificado`) | **`cuerpo`, obligatorio y nuestro** | **1 fichero** | Entrega del SMS (estados 29/30) |
+| **SMS Certificado** (`/envios/sms-certificado`) | **`cuerpo`, obligatorio y nuestro** | **1 fichero** | ~~Entrega del SMS (estados 29/30)~~ **Medido (rev. 17): entrega y acceso, `17 → 20`**, en el único de producción |
 
 Lo que la rev. 4 dijo —«el SMS no lleva texto propio»— es cierto de la primera vía y **falso de la
 segunda**: el formulario de SMS Certificado tiene un `Cuerpo` obligatorio con contador de
@@ -139,6 +186,16 @@ El precio de esa elección, dicho: **el literal de `CONVENCIONES_DESPACHO.md` §
 en el SMS por esta vía.** Lo que el destinatario lee lo compone la plataforma con el nombre del
 remitente. Si se quisiera controlar ese texto palabra por palabra, habría que usar SMS Certificado
 y renunciar al acuse de acceso — que es peor negocio.
+
+**Corrección de la rev. 17, medida: el SMS Certificado también registra el acceso.** El único de
+producción (`006bkxe0q63`, tipo `s` en el listado) hizo `17 → 20 «Documentación accedida»`, y
+ninguno de los 22 SMS medidos pasó por el 29 ni por el 30 (§1.3). Es una sola muestra, pero basta
+para que la razón de arriba —«acredita que el SMS se entregó, no que se accediera»— no se sostenga
+tal cual. **La elección de la entrega electrónica sigue en pie por otra razón**, que no depende de
+ese matiz: el SMS Certificado admite **un** fichero, y el requerimiento sale con las condiciones
+económicas **en adjunto aparte** (§7), que es lo que hace posible el aportable. El motor no manda
+SMS Certificado; si aparece uno con la referencia de una expedición —se puede mandar desde el
+portal—, **no se cosecha como definitivo y sus fechas no cuentan** para el requerido (§7.1).
 
 Consecuencia operativa que gobierna todo el motor: **el burofax admite un destinatario por
 llamada**. Dos domicilios son dos llamadas, siempre.
@@ -167,7 +224,7 @@ aparece en exactamente dos sitios del contrato: `DestinatarioPostal.telefono` �
 incidencia del burofax**— y `SolicitudSms`, el producto que no usamos. En
 `DestinatarioVerificable`, que es el destinatario de la entrega electrónica certificada, **no hay
 patrón ninguno**. La rev. 1 lo atribuyó al canal equivocado y su regla habría detenido planes
-correctos: el destinatario SMS real del §2, `34645508869`, lleva prefijo internacional y no casa
+correctos: el destinatario SMS real del §2, `34XXXXXXXXX`, lleva prefijo internacional y no casa
 ese patrón. Regla que queda: se normaliza el móvil y se valida su forma, pero **el patrón estricto
 se aplica solo donde el contrato lo exige**, y el prefijo `34` se acepta.
 
@@ -239,6 +296,54 @@ los nueve de arriba dejaría envíos reales sin clasificar:
 
 **La regla que el motor codifica, y que importa más que la tabla:** un código que **no** esté
 clasificado no cae en «en curso» por defecto. Se declara **desconocido** y el frontal lo nombra.
+
+**Los plazos del servicio, según el prestador** (rev. 16, leídos el 2026-09-25 en la Declaración
+de Prácticas de Codicert, **v2.5 del 23/01/2026**,
+`https://www.codicert.io/wp-content/uploads/2026/01/dpc_23_01_2026.pdf`). La API no los dice:
+solo devuelve, en la entrega electrónica y el correo certificado, un `fecha_expiracion` de salida
+—que **no es este plazo**: es el envío más cinco años (rev. 17, abajo)—, y el único plazo
+configurable (`expiracion`, de 3 a 30 días) es de los contratos y el SEPA.
+
+- **§4.5.5 — 30 días naturales desde el envío.** Es lo que la comunicación queda a disposición del
+  destinatario; el remitente puede cambiarlo, nunca por debajo de 72 horas, y por nuestra API no
+  se puede en la entrega electrónica. **Vencido sin lectura, el estado es el 40, «Caducado».**
+- **§4.5.10 — la correspondencia con la norma ETSI EN 319 522-1**, que es la que da sentido a cada
+  código: 27 = D.1 (el aviso llegó al servidor), **17 = D.3 (el aviso llegó al buzón)**, **20 =
+  E.1 (entrega del contenido: leído)**, 22 = D.4 (recordatorio fallido), 28 = C.4 (rechazo), 40 =
+  C.5 (vence el plazo sin aceptación ni rechazo) y 42 = C.2 (fallido). Cinco de los doce códigos
+  de esa tabla —el 0 «solicitado», el 2 «cancelado», el 16 «identificación errónea», el 22 y el 34
+  «aceptado»— el motor no los clasificaba: si aparecían, salían como **desconocidos**, que es lo
+  que la regla de arriba quiere. **Desde la rev. 17 el 22 sí se clasifica** (abajo); los otros
+  cuatro, no.
+- **§4.5.7 — las evidencias se conservan al menos 15 años** desde el envío (las condiciones
+  generales dicen cinco para el resto de documentos).
+- **El burofax no está en esa Declaración**, que es la del servicio electrónico: sus plazos no
+  salen de aquí.
+
+Con eso, F2 ya encaja: una entrega electrónica solo se cosecha en 20 o cerrada (28, 40, 42), así
+que la que nadie lee se cosecha al caducar, a los 30 días.
+
+**Los estados, medidos sobre todos los envíos** (rev. 17, 2026-09-26; plan de los estados medidos,
+M-17 a M-22). Barrido en solo lectura de los 117 envíos de `madrid.bd` —72 entregas electrónicas por
+correo, 20 por SMS, 24 burofax y 1 SMS Certificado— y de los 2 del sandbox:
+
+- **El SMS no tiene estados propios.** Ninguno de los 22 SMS pasa por el 29, el 30 ni el 39: recorren
+  los del correo. Esos tres siguen **sin clasificar**, a propósito: si aparecen, se declaran.
+- **El 22 dejaba el envío sin cerrar.** Un SMS que no llegó nunca hizo `3 → 14 → 22` y ahí se quedó,
+  83 días sin el 40, que la plataforma no pone a lo que no entregó. **Decisión de Nikolai
+  (2026-09-26): el 22 cierra sin entrega si ningún aviso llegó**; si llegó el primero, el requerido
+  aún puede leer y lo cierra el 40. Lo que aprobó nombraba el 17, el 20 y el 21; **el plan lo
+  concreta (D-1)** añadiendo el 19 y **el 27** —éste, porque el aviso está en su servidor, igual que
+  con el 17— y contándolos en cualquier punto del histórico, porque el acuse puede llegar tarde
+  (§6.3). El motor lo clasifica en familia propia, `AVISO_FALLIDO`, porque no siempre cierra.
+- **El 40 llega a los 30 días exactos del envío, al segundo**: 24 de 24 en el correo y 6 de 6 en el
+  SMS. La Declaración, confirmada con datos.
+- **`fecha_expiracion` no es ese plazo**: en los 119 envíos, de los tres tipos, es el envío **más
+  cinco años**. Es la custodia.
+- **Un burofax entregado puede quedarse sin su 19**: `006bgjupt2a`, 88 días en 17. En los otros
+  siete, el 19 tardó de 1,3 a 29,1 días. El motor no lo cierra: lo declara **estancado** (§7.1).
+- En el correo, **45 de 72** pasan por el 27 y no por el 17; si no se leen, su recepción es el primer
+  21, un día después del envío. Es la regla del §6.2, que no cambia.
 Si mañana la plataforma añade un cierre nuevo, con el default benigno la expedición no terminaría
 nunca y nadie se enteraría.
 
@@ -308,9 +413,9 @@ Cuenta maestra `engelvoelkers` en `usuarios.codicert.io`, **25 subusuarios enume
 
 | Hora | Tipo | Destinatario | Estado |
 |---|---|---|---|
-| 13:05:34 | Burofax | TUV SUD IBERIA, S.A. | Entregado |
-| 13:02:57 | Entrega Electrónica Certificada | 34645508869 | Recordatorio lectura entregado |
-| 13:01:27 | Entrega Electrónica Certificada | JoseMaria.Arnau@tuvsud.com | Leído |
+| 13:05:34 | Burofax | [mercantil requerida] | Entregado |
+| 13:02:57 | Entrega Electrónica Certificada | 34XXXXXXXXX | Recordatorio lectura entregado |
+| 13:01:27 | Entrega Electrónica Certificada | [email de la persona requerida] | Leído |
 
 Tres envíos, tres canales, **un mismo `id_personalizado`**. Ese campo es el hilo que cose la
 expedición, y ya se usa así sin que nadie lo hubiera escrito.
@@ -320,14 +425,14 @@ mal: `BCN-OS-008684 - OVC` es la referencia de la operación **más** el discrim
 producción ya había resuelto lo que la rev. 1 dejaba abierto. El §3 lo recoge.
 
 El detalle del burofax confirma el mapeo de la ficha postal: `nombre` es la razón social
-(«TUV SUD IBERIA, S.A.»), `a_atencion` la persona («Sr. Jose María Arnau»), y debajo dirección,
+(«[mercantil requerida]»), `a_atencion` la persona («Sr. [persona requerida]»), y debajo dirección,
 población, provincia, CP y el teléfono de incidencia.
 
 ### 2.1 El emisor sale del expediente, no se teclea
 
 Decisión de Nikolai del 2026-09-17: **los envíos salen del usuario `.bd` del Market Center**
 que reclama, que es lo que ya se hace —el certificado del W-04A6LI salió de `valencia.bd` y el
-OVC de TUV SUD de `barcelona.bd`—.
+OVC de [mercantil requerida] de `barcelona.bd`—.
 
 El mapeo es determinista: las **siete ciudades canónicas** de `core/ciudades.py` tienen cada una
 su usuario, y **las siete se enumeraron** en el portal el 2026-09-17; no es inferencia. El slug de
@@ -466,7 +571,7 @@ Entrada: el expediente y el **tipo de comunicación**. Del CRM salen las partes 
 4. **Lo que falta se declara, no se inventa.** Un requerido sin móvil sale como «sin canal SMS».
    Un requerido **sin ningún canal** detiene el plan.
 5. **La ficha se valida entera antes de gastar, no en el 422.** El móvil se normaliza —el prefijo
-   va en campo aparte, que es por qué el destinatario real de producción es `34645508869`— y
+   va en campo aparte, que es por qué el destinatario real de producción es `34XXXXXXXXX`— y
    `pais` solo admite `"España"`, así que un domicilio extranjero para el burofax se detiene en el
    plan.
 
@@ -585,6 +690,14 @@ requerido le basta cualquier canal.
 | Idoneidad del canal | art. 7.1 | **Domicilio o lugar de trabajo que conste**, o el medio electrónico **empleado por las partes en sus relaciones previas** |
 | Definición del objeto | art. 7.1 | La solicitud ha de definir «adecuadamente el objeto de la negociación» |
 
+**El 17 y el 21 son recepción, no lectura — decidido por Nikolai el 2026-09-25 (rev. 16).** La
+Declaración de Prácticas del prestador (v2.5, §4.5.5) solo llama **entregada** a la comunicación
+leída (20), y su tabla hace del 17 el aviso entregado en el buzón (ETSI D.3, §1.3). Se le planteó
+si eso obligaba a dejar de contar el 17 y el 21 como recepción, y decidió que no: **la recepción la
+acreditan el 17, el 20 y el 21; el acceso al contenido del art. 10.2, solo el 20.** Es la
+clasificación que el motor ya tenía (`RECEPCION` y `ACCESO` en `core/expedicion_certificada.py`),
+y no cambia.
+
 **La idoneidad del canal se registra, no se presume** (rev. 2). Un email sacado del CRM que nunca
 se usó entre las partes no es, por sí solo, el «medio de comunicación electrónico empleado por las
 partes en sus relaciones previas» del art. 7.1. El plan marca cada canal electrónico como
@@ -599,6 +712,16 @@ mes. A ellas se añade lo que la rev. 1 trató solo como pérdida:
 **El rechazo y el silencio tienen valor afirmativo.** El estado 28 no es un fracaso del envío: es
 un hecho acreditado con consecuencias propias —art. 7.4 y art. 395.1 LEC en la redacción dada por
 el art. 22.28 de la LO 1/2025—. El motor lo registra como evento con fecha, no como error.
+
+**El 22, cuando ningún aviso llegó, también cierra** (rev. 17, decisión de Nikolai del
+2026-09-26, con los indicios que concreta el plan en su D-1). Es el recordatorio fallido (ETSI D.4):
+si en todo el histórico no hay ningún indicio de que un aviso llegara —17, 19, 20, 21 o 27; antes o
+después del 22, porque el acuse puede llegar tarde—, el envío queda **cerrado sin entrega** en la
+fecha del 22 y su certificado se cosecha como
+prueba del intento. **Riesgo aceptado, dicho:** si después llegara un indicio, la cosecha siguiente
+saltaría el certificado ya archivado (`ya_estaba`) y el hecho posterior no entraría solo en el
+expediente; un 17, 21 o 27 tardío, además, saca el envío de lo cosechable hasta que culmine (lo
+reprodujo la R1). Medido: 83 días sin cambios tras el 22 —una observación, no una garantía—.
 
 **El año del art. 7.3 tiene dos *dies a quo*** unidos por «respectivamente»: desde la recepción si
 la solicitud quedó sin respuesta, desde la terminación sin acuerdo si hubo negociación. El motor no
@@ -680,6 +803,25 @@ Cuando una expedición finaliza, `cosechar` baja el certificado de cada envío, 
 remitente sea el emisor esperado**, y lo sube al expediente con el nombre canónico
 `<ASUNTO> - <REF>-<codigo>.pdf` por la vía del §17.1. La subida se verifica por resultado: se baja
 lo subido y se compara el `sha256`.
+
+**Lo que no se cosecha, con su motivo** (rev. 17). No hay uno, hay cuatro, y el frontal —`estado`,
+`cosechar` y el aportable de F3— dice el de cada envío en vez de «el hecho aún puede mejorar», que
+de tres de los 117 envíos reales era falso:
+
+- **canal sin clasificar** — no se sabe en qué culmina; no se cosecha nunca **como definitivo**, ni
+  con un cierre, y **sus fechas no cuentan** en el reloj del requerido;
+- **código sin clasificar** — se arregla en el código, no esperando;
+- **estancado** — en curso pero **más de 40 días sin moverse** (el silencio más largo medido antes de
+  un cambio es de 29,1 días);
+- **en curso** — el hecho aún puede mejorar.
+
+El estancado es un **aviso**, no una clasificación: no hace cosechable nada, y señala la salida que
+ya existe, `cosechar --incluir-pendientes`, que baja el certificado con su estado en el nombre sin
+ocupar el sitio del definitivo — **salvo al que no tiene ningún evento**, que no tiene estado con
+que nombrar un provisional: a ese el informe le dice que lo mire en el portal (R1/H-01).
+**Límite declarado:** el aportable se prepara solo sobre el
+definitivo, así que un estancado no tiene aportable (`MEJORAS_FUTURAS.md`, con su disparador).
+El motivo se mide contra la **hora de la lectura**, que la expedición lleva siempre.
 
 ### 7.2 La anatomía del certificado, medida
 
@@ -792,9 +934,30 @@ consten para que nadie los reinvente:
    el primer adjunto, 7 el segundo). Vale como control cruzado del instrumento de abajo, no como
    instrumento único: del burofax no está medido.
 
-**El instrumento que sí funciona: casar el texto.** El motor compone B, luego conoce su texto
-exactamente. Para cada página de la reproducción extrae el texto y lo casa, normalizado, contra las
-páginas de B. Es independiente del orden, del número de adjuntos y de que Codicert los fusione.
+**El instrumento que sí funciona: casar el texto.** Para cada página de la reproducción se extrae
+el texto y se casa, normalizado, contra las páginas de B. Es independiente del orden, del número de
+adjuntos y de que Codicert los fusione.
+
+> ⚠️ **Rev. 13: de dónde sale el texto de B.** Este párrafo decía «el motor compone B, luego
+> conoce su texto exactamente», y **en lo construido no es así**: F1 recibe los PDF por `--doc` y
+> dejó escrito que partir la plantilla es trabajo del operador (M-9 del plan de F3). F3 lee B de
+> **los adjuntos que salieron**, bajados de Codicert con `GET /envios/{id}/adjuntos/{nombre}` y
+> verificados contra la huella que lista el acta —3 de 3 coinciden (M-5)—, lo que además es más
+> fiable que lo que el operador diga que mandó. Salen de la **entrega electrónica**, la única cuyo
+> acta lista los adjuntos uno a uno; y valen para el **burofax** de la misma expedición, porque su
+> fichero fundido es la concatenación exacta de esos adjuntos, página a página y en el mismo orden
+> (M-4). Una expedición **solo de burofax** no trae de dónde sacarlos, y F3 para y lo dice.
+>
+> **Lo medido, que fija el instrumento** (M-3): quitada la cabecera que Codicert pone a cada página
+> de la reproducción («Código de envío: … Página: N de M»), original y copia coinciden al **100 %**
+> en las ocho parejas medidas; la misma plantilla en otra expedición, **0,877-0,939**; páginas
+> distintas, **0,39** como mucho. El umbral está en **0,98**. B son las páginas desde la que lleva
+> el rótulo **como línea entera** hasta el final de su documento: la palabra «condiciones» sale
+> también en el requerimiento y en la factura (M-7), y si el rótulo no cae al final se retira de
+> más, nunca de menos, y se avisa de la página arrastrada.
+>
+> **Y la reproducción real no es el documento de tres páginas de la tabla de arriba**: es el
+> refundido **más la factura**, cuatro páginas (M-1). La factura es prueba y se queda.
 
 **Y el literal `CONFIDENCIAL - CONDICIONES` se ha visto funcionar sobre un documento real** (rev.
 10): en la OVC `006catetonk`, enviada por correo a un requerido de verdad, aparece en la página 7
@@ -819,6 +982,21 @@ solo existe cuando B **no** se ha localizado del todo, y ese es exactamente el c
 Nuestro B nace de un RTF y lleva texto siempre; si un día no se localizara, es que algo cambió y
 hace falta un humano.
 
+> **Rev. 13: la parada, construida, son tres** (`core/certificado_aportable.recortar`), las tres
+> antes de entregar nada: (1) una página de B que no se localiza en la reproducción, o que no
+> tiene texto con que localizarla, para; (2) una página que se conserva y lleva el rótulo para,
+> **también si es del acta**, que no se recorta —es la red de la primera por un instrumento
+> independiente—; y (3) el PDF producido **se relee** y tiene que ser exactamente las páginas
+> conservadas, sin copia de B ni rótulo. Y una cuarta regla, de las que no se escriben solas: **si
+> ningún documento enviado lleva el rótulo, F3 no certifica que el íntegro sea aportable** —o no
+> había condiciones, o las había con otro rótulo—: para y lo decide una persona.
+>
+> **Rev. 14 (R2): el rótulo ABRE las condiciones como título, y la tercera parada relee el
+> FICHERO.** Una cita del título en la prosa del requerimiento lo retiraba entero (R2/H-03):
+> ahora solo abre las condiciones el rótulo que abre una línea —aunque la extracción lo parta—, y
+> una mención en una página que se conserva **para**, diciendo que es una mención. Y la relectura
+> ya no mira el texto de las páginas: mira el fichero entero contra una **lista blanca** (§7.4).
+
 ### 7.4 Qué produce, y el aviso que sí tiene discriminante
 
 Tres artefactos, los tres archivados:
@@ -833,6 +1011,62 @@ Tres artefactos, los tres archivados:
 **bloque A** no contenga cifras ni términos de la oferta —importe, calendario, quita, plazo de
 aceptación— y que **el asunto y el cuerpo** tampoco, porque el acta los reproduce y el acta no se
 recorta. Si salta, nombra qué encontró y dónde.
+
+> ⚠️ **Rev. 13: el discriminante de «cifras» no sirve, y se cambia por el texto de B.** Los tres
+> requerimientos reales llevan la **deuda reclamada en euros** («…adeudando… la cantidad de X €»),
+> y la factura, base, IVA y total (M-2): un aviso por cifras habría saltado en todo envío. Lo que
+> distingue una fuga es el **propio texto de las condiciones**: se buscan sus frases de **8
+> palabras** —tras el rótulo y antes de la despedida— en todo lo que se conserva, **acta incluida**,
+> que es donde van el asunto y el cuerpo. Medido: cero coincidencias en los tres certificados; con
+> 5 o 6 palabras saltan en falso el IBAN de la factura y «de la Oferta Vinculante Confidencial»
+> (M-6), y los sintéticos de la suite reproducen esas dos fuentes para que el umbral no se pueda
+> bajar sin que un test lo vea. Sigue siendo **aviso, no parada**.
+>
+> **Los ficheros**, junto al íntegro en `04_Output predemanda/Certificados`:
+> `<íntegro> - APORTABLE.pdf` y `<íntegro> - MANIFIESTO.json`. El aportable **no lleva la firma**
+> del prestador —recortar la rompe— **ni su sello visible**: el widget de firma de la página 1 se
+> quita, porque pintaría «Digitally signed by…» sobre un documento que ya no está firmado (M-8,
+> comprobado a ojo sobre el aportable real). Lo que sí conserva es la numeración de Codicert en el
+> pie («Página 1 de 8» en un aportable de 7): el salto se ve, y el aportable no aparenta estar
+> completo. El recorte es **determinista**, y por eso volver a lanzarlo compara por contenido y ni
+> duplica ni pisa. F3 **no sube** el aportable al CRM: el íntegro, que es la prueba, ya lo subió F2.
+>
+> ⚠️ **Rev. 14 (R2/H-01): el aportable es la IMAGEN de las páginas que se conservan, con una capa
+> de texto leída por OCR.** Copiar su estructura arrastraba lo que compartían con las retiradas: el
+> formulario de las condiciones (R1) y, podado ese, patrones, fuentes, máscaras y metadatos que
+> ninguna página conservada dibujaba (R2, siete vías). Cada remedio cerraba una vía; la imagen
+> cierra la frontera: **lo que no se dibuja no está**. Cada página conservada se dibuja **sin
+> anotaciones** a 200 ppp —las huellas del acta se leen a ojo— y va como una imagen JPEG; encima,
+> una capa de texto **invisible** de OCR (OCRmyPDF + Tesseract, `spa`), que solo ve esos píxeles,
+> para que el aportable se pueda buscar y lo lea una LLM (lo pidió Nikolai el 2026-09-25). **Sin
+> OCR no hay aportable.** El texto fiel sigue siendo el del íntegro, y el manifiesto (versión 2) y
+> el frontal lo dicen. La relectura exige un **perfil**: cada página, su imagen —byte a byte la del
+> raster, que el OCR no toca— y como mucho una capa de texto invisible; nada suelto en el fichero; y
+> que el OCR no lea el rótulo ni una página que se parezca más a una retirada que a la suya.
+> **Idempotencia:** la imagen es determinista y el OCR no, así que volver a lanzar **relee** el
+> aportable escrito contra la imagen de hoy, sin pasar el OCR otra vez; un manifiesto sin su
+> aportable **para**, porque un aportable repuesto no casaría con él. Y lo que el CRM dijo del
+> destinatario va en su propia clave del manifiesto, fuera de su identidad (R2/H-04).
+>
+> ⚠️ **Rev. 15 (R3): el fichero lo COMPONE el motor, y la relectura lo recompone.** Sustituye tres
+> cosas de la rev. 14: OCRmyPDF, el perfil de la relectura y la parada del manifiesto huérfano. La
+> R3 enseñó que un fichero escrito por otro tiene más sitios de los que un perfil enumera
+> —revisiones anteriores, objetos de otra generación, datos colgados de una fuente, una segunda
+> capa que nadie invoca— y que una página puede guardar su imagen sin dibujarla. Ahora el OCR
+> (**Tesseract directo**, `spa`) solo devuelve **líneas** —texto y caja— de la imagen de cada
+> página, y el aportable se escribe aquí en una **forma fija**: por página, su imagen a página
+> completa y un renglón de texto invisible por línea leída, en Helvetica y WinAnsi; sin
+> metadatos, revisiones ni objetos sin uso. **La relectura lee los renglones, recompone el fichero
+> con la imagen del recorte y exige los mismos bytes**; después exige que ninguna página lleve el
+> rótulo, que cada página **dibuje** su imagen tal cual —se dibuja el fichero con PDFium— y que
+> esa imagen se parezca más a la página que tocaba que a **cualquier** otra del íntegro, y que
+> cada página con texto traiga el suyo (un parecido de 0,30 como poco). **No acredita que cada
+> palabra salga de los píxeles**: eso descansa en que el OCR solo los recibe a ellos. Un **aviso
+> nuevo** dice cuándo la imagen de una página muestra frases de las condiciones que su texto no
+> lleva —un escaneo—. El **título** de las condiciones exige, además, que no le siga nada en
+> minúscula en su línea, y una mención antes del título **para** (R3/H-05). El fichero es
+> determinista —el mismo OCR sobre la misma imagen da las mismas líneas—, así que un manifiesto
+> huérfano **se repone** si el aportable sale con su huella, y si no, para. Manifiesto, versión 3.
 
 ## 8. Credenciales y entornos
 
@@ -863,7 +1097,35 @@ pruebas, «así no se cobrará nada».
 |---|---|---|
 | **F1** | `core/codicert.py` + `planificar` + `ejecutar` + `plan`/`enviar` | Sí: sustituye el picado manual |
 | **F2** | `refrescar` + `cosechar` + `core/sudespacho_documentos.py` + `estado`/`cosechar` | Sí: cierra la prueba del envío |
-| **F3** | `core/certificado_aportable.py` + el aportable y su manifiesto | Sí: produce lo que va al juzgado |
+| **F3** | `core/certificado_aportable.py` + el aportable y su manifiesto + `aportable` | Sí: produce lo que va al juzgado |
+
+> **Rev. 13 (2026-09-25), al construir F3.** El humo (`scripts/_codicert_humo_f3.py`) corrió
+> contra **producción**, en solo lectura y fuera del expediente, sobre `W-04AKM2 - OVC`: aportable
+> del correo `006catetonk` sin su página 7 y del burofax `006catfpdv6` sin su página 9 —las dos,
+> la de condiciones, casada al 1,000 en las tres numeraciones—; `006catf83zx` declarado pendiente;
+> factura conservada, rótulo ausente **de lo visible**, huellas de íntegro y aportable iguales a
+> las del manifiesto, sello de firma presente en el íntegro y ausente en el aportable; crédito
+> 836,9215 € antes y después. **El camino real queda ejercido para Madrid**; las otras seis plazas
+> siguen sin credencial.
+>
+> ⚠️ **Y lo que ese humo NO vio, que es lo importante:** releía el texto de las páginas, no el
+> fichero. La R1 (H-01) demostró que **los dos aportables llevaban dentro el formulario de la
+> página de condiciones**, porque los certificados reales comparten un `/Resources` entre todas
+> sus páginas (§12.4). Remediado y **re-verificado sin red sobre esos mismos certificados**:
+> formularios con el rótulo 1 → 0, lo conservado idéntico píxel a píxel salvo el sello. Los dos
+> PDF defectuosos solo existieron en el directorio temporal de la sesión.
+>
+> **Rev. 14:** la R2 enseñó siete vías más, y el aportable pasó a ser imagen con OCR (§7.4).
+> **Re-verificado sin red sobre los mismos dos certificados:** ni un stream del íntegro sobrevive en
+> el aportable, cada imagen es su página y el OCR lee lo conservado sin leer el rótulo. Y correrlo
+> sobre los REALES encontró lo que el sintético no enseñaba: por encima de 1 MB OCRmyPDF linealiza
+> —objetos que no cuelgan de nada, que la relectura para— y deja `sys.stderr` cambiado por un
+> `StringIO` que se tragaba las trazas. Los dos, arreglados en el adaptador y con su test.
+>
+> **Rev. 15:** con el aportable compuesto por el motor, **re-verificado sin red sobre los mismos
+> dos certificados**: ni un stream del íntegro dentro, lo que dibuja cada página es la suya, el OCR
+> se parece a cada original y no lee el rótulo, y **un segundo OCR da el mismo fichero**. OCRmyPDF
+> sale del camino del aportable, y con él los dos defectos de la rev. 14.
 
 **Lo que se prueba con doble y lo que no.** Con el puerto del §4.2, el criterio del jurídico se
 prueba entera contra dobles. Lo que **no se puede probar sin enviar de verdad** se nombra aquí para
@@ -936,7 +1198,7 @@ Ninguno de los dos restos condiciona el diseño ni bloquea F1.
 - **Objeto revisado:** `docs/superpowers/specs/2026-09-17-envio-certificado-codicert-design.md` rev. 1, commit `d895d1d`
 - **Ronda:** 1, sobre el diseño
 - **Revisor:** Claude Code (sesión independiente) — Codex sin cupo hasta el 2026-09-19
-- **Informe recibido:** `2026-09-17-envio-certificado-codicert-r1-adversarial-review.md`, `sha256` del bloque literal `59d499ffd7fddb209d2979893c96da537aad4cef008c4820fe20a8737d31b2f5`
+- **Informe recibido:** `2026-09-17-envio-certificado-codicert-r1-adversarial-review.md`, `sha256` del bloque literal `819b5f5741201796107362ff45c29fb553b301e18f09fd562b69ad5cb80385f6` (redactado el 2026-09-26: tres apariciones del móvil de un tercero; el del original era `59d499ffd7fddb209d2979893c96da537aad4cef008c4820fe20a8737d31b2f5`)
 - **Hallazgos:** 34 — 12 `alta`, 14 `media`, 8 `baja`. **33 confirmados, 1 refutado en un extremo**
 - **Remediado en:** esta rev. 2
 
@@ -1059,3 +1321,58 @@ la consecuencia, escrita para que nadie la lea de más:
   la parte revisada, y la regla de cierre dice que lo que hay que argumentar como trivial no lo
   es—: se declara **dispensada por quien tiene el techo duro**. La diferencia importa, porque una
   exención es un juicio sobre el diff y una dispensa es una decisión sobre el coste.
+
+### 12.4 La cobertura de F3 (2026-09-25)
+
+**Una ronda, sobre el diff**, que es la lectura de la tabla de `CLAUDE.md`: F3 no decide quién
+escribe sobre qué copia ni destruye datos de cliente —crea dos ficheros nuevos junto al íntegro y
+no pisa ninguno—. Con **`gpt-6-astra`·`medium`**, la fila de «escritura sobre datos de cliente…
+idempotencia», y la frontera que lo justifica es **silenciosa**: un aportable con la página de
+condiciones dentro *parece* correcto —nombre, manifiesto y páginas en su sitio— y su defecto solo
+aparece cuando la otra parte lo lee en el juzgado.
+
+- **R1 de Codex sobre el diff** (commit `a87e2d9`): **NO-SHIP**, 7 hallazgos —2 `alta`, 5
+  `media`—, **los siete confirmados contra la fuente y remediados**, más dos observaciones
+  laterales también remediadas. Acta literal:
+  [`2026-09-25-codicert-f3-r1-adversarial-review.md`](../plans/2026-09-25-codicert-f3-r1-adversarial-review.md);
+  adjudicación en el §12 del [plan de F3](../plans/2026-09-25-codicert-f3.md).
+- **El alto que la justifica, medido en los certificados reales:** las páginas comparten un
+  `/Resources` con el Form XObject de cada página de la reproducción, y copiar las conservadas
+  metía en el aportable el formulario de las condiciones —invisible, recuperable—. El §7.4 se
+  cumple ahora sobre el **fichero**, no sobre lo que se ve: recursos podados a lo que cada página
+  dibuja, sin anotaciones, y una relectura del grafo entero que para si queda un solo objeto que
+  solo usaban las páginas retiradas.
+- **Sobre los nueve commits de la remediación la cobertura independiente era AUSENTE**: cada
+  remedio con su test visto en rojo, 26 de 26 mutantes muertos por su test y la suite con las dos
+  semillas, lo que prueba que cada remedio hace lo que dice, **no** que ninguno haya abierto algo
+  que nadie fue a buscar. Una segunda ronda excede la tabla y la decide Nikolai.
+- **R2 de Codex sobre esa remediación, autorizada expresamente por Nikolai el 2026-09-25**
+  (`a87e2d9` → `3ae4cbe`, mismo modelo y por la misma frontera): **NO-SHIP**, 7 hallazgos —1
+  `alta`, 5 `media`, 1 `baja`—, **los siete confirmados contra la fuente y remediados**. Acta
+  literal: [`2026-09-25-codicert-f3-r2-adversarial-review.md`](../plans/2026-09-25-codicert-f3-r2-adversarial-review.md);
+  adjudicación en el §13 del plan. **El alto cambió la pieza**, no el remedio: la poda cerraba
+  vías de una en una, y el aportable pasó a ser la imagen de lo conservado con su capa de OCR
+  (§7.4), con la relectura como lista blanca.
+- **La remediación de la R2 NO ha pasado ronda: su cobertura independiente es AUSENTE**, y pesa
+  más que la anterior porque la imagen, el perfil y el puerto de OCR son código nuevo. Una R3
+  supera el techo de dos rondas: solo la autoriza Nikolai.
+- **R3 de Codex sobre esa remediación, autorizada expresamente por Nikolai el 2026-09-25**
+  (`3ae4cbe` → `6d950b1`, mismo modelo y por la misma frontera): **NO-SHIP**, 5 hallazgos —2
+  `alta`, 3 `media`—, **los cinco confirmados contra la fuente y remediados**. Acta literal:
+  [`2026-09-25-codicert-f3-r3-adversarial-review.md`](../plans/2026-09-25-codicert-f3-r3-adversarial-review.md);
+  adjudicación en el §14 del plan. **Los cuatro primeros eran la propiedad de la R2 otra vez**:
+  la relectura admitía un fichero que no había escrito el motor y trataba de enumerar lo que ese
+  fichero podía llevar. Desde la rev. 15 el aportable **lo compone el motor** y la relectura lo
+  **recompone** y exige los mismos bytes (§7.4).
+- **La remediación de la R3 NO ha pasado ronda: su cobertura independiente es AUSENTE.** La
+  composición y la recomposición vuelven a ser una pieza nueva. Una cuarta ronda solo la autoriza
+  Nikolai.
+
+### 12.5 La cobertura de los estados medidos (2026-09-26)
+
+**Una ronda, la que la tabla asigna.** La R1 de Codex sobre el diff —`gpt-6-astra`·`medium`, fila
+«escritura sobre datos de cliente»— volvió **LISTA-CON-CAMBIOS** con **dos hallazgos `baja`**, los
+dos confirmados contra la fuente y remediados en `b5c39ee`, más uno propio (la hora de la lectura).
+Acta: [`2026-09-26-codicert-estados-medidos-r1-adversarial-review.md`](../plans/2026-09-26-codicert-estados-medidos-r1-adversarial-review.md);
+adjudicación, en el §6 del plan. **La remediación no ha pasado ronda: cobertura AUSENTE**, y una R2
+solo la autoriza Nikolai.

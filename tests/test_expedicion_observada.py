@@ -3,7 +3,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from core import expedicion_certificada as exp
+
+#: Cuándo se «leyó» la expedición de los tests (D-4: la hora de la lectura es
+#: obligatoria). Cerca de las fechas de sus históricos, para que nada salga estancado.
+LEIDA = datetime.fromisoformat("2026-09-13T10:00:00+02:00")
 
 
 def _historico(*pares):
@@ -89,7 +95,7 @@ def test_la_expedicion_agrega_sin_inventar_un_reloj_comun():
     a = _envio(id_envio="006a", historico=_historico((20, "2026-09-12T23:03:43+02:00")))
     b = _envio(id_envio="006b", historico=_historico((21, "2026-09-11T19:00:23+02:00")))
     e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
-                       envios=(a, b))
+                       envios=(a, b), leida_en=LEIDA)
     assert e.completa is False           # b aún puede mejorar
     assert {x.id_envio for x in e.pendientes} == {"006b"}
     assert {x.id_envio for x in e.cosechables} == {"006a"}
@@ -97,5 +103,86 @@ def test_la_expedicion_agrega_sin_inventar_un_reloj_comun():
 
 def test_una_expedicion_VACIA_no_esta_completa():
     """Un censo vacío no es una expedición terminada (spec §5.2)."""
-    assert exp.Expedicion(id_personalizado="W-1 - OVC",
-                          entorno="produccion").completa is False
+    assert exp.Expedicion(id_personalizado="W-1 - OVC", entorno="produccion",
+                          leida_en=LEIDA).completa is False
+
+
+def test_el_22_sin_ningun_aviso_entregado_cierra_sin_entrega():
+    """M-17, `006bij47xan`: el SMS no llegó nunca y el recordatorio falló.
+
+    Decisión de Nikolai (2026-09-26): se cierra sin entrega y se cosecha como prueba del
+    intento. Sin la regla no se cosecharía nunca: la plataforma no caduca lo que no entregó.
+    """
+    e = _envio(historico=_historico((3, "2026-07-01T12:05:33+02:00"),
+                                    (14, "2026-07-02T13:00:45+02:00"),
+                                    (22, "2026-07-04T13:00:50+02:00")))
+    assert e.cerrado_en == datetime.fromisoformat("2026-07-04T13:00:50+02:00")
+    assert e.cosechable
+    assert e.recibido_en is None and e.accedido_en is None
+    assert e.desconocidos == ()
+
+
+@pytest.mark.parametrize("indicio", [17, 19, 20, 21, 27])
+def test_el_22_NO_cierra_si_algun_aviso_llego(indicio):
+    """Si el primer aviso llegó —al buzón, al contenido o al servidor—, el requerido aún
+    puede leer: el 22 del recordatorio no cierra nada y se espera al 40 (D-1)."""
+    e = _envio(historico=_historico((5, "2026-09-01T10:00:00+02:00"),
+                                    (indicio, "2026-09-01T10:00:05+02:00"),
+                                    (14, "2026-09-02T11:00:00+02:00"),
+                                    (22, "2026-09-02T11:00:05+02:00")))
+    assert e.cerrado_en is None
+    assert e.cosechable is (indicio == 20)   # el 20 culmina por sí mismo
+
+
+def test_un_indicio_que_llega_DESPUES_del_22_tambien_lo_anula():
+    """El acuse puede llegar tarde (M-17: en el sandbox el 17 llegó después del 20). La
+    regla mira el histórico entero, no solo lo anterior al 22."""
+    e = _envio(historico=_historico((3, "2026-07-01T12:05:33+02:00"),
+                                    (14, "2026-07-02T13:00:45+02:00"),
+                                    (22, "2026-07-04T13:00:50+02:00"),
+                                    (17, "2026-07-05T09:00:00+02:00")))
+    assert e.cerrado_en is None and not e.cosechable
+
+
+def test_el_40_cierra_aunque_hubiera_un_22_antes():
+    e = _envio(historico=_historico((17, "2026-06-17T16:30:04+02:00"),
+                                    (14, "2026-06-18T17:00:33+02:00"),
+                                    (22, "2026-06-18T17:00:43+02:00"),
+                                    (40, "2026-07-17T16:29:58+02:00")))
+    assert e.cerrado_en == datetime.fromisoformat("2026-07-17T16:29:58+02:00")
+    assert e.cosechable
+
+
+def test_un_canal_sin_clasificar_no_se_cosecha_ni_con_su_culminacion():
+    """M-18, `006bkxe0q63`: el SMS Certificado (tipo `s`) existe en producción e hizo
+    17 → 20. F2 no sabe en qué culmina ese canal: ni su 20 ni su 42 lo hacen definitivo."""
+    leido = _envio(tipo="s", historico=_historico((17, "2026-07-07T12:59:54+02:00"),
+                                                   (20, "2026-07-07T12:59:56+02:00")))
+    fallido = _envio(tipo="s", historico=_historico((42, "2026-07-07T13:00:00+02:00")))
+    assert leido.canal == "desconocido:s" and not leido.canal_clasificado
+    assert not leido.cosechable and not fallido.cosechable
+    # el canal no borra lo que el histórico acredita
+    assert leido.accedido_en == datetime.fromisoformat("2026-07-07T12:59:56+02:00")
+
+
+@pytest.mark.parametrize("codigo", [3, 5, 8, 11, 12, 14, 31])
+def test_el_22_cierra_si_lo_que_hay_delante_no_es_un_indicio(codigo):
+    """R1/H-02: los indicios son EXACTAMENTE {17, 19, 20, 21, 27} (D-1). Los códigos en curso
+    —el 5 «Procesado» incluido— no dicen que el aviso llegara y no impiden el cierre. La lista
+    va escrita aquí a mano, no sacada de la constante que se prueba."""
+    e = _envio(historico=_historico((codigo, "2026-07-01T12:05:33+02:00"),
+                                    (22, "2026-07-04T13:00:50+02:00")))
+    assert e.cerrado_en == datetime.fromisoformat("2026-07-04T13:00:50+02:00")
+    assert e.cosechable
+
+
+@pytest.mark.parametrize("tipo, codigos", [
+    ("c", (20, 999)), ("b", (19, 999)), ("c", (3, 14, 22, 999)), ("c", (42, 999))])
+def test_un_codigo_desconocido_bloquea_la_culminacion_y_el_cierre(tipo, codigos):
+    """R1/H-02: sin la guarda de `desconocidos`, un 999 detrás de un 20, un 19, un 22 que
+    cierra o un 42 dejaría cosechar. El test de antes usaba un 999 solo, que tampoco culmina
+    sin la guarda, y no la probaba."""
+    fechas = [f"2026-07-0{i + 1}T10:00:00+02:00" for i in range(len(codigos))]
+    e = _envio(tipo=tipo, historico=_historico(*zip(codigos, fechas)))
+    assert not e.cosechable
+    assert e.desconocidos == (999,)

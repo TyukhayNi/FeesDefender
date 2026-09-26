@@ -4,12 +4,17 @@
     python -m scripts.codicert enviar   W-04AKM2 --tipo OVC --plaza Madrid --doc A.pdf --confirmar <digest>
     python -m scripts.codicert estado   W-04AKM2 --tipo OVC --plaza Madrid
     python -m scripts.codicert cosechar W-04AKM2 --tipo OVC --plaza Madrid
+    python -m scripts.codicert aportable W-04AKM2 --tipo OVC --plaza Madrid
 
-Las dos primeras son F1 y las dos últimas F2. Solo `enviar` exige confirmación con
-digest: es la que gasta 16,97 € y manda una comunicación irreversible a un tercero.
-`estado` solo lee; `cosechar` archiva el certificado en el expediente y lo cuelga del
-CRM, las dos cosas reversibles — pero corre bajo mutex, porque dos a la vez subirían
-el mismo certificado dos veces.
+Las dos primeras son F1, `estado` y `cosechar` F2, y `aportable` F3. Solo `enviar`
+exige confirmación con digest: es la que gasta 16,97 € y manda una comunicación
+irreversible a un tercero. `estado` solo lee; `cosechar` archiva el certificado en el
+expediente y lo cuelga del CRM, las dos cosas reversibles — pero corre bajo mutex,
+porque dos a la vez subirían el mismo certificado dos veces.
+
+`aportable` deja junto a cada íntegro la versión que va al juzgado —sin las páginas de
+condiciones— y su manifiesto. Ni gasta ni sube nada, y corre bajo el MISMO mutex que la
+cosecha, porque lee lo que ella escribe.
 
 La orden manda sobre la variable (spec §8): producción exige `--entorno produccion`
 escrito en la propia orden, aunque `CODICERT_ENTORNO=produccion` esté puesto en el
@@ -123,6 +128,43 @@ def _fecha(f) -> str:
     return f.strftime("%d/%m/%Y %H:%M") if f else "—"
 
 
+#: La salida de un estancado CON eventos: la descarga provisional existe (R1/H-01).
+SALIDA_DEL_ESTANCADO = (
+    "      Si el certificado de hoy te sirve, `cosechar --incluir-pendientes`",
+    "      lo baja con su estado en el nombre, sin ocupar el sitio del",
+    "      definitivo. El aportable, solo sobre el definitivo.")
+
+#: Lo que se dice de un estancado SIN ningún evento. No hay estado con que nombrar un
+#: provisional y la cosecha lo salta, así que ofrecerle la descarga era mandar a repetir algo
+#: que no hace nada (R1/H-01).
+SIN_EVENTOS = "sin ningún evento: no hay estado con que bajar un provisional; míralo en el portal"
+
+
+def _dias(n: int) -> str:
+    return f"{n} día" if n == 1 else f"{n} días"
+
+
+def _no_cosechables(expedicion: exp.Expedicion, titulo: str) -> list[str]:
+    """Lo no cosechable, con su motivo: es lo que el abogado necesita para saber qué
+    hacer (M-21). Antes salía todo bajo «el hecho aún puede mejorar», y de un envío que
+    lleva ochenta días quieto eso es falso."""
+    grupos = expedicion.pendientes_por()
+    if not grupos:
+        return []
+    lineas = ["", f"  {titulo}"]
+    for motivo, envios in grupos.items():
+        alerta = "" if motivo == exp.PUEDE_MEJORAR else "⚠️ "
+        lineas.append(f"    {alerta}{exp.ETIQUETA[motivo]} — {exp.QUE_SIGNIFICA[motivo]}")
+        for e in envios:
+            vacio = motivo == exp.ESTANCADO and not e.historico
+            lineas.append(f"      · {e.id_envio} ({e.canal}), "
+                          f"{_dias(e.dias_quieto(expedicion.leida_en))} sin moverse"
+                          + (f" — {SIN_EVENTOS}" if vacio else ""))
+        if motivo == exp.ESTANCADO and any(e.historico for e in envios):
+            lineas += list(SALIDA_DEL_ESTANCADO)
+    return lineas
+
+
 def render_estado(expedicion: exp.Expedicion,
                   partes: list[dict] | Callable[[str], list[dict]]) -> str:
     """Lo que el abogado lee para saber a quién se le ha entregado y cuándo.
@@ -165,10 +207,8 @@ def render_estado(expedicion: exp.Expedicion,
         ultimo = max(e.historico, key=lambda x: x.fecha) if e.historico else None
         etiqueta = f"{ultimo.codigo} · {ultimo.titulo}" if ultimo else "(sin histórico)"
         lineas.append(f"  {e.id_envio:<12} {e.canal:<12} {etiqueta:<34} "
-                      f"{'sí' if e.cosechable else 'aún no'}")
-    if expedicion.pendientes:
-        lineas += ["", "  PENDIENTES (el hecho aún puede mejorar; no se cosechan):"]
-        lineas += [f"    · {e.id_envio} ({e.canal})" for e in expedicion.pendientes]
+                      f"{'sí' if e.cosechable else 'no'}")
+    lineas += _no_cosechables(expedicion, "PENDIENTES, y por qué no se cosechan:")
     desconocidos = sorted({c for e in expedicion.envios for c in e.desconocidos})
     if desconocidos:
         lineas += [
@@ -176,6 +216,14 @@ def render_estado(expedicion: exp.Expedicion,
             + ", ".join(str(c) for c in desconocidos),
             "     No se tratan como benignos. Míralos en el portal y añádelos",
             "     a `_FAMILIA_DE` en core/expedicion_certificada.py.",
+        ]
+    canales = sorted({e.tipo for e in expedicion.envios if not e.canal_clasificado})
+    if canales:
+        lineas += [
+            "", "  ⚠️ CANALES SIN CLASIFICAR: tipo " + ", ".join(canales),
+            "     No se cosechan y sus fechas no cuentan en «POR REQUERIDO»: no se",
+            "     sabe qué acreditan. Añádelos a `CANAL_DE_TIPO` y `_CULMINACION`",
+            "     en core/expedicion_certificada.py.",
         ]
     if not expedicion.envios:
         lineas += [
@@ -186,8 +234,8 @@ def render_estado(expedicion: exp.Expedicion,
     return "\n".join(lineas)
 
 
-def render_cosecha(cosechados, pendientes) -> str:
-    """Qué se archivó y qué no, con el emisor verificado a la vista."""
+def render_cosecha(cosechados, expedicion: exp.Expedicion) -> str:
+    """Qué se archivó y qué no —con su motivo—, con el emisor verificado a la vista."""
     lineas = ["COSECHA", ""]
     for c in cosechados:
         marca = "ya estaba" if c.ya_estaba else "nuevo"
@@ -199,11 +247,35 @@ def render_cosecha(cosechados, pendientes) -> str:
         falta = "" if c.local_presente else "   ⚠️ NO ESTÁ (solo en el CRM)"
         lineas.append(f"      local .... {c.ruta_local}{falta}")
         lineas.append(f"      sha256 ... {c.sha256 or '(de una cosecha anterior)'}")
-    if pendientes:
-        lineas += ["", "  NO COSECHADOS (el hecho aún puede mejorar):"]
-        lineas += [f"    · {e.id_envio} ({e.canal})" for e in pendientes]
+    # «SIN CERTIFICADO DEFINITIVO» y no «NO COSECHADOS»: lo que se bajó como provisional
+    # sale arriba y sale también aquí (límite (a) de la R1).
+    lineas += _no_cosechables(expedicion, "SIN CERTIFICADO DEFINITIVO, y por qué:")
     if not cosechados:
         lineas.append("  Nada que cosechar todavía.")
+    return "\n".join(lineas)
+
+
+def render_aportables(resultados) -> str:
+    """Qué se preparó para el juzgado, qué no y por qué. Ningún envío sin su línea."""
+    lineas = ["APORTABLES", ""]
+    for r in resultados:
+        lineas.append(f"  {r.id_envio}  [{r.estado.upper().replace('_', ' ')}]  {r.canal}")
+        if r.ruta_aportable:
+            lineas.append(f"      aportable .... {r.ruta_aportable}")
+        if r.ruta_manifiesto:
+            lineas.append(f"      manifiesto ... {r.ruta_manifiesto}")
+        if r.retiradas:
+            lineas.append("      retiradas .... páginas "
+                          + ", ".join(str(p) for p in r.retiradas) + " del certificado")
+        if r.motivo:
+            lineas.append(f"      motivo ....... {r.motivo}")
+        lineas += [f"      ⚠ {a}" for a in r.avisos]
+    if not resultados:
+        lineas.append("  Nada que preparar.")
+    lineas += ["", "  El aportable NO lleva la firma del prestador: la prueba custodiada",
+               "  es el íntegro, con la huella que da su manifiesto.",
+               "  Es la IMAGEN de las páginas que se conservan, con su texto leído por OCR:",
+               "  sirve para buscar y leer, y el texto fiel es el del íntegro."]
     return "\n".join(lineas)
 
 
@@ -216,8 +288,9 @@ def main(argv: list[str] | None = None) -> int:
         "enviar": "ejecuta un plan ya confirmado; gasta",
         "estado": "relee en Codicert qué ha recibido cada requerido",
         "cosechar": "baja los certificados, los archiva y los sube al CRM",
+        "aportable": "prepara la versión que va al juzgado, sin las condiciones",
     }
-    for nombre in ("plan", "enviar", "estado", "cosechar"):
+    for nombre in ("plan", "enviar", "estado", "cosechar", "aportable"):
         s = sub.add_parser(nombre, help=AYUDA[nombre])
         s.add_argument("w_code", help="expediente, p. ej. W-04AKM2")
         s.add_argument("--tipo", required=True, choices=list(exp.TIPOS_COMUNICACION))
@@ -237,9 +310,10 @@ def main(argv: list[str] | None = None) -> int:
         if nombre == "cosechar":
             s.add_argument("--incluir-pendientes", action="store_true",
                            dest="incluir_pendientes",
-                           help="baja también el certificado de los envíos que aún "
-                                "pueden mejorar; su nombre lleva el estado, así que "
-                                "no ocupan el sitio del definitivo")
+                           help="baja también el certificado de lo no cosechable (en "
+                                "curso, estancado o sin clasificar) que tenga algún evento; "
+                                "su nombre lleva el estado, así que no ocupa el sitio del "
+                                "definitivo")
     args = parser.parse_args(argv)
 
     entorno = entorno_de(argumento=args.entorno)
@@ -277,8 +351,22 @@ def main(argv: list[str] | None = None) -> int:
                 expedicion = exp.refrescar(args.w_code, args.tipo,
                                            entorno_exp=entorno_exp,
                                            ordinal=args.ordinal)
-            print(render_cosecha(cosechados, expedicion.pendientes))
+            print(render_cosecha(cosechados, expedicion))
             return 0
+
+        if args.orden == "aportable":
+            # La MISMA clave que `cosechar`: F3 lee el íntegro que la cosecha escribe
+            # en la misma carpeta, y dos a la vez leerían uno a medio escribir.
+            with sostener(
+                    exp.clave_mutex_cosecha(args.w_code, args.tipo, entorno_exp,
+                                            args.ordinal),
+                    avisar=lambda m: print(m, file=sys.stderr),
+                    que="la preparación de los aportables"):
+                resultados = exp.preparar_aportables(
+                    args.w_code, args.tipo, entorno_exp=entorno_exp,
+                    ordinal=args.ordinal)
+            print(render_aportables(resultados))
+            return 1 if any(r.estado == exp.PARADO for r in resultados) else 0
 
         plan = exp.planificar(args.w_code, args.tipo, [Path(d) for d in args.docs],
                               entorno_exp=entorno_exp, plaza=plaza, entorno=entorno,
