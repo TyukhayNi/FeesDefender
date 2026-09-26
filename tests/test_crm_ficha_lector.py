@@ -246,14 +246,18 @@ def test_cada_clave_llega_a_su_atributo(tmp_path):
 
     `V_movil` y `W_telefono` sobreviven a `normalize_es_phone`, que solo quita `[\\s.\\-/()]` y
     el prefijo de país (medido); la provincia tiene que ser una real, porque la validación
-    rechaza la que el Select no reconocería."""
+    rechaza la que el Select no reconocería. Y el NIF, ya en forma canónica: desde la R3/H-01
+    viaja canonizado (`V_nif` llegaba como `VNIF`), y esa conversión la prueba
+    `test_R3H01_el_nif_viaja_en_su_forma_canonica_y_la_declaracion_se_conserva`."""
     valores = {c: f"V_{c}" for c in _INVENTARIO_CONTRARIO}
     valores["provincia"] = "Zaragoza"
+    valores["nif"] = "VNIF"
     texto = "contrario:\n" + "".join(f"  {c}: '{v}'\n" for c, v in valores.items())
     f = cf.cargar_ficha_yaml(_yaml(tmp_path, texto))
     for c, v in valores.items():
         assert getattr(f.contrarios[0], c) == v, c
     valores_col = {c: f"W_{c}" for c in _INVENTARIO_COLABORADOR}
+    valores_col["nif"] = "WNIF"
     texto = ("colaboradores:\n  - " + "\n    ".join(f"{c}: '{v}'" for c, v in valores_col.items())
              + "\n")
     f = cf.cargar_ficha_yaml(_yaml(tmp_path, texto))
@@ -332,6 +336,105 @@ def test_id_crm_no_entra_en_la_declaracion(tmp_path):
                                              "colaboradores:\n  - {nombre: B, id_crm: 776}\n"))
     assert f.declarados_contrarios == [{"nombre": "A"}]
     assert f.declarados_colaboradores == [{"nombre": "B"}]
+
+
+# ---------------------------------------------------------------------------
+# R3 — los hallazgos de la tercera ronda (plan §10)
+# ---------------------------------------------------------------------------
+
+def test_R3H01_el_nif_viaja_en_su_forma_canonica_y_la_declaracion_se_conserva(tmp_path):
+    """El CRM normaliza caja y espacios al buscar, pero NO separadores (docstring de
+    `_canonizar_documento`, medido): un NIF escrito con puntos no lo encontraría la búsqueda
+    canónica de la corrida siguiente. El DTO lleva la forma canónica; la declaración, la original,
+    que es la que se audita."""
+    f = cf.cargar_ficha_yaml(_yaml(tmp_path,
+        "contrario: {nombre: A, nif: '00.000.000-t'}\n"
+        "colaboradores:\n  - {nombre: B, nif: ' 11.111.111-h '}\n"))
+    assert (f.contrarios[0].nif, f.colaboradores[0].nif) == ("00000000T", "11111111H")
+    assert f.declarados_contrarios[0]["nif"] == "00.000.000-t"
+    assert f.declarados_colaboradores[0]["nif"] == "11.111.111-h"
+
+
+@pytest.mark.parametrize("rol, ruta", [("contrario", "contrario"),
+                                       ("colaborador", "colaboradores[0]")])
+@pytest.mark.parametrize("extra", ["", ", email: a@x.es", ", id_crm: '1128'"])
+def test_R3H02_un_nif_que_se_queda_vacio_se_rechaza_aunque_haya_otra_identidad(tmp_path, rol,
+                                                                               ruta, extra):
+    """`'-- .'` sin sus separadores es nada: igualaba a una ficha sin NIF y salía VERIFICADA."""
+    parte = "{nombre: PARTE-PRUEBA-1, nif: '-- .'" + extra + "}"
+    texto = f"contrario: {parte}\n" if rol == "contrario" else f"colaboradores:\n  - {parte}\n"
+    with pytest.raises(ValueError, match=re.escape(f"{ruta}.nif:")):
+        cf.cargar_ficha_yaml(_yaml(tmp_path, texto))
+
+
+def test_R3H02_un_nif_que_se_queda_vacio_no_cuenta_como_identidad(tmp_path):
+    with pytest.raises(ValueError) as e:
+        cf.cargar_ficha_yaml(_yaml(tmp_path, "contrario: {nombre: A, nif: '-- .'}\n"))
+    assert f"contrario: {cf.SIN_IDENTIDAD}" in str(e.value)
+
+
+def test_R3H03_lo_de_debajo_de_un_merge_tambien_se_informa(tmp_path):
+    with pytest.raises(ValueError) as e:
+        cf.leer_yaml_ficha(_yaml(tmp_path, "contrario: {<<: {nombre: A, nombre: B}}\n"))
+    assert "el merge" in str(e.value)
+    assert "la clave 'nombre' está repetida" in str(e.value)
+
+
+@pytest.mark.parametrize("texto", ["1: x\n", "contrario: {nombre: A, nif: '1', 2: x}\n",
+                                   "null: x\n"], ids=["numero", "anidada", "null"])
+def test_R3H03_una_clave_escalar_que_no_es_texto_se_rechaza_con_su_linea(tmp_path, texto):
+    with pytest.raises(ValueError, match=r"línea 1: .*no es un texto"):
+        cf.leer_yaml_ficha(_yaml(tmp_path, texto))
+
+
+@pytest.mark.parametrize("texto, ruta", [
+    ("contrario:\n  - {nombre: A, nif: '00000000T'}\n  - {nombre: B, nif: '00.000.000-t'}\n",
+     "contrario[1]"),
+    ("contrario:\n  - {nombre: A, id_crm: '1128'}\n  - {nombre: B, id_crm: 1128}\n",
+     "contrario[1]"),
+    ("colaboradores:\n  - {nombre: A, email: a@x.es, nif: '11111111H'}\n"
+     "  - {nombre: B, email: b@x.es, nif: '11111111h'}\n", "colaboradores[1]"),
+], ids=["nif", "id_crm", "nif-colaborador"])
+def test_R3_dos_partes_con_la_misma_identidad_se_rechazan(tmp_path, texto, ruta):
+    """La ventana que abre la PROPIA corrida (R3): dos partes que son la misma ficha pasaban la
+    fase previa cada una contra el estado anterior, y la primera completaba lo que la segunda
+    contradice."""
+    with pytest.raises(ValueError, match=re.escape(f"{ruta}:") + ".*misma parte"):
+        cf.cargar_ficha_yaml(_yaml(tmp_path, texto))
+
+
+def test_R3_el_mismo_email_en_dos_partes_si_vale(tmp_path):              # control positivo
+    """Un email identifica un BUZÓN, no a una persona (`[APER-71]`): un matrimonio comparte uno."""
+    f = cf.cargar_ficha_yaml(_yaml(tmp_path,
+        "contrario:\n  - {nombre: A, nif: '00000000T', email: casa@x.es}\n"
+        "  - {nombre: B, nif: '11111111H', email: casa@x.es}\n"))
+    assert len(f.contrarios) == 2
+
+
+@pytest.mark.parametrize("texto, ruta", [
+    # la segunda solo tiene el email: la búsqueda cae en la ficha de la primera
+    ("contrario:\n  - {nombre: A, nif: '00000000T', email: casa@x.es}\n"
+     "  - {nombre: B, email: ' Casa@X.es'}\n", "contrario[1]"),
+    # la primera llega por id y sin NIF: el buzón no tiene documento con el que descartarla
+    ("contrario:\n  - {nombre: A, id_crm: '1128', email: casa@x.es}\n"
+     "  - {nombre: B, nif: '11111111H', email: casa@x.es}\n", "contrario[1]"),
+    ("colaboradores:\n  - {nombre: A, email: mc@x.es}\n  - {nombre: B, email: mc@x.es}\n",
+     "colaboradores[1]"),
+], ids=["solo-email", "id-sin-nif", "colaboradores"])
+def test_R3_un_email_compartido_sin_el_nif_de_las_dos_se_rechaza(tmp_path, texto, ruta):
+    """`_resolver_por_buzon_compartido` solo descarta una ficha del buzón por su DOCUMENTO: si a
+    una de las dos le falta, la segunda aterriza en la ficha de la primera —o, en colaboradores,
+    cuyo resolutor ignora `motivo`, la completa—."""
+    with pytest.raises(ValueError, match=re.escape(f"{ruta}:") + ".*email"):
+        cf.cargar_ficha_yaml(_yaml(tmp_path, texto))
+
+
+def test_R3_un_email_compartido_por_dos_partes_con_id_crm_si_vale(tmp_path):   # control
+    """Con `id_crm` no se busca: ninguna de las dos puede aterrizar en la ficha de la otra."""
+    f = cf.cargar_ficha_yaml(_yaml(tmp_path,
+        "contrario:\n  - {nombre: A, id_crm: '1128', email: casa@x.es}\n"
+        "  - {nombre: B, id_crm: '1129', email: casa@x.es}\n"))
+    assert [c.id_crm for c in f.contrarios] == ["1128", "1129"]
 
 
 # ---------------------------------------------------------------------------

@@ -64,7 +64,8 @@ class CRMFalso:
         #: {(operación, id): {nº de llamada, …}} que fallan. Para una ficha existente, la 1.ª
         #: lectura es la de la fase previa, la 2.ª la del completado y la 3.ª la final.
         self.fallos: dict[tuple, set[int]] = {}
-        #: Writers que fallan siempre: "crear_contrario", "notas", o "vincular:<bloque>".
+        #: Writers que fallan siempre: "crear_contrario", "crear_colaborador", "notas", o
+        #: "vincular:<bloque>".
         self.writers_caidos: set[str] = set()
         #: Propiedades que el CRM «pierde» al crear: un POST que no guardó un dato.
         self.pierde_al_crear: set[str] = set()
@@ -87,8 +88,14 @@ class CRMFalso:
     def buscar_registros(self, elemento, propiedad, valor, *, operador="equal", limite=5,
                          properties=()):
         self.busquedas.append((elemento, propiedad, valor))
-        norma = sr._canonizar_documento if propiedad == "nif_cif" else (
-            lambda v: str(v or "").strip().lower())
+
+        # El filtro `equal` tal como está MEDIDO (docstring de `_canonizar_documento`): el CRM
+        # normaliza caja y espacios envolventes, pero NO los separadores. La versión anterior
+        # canonizaba el NIF en los dos lados, era más permisiva que el servidor y certificaba
+        # una convergencia que con un NIF escrito con puntos no existe (R3/H-01).
+        def norma(v):
+            return str(v or "").strip().lower()
+
         registros = [
             {"id": fid, "values": [{"property": {"name": p}, "value": ficha.get(p)}
                                    for p in (propiedad, *properties)]}
@@ -156,6 +163,8 @@ class CRMFalso:
 
     def create_colaborador(self, datos, *, client=None):
         self.escrituras.append(("crear_colaborador", datos.nombre))
+        if "crear_colaborador" in self.writers_caidos:
+            raise sr.SudespachoRelationsError("REST POST colaboradores -> HTTP 500")
         ficha = {"nombre": datos.nombre, "email": datos.email, "movil": datos.movil,
                  "telefono1": datos.telefono, "nif_cif": datos.nif}
         fid = self._nuevo_id()
@@ -252,6 +261,44 @@ def test_convergencia_dos_corridas_no_crean_otra_ficha_ni_sobrantes(caso, monkey
     assert crm.vinculos == vinculos_1                      # la segunda no añade ni sobra nada
 
 
+@pytest.mark.parametrize("rol", ["contrario", "colaborador"])
+def test_R3H01_un_nif_con_separadores_converge_con_el_filtro_del_CRM(caso, monkeypatch, rol):
+    """El control de fidelidad de la R3: con el filtro medido —que no quita separadores—, dos
+    corridas de una parte nueva con `nif: '00.000.000-t'` creaban DOS fichas y la segunda acababa
+    con SOBRA. Viajando en forma canónica, la segunda corrida la encuentra."""
+    crm = CRMFalso().instalar(monkeypatch)
+    parte = "{nombre: JUAN, nif: '00.000.000-t'}"
+    _yaml(caso, f"contrario: {parte}\n" if rol == "contrario" else f"colaboradores:\n  - {parte}\n")
+    for _ in range(2):
+        r = _corre()
+        assert r.exit_code == 0, r.output
+        assert cli.EXITO_VERIFICADA in r.output
+    assert len(crm.creados()) == 1, crm.creados()
+    elemento = "clientes_contrarios" if rol == "contrario" else "colaboradores"
+    assert [f["nif_cif"] for f in crm.fichas[elemento].values()] == ["00000000T"]
+
+
+def test_R3H01_colaborador_por_id_con_un_nif_ajeno_deja_la_resolucion_por_nif_ambigua(
+        caso, monkeypatch):
+    """La frase del spec §5 que la R3 desmintió, revalidada. Con el NIF escrito con separadores,
+    la ficha 1128 se completaba con él tal cual, la búsqueda canónica no la veía y la resolución
+    siguiente por NIF devolvía la 1129 SIN ambigüedad: una identidad duplicada que nadie detecta.
+    Viajando canónico, las dos comparten NIF y la resolución siguiente PARA.
+
+    Solo colaborador: el NIF no está en `_COMPLETABLES_CONTRARIO`, así que por id no se escribe en
+    un contrario (la lectura final lo da por vacío) y no hay duplicado que crear."""
+    crm = CRMFalso(fichas={"colaboradores": {
+        "1128": {"nombre": "PARTE-PRUEBA-1"},
+        "1129": {"nombre": "PARTE-PRUEBA-2", "nif_cif": "00000000T"}}}).instalar(monkeypatch)
+    _yaml(caso, "colaboradores:\n  - {nombre: PARTE-PRUEBA-1, id_crm: '1128', "
+                "nif: '00.000.000-T'}\n")
+    r = _corre()
+    assert r.exit_code == 0, r.output               # el límite declarado (#306): no lo ve
+    assert crm.fichas["colaboradores"]["1128"]["nif_cif"] == "00000000T"
+    with pytest.raises(sr.ConflictoDeIdentidad, match="VARIAS fichas"):
+        sr.resolver_colaborador_existente(sr.NuevoColaborador(nombre="X", nif="00000000T"))
+
+
 def test_un_colaborador_por_id_se_completa_y_vincula_sin_buscar(caso, monkeypatch):
     crm = CRMFalso(fichas={"colaboradores": {"776": {"nombre": "ANA", "movil": ""}}}).instalar(
         monkeypatch)
@@ -288,6 +335,22 @@ def test_por_id_contradicho_cero_writers_y_sin_buscar(caso, monkeypatch):
     r = _corre()
     assert r.exit_code == 1, r.output
     assert crm.escrituras == [] and crm.busquedas == []
+
+
+@pytest.mark.parametrize("rol", ["contrario", "colaborador"])
+def test_R3_dos_partes_que_resuelven_a_la_misma_ficha_cero_writers(caso, monkeypatch, rol):
+    """La observación de la R3 en lo que el validador no puede ver: una parte llega por id y la
+    otra por un NIF que el CRM ya tiene en ESA ficha. Cada una pasaba la fase previa por separado,
+    y la corrida escribía las dos en la misma ficha."""
+    elemento = "clientes_contrarios" if rol == "contrario" else "colaboradores"
+    crm = CRMFalso(fichas={elemento: {"1128": {"nombre": "JUAN", "nif_cif": "00000000T"}}}
+                   ).instalar(monkeypatch)
+    partes = "  - {nombre: JUAN, id_crm: '1128'}\n  - {nombre: JUAN, nif: 00000000T}\n"
+    _yaml(caso, ("contrario:\n" if rol == "contrario" else "colaboradores:\n") + partes)
+    r = _corre()
+    assert r.exit_code == 1, r.output
+    assert f"{elemento} id=1128: dos partes resuelven a la misma ficha" in r.output
+    assert crm.escrituras == []
 
 
 def test_la_segunda_parte_invalida_cero_writers_para_la_primera(caso, monkeypatch):
@@ -340,19 +403,24 @@ def test_una_parte_CREADA_a_la_que_el_CRM_no_guardo_un_dato_da_DATO(caso, monkey
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("caido", ["vincular:clientes_propios", "crear_contrario",
-                                   "vincular:clientes_contrarios", "vincular:colaboradores",
-                                   "notas"])
+                                   "vincular:clientes_contrarios", "crear_colaborador",
+                                   "vincular:colaboradores", "notas"])
 def test_cada_writer_que_falla_da_1_sin_VERIFICADA_ni_sobrantes(caso, monkeypatch, caido):
     # Un colaborador AJENO ya vinculado de otra corrida: si la parcial emitiera sobrantes, se
-    # vería aquí.
-    crm = CRMFalso(fichas={"colaboradores": {"776": _ANA_776}},
-                   vinculos={"colaboradores": ["999"]}).instalar(monkeypatch)
+    # vería aquí. El alta del colaborador solo se intenta si no existe, así que para ese writer
+    # ANA es nueva (R3, §5: la matriz no tenía la creación fallida de un colaborador).
+    fichas = {} if caido == "crear_colaborador" else {"colaboradores": {"776": _ANA_776}}
+    crm = CRMFalso(fichas=fichas, vinculos={"colaboradores": ["999"]}).instalar(monkeypatch)
     crm.writers_caidos = {caido}
     _yaml(caso, _YAML_BASE)
     r = _corre()
     assert r.exit_code == 1, r.output
     assert cli.EXITO_VERIFICADA not in r.output
     assert "[SOBRA]" not in r.output
+    # Que el fallo se inyectó donde importa: el writer llegó a intentarse.
+    op, _, bloque = caido.partition(":")
+    assert any(e[0] == op and (not bloque or e[1] == bloque) for e in crm.escrituras), \
+        crm.escrituras
 
 
 # ---------------------------------------------------------------------------

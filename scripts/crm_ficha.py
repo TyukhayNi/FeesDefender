@@ -78,6 +78,11 @@ def _fase_previa(ficha) -> list[str]:
     puede leer, un `id_crm` que no existe, un conflicto o una ambigüedad de la resolución. Si hay
     alguno, no se escribe nada: escribir antes dejaría un vínculo y unos completados sobre una
     ficha que el propio YAML desmiente, y `crm_ficha` no desvincula (R2/H-01).
+
+    Y dos partes del mismo rol que resuelven a la MISMA ficha tampoco pasan (R3): cada una se
+    compara con el CRM de antes de la corrida, así que la segunda completaría lo que la primera
+    ya contradice. Lo que se decide sin el CRM —mismo NIF, mismo id, email compartido— ya lo ha
+    rechazado `validar_ficha`; esto es lo que solo se ve resolviendo.
     """
     problemas: list[str] = []
     for elemento, partes, declarados, resolver, leer in (
@@ -86,6 +91,7 @@ def _fase_previa(ficha) -> list[str]:
         ("colaboradores", ficha.colaboradores, ficha.declarados_colaboradores,
          resolver_colaborador_existente, get_colaborador),
     ):
+        vistas: dict[str, str] = {}
         for dto, declarado in zip(partes, declarados, strict=True):
             try:
                 existente = resolver(dto)
@@ -94,6 +100,13 @@ def _fase_previa(ficha) -> list[str]:
                 continue
             if not existente:
                 continue                    # se creará: la audita la lectura final
+            existente = str(existente)
+            if existente in vistas:
+                problemas.append(f"{elemento} id={existente}: dos partes resuelven a la misma "
+                                 f"ficha —{vistas[existente]!r} y {dto.nombre!r}, esta por "
+                                 f"{_identifica(dto)}—; la corrida escribiría las dos en ella")
+                continue
+            vistas[existente] = dto.nombre
             try:
                 actual = leer(existente)
             except Exception as exc:  # noqa: BLE001

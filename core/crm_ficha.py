@@ -77,6 +77,7 @@ def _mapping_sin_perdida(loader: _CargadorFicha, node: yaml.MappingNode,
         if clave_node.tag == _ETIQUETA_MERGE:
             loader.problemas.append(f"línea {linea}: el merge (`<<`) no se admite en "
                                     "_ficha_crm.yaml: escribe cada clave")
+            loader.construct_object(valor_node, deep=deep)     # lo de debajo también (R3/H-03)
             continue
         if not isinstance(clave_node, yaml.ScalarNode):
             forma = "una lista" if isinstance(clave_node, yaml.SequenceNode) else "un mapping"
@@ -86,6 +87,13 @@ def _mapping_sin_perdida(loader: _CargadorFicha, node: yaml.MappingNode,
             continue
         clave = loader.construct_object(clave_node, deep=deep)
         valor = loader.construct_object(valor_node, deep=deep)
+        if not isinstance(clave, str):
+            # Un escalar que YAML convierte (`1`, `null`, `yes`, una fecha) es un nodo escalar
+            # igual que un texto: mirar el NODO no bastaba (R3/H-03).
+            loader.problemas.append(f"línea {linea}: la clave `{clave_node.value}` no es un "
+                                    f"texto (YAML la lee como {type(clave).__name__}); una "
+                                    "clave tiene que ser el nombre de un campo")
+            continue
         if clave in vistas:
             loader.problemas.append(f"línea {linea}: la clave {clave!r} está repetida (ya en la "
                                     f"línea {vistas[clave]}); YAML se quedaría solo con la última")
@@ -182,6 +190,20 @@ def _hay(valor: object) -> bool:
     return isinstance(valor, str) and bool(valor.strip())
 
 
+def _nif(valor: object) -> str:
+    """El NIF declarado en su forma canónica —la misma con la que busca `resolver_parte`—, o `""`.
+
+    Es la forma que viaja al CRM (R3/H-01): el CRM normaliza caja y espacios al buscar, pero NO
+    los separadores (docstring de `_canonizar_documento`, medido), así que un NIF escrito con
+    puntos no lo encontraría la búsqueda de la corrida siguiente y crearía otra ficha.
+    """
+    return _canonizar_documento(valor) if isinstance(valor, str) else ""
+
+
+def _email(valor: object) -> str:
+    return valor.strip().lower() if isinstance(valor, str) else ""
+
+
 def _sugerencia(clave: object, validas: tuple[str, ...]) -> str:
     """TODAS las válidas cercanas, en el orden de la tupla (R2/H-07): `apellido` casa igual con
     `apellido1` que con `apellido2`, y elegir una sería adivinar. No es un alias de entrada: la
@@ -228,12 +250,53 @@ def _problemas_parte(d: dict, ruta: str, validas: tuple[str, ...]) -> list[str]:
     if "provincia" in validas and _hay(v) and provincia_canonica(v) is None:
         p.append(f"{ruta}.provincia: {v!r} no es ninguna provincia del CRM y el Select la "
                  "descartaría: el dato no puede llegar nunca")
+    # Un NIF que se queda en nada sin sus separadores es la misma pérdida que el teléfono de
+    # arriba, pero en la COMPARACIÓN: la lectura final lo daba por igual a una ficha sin NIF y
+    # salía VERIFICADA (R3/H-02). Se rechaza aunque haya email o id_crm.
+    v = d.get("nif")
+    if _hay(v) and not _nif(v):
+        p.append(f"{ruta}.nif: {v!r} se queda vacío sin sus separadores: no es un documento que "
+                 "se pueda buscar ni comparar")
     # Identidad estable (spec §3 A.4, R1/H-04): `resolver_parte` identifica solo por NIF o
     # email, así que sin ninguno —ni `id_crm`, la salida para una parte legítima sin ellos—
-    # cada relanzamiento crearía otra ficha.
-    if not (_hay(d.get("nif")) or _hay(d.get("email")) or _id_crm(d.get("id_crm"))):
+    # cada relanzamiento crearía otra ficha. El NIF cuenta por su forma canónica (R3/H-02).
+    if not (_nif(d.get("nif")) or _hay(d.get("email")) or _id_crm(d.get("id_crm"))):
         p.append(f"{ruta}: {SIN_IDENTIDAD} —falta NIF, email o id_crm—: cada corrida crearía "
                  "otra ficha y la anterior quedaría como sobrante (spec §3 A.4)")
+    return p
+
+
+def _problemas_misma_ficha(partes: list[tuple[str, dict]]) -> list[str]:
+    """Dos partes del mismo rol que la corrida acabaría escribiendo en UNA ficha (R3, §1).
+
+    La fase previa compara cada parte con el CRM de ANTES de la corrida, y no ve lo que la propia
+    corrida crea o completa entre una parte y la siguiente: la primera escribe y la segunda
+    aterriza en esa ficha, completándola con lo suyo. Lo que se decide sin el CRM, aquí:
+
+    - el mismo `id_crm` o el mismo NIF canónico son la misma parte, declarada dos veces;
+    - un email compartido solo se distingue por el DOCUMENTO de cada ficha
+      (`_resolver_por_buzon_compartido`), así que exige el NIF de las dos —o el `id_crm` de las
+      dos, que no buscan—.
+    """
+    p: list[str] = []
+    for j, (ruta, d) in enumerate(partes):
+        for otra, e in partes[:j]:
+            misma = [c for c, a, b in (
+                ("id_crm", _id_crm(e.get("id_crm")), _id_crm(d.get("id_crm"))),
+                ("NIF", _nif(e.get("nif")), _nif(d.get("nif")))) if a and a == b]
+            if misma:
+                p.append(f"{ruta}: es la misma parte que {otra} —el mismo {misma[0]}—: el YAML "
+                         "la declara dos veces y la corrida escribiría las dos en una sola ficha")
+                break
+            correo = _email(d.get("email"))
+            ambas_id = _id_crm(d.get("id_crm")) and _id_crm(e.get("id_crm"))
+            ambas_nif = _nif(d.get("nif")) and _nif(e.get("nif"))
+            if correo and correo == _email(e.get("email")) and not (ambas_id or ambas_nif):
+                p.append(f"{ruta}: comparte el email con {otra} y a una de las dos le falta el "
+                         "NIF: la búsqueda por email no puede distinguirlas y la corrida "
+                         "escribiría las dos en la misma ficha. Declara el NIF de las dos, o el "
+                         "id_crm de las dos")
+                break
     return p
 
 
@@ -264,6 +327,8 @@ def validar_ficha(data: object) -> list[str]:
         for i, e in enumerate(contr):
             p += (_problemas_parte(e, f"contrario[{i}]", CLAVES_CONTRARIO) if isinstance(e, dict)
                   else [f"contrario[{i}]: tiene que ser un mapping, y es {_forma(e)}"])
+        p += _problemas_misma_ficha([(f"contrario[{i}]", e) for i, e in enumerate(contr)
+                                     if isinstance(e, dict)])
     elif contr is not None:
         p.append("contrario: tiene que ser un mapping o una lista de mappings, y es "
                  f"{_forma(contr)}")
@@ -273,6 +338,8 @@ def validar_ficha(data: object) -> list[str]:
             p += (_problemas_parte(e, f"colaboradores[{i}]", CLAVES_COLABORADOR)
                   if isinstance(e, dict)
                   else [f"colaboradores[{i}]: tiene que ser un mapping, y es {_forma(e)}"])
+        p += _problemas_misma_ficha([(f"colaboradores[{i}]", e) for i, e in enumerate(cols)
+                                     if isinstance(e, dict)])
     elif cols is not None:
         p.append(f"colaboradores: tiene que ser una lista de mappings, y es {_forma(cols)}")
     return p
@@ -309,16 +376,17 @@ def _contrarios_de(raw) -> list[NuevoClienteContrario]:
 
 def _contrario_de(d: dict) -> NuevoClienteContrario:
     # Leyendo de la tupla, no enumerando a mano: `cp`, `provincia` y `telefono` estuvieron
-    # escritos en los YAML sin leerse nunca, porque la lista de aquí no los tenía.
+    # escritos en los YAML sin leerse nunca, porque la lista de aquí no los tenía. El NIF, en la
+    # forma con la que se busca (R3/H-01); la declaración conserva la escrita.
     return NuevoClienteContrario(**{c: _valor(d.get(c)) for c in CLAVES_CONTRARIO
-                                    if c != "id_crm"},
-                                 id_crm=_id_crm(d.get("id_crm")) or "")
+                                    if c not in ("nif", "id_crm")},
+                                 nif=_nif(d.get("nif")), id_crm=_id_crm(d.get("id_crm")) or "")
 
 
 def _colaborador_de(d: dict) -> NuevoColaborador:
     return NuevoColaborador(**{c: _valor(d.get(c)) for c in CLAVES_COLABORADOR
-                               if c != "id_crm"},
-                            id_crm=_id_crm(d.get("id_crm")) or "")
+                               if c not in ("nif", "id_crm")},
+                            nif=_nif(d.get("nif")), id_crm=_id_crm(d.get("id_crm")) or "")
 
 
 def _declaracion(d: dict, claves: tuple[str, ...]) -> dict[str, str]:
