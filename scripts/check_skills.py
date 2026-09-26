@@ -64,19 +64,37 @@ def skill_dirs() -> list[Path]:
 
 # --- 1. CHANGELOG desincronizado --------------------------------------------
 
+class GitNoRespondio(RuntimeError):
+    """Una consulta a git sin respuesta completa: su salida vacia NO es «nada cambiado»."""
+
+
+#: Lo que dice la linea del CHANGELOG cuando no se pudo mirar. Constante, para que los tests no
+#: copien la frase.
+CHANGELOG_NO_COMPROBADO = "NO comprobado"
+
+
 def _git_changed_files() -> set[str]:
-    """Ficheros tocados en working tree + staged + ultimo commit (rutas con '/')."""
+    """Ficheros tocados en working tree + staged + ultimo commit (rutas con '/').
+
+    LANZA `GitNoRespondio` si una consulta falla o avisa por stderr: antes devolvia `[]` y el
+    informe decia «CHANGELOG sin actualizar: ninguna» sin haber mirado ninguna skill (R1 de «git
+    que falla en voz alta», 2026-09-26; la sonda de `session_close` solo cubria el fallo total).
+    """
     changed: set[str] = set()
 
     def run(args: list[str]) -> list[str]:
+        orden = "git " + " ".join(args)
         try:
             r = subprocess.run(
                 ["git", *args], cwd=_REPO, capture_output=True,
                 text=True, encoding="utf-8", errors="replace",
             )
-        except FileNotFoundError:
-            return []
-        return r.stdout.splitlines() if r.returncode == 0 else []
+        except OSError as e:
+            raise GitNoRespondio(f"{orden}: no se pudo ejecutar ({e})") from e
+        aviso = (r.stderr or "").strip()
+        if r.returncode != 0 or aviso:
+            raise GitNoRespondio(f"{orden} fallo (rc={r.returncode}): {aviso[:300]}")
+        return r.stdout.splitlines()
 
     for ln in run(["status", "--porcelain"]):
         ruta = ln[3:] if len(ln) > 3 else ln
@@ -171,7 +189,13 @@ def report(repackage: bool = False) -> int:
     dirs = skill_dirs()
     nombres = [d.name for d in dirs]
 
-    cl_stale = changelog_stale(_git_changed_files(), nombres)
+    try:
+        cl_stale = changelog_stale(_git_changed_files(), nombres)
+        cl_linea, cl_avisos = ", ".join(cl_stale) or "ninguna", len(cl_stale)
+    except GitNoRespondio as e:
+        # No se pudo mirar: se dice, y cuenta como aviso — un chequeo que no corrio no puede
+        # acabar en «Todo en orden», ni pasar un `--strict`.
+        cl_linea, cl_avisos = f"{CHANGELOG_NO_COMPROBADO} ({e})", 1
     pkg_stale = package_stale(dirs, _DIST, pk._incluir)
     drift = ssh.check()
 
@@ -189,7 +213,7 @@ def report(repackage: bool = False) -> int:
             print(f"  - {d}")
 
     print("Chequeo de skills (modo AVISO) - no bloquea.\n")
-    print(f"  CHANGELOG sin actualizar : {', '.join(cl_stale) or 'ninguna'}")
+    print(f"  CHANGELOG sin actualizar : {cl_linea}")
     print(f"  .skill caducado          : {', '.join(pkg_stale) or 'ninguna'}")
     print(f"  Drift de helpers         : {len(drift)} fichero(s)")
     print(f"  Identidad incompleta     : {', '.join(id_gaps) or 'ninguna'}")
@@ -200,7 +224,7 @@ def report(repackage: bool = False) -> int:
         for name in pkg_stale:
             pk.package(_SKILLS / name, _DIST)
 
-    total = len(cl_stale) + len(pkg_stale) + len(drift) + len(id_gaps) + len(tax_drift)
+    total = cl_avisos + len(pkg_stale) + len(drift) + len(id_gaps) + len(tax_drift)
     if total:
         print(f"\n{total} aviso(s). Detalle de identidad: python scripts/validate_skills.py")
     else:

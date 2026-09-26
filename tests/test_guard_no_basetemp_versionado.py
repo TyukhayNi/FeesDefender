@@ -27,7 +27,8 @@ necesita eximir a `tests/` (una exencion seria un hueco, no una comodidad).
 from __future__ import annotations
 
 import re
-import subprocess
+
+from tests import _git
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,9 +41,9 @@ NUMERADO = re.compile(r"^test_.+\d+$")
 
 
 def _trackeados() -> list[str]:
-    r = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True,
-                       text=True, encoding="utf-8", errors="replace")
-    return [ln for ln in r.stdout.splitlines() if ln]
+    """Todo lo trackeado. Si `git` no puede enumerarlo, PARA en vez de devolver la lista vacia
+    con la que este guard pasaba sin mirar nada (plan 2026-09-26, git que falla en voz alta)."""
+    return _git.trackeados(ROOT)
 
 
 def _ofensores(trackeados: list[str]) -> dict[str, list[str]]:

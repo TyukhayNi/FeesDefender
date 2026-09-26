@@ -31,6 +31,9 @@ from pathlib import Path
 
 import pytest
 
+# Con alias: este modulo ya tiene su `_git` crudo, que las fixtures usan para montar laboratorios.
+from tests import _git as _gitmod
+
 REPO = Path(__file__).resolve().parents[1]
 
 NUL = "\0"
@@ -70,6 +73,25 @@ def _git(
     )
 
 
+def _consulta(
+    que: str,
+    args: list[str] | tuple[str, ...],
+    repo: Path,
+    rc_validos: tuple[int, ...] = (0,),
+    entrada: str | None = None,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """`_git` que no deja pasar un «no pude mirar» como respuesta: lanza si el codigo no es uno
+    de los que `que` usa como respuesta y tambien si git aviso por stderr. Lo segundo es R1/H-04
+    de «git que falla en voz alta» (2026-09-26), medido con git 2.53: con el `.gitignore`
+    ilegible, `check-ignore` sale con 1 —«no ignorada»— y solo el stderr dice que no leyo las
+    reglas."""
+    proc = _git(args, repo, entrada=entrada, env=env)
+    if proc.returncode not in rc_validos or proc.stderr.strip():
+        raise RuntimeError(f"git {que} fallo (rc={proc.returncode}): {proc.stderr.strip()}")
+    return proc
+
+
 def _ls_files(repo: Path = REPO) -> list[str]:
     """Rutas trackeadas del repo.
 
@@ -79,19 +101,29 @@ def _ls_files(repo: Path = REPO) -> list[str]:
     La primera version de este guard atribuia al `\\r` cinco positivos que en realidad
     tenian dos causas distintas, ninguna relacionada — ver el test de la negacion.)
     """
-    proc = _git(["ls-files", "-z"], repo)
-    if proc.returncode != 0:
-        raise RuntimeError(f"git ls-files fallo (rc={proc.returncode}): {proc.stderr.strip()}")
+    proc = _consulta("ls-files", ["ls-files", "-z"], repo)
     return [p for p in proc.stdout.split(NUL) if p.strip()]
 
 
 def _regla(ruta: str, repo: Path = REPO, env: dict[str, str] | None = None) -> str:
     """El campo `<fuente>:<linea>:<patron>` de la regla que DECIDE sobre `ruta`."""
-    proc = _git(
-        [*_SIN_EXCLUDES_GLOBALES, "check-ignore", "--no-index", "-v", ruta], repo, env=env
+    # Como sus hermanas de este fichero: 0 (ignorada) y 1 (no ignorada) son respuestas; otro
+    # codigo es que no pudo mirar, y leerlo como «sin regla» era un verde falso (plan
+    # 2026-09-26, git que falla en voz alta).
+    proc = _consulta(
+        "check-ignore", [*_SIN_EXCLUDES_GLOBALES, "check-ignore", "--no-index", "-v", ruta],
+        repo, rc_validos=_RC_VALIDOS, env=env,
     )
     campos = [c for c in proc.stdout.strip().split("\t") if c]
     return campos[0] if campos else ""
+
+
+def _ignora(ruta: str, repo: Path) -> bool:
+    """¿La ignoran las reglas? La consulta suelta, sin `-v`. Antes era una funcion del test de la
+    skill anidada que leia cualquier codigo distinto de 0 como «no ignorada» (R1/H-02)."""
+    return _consulta(
+        "check-ignore", ["check-ignore", "--no-index", "-q", ruta], repo, rc_validos=_RC_VALIDOS,
+    ).returncode == 0
 
 
 def _fuente(campo: str) -> str:
@@ -131,14 +163,10 @@ def _ignorados(
     """
     if not rutas:
         return []
-    proc = _git(
-        [*_SIN_EXCLUDES_GLOBALES, "check-ignore", "--no-index", "--stdin", "-z"],
-        repo, entrada=NUL.join(rutas), env=env,
+    proc = _consulta(
+        "check-ignore", [*_SIN_EXCLUDES_GLOBALES, "check-ignore", "--no-index", "--stdin", "-z"],
+        repo, rc_validos=_RC_VALIDOS, entrada=NUL.join(rutas), env=env,
     )
-    if proc.returncode not in _RC_VALIDOS:
-        raise RuntimeError(
-            f"git check-ignore fallo (rc={proc.returncode}): {proc.stderr.strip()}"
-        )
     candidatos = [p for p in proc.stdout.split(NUL) if p.strip()]
     if not candidatos:
         return []
@@ -266,8 +294,10 @@ def test_la_decision_muerde_sobre_un_fichero_trackeado_e_ignorado(repo_lab: Path
     assert "secreto.txt" in _ls_files(repo_lab), "el laboratorio no trackeo la sonda"
 
     assert _ignorados(["secreto.txt"], repo=repo_lab) == ["secreto.txt"]
-    # Y la asimetria que hace necesaria la bandera, medida en el mismo laboratorio.
-    sin_bandera = _git(["check-ignore", "--stdin", "-z"], repo_lab, entrada="secreto.txt")
+    # Y la asimetria que hace necesaria la bandera, medida en el mismo laboratorio. Validada: un
+    # check-ignore que fallara dejaria la salida vacia y la asercion de abajo pasaria sin medir.
+    sin_bandera = _consulta("check-ignore", ["check-ignore", "--stdin", "-z"], repo_lab,
+                            rc_validos=_RC_VALIDOS, entrada="secreto.txt")
     assert not sin_bandera.stdout.strip(), (
         "check-ignore SIN --no-index ya reporta ficheros trackeados: revisa si la "
         f"decision sigue necesitando la bandera. Salida: {sin_bandera.stdout!r}"
@@ -335,7 +365,7 @@ def test_la_excepcion_alcanza_una_skill_anidada(tmp_path: Path):
     ]
     assert len(reglas) == 3, f"la excepcion del .gitignore ya no son tres lineas: {reglas}"
 
-    _git(["init", "-q", "."], tmp_path)
+    _consulta("init", ["init", "-q", "."], tmp_path)
     (tmp_path / ".gitignore").write_text("logs/\n" + "\n".join(reglas) + "\n", encoding="utf-8")
 
     rescatados = [".claude/skills/alpha/logs/README.md",
@@ -349,11 +379,9 @@ def test_la_excepcion_alcanza_una_skill_anidada(tmp_path: Path):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("x\n", encoding="utf-8")
 
-    def ignora(r: str) -> bool:
-        return _git(["check-ignore", "--no-index", "-q", r], tmp_path).returncode == 0
-
-    assert [r for r in rescatados if ignora(r)] == [], "la excepcion no alcanza a una skill anidada"
-    assert [r for r in ignorados if not ignora(r)] == [], "la excepcion se fue de alcance"
+    assert [r for r in rescatados if _ignora(r, tmp_path)] == [], (
+        "la excepcion no alcanza a una skill anidada")
+    assert [r for r in ignorados if not _ignora(r, tmp_path)] == [], "la excepcion se fue de alcance"
 
 
 def test_el_guard_grita_si_git_no_puede_responder(tmp_path: Path):
@@ -382,11 +410,16 @@ def test_el_guard_grita_si_git_no_puede_responder(tmp_path: Path):
 # --- Comentarios al final de una regla: la OTRA forma de que una regla no muerda -------
 
 
-def _gitignores_trackeados() -> list[Path]:
+def _gitignores_trackeados(repo: Path | None = None) -> list[Path]:
     """Los `.gitignore` que el repositorio REPARTE. Uno local sin commitear no cuenta:
-    la clase que este fichero vigila son las reglas que viajan con el repo."""
-    salida = _git(["ls-files", "-z", "--", "*.gitignore", ".gitignore"], REPO)
-    return [REPO / r for r in salida.stdout.split(NUL) if r.strip()]
+    la clase que este fichero vigila son las reglas que viajan con el repo.
+
+    Por el helper que PARA si git falla (`tests/_git.py`): con el `_git` crudo, un `ls-files`
+    que fallaba devolvia `[]` y el guard de comentarios pasaba sin haber mirado ningun
+    `.gitignore` (R1/H-02 de «git que falla en voz alta»). Sin `repo`, `REPO` se lee al llamar,
+    para que parchearlo siga redirigiendo el guard."""
+    repo = repo or REPO
+    return [repo / r for r in _gitmod.trackeados(repo, "--", "*.gitignore", ".gitignore")]
 
 
 def reglas_con_comentario_en_linea(texto: str) -> list[tuple[int, str]]:
@@ -446,6 +479,19 @@ def _posicion_del_comentario(linea: str) -> int | None:
     return None
 
 
+def _reglas_muertas(repo: Path | None = None) -> dict[str, list[tuple[int, str]]]:
+    """Por `.gitignore` trackeado de `repo`, sus reglas con comentario al final. Funcion aparte
+    del guard para probarlo contra un ofensor real de laboratorio (R1/H-02)."""
+    repo = repo or REPO
+    malos: dict[str, list[tuple[int, str]]] = {}
+    for ruta in _gitignores_trackeados(repo):
+        hallazgos = reglas_con_comentario_en_linea(
+            ruta.read_text(encoding="utf-8", errors="replace"))
+        if hallazgos:
+            malos[str(ruta.relative_to(repo))] = hallazgos
+    return malos
+
+
 def test_ninguna_regla_lleva_comentario_al_final_de_la_linea():
     """Medido el 2026-09-06 (R1 de Codex, H-06): `.hypothesis/   # …` era un patron
     literal que no casaba con nada, y la caché quedaba sin ignorar. Lo tapaba por accidente
@@ -459,12 +505,7 @@ def test_ninguna_regla_lleva_comentario_al_final_de_la_linea():
     una regla con comentario no casa con nada, asi que ningun fichero trackeado se ve
     afectado y aquel se queda verde. Son dos formas distintas de que una regla no muerda.
     """
-    malos: dict[str, list[tuple[int, str]]] = {}
-    for ruta in _gitignores_trackeados():
-        hallazgos = reglas_con_comentario_en_linea(
-            ruta.read_text(encoding="utf-8", errors="replace"))
-        if hallazgos:
-            malos[str(ruta.relative_to(REPO))] = hallazgos
+    malos = _reglas_muertas()
     assert not malos, (
         "git NO admite comentarios al final de una regla: el `#` pasa a formar parte del "
         "patron y la regla queda muerta sin avisar. Pon el comentario en su propia "

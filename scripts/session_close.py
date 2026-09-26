@@ -26,6 +26,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from sys import executable as PYTHON
 
@@ -69,8 +70,22 @@ _RE_EXTENSION = re.compile(r"\.(?=[0-9]*[A-Za-z])[A-Za-z0-9]{1,8}$")
 _RE_PREFIJO_BLOQUE = re.compile(r"^\s*(?:>\s*)*")
 
 
+class ConsultaGitFallida(RuntimeError):
+    """Una consulta a git sin respuesta completa: su salida NO es «no hay nada»."""
+
+
 def _git_lines(args: list[str]) -> list[str]:
-    """Salida de un comando git, una linea por elemento. [] si git falla."""
+    """Salida de un comando git, una linea por elemento.
+
+    LANZA `ConsultaGitFallida` si git no se pudo ejecutar, si salio con un codigo distinto de 0
+    o si aviso por stderr (git dice ahi lo que no pudo leer —un directorio que `status` no pudo
+    abrir— y sigue con 0). Hasta la R1 de «git que falla en voz alta» (H-05) devolvia `[]`, y cada
+    consumidor lo leia como «nada»: la verja se saltaba los lentos con el indice roto, y los
+    avisos decian «nada que avisar» con `log` fallando. Ahora cada consumidor decide que es «no
+    lo se» para el: la verja corre los lentos, un aviso se declara no comprobado y el recuento de
+    una rama sale `None`.
+    """
+    orden = "git " + " ".join(args)
     try:
         r = subprocess.run(
             ["git", *args],
@@ -80,11 +95,92 @@ def _git_lines(args: list[str]) -> list[str]:
             encoding="utf-8",
             errors="replace",
         )
-    except FileNotFoundError:
-        return []
-    if r.returncode != 0:
-        return []
+    except OSError as e:
+        raise ConsultaGitFallida(f"{orden}: no se pudo ejecutar ({e})") from e
+    aviso = (r.stderr or "").strip()
+    if r.returncode != 0 or aviso:
+        raise ConsultaGitFallida(f"{orden} fallo (rc={r.returncode}): {aviso[:300]}")
     return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+
+
+#: Como empieza la linea de un aviso que NO se ha comprobado porque git no responde. Constante,
+#: para que los tests no copien la frase (un negativo contra un literal se vacia).
+NO_COMPROBADO = "[aviso] NO comprobado:"
+
+#: Los avisos de este cierre que leen git. Si git no responde, cada uno se DECLARA no comprobado
+#: en vez de correr sobre una salida vacia y decir "nada que avisar".
+AVISO_SKILLS = "el chequeo de skills"
+AVISO_COBERTURA = "la cobertura del diff"
+AVISO_PUBLICACION = "el trabajo sin publicar"
+AVISO_PLAN = "la coherencia de PLAN.md con git"
+AVISO_TRAZA = "la trazabilidad de specs/plans"
+AVISOS_QUE_DEPENDEN_DE_GIT = (AVISO_SKILLS, AVISO_COBERTURA, AVISO_PUBLICACION, AVISO_PLAN,
+                              AVISO_TRAZA)
+
+#: Las frases con que cada aviso dice «todo en orden». Constantes por lo mismo que `NO_COMPROBADO`:
+#: un test que compruebe que NO salen cuando no se pudo mirar tiene que usar la frase real.
+NADA_SIN_PUBLICAR = "sin commits sin publicar"
+NADA_EN_PLAN = "sin items pendientes que citen ramas que git ya no conoce"
+NADA_EN_TRAZA = "Sin specs/plans nuevos"
+#: Una rama cuyos commits git no pudo contar: se nombra, no se cuenta como cero.
+RAMA_NO_COMPROBADA = "[aviso] rama NO comprobada:"
+#: Ramas cuyo upstream ya no existe en origin: git lo DICE (`[gone]`), no es un fallo.
+UPSTREAM_DESAPARECIDO = "con su upstream desaparecido en origin"
+
+
+def _git_responde() -> str | None:
+    """None si git responde en este arbol; si no, por que.
+
+    Es un PREFLIGHT, no un certificado. Si git no responde EN ABSOLUTO —una copia sin `.git`, sin
+    git en el PATH—, se dice una vez y cada aviso que depende de git sale como no comprobado sin
+    intentarlo (plan `docs/superpowers/plans/2026-09-26-git-que-falla-en-voz-alta.md`). Que
+    responda aqui NO garantiza que responda a cada consulta: un indice o un objeto corruptos
+    rompen `status` o `log` y dejan `rev-parse --git-dir` en pie (R1/H-05). De eso se ocupa
+    `_git_lines`, que lanza, y cada consumidor, que lo declara.
+    """
+    try:
+        r = subprocess.run(["git", "rev-parse", "--git-dir"], cwd=ROOT, capture_output=True,
+                           encoding="utf-8", errors="replace")
+    except OSError as e:
+        return f"no se pudo ejecutar git ({e})"
+    if r.returncode != 0:
+        return (r.stderr or "").strip()[:300] or f"git salio con {r.returncode}"
+    return None
+
+
+def _modo_de_la_verja(force_slow: bool, git_no_responde: str | None) -> tuple[bool, str]:
+    """(¿corren los tests lentos?, por que).
+
+    Sin git no se sabe si `core/anon/` esta tocado, y saltarse los lentos era leer "no" donde
+    habia "no lo se": se corren, y se dice por que.
+    """
+    if force_slow:
+        return True, "forzado (--runslow/RUN_SLOW)"
+    if git_no_responde:
+        return True, (f"git no responde en este arbol ({git_no_responde}): no se sabe si "
+                      "core/anon/ esta tocado, asi que se corren los lentos por si acaso")
+    try:
+        tocado = _anon_tocado()
+    except ConsultaGitFallida as e:
+        # La sonda respondio y la consulta no (R1/H-05): el mismo «no lo se», por otra via.
+        return True, (f"no se pudo saber si core/anon/ esta tocado ({e}), asi que se corren "
+                      "los lentos por si acaso")
+    if tocado:
+        return True, "core/anon/ tocado"
+    return False, ""
+
+
+def _si_git_responde(git_no_responde: str | None, que: str, aviso: Callable[[], None]) -> None:
+    """Corre `aviso` si git responde; si no —o si una de sus consultas falla por el camino, que
+    la sonda no lo certifica (R1/H-05)—, lo DECLARA no comprobado."""
+    if git_no_responde:
+        print(f"\n{NO_COMPROBADO} {que} - git no responde en este arbol ({git_no_responde}). "
+              "Eso no es \"nada que avisar\".")
+        return
+    try:
+        aviso()
+    except ConsultaGitFallida as e:
+        print(f"\n{NO_COMPROBADO} {que} - {e}. Eso no es \"nada que avisar\".")
 
 
 def _anon_tocado() -> bool:
@@ -101,34 +197,46 @@ def _anon_tocado() -> bool:
     return False
 
 
-def _git_count(rango: list[str]) -> int:
-    """Nº de commits en un rango tipo 'A..B'. 0 si git falla o el rango es vacío."""
-    out = _git_lines(["rev-list", "--count", *rango])
-    return int(out[0]) if out and out[0].isdigit() else 0
+def _git_count(rango: list[str]) -> int | None:
+    """Nº de commits en un rango tipo 'A..B', o None si git no pudo contarlos.
+
+    Un fallo NO es un cero (R1/H-05): sin `origin/main`, `rev-list` falla y el aviso decia «sin
+    commits sin publicar». El fallo por rama no tumba a las demas: esa rama se declara aparte.
+    """
+    try:
+        out = _git_lines(["rev-list", "--count", *rango])
+    except ConsultaGitFallida:
+        return None
+    return int(out[0]) if out and out[0].isdigit() else None
 
 
-def _trabajo_sin_publicar() -> list[tuple[str, int, str]]:
+def _trabajo_sin_publicar() -> list[tuple[str, int | None, str]]:
     """Ramas locales con commits que NO están en el archivo central (origin).
 
     Devuelve tuplas (rama, n_commits, tipo) donde tipo es:
       - 'sin_publicar': la rama tiene upstream y va n commits por delante.
       - 'nunca_subida': la rama no tiene upstream y tiene n commits sobre origin/main.
+      - 'upstream_desaparecido' (n None): su upstream ya no existe en origin —git lo marca
+        `[gone]`, lo normal tras mergear y podar—; no se compara, y se nombra.
+      - 'no_comprobada' (n None): git no pudo contar sus commits. No es un cero (R1/H-05).
     Solo consultas locales a git; sin red ni credenciales.
     """
-    filas: list[tuple[str, int, str]] = []
-    fmt = "%(refname:short)\t%(upstream:short)"
+    filas: list[tuple[str, int | None, str]] = []
+    fmt = "%(refname:short)\t%(upstream:short)\t%(upstream:track)"
     for ln in _git_lines(["for-each-ref", "--format=" + fmt, "refs/heads"]):
         partes = ln.split("\t")
         rama = partes[0]
         upstream = partes[1] if len(partes) > 1 and partes[1] else ""
-        if upstream:
-            n = _git_count([f"{upstream}..{rama}"])
-            if n:
-                filas.append((rama, n, "sin_publicar"))
-        else:
-            n = _git_count([f"origin/main..{rama}"])
-            if n:
-                filas.append((rama, n, "nunca_subida"))
+        seguimiento = partes[2] if len(partes) > 2 else ""
+        if upstream and seguimiento == "[gone]":
+            filas.append((rama, None, "upstream_desaparecido"))
+            continue
+        base = upstream or "origin/main"
+        n = _git_count([f"{base}..{rama}"])
+        if n is None:
+            filas.append((rama, None, "no_comprobada"))
+        elif n:
+            filas.append((rama, n, "sin_publicar" if upstream else "nunca_subida"))
     return filas
 
 
@@ -140,13 +248,23 @@ def _avisar_publicacion() -> None:
     """
     actual = (_git_lines(["branch", "--show-current"]) or [""])[0]
     filas = _trabajo_sin_publicar()
+    publicables = [f for f in filas if f[2] in ("sin_publicar", "nunca_subida")]
+    no_comprobadas = [f[0] for f in filas if f[2] == "no_comprobada"]
+    desaparecidos = [f[0] for f in filas if f[2] == "upstream_desaparecido"]
     print("\n" + "-" * 40)
     print("Trabajo sin publicar")
-    if not filas:
-        print(f"Rama actual: {actual} - sin commits sin publicar. Nada que llevar al archivo.")
+    for rama in no_comprobadas:
+        print(f"{RAMA_NO_COMPROBADA} {rama} - git no pudo contar sus commits. Eso no es "
+              "\"nada sin publicar\".")
+    if desaparecidos:
+        print(f"[i] {len(desaparecidos)} rama(s) {UPSTREAM_DESAPARECIDO} (lo normal tras "
+              f"mergear y podar); no se comparan: {', '.join(desaparecidos)}")
+    if not publicables:
+        if not no_comprobadas:
+            print(f"Rama actual: {actual} - {NADA_SIN_PUBLICAR}. Nada que llevar al archivo.")
         return
     print("[!] Tienes trabajo que NO esta en el archivo central (origin):")
-    for rama, n, tipo in filas:
+    for rama, n, tipo in publicables:
         marca = " (rama nunca subida)" if tipo == "nunca_subida" else ""
         aqui = "  <- estas aqui" if rama == actual else ""
         plural = "commit" if n == 1 else "commits"
@@ -301,7 +419,7 @@ def _avisar_plan_desfasado() -> None:
     texto = plan.read_text(encoding="utf-8")
     filas = _plan_items_desfasados(texto, _ramas_conocidas())
     if not filas:
-        print("PLAN.md: sin items pendientes que citen ramas que git ya no conoce.")
+        print(f"PLAN.md: {NADA_EN_PLAN}.")
         return
     print("[!] PLAN.md marca trabajo PENDIENTE en ramas que git ya no conoce")
     print("    (probable: mergeadas y podadas -> el item deberia estar cerrado):")
@@ -454,7 +572,7 @@ def _avisar_specs_sin_traza() -> None:
     print(f"Trazabilidad de specs/plans (ultimos {_TRAZA_DIAS} dias)")
     recientes = _disenos_recientes()
     if not recientes:
-        print(f"Sin specs/plans nuevos en los ultimos {_TRAZA_DIAS} dias.")
+        print(f"{NADA_EN_TRAZA} en los ultimos {_TRAZA_DIAS} dias.")
         return
     huerfanos = _disenos_sin_traza(recientes, _texto_corpus_trazas())
     if not huerfanos:
@@ -880,12 +998,15 @@ def main() -> None:
         sys.exit(2)
 
     force_slow = "--runslow" in sys.argv or os.getenv("RUN_SLOW") == "1"
-    runslow = force_slow or _anon_tocado()
+    git_no_responde = _git_responde()
+    runslow, motivo = _modo_de_la_verja(force_slow, git_no_responde)
 
     print("FeesDefender - pytest pre-commit")
     print("-" * 40)
+    if git_no_responde:
+        print(f"[!] git no responde en este arbol: {git_no_responde}")
+        print("    Lo que depende de git NO se comprueba en este cierre, y cada aviso lo dice.")
     if runslow:
-        motivo = "forzado (--runslow/RUN_SLOW)" if force_slow else "core/anon/ tocado"
         print(f"Modo: COMPLETO (incluye tests lentos) - {motivo}")
         pytest_args = ["--runslow"]
     else:
@@ -908,7 +1029,9 @@ def main() -> None:
 
     # Chequeo de skills (modo AVISO, no bloquea el cierre): CHANGELOG sin
     # actualizar, .skill caducado, drift de helpers, identidad incompleta.
-    try:
+    # Los avisos que leen git pasan por `_si_git_responde`: sin git, cada uno se declara NO
+    # comprobado en vez de correr sobre salidas vacias y decir "nada que avisar".
+    def _check_skills() -> None:
         import importlib.util
         spec = importlib.util.spec_from_file_location(
             "check_skills", ROOT / "scripts" / "check_skills.py"
@@ -917,24 +1040,27 @@ def main() -> None:
         spec.loader.exec_module(cs)
         print("\n" + "-" * 40)
         cs.report(repackage=False)
+
+    try:
+        _si_git_responde(git_no_responde, AVISO_SKILLS, _check_skills)
     except Exception as e:  # el chequeo nunca debe romper el cierre
         print(f"[aviso] no se pudo correr check_skills: {e}")
 
     # Aviso de cobertura de las lineas NUEVAS del diff (modo AVISO, no bloquea).
     try:
-        _avisar_cobertura_del_diff()
+        _si_git_responde(git_no_responde, AVISO_COBERTURA, _avisar_cobertura_del_diff)
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo medir la cobertura del diff: {e}")
 
     # Aviso de trabajo sin publicar (modo AVISO, no bloquea el cierre).
     try:
-        _avisar_publicacion()
+        _si_git_responde(git_no_responde, AVISO_PUBLICACION, _avisar_publicacion)
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar trabajo sin publicar: {e}")
 
     # Aviso de PLAN.md desfasado respecto a git (modo AVISO, no bloquea).
     try:
-        _avisar_plan_desfasado()
+        _si_git_responde(git_no_responde, AVISO_PLAN, _avisar_plan_desfasado)
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar coherencia de PLAN.md: {e}")
 
@@ -946,7 +1072,7 @@ def main() -> None:
 
     # Aviso de specs/plans recientes sin traza en el ledger (modo AVISO, no bloquea).
     try:
-        _avisar_specs_sin_traza()
+        _si_git_responde(git_no_responde, AVISO_TRAZA, _avisar_specs_sin_traza)
     except Exception as e:  # el aviso nunca debe romper el cierre
         print(f"[aviso] no se pudo comprobar trazabilidad de specs/plans: {e}")
 

@@ -37,7 +37,11 @@ La resolución ocurre UNA vez por invocación (`resolver_blocklist`) y ese mismo
 para escanear y para el aviso (R1/H-03). Si la lista sale VACÍA, `main` lo dice en STDERR
 con cada ruta buscada y su estado real —no existe / existe sin términos utilizables— y con
 si el principal se resolvió o no (R1/H-04): un guard que no puede mirar tiene que declararlo,
-sin afirmar causas que no comprobó. Para que ese aviso llegue a quien commitea, el hook va
+sin afirmar causas que no comprobó. Y si la lista NO está vacía pero el principal no se pudo
+determinar —git falló al consultarlo, o no es un árbol verificable—, lo dice igual: la lista es
+PARCIAL, y los términos que vivan solo en el principal no se han mirado (R1/H-01 de «git que falla
+en voz alta», 2026-09-26: hasta entonces solo se declaraba la vacía, y un worktree con un solo
+término propio escaneaba con la mitad en silencio). Para que ese aviso llegue a quien commitea, el hook va
 con `verbose: true` en `.pre-commit-config.yaml`: pre-commit solo muestra la salida de un
 hook que devuelve 0 si el hook es verbose (R1/H-01). Sigue sin fallar cerrado — esa tercera
 vía queda para cuando no encontrar la lista sea una anomalía y no el caso normal.
@@ -77,6 +81,11 @@ RUTAS_VETADAS = [
 
 _TERM_MIN = 4  # términos más cortos generan ruido/falsos positivos
 
+#: Cabeceras de los dos avisos de la blocklist. Constantes, para que los tests no copien la frase
+#: (un negativo contra un literal se vacía si el texto cambia).
+AVISO_VACIA = "leak-guard AVISO — blocklist VACÍA"
+AVISO_PARCIAL = "leak-guard AVISO — blocklist PARCIAL"
+
 
 def _norm(p: str) -> str:
     return p.replace("\\", "/")
@@ -113,42 +122,48 @@ def _git(repo: Path, *args: str) -> str | None:
     return out.stdout
 
 
-def _resolver_principal(repo: Path) -> tuple[Path | None, str]:
-    """(checkout principal, motivo). El principal es el PRIMER árbol de `git worktree list`
-    —así lo documenta git—, aceptado solo si se verifica por resultado: es un árbol de
-    trabajo distinto de `repo` y comparte `--git-common-dir` con él. Todo lo que no pase esa
-    verificación devuelve None con el motivo, para que el aviso diga lo que pasó y no lo
-    que se supone (R1/H-02, H-04).
+def _resolver_principal(repo: Path) -> tuple[Path | None, str, bool]:
+    """(checkout principal, motivo, ¿determinado?). El principal es el PRIMER árbol de
+    `git worktree list` —así lo documenta git—, aceptado solo si se verifica por resultado: es
+    un árbol de trabajo distinto de `repo` y comparte `--git-common-dir` con él. Todo lo que no
+    pase esa verificación devuelve None con el motivo, para que el aviso diga lo que pasó y no
+    lo que se supone (R1/H-02, H-04).
+
+    «Determinado» dice si se SABE qué otra raíz hay que leer, y cada salida lo declara: lo está
+    si se resolvió, si este árbol ya es el principal y si el repositorio es bare (no hay otra).
+    Todo lo demás es «no se pudo saber», y con términos locales deja la lista PARCIAL, que `main`
+    declara (R1/H-01 de «git que falla en voz alta»).
     """
     comun_propio = _git(repo, "rev-parse", "--git-common-dir")
     if comun_propio is None:
-        return None, "no se pudo consultar git desde este árbol (¿sin git, fuera de un repo?)"
+        return None, "no se pudo consultar git desde este árbol (¿sin git, fuera de un repo?)", False
     listado = _git(repo, "worktree", "list", "--porcelain")
     if listado is None:
-        return None, "git worktree list falló"
+        return None, "git worktree list falló", False
     lineas = listado.splitlines()
     if not lineas or not lineas[0].startswith("worktree "):
-        return None, "git worktree list no devolvió ningún árbol"
+        return None, "git worktree list no devolvió ningún árbol", False
     if len(lineas) > 1 and lineas[1].strip() == "bare":
-        return None, "el repositorio es bare: no hay checkout principal"
+        return None, "el repositorio es bare: no hay checkout principal", True
     candidato = Path(lineas[0][len("worktree "):].strip())
     try:
         if candidato.resolve() == repo.resolve():
-            return None, "este árbol ES el checkout principal"
+            return None, "este árbol ES el checkout principal", True
     except OSError:
-        return None, f"no se pudo resolver la ruta {candidato}"
+        return None, f"no se pudo resolver la ruta {candidato}", False
     toplevel = _git(candidato, "rev-parse", "--show-toplevel")
     comun_cand = _git(candidato, "rev-parse", "--git-common-dir")
     if toplevel is None or comun_cand is None:
-        return None, f"{candidato} no es un árbol de trabajo consultable (¿.git separado, submódulo?)"
+        return None, (f"{candidato} no es un árbol de trabajo consultable (¿.git separado, "
+                      "submódulo?)"), False
     try:
         if Path(toplevel.strip()).resolve() != candidato.resolve():
-            return None, f"{candidato} no es la raíz de un árbol de trabajo"
+            return None, f"{candidato} no es la raíz de un árbol de trabajo", False
         if (candidato / comun_cand.strip()).resolve() != (repo / comun_propio.strip()).resolve():
-            return None, f"{candidato} pertenece a otro repositorio"
+            return None, f"{candidato} pertenece a otro repositorio", False
     except OSError:
-        return None, f"no se pudo resolver la ruta {candidato}"
-    return candidato, f"resuelto: {candidato}"
+        return None, f"no se pudo resolver la ruta {candidato}", False
+    return candidato, f"resuelto: {candidato}", True
 
 
 def _leer_terminos(raiz: Path) -> list[tuple[Path, str, set[str]]]:
@@ -200,13 +215,16 @@ class Blocklist:
     raices: list[Path]                  # árbol dado y, si se resolvió, el principal
     rutas: list[tuple[Path, str]]       # (ruta buscada, estado observado)
     principal: str                      # cómo acabó la resolución del checkout principal
+    # ¿Se sabe qué otra raíz había que leer? Por defecto NO: una Blocklist construida sin decirlo
+    # no se da por completa (R1/H-01 de «git que falla en voz alta»).
+    principal_determinado: bool = False
 
 
 def resolver_blocklist(repo: Path) -> Blocklist:
     """Términos sensibles desde artefactos gitignored, unión del árbol dado y del checkout
     principal si es un worktree (`MEJORAS #161`). Consulta git una sola vez por invocación."""
     raices = [repo]
-    principal, motivo = _resolver_principal(repo)
+    principal, motivo, determinado = _resolver_principal(repo)
     if principal is not None:
         raices.append(principal)
     terms: set[str] = set()
@@ -216,7 +234,7 @@ def resolver_blocklist(repo: Path) -> Blocklist:
             rutas.append((ruta, estado))
             terms |= encontrados
     # Los más largos primero: match más específico y mensajes más útiles.
-    return Blocklist(sorted(terms, key=len, reverse=True), raices, rutas, motivo)
+    return Blocklist(sorted(terms, key=len, reverse=True), raices, rutas, motivo, determinado)
 
 
 def cargar_blocklist(repo: Path) -> list[str]:
@@ -239,7 +257,7 @@ def aviso_blocklist_vacia(bl: Blocklist) -> str:
     """Texto del aviso cuando la lista salió vacía: qué NO se comprobó, dónde se buscó y qué
     se encontró en cada sitio. Solo afirma lo observado (R1/H-04)."""
     lineas = [
-        "leak-guard AVISO — blocklist VACÍA: la comprobación de PII por VALOR (nombres, "
+        f"{AVISO_VACIA}: la comprobación de PII por VALOR (nombres, "
         "emails, direcciones de la lista) NO se ha ejecutado. Este verde no la acredita.",
         f"  Checkout principal: {bl.principal}",
         "  Rutas buscadas:",
@@ -250,6 +268,23 @@ def aviso_blocklist_vacia(bl: Blocklist) -> str:
         "  La lista vive gitignored en el checkout principal. Ver docs/SEGURIDAD_DATOS.md y "
         "MEJORAS #161."
     )
+    return "\n".join(lineas)
+
+
+def aviso_blocklist_parcial(bl: Blocklist) -> str:
+    """Texto del aviso cuando HAY términos pero el checkout principal no se pudo determinar: se
+    ha escaneado con los de este árbol, y los que vivan solo en el principal —si lo hay— no se
+    han mirado (R1/H-01 de «git que falla en voz alta»). Solo afirma lo observado."""
+    lineas = [
+        f"{AVISO_PARCIAL}: el checkout principal no se pudo determinar, así que se ha "
+        f"escaneado solo con lo que hay en este árbol ({len(bl.terminos)} término(s)). Si hay "
+        "un principal, los términos que vivan solo allí NO se han comprobado: este verde no "
+        "lo acredita.",
+        f"  Checkout principal: {bl.principal}",
+        "  Rutas buscadas:",
+    ]
+    for ruta, estado in bl.rutas:
+        lineas.append(f"    - {ruta} — {estado}")
     return "\n".join(lineas)
 
 
@@ -395,6 +430,10 @@ def main(argv: list[str], repo: Path = REPO_DEFECTO) -> int:
     if not bl.terminos:
         # MEJORAS #161: el guard sin lista no refuta nada. Lo dice, y sigue (rutas + formas).
         print(aviso_blocklist_vacia(bl), file=sys.stderr)
+        print("", file=sys.stderr)
+    elif not bl.principal_determinado:
+        # R1/H-01 de «git que falla en voz alta»: con media lista tampoco refuta lo que no miró.
+        print(aviso_blocklist_parcial(bl), file=sys.stderr)
         print("", file=sys.stderr)
     bloqueos = escanear(paths, repo, bl)
     bloqueos_forma, avisos = escanear_formas(paths, repo)
