@@ -13390,3 +13390,56 @@ sale; una `claude/x` podada, sí. Una ronda: toca `scripts/`, no datos de client
 
 **Disparador de promoción.** El próximo cierre que tenga que explicar el aviso en vez de leerlo, o
 antes si se toca `session_close` por otra cosa.
+
+---
+
+## 305. `crm_ficha` detecta el apellido vacío de una ficha existente y no lo repara: completar el nombre y los apellidos es otra decisión, con otro radio de daño
+
+> **Anotada el 2026-09-26** al construir `crm_ficha` (fila #40 de `PLAN.md`; spec rev. 3 §5,
+> «Lo que queda fuera»).
+
+`_COMPLETABLES_CONTRARIO` (`core/sudespacho_relations.py`) completa en un contrario que ya existe
+`email`, `movil`, `direccion`, `poblacion`, `cp`, `telefono` y `provincia`, y **no** `nombre`,
+`1apellido`, `2apellido` ni `nif_cif`. Desde la fila #40 la verificación lo **detecta**: una ficha
+con `1apellido` vacío sale como `[DATO] clientes_contrarios id=… 1apellido: vacío en el CRM` y la
+corrida termina con código 1 —el caso de W-030A13, fichas 1128 y 1129—. Pero no lo **repara**: lo
+completa un humano en la UI.
+
+**Por qué no se cerró en la misma pieza.** Escribir el nombre o los apellidos en la ficha de una
+persona identificada quizá solo por email es otra decisión: con el buzón compartido de `[APER-71]`
+(un matrimonio con un solo correo), completar el apellido de la ficha equivocada es empezar a fundir
+a dos personas. Y la política de completar solo lo vacío (`_COMPLETABLES_*`) quedó fuera del
+alcance por decisión de Nikolai del 2026-09-25. **Radio de daño: dos rondas** (escribe datos de
+identidad en la ficha de un cliente).
+
+**Remedio probable.** Completar `1apellido` y `2apellido` solo cuando la ficha se identificó **por
+NIF** —nunca por email— y su `nombre` coincide con el declarado; o dejarlo manual y que el `[DATO]`
+diga con qué dato del YAML hay que rellenarlo.
+
+**Disparador de promoción.** La próxima ficha real que salga con `[DATO] … 1apellido: vacío en el
+CRM`, o una decisión de Nikolai.
+
+---
+
+## 306. Una parte con `id_crm` cuyo NIF declarado es de OTRA ficha: la fase previa no lo ve, y en un colaborador el completado lo escribe
+
+> **Anotada el 2026-09-26**: límite declarado del spec rev. 3 de `crm_ficha` (§5), no medido en un
+> caso real.
+
+Con `id_crm`, la resolución **no busca** (spec §3 A.4): la fase previa lee la ficha por id y
+compara lo declarado con ella. Si esa ficha no tiene NIF y el YAML declara uno que pertenece a
+**otra** ficha del CRM, no hay ningún «distinto» que detectar; y en un colaborador el NIF es
+completable (`_COMPLETABLES_COLABORADOR`), así que el completado lo escribe y quedan dos fichas con
+el mismo NIF.
+
+**El daño, acotado y a la vista:** la siguiente resolución por ese NIF sale ambigua y
+`_exigir_identidad_cierta` **para** —falla cerrado—. No se funde nada en silencio, pero hay que
+deduplicar a mano.
+
+**Remedio probable.** En la fase previa, para una parte con `id_crm` que declare NIF o email,
+resolver también por ellos y exigir que no apunten a una ficha distinta. Es otra decisión sobre
+A.4 —hoy, «con `id_crm` no se busca»— y no estaba en la lista cerrada de la R2. **Radio de daño:
+dos rondas** (decide qué ficha es una persona).
+
+**Disparador de promoción.** El primer `_ficha_crm.yaml` real que use `id_crm` junto con un NIF
+(medido el 2026-09-25: ninguna parte real necesita todavía `id_crm`).
