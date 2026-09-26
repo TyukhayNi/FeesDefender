@@ -227,6 +227,10 @@ class NuevoColaborador:
     grupos: list[int] = field(default_factory=lambda: list(GRUPOS_DEFAULT))
     usuarios: list[int] = field(default_factory=lambda: list(USUARIOS_DEFAULT))
 
+    #: La ficha EXACTA del CRM, cuando el `_ficha_crm.yaml` la declara (spec rev. 3 §3 A.4 de
+    #: `crm_ficha`): con ella no se busca ni se crea. Vacío = identificar por NIF o email.
+    id_crm: str = ""
+
     def __post_init__(self) -> None:
         self.movil = normalize_es_phone(self.movil)
         self.telefono = normalize_es_phone(self.telefono)
@@ -255,6 +259,9 @@ class NuevoClienteContrario:
     cp: str = ""                         # cp
     provincia: str = ""                  # Select: valor LITERAL del enum
     telefono: str = ""                   # telefono1
+    #: La ficha EXACTA del CRM, cuando el `_ficha_crm.yaml` la declara (spec rev. 3 §3 A.4 de
+    #: `crm_ficha`): con ella no se busca ni se crea. Vacío = identificar por NIF o email.
+    id_crm: str = ""
 
     def __post_init__(self) -> None:
         self.movil = normalize_es_phone(self.movil)
@@ -1666,18 +1673,34 @@ def ensure_contrario_vinculado(
     return contrario_id, created
 
 
+def resolver_contrario_existente(datos: NuevoClienteContrario) -> str | None:
+    """La ficha que YA existe para esta parte, o `None` si hay que crearla. **No escribe.**
+
+    Con `id_crm` no se busca: se devuelve ese id y quien llama lo lee (spec rev. 3 §3 A.4 de
+    `crm_ficha`). Sin él, la resolución de siempre por NIF o email, que levanta ante conflicto,
+    ambigüedad o una consulta caída. La usan la fase previa de `crm_ficha` y
+    `_resolver_o_crear_contrario`, y así las dos identifican igual.
+    """
+    if datos.id_crm:
+        return datos.id_crm
+    r = resolver_parte("clientes_contrarios", nif=datos.nif, email=datos.email)
+    _exigir_identidad_cierta(r, elemento="clientes_contrarios",
+                             nif=datos.nif, email=datos.email)
+    return r.id
+
+
 def _resolver_o_crear_contrario(datos: NuevoClienteContrario) -> tuple[str, bool]:
     """La parte de identidad, compartida por las dos jurisdicciones.
 
     Deduplica por **NIF o email** —antes solo por NIF, asi que un contrario sin NIF
-    generaba ficha nueva en cada caso— y **levanta** si los dos criterios discrepan.
+    generaba ficha nueva en cada caso— y **levanta** si los dos criterios discrepan. Con
+    `id_crm`, ni busca ni crea: completa lo vacío de ESA ficha igual que si la hubiera hallado
+    por NIF (la rama vive en `resolver_contrario_existente`).
     """
-    r = resolver_parte("clientes_contrarios", nif=datos.nif, email=datos.email)
-    _exigir_identidad_cierta(r, elemento="clientes_contrarios",
-                             nif=datos.nif, email=datos.email)
-    if r.id:
-        _completar_contrario_existente(r.id, datos)
-        return r.id, False
+    existente = resolver_contrario_existente(datos)
+    if existente:
+        _completar_contrario_existente(existente, datos)
+        return existente, False
     return create_cliente_contrario(datos), True
 
 
@@ -2433,6 +2456,21 @@ def _completar_colaborador_existente(colab_id: str, datos: NuevoColaborador) -> 
             "afirma que se completara, revisar a mano", colab_id, no_confirmados)
 
 
+def resolver_colaborador_existente(
+    datos: NuevoColaborador,
+    *,
+    client: SudespachoLegacyClient | None = None,
+) -> str | None:
+    """Espejo de `resolver_contrario_existente` para colaboradores. **No escribe.**
+
+    Con `id_crm` devuelve ese id sin buscar; sin él, `_resolver_colaborador`, que levanta ante
+    conflicto, ambigüedad o un NIF sin comprobar.
+    """
+    if datos.id_crm:
+        return datos.id_crm
+    return _resolver_colaborador(datos, client=client)
+
+
 def _resolver_o_crear_colaborador(
     datos: NuevoColaborador,
     *,
@@ -2444,8 +2482,9 @@ def _resolver_o_crear_colaborador(
     `ensure_colaborador_vinculado_judicial` seguia siendo email-only porque el cambio
     se hizo en la rama extrajudicial y la otra se quedo atras. Con el gancho de
     completar en un solo sitio, esa asimetria no puede volver a aparecer por olvido.
+    Con `id_crm`, ni busca ni crea (la rama vive en `resolver_colaborador_existente`).
     """
-    colab_id = _resolver_colaborador(datos, client=client)
+    colab_id = resolver_colaborador_existente(datos, client=client)
     if colab_id is not None:
         _completar_colaborador_existente(colab_id, datos)
         return colab_id, False

@@ -4,6 +4,7 @@ Un dato que no se pudo leer nunca se convierte en un dato que no existe. Y apare
 un correo del expediente no te hace colaborador de ese expediente: eso lo decide
 Nikolai, y el informe solo se lo senala.
 """
+import hashlib
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -284,7 +285,7 @@ class TestApplyRellenaSoloElHueco:
 
     def test_los_telefonos_se_escriben_ENTRE_COMILLAS(self, caso):
         """Sin comillas, `movil: 0612345678` lo relee YAML como un entero octal y el
-        cero inicial no se recupera. `_escalar` lo RECHAZA, asi que romperia el CLI."""
+        cero inicial no se recupera. `validar_ficha` lo RECHAZA, asi que romperia el CLI."""
         _ficha(caso).write_text(
             "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n",
             encoding="utf-8")
@@ -295,8 +296,8 @@ class TestApplyRellenaSoloElHueco:
     def test_el_YAML_resultante_lo_puede_leer_cargar_ficha_yaml(self, caso):
         """La prueba por RESULTADO: que el siguiente eslabon lo acepte."""
         from core.crm_ficha import cargar_ficha_yaml
-        _ficha(caso).write_text(
-            "contrario:\n  nombre: JUAN\ncolaboradores:\n  - nombre: ANA\n"
+        _ficha(caso).write_text(            # el contrario, con NIF desde la Task 3 de crm_ficha
+            "contrario:\n  nombre: JUAN\n  nif: '00000000T'\ncolaboradores:\n  - nombre: ANA\n"
             "    email: ana@engelvoelkers.com\n", encoding="utf-8")
         _aplica(["--confirmar"])
 
@@ -400,6 +401,29 @@ class TestApplyNoLegitimaUnTelefonoPreexistenteInvalido:
         assert isinstance(por_email["berta@engelvoelkers.com"]["movil"], int), (
             "con el defecto vivo, esto salia como str '101005687' -- 9 digitos "
             "'validos' fabricados a partir de un octal, no el dato original")
+
+
+class TestApplyNoReescribeUnaFichaQuePerderiaDatos:
+    """R1/H-01 del diseño de crm_ficha: `apply` leía con `safe_load` y reescribía el fichero
+    entero, así que una clave repetida se CONSOLIDABA —la parte perdida desaparecía también
+    del disco— y `crm_ficha` ya no podía verla. Con el lector compartido falla sin tocarlo."""
+
+    #: En los dos casos la ÚLTIMA aparición es la de ANA, cuya firma trae móvil y teléfono: es
+    #: justo cuando `safe_load` se quedaba con ella, `apply` rellenaba y reescribía, y la otra
+    #: (el email `otra@`, la colaboradora BEA) desaparecía también del disco.
+    @pytest.mark.parametrize("texto, linea", [
+        ("colaboradores:\n  - nombre: ANA\n    email: otra@engelvoelkers.com\n"
+         "    email: ana@engelvoelkers.com\n", 4),
+        ("colaboradores:\n  - nombre: BEA\n    email: bea@engelvoelkers.com\n"
+         "colaboradores:\n  - nombre: ANA\n    email: ana@engelvoelkers.com\n", 4),
+    ])
+    def test_una_clave_repetida_falla_sin_tocar_el_fichero(self, caso, texto, linea):
+        _ficha(caso).write_text(texto, encoding="utf-8")
+        antes = hashlib.sha256(_ficha(caso).read_bytes()).hexdigest()
+        r = _aplica(["--confirmar"])
+        assert r.exit_code == 1, r.output
+        assert f"línea {linea}" in r.output
+        assert hashlib.sha256(_ficha(caso).read_bytes()).hexdigest() == antes
 
 
 class TestElConflictoNoSeAplica:

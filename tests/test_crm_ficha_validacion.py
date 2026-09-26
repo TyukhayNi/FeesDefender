@@ -214,7 +214,10 @@ class TestQueDatosSeValidan:
         from core.crm_ficha import cargar_ficha_yaml
 
         y = tmp_path / "_ficha_crm.yaml"
-        y.write_text("contrario:\n  nombre: ANA\n  nif: ''\n", encoding="utf-8")
+        # Migrado (Task 3 de crm_ficha): el `nif: ''` es la propiedad, así que la identidad
+        # que desde entonces exige toda parte va por el email.
+        y.write_text("contrario:\n  nombre: ANA\n  nif: ''\n  email: ana@ev.example\n",
+                     encoding="utf-8")
         campos = {d.campo for d in datos_de_ficha(cargar_ficha_yaml(y))}
         assert "contrario.nif" not in campos
 
@@ -301,7 +304,8 @@ class TestUnDatoDeUnaPalabraNoAcredita:
 
         y = tmp_path / "_ficha_crm.yaml"
         y.write_text("contrario:\n  nombre: ALBERTO CAMPRUBI CORDAL\n"
-                     "  apellido1: CAMPRUBI\n  apellido2: CORDAL\n", encoding="utf-8")
+                     "  apellido1: CAMPRUBI\n  apellido2: CORDAL\n"
+                     "  nif: '00000000T'\n", encoding="utf-8")   # identidad (Task 3)
         por_campo = {d.campo: d for d in datos_de_ficha(cargar_ficha_yaml(y))}
 
         assert "contrario.apellido1" in por_campo

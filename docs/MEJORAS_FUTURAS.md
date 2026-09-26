@@ -12906,7 +12906,7 @@ repos necesita una sesión, no una por repo.**
 
 ---
 
-## 283. `_ficha_crm.yaml`: una clave que el loader no conoce se descarta en silencio, y el dato no llega al CRM  [PROMOVIDO → PLAN.md 2026-09-25]
+## 283. `_ficha_crm.yaml`: una clave que el loader no conoce se descarta en silencio, y el dato no llega al CRM  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-25]
 
 > **Medido el 2026-09-23 por GET** sobre el extrajudicial 653 (W-030A13), desde la sesión de
 > W-0462E1.
@@ -12936,6 +12936,14 @@ W-030A13.
 rechazar en vez de avisar: de los 14 `_ficha_crm.yaml` reales, la única clave desconocida es esta
 misma `apellido`, dos veces y las dos en W-030A13. Y el daño llega al burofax: Codicert compone el
 nombre del requerido desde los campos del CRM que esta clave dejó vacíos.
+
+**CERRADA el 2026-09-26 (PR #400, fila #40 de `PLAN.md`), junto con `#288`.** El
+`_ficha_crm.yaml` se lee con un lector sin pérdida —claves repetidas, alias, merge y claves que no
+son texto, todo con su línea— que comparten `cargar_ficha_yaml` y `crm_colaboradores_firmas.apply`,
+y se valida entero antes de tocar el CRM: una clave desconocida sale con su ruta y **todas** las
+sugerencias cercanas (`apellido` → `apellido1` o `apellido2`), sin convertirse en alias. W-030A13
+se rechaza ahora por sus dos `apellido`, que es exactamente este defecto. Lo que no cierra, porque
+es otra decisión: reparar las fichas 1128 y 1129 (`#312`).
 
 ---
 
@@ -13061,7 +13069,7 @@ decide qué compuestos conservan fila padre.
 
 ---
 
-## 288. La verificación de `crm_ficha` comprueba INCLUSIÓN, no igualdad: dos colaboradores ajenos pasaron por delante de un «VERIFICADA por lectura»  [PROMOVIDO → PLAN.md 2026-09-25]
+## 288. La verificación de `crm_ficha` comprueba INCLUSIÓN, no igualdad: dos colaboradores ajenos pasaron por delante de un «VERIFICADA por lectura»  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-25]
 
 > **Rescatada el 2026-09-25 del PR #387** (allí, número 279; apertura de W-030A13, 2026-09-16),
 > por la misma causa que `#287`. El texto es el del PR.
@@ -13118,6 +13126,14 @@ expediente, y un error suyo da acceso a quien no debe tenerlo.
 ese día: el `_ficha_crm.yaml` es la lista **completa** de partes, así que un vínculo que no
 declara es un **fallo** de la verificación, no un aviso, y `crm_ficha` no desvincula nunca. Diseño
 en `docs/superpowers/specs/2026-09-25-crm-ficha-claves-y-conjunto-design.md`.
+
+**CERRADA el 2026-09-26 (PR #400, fila #40 de `PLAN.md`), junto con `#283`.** La verificación
+compara por **igualdad**: los vínculos de los tres bloques con multiplicidad —un vínculo de más
+sale como `[SOBRA]` y la corrida falla, el 653 reproducido da dos— y los **datos** declarados de
+cada parte, creada o existente, contra su ficha (`[DATO]` vacío o distinto). «VERIFICADA: vínculos
+y datos de la ficha» solo sale con todo leído y todo igual. Antes de escribir, una fase previa de
+solo lectura no deja escribir nada sobre una ficha que el YAML contradice. Tres rondas de Codex, la
+última sobre el diff y remediada sin otra ronda (plan §10).
 
 ---
 
@@ -13499,6 +13515,8 @@ sale; una `claude/x` podada, sí. Una ronda: toca `scripts/`, no datos de client
 **Disparador de promoción.** El próximo cierre que tenga que explicar el aviso en vez de leerlo, o
 antes si se toca `session_close` por otra cosa.
 
+---
+
 ## 304. El recorte dibuja dos veces cada página que se conserva
 
 > **Medido en la R3 de F3, el 2026-09-25**, sobre los dos certificados reales: el recorte tarda
@@ -13674,6 +13692,8 @@ recogían (grep de `PROPERTIES S` y `PROPIEDADES S`, vacío).
 
 **Disparador de promoción.** La próxima apertura de Madrid.
 
+---
+
 ## 311. El contrato de revisión no prevé redactar un acta
 
 > **Medido el 2026-09-26**, en la ronda 4 del saneado de PII: el móvil de un tercero estaba
@@ -13695,3 +13715,94 @@ el modelo es el de su fila.
 **Disparador de promoción.** La próxima vez que haya que sacar un dato de dentro de un acta, o una
 decisión de Nikolai de formalizarlo antes.
 
+
+---
+
+## 312. `crm_ficha` detecta el apellido vacío de una ficha existente y no lo repara: completar el nombre y los apellidos es otra decisión, con otro radio de daño
+
+> **Anotada el 2026-09-26** al construir `crm_ficha` (fila #40 de `PLAN.md`; spec rev. 3 §5,
+> «Lo que queda fuera»).
+
+`_COMPLETABLES_CONTRARIO` (`core/sudespacho_relations.py`) completa en un contrario que ya existe
+`email`, `movil`, `direccion`, `poblacion`, `cp`, `telefono` y `provincia`, y **no** `nombre`,
+`1apellido`, `2apellido` ni `nif_cif`. Desde la fila #40 la verificación lo **detecta**: una ficha
+con `1apellido` vacío sale como `[DATO] clientes_contrarios id=… 1apellido: vacío en el CRM` y la
+corrida termina con código 1 —el caso de W-030A13, fichas 1128 y 1129—. Pero no lo **repara**: lo
+completa un humano en la UI.
+
+**Por qué no se cerró en la misma pieza.** Escribir el nombre o los apellidos en la ficha de una
+persona identificada quizá solo por email es otra decisión: con el buzón compartido de `[APER-71]`
+(un matrimonio con un solo correo), completar el apellido de la ficha equivocada es empezar a fundir
+a dos personas. Y la política de completar solo lo vacío (`_COMPLETABLES_*`) quedó fuera del
+alcance por decisión de Nikolai del 2026-09-25. **Radio de daño: dos rondas** (escribe datos de
+identidad en la ficha de un cliente).
+
+**Remedio probable.** Completar `1apellido` y `2apellido` solo cuando la ficha se identificó **por
+NIF** —nunca por email— y su `nombre` coincide con el declarado; o dejarlo manual y que el `[DATO]`
+diga con qué dato del YAML hay que rellenarlo.
+
+**Disparador de promoción.** La próxima ficha real que salga con `[DATO] … 1apellido: vacío en el
+CRM`, o una decisión de Nikolai.
+
+---
+
+## 313. Una parte con `id_crm` cuyo NIF declarado es de OTRA ficha: la fase previa no lo ve, y en un colaborador el completado lo escribe
+
+> **Anotada el 2026-09-26**: límite declarado del spec rev. 3 de `crm_ficha` (§5), no medido en un
+> caso real. **Corregida el mismo día tras la R3 (H-01, plan §10):** la primera versión de esta
+> entrada decía que el daño «falla cerrado», y con un NIF escrito con separadores era falso.
+
+Con `id_crm`, la resolución **no busca** (spec §3 A.4): la fase previa lee la ficha por id y
+compara lo declarado con ella. Si esa ficha no tiene NIF y el YAML declara uno que pertenece a
+**otra** ficha del CRM, no hay ningún «distinto» que detectar; y en un colaborador el NIF es
+completable (`_COMPLETABLES_COLABORADOR`), así que el completado lo escribe y quedan dos fichas con
+el mismo NIF. En un contrario no es completable: no se escribe, y la lectura final lo da por vacío.
+
+**El daño, acotado y a la vista — desde la R3, no antes.** El NIF se escribe ahora en su forma
+canónica, la misma con la que busca `resolver_parte`, así que la siguiente resolución por ese NIF
+sale ambigua y `_exigir_identidad_cierta` **para** (lo prueba
+`test_R3H01_colaborador_por_id_con_un_nif_ajeno_deja_la_resolucion_por_nif_ambigua`). Hasta la R3
+viajaba como se escribió: con `00.000.000-T`, la búsqueda canónica no veía la ficha completada y
+devolvía la otra **sin** ambigüedad —una identidad duplicada que nadie detectaba—. **Lo que sigue
+sin cubrir:** una ficha histórica cuyo NIF se guardó con separadores no la encuentra ninguna
+búsqueda canónica, y entonces tampoco hay ambigüedad que detectar.
+
+**Remedio probable.** En la fase previa, para una parte con `id_crm` que declare NIF o email,
+resolver también por ellos y exigir que no apunten a una ficha distinta. Es otra decisión sobre
+A.4 —hoy, «con `id_crm` no se busca»— y no estaba en la lista cerrada de la R2. **Radio de daño:
+dos rondas** (decide qué ficha es una persona).
+
+**Disparador de promoción.** El primer `_ficha_crm.yaml` real que use `id_crm` junto con un NIF
+(medido el 2026-09-25: ninguna parte real necesita todavía `id_crm`).
+
+---
+
+## 314. `_resolver_colaborador` ignora el `motivo` de `resolver_parte`: ante un buzón compartido con una ficha sin documento, el colaborador vincula esa ficha en vez de parar
+
+> **Anotada el 2026-09-26**, de la R3 de `crm_ficha` (H-02; plan §10). **Anterior a esa pieza:** no
+> la introdujo su diff, y el contrario no la tiene.
+
+`resolver_parte` devuelve un `motivo`, sin `id`, cuando no puede establecer la identidad por algo
+que no es «varias fichas»: un NIF no interpretable, o un buzón compartido una de cuyas fichas no
+tiene documento comparable (`_resolver_por_buzon_compartido`, `[APER-71]`). El contrario lo trata
+como lo que es —`_exigir_identidad_cierta` levanta—, pero `_resolver_colaborador` solo mira
+`conflicto`, `ambiguo` y `sin_comprobar`: con `motivo` y sin `id`, cae a
+`find_colaborador_by_email`, que recorre el listado y devuelve la **primera** ficha con ese email,
+o, sin email, devuelve `None` y la parte se **crea**. La R3 lo midió con el NIF no interpretable:
+dos corridas crearon dos fichas, y la segunda acabó en `[SOBRA]`.
+
+**Qué cerró ya la R3, y qué no.** `crm_ficha` rechaza al validar el NIF que se queda en nada (spec
+rev. 4, A.3), así que por esa pieza el primer caso no llega. El segundo —un colaborador con un NIF
+que no casa ninguna ficha y un email que comparte con una ficha sin NIF— sí llega, y también por
+los demás llamadores de `ensure_colaborador_vinculado`, en las dos jurisdicciones. Con los
+consultores de E&V, de correo corporativo individual, es improbable; con cualquier otro
+colaborador, no.
+
+**Remedio probable.** Tratar `r.motivo` en `_resolver_colaborador` como en el contrario:
+`_exigir_identidad_cierta` antes del respaldo por listado. Cambia el comportamiento de todos los
+llamadores, así que lleva su propia regresión —el buzón con una ficha sin documento, en las dos
+jurisdicciones— y se dice en el PR. **Radio de daño: dos rondas** (decide qué ficha es una
+persona).
+
+**Disparador de promoción.** Un colaborador ajeno a E&V que comparta correo con otra ficha, o el
+primer `[SOBRA]` o `[DATO]` de un colaborador que se explique por esto.
