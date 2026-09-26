@@ -2259,3 +2259,94 @@ def test_307_un_original_con_bytes_AÑADIDOS_antes_del_relleno_no_se_confirma(tm
     p = _caso_drive(tmp_path, {"f.pdf": local + b"\0" * (512 - len(local))}) / "00_Input" / "01_Drive EV" / "f.pdf"
 
     assert va._es_el_relleno_de_225(p, _sha(original)) is False
+
+
+# --- C1 (MEJORAS #306): los nativos de Google se comparan con su exportación ---------
+
+_DOC = "application/vnd.google-apps.document"
+
+
+def test_306_el_adaptador_CONSERVA_el_mimeType_de_cada_fichero(tmp_path):
+    """Sin el `mimeType` en el censo, C1 no puede saber que un objeto remoto es un nativo de
+    Google: el adaptador lo pedía —lo usaba para reconocer carpetas— y lo tiraba."""
+    def transporte(url, params):
+        return {"files": [{"id": "f1", "name": "_chat", "mimeType": _DOC},
+                          {"id": "f2", "name": "a.pdf", "mimeType": "application/pdf",
+                           "sha256Checksum": "aa"}]}
+
+    censo = vaf.DeLaRed(transporte=transporte).censo_drive("T", "F")
+    tipos = {f.ruta: f.mime_type for f in censo.ficheros}
+    assert tipos == {"_chat": _DOC, "a.pdf": "application/pdf"}, tipos
+
+
+@pytest.mark.parametrize("mime, ext", [
+    ("application/vnd.google-apps.document", ".docx"),
+    ("application/vnd.google-apps.spreadsheet", ".xlsx"),
+    ("application/vnd.google-apps.presentation", ".pptx"),
+    ("application/vnd.google-apps.drawing", ".svg"),
+])
+def test_306_un_nativo_de_Google_cruza_con_el_nombre_que_le_da_rclone(tmp_path, mime, ext):
+    """W-02Y2J6 (2026-09-25): `remoto 88, local 88` y aun así `fallo`, con los MISMOS ocho
+    ficheros faltando y sobrando. Eran nativos de Google: la API los nombra sin extensión y
+    el pull los deja en disco con la de exportación que añade rclone (`--drive-export-formats`
+    por defecto: `docx,xlsx,pptx,svg`; el pull no fija otros)."""
+    c = _caso_drive(tmp_path, {f"sub/_chat{ext}": b"exportado"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("sub/_chat", mime_type=mime)])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["nativos_google"] == 1
+
+
+def test_306_un_nativo_cuya_exportacion_FALTA_se_nombra_como_se_busca(tmp_path):
+    """CONTROL POSITIVO: el cruce nuevo no puede tragarse un nativo que no llegó. Y el
+    nombre que se muestra es el que el operador tiene que buscar en disco: el exportado."""
+    c = _caso_drive(tmp_path, {"a.pdf": b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("a.pdf"),
+                              vaf.FicheroRemoto("hoja", mime_type="application/vnd.google-apps.spreadsheet")])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["faltan_en_local"] == ["hoja.xlsx"], r.evidencia
+
+
+def test_306_un_nativo_SIN_formato_de_exportacion_sigue_faltando(tmp_path):
+    """CONTROL POSITIVO: no es «todo lo de Google se ignora». Un formulario no tiene formato
+    de exportación y rclone no lo descarga; el pull no lo trae, y C1 lo sigue diciendo."""
+    c = _caso_drive(tmp_path, {"a.pdf": b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("a.pdf"),
+                              vaf.FicheroRemoto("encuesta", mime_type="application/vnd.google-apps.form")])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["faltan_en_local"] == ["encuesta"], r.evidencia
+
+
+def test_306_un_fichero_que_NO_es_nativo_no_gana_extension(tmp_path):
+    """CONTROL POSITIVO: la extensión la añade la exportación, no el nombre. Un PDF subido
+    sin extensión se descarga tal cual, y un `.docx` local con su nombre es otro fichero."""
+    c = _caso_drive(tmp_path, {"informe.docx": b"x"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("informe", mime_type="application/pdf")])
+
+    r = _rr(c, "censo_remoto", f)
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["faltan_en_local"] == ["informe"], r.evidencia
+
+
+def test_306_un_nativo_y_un_fichero_que_acaban_en_la_MISMA_ruta_local_colisionan(tmp_path):
+    """El nativo `x` se exporta como `x.docx`, y en la misma carpeta hay un `x.docx` subido:
+    en disco no caben los dos. C1 lo declara colisión y C2 no elige contra cuál contrastar
+    —lo mismo que con dos nombres que solo difieren en su forma Unicode—."""
+    c = _caso_drive(tmp_path, {"x.docx": b"subido"})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("x", mime_type=_DOC, file_id="A"),
+                              vaf.FicheroRemoto("x.docx", sha256=_sha(b"subido"), file_id="B")])
+
+    c1 = _rr(c, "censo_remoto", f)
+    c2 = _rr(c, "hash_drive", f)
+
+    assert c1.estado == va.FALLO and c1.evidencia["colisiones_de_clave"], c1.evidencia
+    assert c2.estado == va.FALLO and c2.evidencia["colisiones_de_clave"], c2.evidencia

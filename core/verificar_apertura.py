@@ -659,6 +659,35 @@ def clave_de_cruce(ruta: str) -> str:
     return unicodedata.normalize("NFC", ruta)
 
 
+#: La extensión con que `rclone` deja en disco cada nativo de Google. Son sus formatos de
+#: exportación **por defecto** (`--drive-export-formats docx,xlsx,pptx,svg`, comprobado en
+#: rclone 1.73.5), que el pull no cambia (`core/intake_drive.py`): de la lista, rclone usa
+#: el primero que el tipo admite. Medidos en W-02Y2J6 (`MEJORAS #306`): documento y hoja de
+#: cálculo; presentación y dibujo, por la regla, sin caso medido.
+#:
+#: **Un nativo que no está aquí no tiene fichero que esperar** —un formulario, un sitio—:
+#: rclone no lo descarga y C1 lo sigue contando como faltante. No se exime en silencio: lo
+#: que el pull no trae, el censo lo dice.
+_EXPORTACION_NATIVOS_RCLONE: dict[str, str] = {
+    "application/vnd.google-apps.document": ".docx",
+    "application/vnd.google-apps.spreadsheet": ".xlsx",
+    "application/vnd.google-apps.presentation": ".pptx",
+    "application/vnd.google-apps.drawing": ".svg",
+}
+
+
+def ruta_local_esperada(f: Any) -> str:
+    """El nombre con que el pull deja en disco ese objeto del remoto (`MEJORAS #306`).
+
+    Un nativo de Google no tiene bytes propios: la API lo nombra **sin extensión** y en
+    `01_Drive EV` aparece con la de exportación que añade rclone. Comparar los dos nombres
+    tal cual daba el mismo fichero como faltante y como sobrante a la vez. La extensión se
+    añade siempre —rclone no mira si el nombre ya acababa en `.docx`— y solo por el tipo:
+    un PDF subido sin extensión se descarga tal cual.
+    """
+    return f.ruta + _EXPORTACION_NATIVOS_RCLONE.get(getattr(f, "mime_type", "") or "", "")
+
+
 @_de_red
 def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
     """Lo que el remoto declara contra lo que hay en `01_Drive EV`.
@@ -695,11 +724,14 @@ def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
 
     # Se cruza por `clave_de_cruce` y se MUESTRA la ruta original: el nombre que el
     # operador tiene que buscar es el que ve, no una forma canónica que no existe en
-    # ningún sitio.
-    c_remoto = Counter(clave_de_cruce(f.ruta) for f in censo.ficheros)
+    # ningún sitio. Del lado remoto, la ruta es la que el pull deja en disco: la de un
+    # nativo de Google lleva la extensión de su exportación (`MEJORAS #306`).
+    esperadas = [(f, ruta_local_esperada(f)) for f in censo.ficheros]
+    c_remoto = Counter(clave_de_cruce(e) for _, e in esperadas)
     c_local = Counter(clave_de_cruce(r) for r in locales)
-    muestra = {clave_de_cruce(f.ruta): f.ruta for f in censo.ficheros}
+    muestra = {clave_de_cruce(e): e for _, e in esperadas}
     muestra.update({clave_de_cruce(r): r for r in locales})
+    nativos = sum(1 for f, e in esperadas if e != f.ruta)
     faltan = sorted(muestra.get(k, k) for k in (c_remoto - c_local).elements())
     sobran = sorted(muestra.get(k, k) for k in (c_local - c_remoto).elements())
 
@@ -707,9 +739,11 @@ def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
     # un sistema de ficheros Windows **no caben los dos**, así que uno falta de verdad.
     # Fundirlos en silencio sería el defecto simétrico del que este cruce viene a
     # arreglar — un descuadre real presentado como «todo cuadra».
+    # Lo mismo vale para un nativo exportado y un fichero subido que acaban en la misma
+    # ruta local (`x` → `x.docx` junto a un `x.docx`): se declara con los nombres remotos.
     vistas: dict[str, list[str]] = {}
-    for f in censo.ficheros:
-        vistas.setdefault(clave_de_cruce(f.ruta), []).append(f.ruta)
+    for f, e in esperadas:
+        vistas.setdefault(clave_de_cruce(e), []).append(f.ruta)
     colisiones = sorted(k for k, rutas in vistas.items() if len(rutas) > 1)
 
     # Un descuadre entre nombres que pasaron por el `--local-encoding` de rclone casi
@@ -720,7 +754,8 @@ def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
     ev = {"remoto": sum(c_remoto.values()), "local": sum(c_local.values()),
           "faltan_en_local": faltan[:8], "sobran_en_local": sobran[:8],
           "colisiones_de_clave": [vistas[k] for k in colisiones][:8],
-          "con_marcas_de_encoding_rclone": con_marcas[:8]}
+          "con_marcas_de_encoding_rclone": con_marcas[:8],
+          "nativos_google": nativos}
     if colisiones:
         return Resultado("censo_remoto", titulo, FALLO,
                          f"{len(colisiones)} colision(es) de clave en el remoto: dos "
@@ -736,9 +771,11 @@ def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
         return Resultado("censo_remoto", titulo, FALLO,
                          f"{len(faltan)} fichero(s) del remoto que no están en local y "
                          f"{len(sobran)} en local que no están en el remoto{pista}", ev)
+    exportados = (f" ({nativos} nativos de Google, cruzados con su exportación)"
+                  if nativos else "")
     return Resultado("censo_remoto", titulo, OK,
-                     f"los {sum(c_remoto.values())} ficheros del remoto están en local, "
-                     "y ninguno de más", ev)
+                     f"los {sum(c_remoto.values())} ficheros del remoto están en local"
+                     f"{exportados}, y ninguno de más", ev)
 
 
 #: Tope de la cola de ceros que se examina. El relleno de `MEJORAS #225` lleva al SIGUIENTE
@@ -856,10 +893,12 @@ def c2_hash_contra_drive(case_dir: Path, ctx: "_Contexto") -> Resultado:
     # introdujo la primera versión** (R1/H-04): con dos remotos que colapsan a la misma
     # clave ganaba el último, C2 contrastaba contra el hash EQUIVOCADO y devolvía `ok`
     # donde antes daba `fallo` — dependiendo del orden del censo. Detectar la colisión en
-    # C1 y no aquí fue remediar el ejemplo y no la frontera.
+    # C1 y no aquí fue remediar el ejemplo y no la frontera. La clave es la de la ruta que
+    # el pull deja en disco, como en C1 (`MEJORAS #306`): un nativo exportado que cae
+    # sobre un fichero subido es una clave con dos checksums, y no se elige.
     por_clave: dict[str, set[str]] = {}
     for f in censo.ficheros:
-        por_clave.setdefault(clave_de_cruce(f.ruta), set()).add(f.sha256 or "")
+        por_clave.setdefault(clave_de_cruce(ruta_local_esperada(f)), set()).add(f.sha256 or "")
     ambiguas = sorted(k for k, shas in por_clave.items() if len(shas) > 1)
     con_hash = {k: next(iter(shas)) for k, shas in por_clave.items()
                 if len(shas) == 1 and next(iter(shas))}
