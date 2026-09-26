@@ -1107,6 +1107,11 @@ class EnvioObservado:
     def canal(self) -> str:
         return CANAL_DE_TIPO.get(self.tipo, f"desconocido:{self.tipo}")
 
+    @property
+    def canal_clasificado(self) -> bool:
+        """¿Sabemos en qué culmina el canal? M-18: el tipo `s` (SMS Certificado), no."""
+        return self.tipo in CANAL_DE_TIPO
+
     def _primera(self, *familias: str) -> datetime | None:
         """La fecha MÁS TEMPRANA de las entradas de esas familias.
 
@@ -1160,8 +1165,11 @@ class EnvioObservado:
         estado, el provisional ocuparía el sitio del bueno.
 
         Un código desconocido NO hace cosechable: no se sabe si culmina algo.
+
+        Un canal sin clasificar tampoco (M-18, D-2): sin saber en qué culmina, ni su 20 ni
+        su 42 dicen que el certificado sea el definitivo.
         """
-        if self.desconocidos:
+        if not self.canal_clasificado or self.desconocidos:
             return False
         codigos = {e.codigo for e in self.historico}
         if _CULMINACION.get(self.canal) in codigos:

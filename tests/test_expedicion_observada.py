@@ -147,3 +147,15 @@ def test_el_40_cierra_aunque_hubiera_un_22_antes():
                                     (40, "2026-07-17T16:29:58+02:00")))
     assert e.cerrado_en == datetime.fromisoformat("2026-07-17T16:29:58+02:00")
     assert e.cosechable
+
+
+def test_un_canal_sin_clasificar_no_se_cosecha_ni_con_su_culminacion():
+    """M-18, `006bkxe0q63`: el SMS Certificado (tipo `s`) existe en producción e hizo
+    17 → 20. F2 no sabe en qué culmina ese canal: ni su 20 ni su 42 lo hacen definitivo."""
+    leido = _envio(tipo="s", historico=_historico((17, "2026-07-07T12:59:54+02:00"),
+                                                   (20, "2026-07-07T12:59:56+02:00")))
+    fallido = _envio(tipo="s", historico=_historico((42, "2026-07-07T13:00:00+02:00")))
+    assert leido.canal == "desconocido:s" and not leido.canal_clasificado
+    assert not leido.cosechable and not fallido.cosechable
+    # el canal no borra lo que el histórico acredita
+    assert leido.accedido_en == datetime.fromisoformat("2026-07-07T12:59:56+02:00")
