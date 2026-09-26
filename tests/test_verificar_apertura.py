@@ -34,20 +34,49 @@ def _caso(tmp_path, nombre=CASE):
     return d
 
 
+def _ruta_fuente(fila) -> str:
+    """La ruta de la fuente que la sala de máquina da a una fila: la suya, o la del bundle si
+    es un hijo. El split no da fila al padre, y todos sus hijos llevan su `rel_path`
+    (`core/sala_maquina.py`, la rama del split)."""
+    padre = fila.get("parent_slug")
+    base = padre.strip() if isinstance(padre, str) and padre.strip() else fila.get("slug")
+    return f"01_Drive EV/{base}.pdf"
+
+
 def _con_sala_maquina(case_dir, filas):
     sm = case_dir / "01_Procesado" / "02_Sala de máquina"
     sm.mkdir(parents=True, exist_ok=True)
+    # Toda fila real lleva `rel_path`, la ruta de su fuente bajo `00_Input/`: se rellena solo
+    # donde el test no la da, y nunca en lo que no es un mapa —la basura que algunos tests
+    # escriben a propósito—.
+    filas = [({"rel_path": _ruta_fuente(f), **f} if isinstance(f, dict) else f)
+             for f in filas]
     (sm / "_cobertura.json").write_text(json.dumps(filas, ensure_ascii=False),
                                         encoding="utf-8")
     return sm
 
 
-def _con_catalogo(case_dir, n):
+def _entrada(slug: str) -> dict:
+    """La entrada del catálogo para la fuente de esa fila, con la forma que escribe
+    `manifiesto_a_catalogo.derivar`: el catálogo no lleva `slug`, lleva `ruta_relativa` y
+    `hash`. El hash sale de la ruta para que no coincida por azar con ninguna fila."""
+    import hashlib
+
+    ruta = f"01_Drive EV/{slug}.pdf"
+    h = hashlib.sha256(ruta.encode()).hexdigest()
+    return {"id_doc": h[:12], "ruta_relativa": ruta, "nombre_original": f"{slug}.pdf",
+            "fuente": "drive_ev", "estado": "original", "hash": h}
+
+
+def _con_catalogo(case_dir, docs):
+    """`docs`: los slugs de la cobertura cuya fuente recoge el catálogo, o un número de
+    entradas que no corresponden a ninguna fila (hasta el 2026-09-26, la única forma: el
+    catálogo del fixture llevaba `slug` y `titulo`, que el real no tiene)."""
     proc = case_dir / "01_Procesado"
     proc.mkdir(parents=True, exist_ok=True)
-    entradas = [{"slug": f"doc_{i}", "titulo": f"Documento {i}"} for i in range(n)]
+    slugs = [f"doc_{i}" for i in range(docs)] if isinstance(docs, int) else list(docs)
     (proc / "indice_documental.yaml").write_text(
-        yaml.dump(entradas, allow_unicode=True), encoding="utf-8")
+        yaml.dump([_entrada(s) for s in slugs], allow_unicode=True), encoding="utf-8")
 
 
 def _con_sala_lectura(case_dir, *, artefactos=("INDICE.md", "CRONOLOGIA.md",
@@ -153,7 +182,7 @@ def test_c3_ok_cuando_los_documentos_logicos_cuadran(tmp_path):
     c = _caso(tmp_path)
     _con_sala_maquina(c, [{"slug": "a", "parent_slug": ""},
                           {"slug": "b", "parent_slug": ""}])
-    _con_catalogo(c, 2)
+    _con_catalogo(c, ["a", "b"])
     r = _r(c, "cobertura_vs_catalogo")
     assert r.estado == va.OK, r.detalle
 
@@ -170,7 +199,7 @@ def test_c3_los_hijos_de_bundle_NO_cuentan(tmp_path):
                           {"slug": "s1", "parent_slug": "bundle"},
                           {"slug": "s2", "parent_slug": "bundle"},
                           {"slug": "s3", "parent_slug": "bundle"}])
-    _con_catalogo(c, 1)
+    _con_catalogo(c, ["bundle"])
     r = _r(c, "cobertura_vs_catalogo")
     assert r.estado == va.OK, r.detalle
     assert r.evidencia["hijos_de_bundle"] == 3
@@ -182,7 +211,7 @@ def test_c3_FALLA_cuando_faltan_documentos_en_el_catalogo(tmp_path):
     sala de máquina procesó 21 documentos y a la sala llegaron 17."""
     c = _caso(tmp_path)
     _con_sala_maquina(c, [{"slug": f"d{i}", "parent_slug": ""} for i in range(21)])
-    _con_catalogo(c, 17)
+    _con_catalogo(c, [f"d{i}" for i in range(17)])
     r = _r(c, "cobertura_vs_catalogo")
     assert r.estado == va.FALLO
     assert "21" in r.detalle and "17" in r.detalle
@@ -629,7 +658,7 @@ def test_c3_un_hijo_con_padre_REAL_sigue_sin_contar(tmp_path):
     c = _caso(tmp_path)
     _con_sala_maquina(c, [{"slug": "bundle", "parent_slug": ""},
                           {"slug": "s1", "parent_slug": "bundle"}])
-    _con_catalogo(c, 1)
+    _con_catalogo(c, ["bundle"])
     r = _r(c, "cobertura_vs_catalogo")
     assert r.estado == va.OK, r.detalle
     assert r.evidencia["hijos_de_bundle"] == 1
@@ -811,7 +840,7 @@ def test_c8_detecta_las_variantes_de_grafia(tmp_path, texto):
 def _roto_cobertura(tmp_path):
     c = _caso(tmp_path)
     _con_sala_maquina(c, [{"slug": f"d{i}", "parent_slug": ""} for i in range(21)])
-    _con_catalogo(c, 17)
+    _con_catalogo(c, [f"d{i}" for i in range(17)])
     return c
 
 
@@ -2075,7 +2104,7 @@ def test_c3_ve_el_catalogo_que_la_skill_deja_DENTRO_de_la_sala(tmp_path):
     _con_sala_maquina(c, [{"slug": "a"}, {"slug": "b"}])
     sala = _con_sala_lectura(c)
     (sala / "indice_documental.yaml").write_text(
-        yaml.dump([{"slug": "a"}, {"slug": "b"}]), encoding="utf-8")
+        yaml.dump([_entrada("a"), _entrada("b")]), encoding="utf-8")
     r = _r(c, "cobertura_vs_catalogo")
     assert r.estado == va.OK, r.detalle
     assert r.evidencia["catalogo_en"] == "sala"
@@ -2084,7 +2113,7 @@ def test_c3_ve_el_catalogo_que_la_skill_deja_DENTRO_de_la_sala(tmp_path):
 def test_c3_sigue_viendo_el_catalogo_en_01_procesado_y_dice_donde(tmp_path):
     c = _caso(tmp_path)
     _con_sala_maquina(c, [{"slug": "a"}])
-    _con_catalogo(c, 1)
+    _con_catalogo(c, ["a"])
     r = _r(c, "cobertura_vs_catalogo")
     assert r.estado == va.OK and r.evidencia["catalogo_en"] == "01_Procesado"
 
@@ -2147,7 +2176,7 @@ def test_c3_R1_H05_con_los_DOS_catalogos_y_distintos_es_fallo(tmp_path):
     _con_sala_maquina(c, [{"slug": "a"}])
     _con_catalogo(c, 2)
     sala = _con_sala_lectura(c)
-    (sala / "indice_documental.yaml").write_text(yaml.dump([{"slug": "a"}]),
+    (sala / "indice_documental.yaml").write_text(yaml.dump([_entrada("a")]),
                                                  encoding="utf-8")
     r = _r(c, "cobertura_vs_catalogo")
     assert r.estado == va.FALLO, r.detalle
@@ -2160,9 +2189,9 @@ def test_c3_R1_H05_con_los_dos_catalogos_iguales_compara_y_lo_dice(tmp_path):
     evidencia dice que había dos."""
     c = _caso(tmp_path)
     _con_sala_maquina(c, [{"slug": "a"}])
-    _con_catalogo(c, 1)
+    _con_catalogo(c, ["a"])
     sala = _con_sala_lectura(c)
-    (sala / "indice_documental.yaml").write_text(yaml.dump([{"slug": "a"}]),
+    (sala / "indice_documental.yaml").write_text(yaml.dump([_entrada("a")]),
                                                  encoding="utf-8")
     r = _r(c, "cobertura_vs_catalogo")
     assert r.estado == va.OK, r.detalle
