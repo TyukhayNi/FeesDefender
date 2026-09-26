@@ -39,10 +39,16 @@ class FicheroRemoto:
     que la primera versión fundía en uno: con un `set` de rutas, dos objetos remotos
     homónimos —uno de ellos con checksum distinto— se contaban como uno y el expediente
     salía en verde (H-01).
+
+    `mime_type` es el que declara Drive. Un nativo de Google (`application/vnd.google-apps.*`)
+    no tiene bytes propios: el pull lo deja en disco **exportado**, con otro nombre, y sin el
+    tipo el censo no podía saberlo (`MEJORAS #306`). El adaptador lo pedía para reconocer
+    carpetas y lo tiraba.
     """
     ruta: str
     sha256: str = ""
     file_id: str = ""
+    mime_type: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -177,7 +183,8 @@ class DeLaRed:
                         else:
                             ficheros.append(FicheroRemoto(
                                 ruta=rel, sha256=f.get("sha256Checksum") or "",
-                                file_id=str(f.get("id") or "")))
+                                file_id=str(f.get("id") or ""),
+                                mime_type=str(f.get("mimeType") or "")))
                     pagina = data.get("nextPageToken")
                     if not pagina:
                         break
