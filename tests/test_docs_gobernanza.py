@@ -64,6 +64,11 @@ def _ofensores_plan_legacy(lineas: list[str]) -> list[str]:
         # aqui. Coincide con el patron por casualidad (mismo prefijo
         # "docs/PLAN_"); no existe en este repo y no se reubica.
         and "docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md" not in ln
+        # Excepcion documentada (2026-09-26): el acta de la R1 de «git que falla en voz alta»
+        # conserva LITERAL el informe del revisor, que cita el plan heredado SINTETICO de su
+        # laboratorio —no existe en este repo—. El bloque literal no se puede tocar: lo sella G8.
+        and "docs/superpowers/plans/2026-09-26-git-que-falla-en-voz-alta-r1-adversarial-review.md"
+        not in ln
     ]
 
 
