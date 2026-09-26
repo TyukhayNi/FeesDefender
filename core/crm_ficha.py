@@ -7,15 +7,16 @@ orquestador (``scripts/crm_ficha.py``) ejecuta los efectos contra el CRM.
 from __future__ import annotations
 
 import difflib
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import yaml
 
 from core.config import CLIENTES_PROPIOS_EV
 from core.sudespacho_relations import (NuevoClienteContrario, NuevoColaborador,
-                                       provincia_canonica)
+                                       _canonizar_documento, provincia_canonica)
 from core.utils import normalize_es_phone
 
 CLIENTE_PROPIO_DEFAULT = "EV_MMC_SPAIN"
@@ -310,3 +311,152 @@ def cargar_ficha_yaml(path: Path) -> FichaCRMInput:
         cliente_propio=CLIENTE_PROPIO_DEFAULT if cp is None else _valor(cp),
         firmante=_valor(data.get("firmante")),
     )
+
+
+# ---------------------------------------------------------------------------
+# Auditoría: vínculos y datos por IGUALDAD (spec rev. 3 §4, Parte B)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class AuditoriaRelaciones:
+    ok: list[str]
+    faltan: list[str]
+    sobran: list[str]
+
+
+#: Los tres bloques que `crm_ficha` escribe. Los demás (actuaciones, documentos…) no son suyos
+#: y no se miran.
+BLOQUES_AUDITADOS = ("clientes_propios", "clientes_contrarios", "colaboradores")
+
+
+def _orden_id(id_: str) -> tuple:
+    return (0, int(id_)) if id_.isdigit() else (1, id_)
+
+
+def auditar_relaciones(esperado: Mapping[str, Sequence[str]],
+                       leido: Mapping[str, Sequence[Mapping]]) -> AuditoriaRelaciones:
+    """Lo escrito contra lo leído, por IGUALDAD y con multiplicidad (spec §4 B.1).
+
+    `esperado` son los ids que la corrida resolvió, por bloque; `leido`, la salida de
+    `get_relaciones`, que ya desacumula un registro por id. Lo que está de más es un fallo
+    (`#288`: el YAML es la lista COMPLETA de partes, decisión de Nikolai del 2026-09-25), y la
+    multiplicidad no se cambia por conjuntos: dos declaraciones que colapsan a un id con un solo
+    vínculo son una `falta`, y un conjunto las daría por buenas (R1/H-02 del PR #275).
+    """
+    ok: list[str] = []
+    faltan: list[str] = []
+    sobran: list[str] = []
+    for bloque in BLOQUES_AUDITADOS:
+        pedidos = Counter(str(i) for i in esperado.get(bloque, ()))
+        vistos = Counter(str(v.get("id")) for v in leido.get(bloque, ()) or ())
+        for id_ in sorted(set(pedidos) | set(vistos), key=_orden_id):
+            p, v = pedidos[id_], vistos[id_]
+            if p and v >= p:
+                ok.append(f"{bloque} id={id_}" + (f" (x{p})" if p > 1 else ""))
+            elif p:
+                faltan.append(f"{bloque} id={id_} (la corrida escribió {p}, la lectura ve {v})")
+            sobran += [f"{bloque} id={id_}"] * max(0, v - p)
+    return AuditoriaRelaciones(ok=ok, faltan=faltan, sobran=sobran)
+
+
+@dataclass(frozen=True)
+class Discrepancia:
+    """Un campo que el YAML declara y la ficha del CRM no tiene igual (spec §4 B.2)."""
+    elemento: str
+    id: str
+    campo: str          # la clave del YAML
+    propiedad: str      # la del CRM
+    tipo: str           # "vacio" | "distinto"
+    crm: str
+    yaml: str
+
+    def __str__(self) -> str:
+        base = f"{self.elemento} id={self.id} {self.propiedad}"
+        if self.tipo == "vacio":
+            return f"{base}: vacío en el CRM"
+        return f"{base}: distinto (CRM {self.crm!r}, YAML {self.yaml!r})"
+
+
+def _n_texto(v: object) -> str:
+    return "" if v is None else " ".join(str(v).split()).casefold()
+
+
+def _n_nif(v: object) -> str:
+    return _canonizar_documento("" if v is None else str(v))
+
+
+def _n_email(v: object) -> str:
+    return "" if v is None else str(v).strip().lower()
+
+
+def _n_tel(v: object) -> str:
+    return normalize_es_phone("" if v is None else str(v).strip())
+
+
+def _n_cp(v: object) -> str:
+    return "" if v is None else str(v).strip()
+
+
+#: El «Sin Asignar» del Select (atlas, enum `provincia`: `1=Sin Asignar`) es el VACÍO del
+#: campo, no una provincia: tratarlo como un valor daría «distinto» ante una ficha sin dato.
+_PROVINCIA_SIN_ASIGNAR = frozenset({"1", "sin asignar"})
+
+
+def _n_provincia_crm(v: object) -> str:
+    t = _n_texto(v)
+    return "" if t in _PROVINCIA_SIN_ASIGNAR else t
+
+
+def _n_provincia_yaml(v: object) -> str:
+    # La MISMA normalización de texto en los dos lados, después de canonizar la del YAML: con
+    # `provincia_canonica` en uno y `casefold` en el otro no casaban NUNCA (R2/H-03). La que no
+    # se reconoce ya la ha rechazado `validar_ficha`.
+    return _n_texto(provincia_canonica(str(v)) or v)
+
+
+_NORMALIZA = {"texto": (_n_texto, _n_texto), "nif": (_n_nif, _n_nif),
+              "email": (_n_email, _n_email), "tel": (_n_tel, _n_tel), "cp": (_n_cp, _n_cp),
+              "provincia": (_n_provincia_yaml, _n_provincia_crm)}
+
+#: (campo del YAML, propiedad del CRM, clase de normalización). Anclado a la fuente, no
+#: supuesto: el payload de `_rest_post_cliente_contrario` / `_rest_post_colaborador`, los GET
+#: de `get_cliente_contrario` / `get_colaborador` (`_PROPS_COLABORADOR`), el atlas
+#: (`### clientes_contrarios`) e `INTEGRACION_SUDESPACHO.md` §10.6.
+CAMPOS_CONTRARIO_CRM = (
+    ("nombre", "nombre", "texto"), ("apellido1", "1apellido", "texto"),
+    ("apellido2", "2apellido", "texto"), ("email", "email", "email"),
+    ("movil", "movil", "tel"), ("nif", "nif_cif", "nif"),
+    ("direccion", "direccion", "texto"), ("poblacion", "poblacion", "texto"),
+    ("cp", "cp", "cp"), ("provincia", "provincia", "provincia"),
+    ("telefono", "telefono1", "tel"),
+)
+CAMPOS_COLABORADOR_CRM = (
+    ("nombre", "nombre", "texto"), ("email", "email", "email"),
+    ("movil", "movil", "tel"), ("telefono", "telefono1", "tel"), ("nif", "nif_cif", "nif"),
+)
+_CAMPOS_DE = {"clientes_contrarios": CAMPOS_CONTRARIO_CRM,
+              "colaboradores": CAMPOS_COLABORADOR_CRM}
+
+
+def auditar_datos(elemento: str, id_: str, declarado: Mapping,
+                  ficha_crm: Mapping) -> list[Discrepancia]:
+    """Cada campo que el YAML declara no vacío, contra el de la ficha del CRM (spec §4 B.2).
+
+    Recibe la DECLARACIÓN —el mapping validado de la parte—, no el DTO: el DTO normaliza al
+    construirse (`'+34'` se queda vacío), y la auditoría no vería lo que se perdió por el camino
+    (R2/H-02). Tres resultados por campo: igual (no sale), vacío en el CRM o distinto.
+    """
+    fuera: list[Discrepancia] = []
+    for campo, propiedad, clase in _CAMPOS_DE[elemento]:
+        bruto = declarado.get(campo)
+        if bruto is None or not str(bruto).strip():
+            continue                                   # lo que el YAML no declara no se compara
+        del_yaml, del_crm = _NORMALIZA[clase]
+        visto = del_crm(ficha_crm.get(propiedad))
+        if del_yaml(bruto) == visto:
+            continue
+        fuera.append(Discrepancia(
+            elemento=elemento, id=str(id_), campo=campo, propiedad=propiedad,
+            tipo="vacio" if not visto else "distinto",
+            crm=str(ficha_crm.get(propiedad) or "").strip(), yaml=str(bruto).strip()))
+    return fuera
