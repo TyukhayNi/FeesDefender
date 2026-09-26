@@ -78,3 +78,54 @@ def test_sha_valido_acepta_sha256_md5_y_vacio():
     assert mp.sha_valido("")
     assert not mp.sha_valido("aaaa")
     assert not mp.sha_valido("md5:zzzz")
+
+
+# --- `## No copiados` (MEJORAS #316) ---------------------------------------------
+#
+# La población del catálogo no tenía contrato: cada fichero de `00_Input` acaba con fila
+# en la tabla O con una línea en `## No copiados`, y hasta el 2026-09-26 esa sección era
+# texto libre —cinco formatos distintos en los manifiestos reales— que ninguna herramienta
+# podía leer. El formato cerrado es `- duplicado|excluido: `ruta` — motivo`.
+
+_MANIF_NO_COPIADOS = _MANIF_7COL + """
+## No copiados
+
+- duplicado: `00_Input\2026-09-23_whatsapp_02\Chat\IMG-1.jpg` — de `SALA:2025-03-01_hoja_visita.jpeg`
+- excluido: `2026-09-23_email_01/corr/aviso.png` — imagen de publicidad incrustada
+- duplicado, saltado: `01_Drive EV/copia.pdf` — de `2024-04-26_catastro.pdf`
+
+## Otra sección
+
+- excluido: `fuera/de/la/seccion.pdf` — no cuenta
+"""
+
+
+def test_no_copiados_lee_las_lineas_de_formato_cerrado():
+    lineas = mp.parse_no_copiados(_MANIF_NO_COPIADOS, estricto=True)
+    assert [(d["motivo"], d["ruta"]) for d in lineas] == [
+        ("duplicado", "00_Input\2026-09-23_whatsapp_02\Chat\IMG-1.jpg"),
+        ("excluido", "2026-09-23_email_01/corr/aviso.png"),
+        ("duplicado", "01_Drive EV/copia.pdf"),
+    ]
+    assert lineas[1]["detalle"] == "imagen de publicidad incrustada"
+
+
+def test_no_copiados_sin_seccion_es_una_lista_vacia():
+    assert mp.parse_no_copiados(_MANIF_7COL, estricto=True) == []
+
+
+def test_no_copiados_ESTRICTO_rechaza_una_linea_de_texto_libre():
+    """El formato que usaron W-0462E1 para sus exclusiones —«excluidos: los zips crudos…»,
+    varios ficheros en prosa— no se puede cruzar con nada: en modo estricto es un error,
+    y la verja de la skill no deja declarar así."""
+    texto = _MANIF_7COL + "\n## No copiados\n\n- excluidos: los `.zip` crudos del correo\n"
+    with pytest.raises(ValueError, match="No copiados"):
+        mp.parse_no_copiados(texto, estricto=True)
+    assert mp.parse_no_copiados(texto) == []
+
+
+def test_no_copiados_ESTRICTO_rechaza_una_linea_sin_motivo():
+    """Una declaración sin motivo no es una declaración."""
+    texto = _MANIF_7COL + "\n## No copiados\n\n- excluido: `a.pdf` — \n"
+    with pytest.raises(ValueError):
+        mp.parse_no_copiados(texto, estricto=True)

@@ -1,5 +1,26 @@
 # Changelog — organizar-sala-lectura
 
+## 1.18 — 2026-09-26
+- **Población: cada fichero de `00_Input` tiene fila o una línea en `## No copiados`, y el
+  verify lo comprueba** (`MEJORAS #316`). Medido con la C3 por identidad de
+  `verificar_apertura`: en 14 de 23 expedientes, documentos que la sala de máquina procesó
+  no llegaron al catálogo, y en varios no figuraban en ninguna parte del manifiesto. La
+  sección `## No copiados` era texto libre —cinco formatos en los manifiestos reales— y
+  nadie podía cruzarla.
+- **Formato cerrado** de `## No copiados`: `` - duplicado: `ruta` — de `…` `` o
+  `` - excluido: `ruta` — motivo `` (`manifiesto_parser.parse_no_copiados`; se acepta el
+  alias antiguo `duplicado, saltado`). Una línea fuera de formato es un error del verify.
+- **`verificar_sala.py --cobertura`** (obligatorio si existe la sala de máquina) falla si una
+  fuente de la cobertura no tiene fila —por ruta o por sha256— ni línea declarada. Solo no la
+  piden tres reglas de productor: el protocolo del registro por ubicación (copia exacta de
+  `core/intake_control.py` en `scripts/intake_control.py`), el zip crudo de WhatsApp junto a
+  su chat y la firma `_firma_*` que `email_export` deja en un lote de correo
+  (`preclasificar.es_firma_de_correo`). Sin `--cobertura`, el OK avisa de que no la ha
+  contrastado.
+- **Audios, vídeos, zips y vCards son documentos** (Paso 5): fila, con `08` si no se saben
+  leer. En W-02Y2J6 eran siete notas de voz de WhatsApp, transcritas en `03_MD` y ausentes
+  de la sala.
+
 ## 1.17 — 2026-09-10
 - **La desambiguación de nombres pasa de `_2`/`_3` a `__<sha8>`, y en un grupo colisionado
   NADIE conserva el nombre pelado** (Paso 2, y la mención del Paso 4 al abortar por

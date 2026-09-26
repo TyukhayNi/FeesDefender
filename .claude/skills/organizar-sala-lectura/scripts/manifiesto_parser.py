@@ -62,3 +62,51 @@ def parse_manifiesto(texto: str, *, estricto: bool = False) -> list[dict]:
             "fila(s) malformada(s) en el _MANIFIESTO.md (nº de columnas incorrecto) — "
             "se perderían del catálogo en silencio:\n" + "\n".join(rechazadas))
     return filas
+
+
+# --- `## No copiados` (MEJORAS #316) ------------------------------------------------
+#
+# Cada fichero de `00_Input` acaba con fila en la tabla O con una línea en esta sección:
+# nunca fuera de las dos. Hasta el 2026-09-26 la sección era texto libre —cinco formatos
+# distintos en los manifiestos reales, y ficheros enteros que no aparecían en ninguno—, así
+# que nadie podía comprobar que la sala de lectura hubiera dado cuenta de todo.
+_CABECERA_NO_COPIADOS = re.compile(r"^##\s+No copiados\b", re.IGNORECASE)
+_LINEA_NO_COPIADO = re.compile(
+    r"^\s*-\s+(?P<motivo>duplicado(?:, saltado)?|excluido):\s+`(?P<ruta>[^`]+)`"
+    r"\s+—\s+(?P<detalle>\S.*?)\s*$")
+
+
+def parse_no_copiados(texto: str, *, estricto: bool = False) -> list[dict]:
+    """Las declaraciones de `## No copiados`: `{motivo, ruta, detalle}` por línea.
+
+    Formato cerrado: ``- duplicado: `ruta_original` — de `lo que se conserva` `` o
+    ``- excluido: `ruta_original` — motivo``. Se acepta el alias ``duplicado, saltado``, que
+    es como lo escribieron los manifiestos anteriores. Una viñeta de la sección que no casa
+    con el formato —prosa que nombra varios ficheros, o una línea sin motivo— **no se puede
+    cruzar con nada**: con `estricto=True` es un `ValueError`, y sin él se ignora.
+    """
+    dentro = False
+    fuera: list[dict] = []
+    rechazadas: list[str] = []
+    for i, linea in enumerate(texto.splitlines(), 1):
+        if re.match(r"^#{1,2}\s", linea):
+            dentro = bool(_CABECERA_NO_COPIADOS.match(linea))
+            continue
+        s = linea.strip()
+        if not dentro or not s.startswith("-"):
+            continue
+        m = _LINEA_NO_COPIADO.match(linea)
+        if not m:
+            rechazadas.append(f"  línea {i}: {s}")
+            continue
+        fuera.append({
+            "motivo": "duplicado" if m.group("motivo").startswith("duplicado") else "excluido",
+            "ruta": m.group("ruta").strip(),
+            "detalle": m.group("detalle"),
+        })
+    if estricto and rechazadas:
+        raise ValueError(
+            "línea(s) de «## No copiados» fuera del formato "
+            "`- duplicado|excluido: `ruta` — motivo` — no se pueden cruzar con nada:\n"
+            + "\n".join(rechazadas))
+    return fuera

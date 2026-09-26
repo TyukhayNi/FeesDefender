@@ -21,7 +21,7 @@ metadata:
   naturaleza: atomica
   jurisdiction: ES
   area: [civil, procesal]
-  version: "1.17"
+  version: "1.18"
   author: "Nikolai Tyukhay"
   organization: "Tyukhay Legal"
   contact: "nikolai.tyukhay@tyukhay.legal"
@@ -187,9 +187,10 @@ tal diálogo.
       (`_export_original.zip` que `whatsapp_intake` deja junto al `_chat.txt`): se
       anotan `duplicado_de` su chat y **no reciben fila propia** (no tienen fecha
       ni espejo MD; darles una fabrica basura `0000-00-00`). Trabaja sobre las
-      rutas ya limpias en los pasos siguientes.
+      rutas ya limpias en los pasos siguientes. Igual `es_firma_de_correo(ruta)`: la
+      firma `_firma_*` que `email_export` dejó en un lote de correo tampoco tiene fila.
    a. `dedup_por_sha(ficheros)` → clasifica UNA sola vez cada sha256 único; los
-      duplicados se anotan en el `_MANIFIESTO.md` como "duplicado, saltado" sin
+      duplicados se anotan en `## No copiados` como `- duplicado: …` (Paso 5) sin
       volver a leerlos.
    b. `agrupar_por_hilo(rutas_eml)` sobre los `.eml` únicos → la clave es la
       **descripción del nombre ignorando el prefijo de fecha** (`email_export` ya
@@ -436,6 +437,14 @@ tal diálogo.
      los bytes (el `md5` de Drive NO sirve: la traza del caso llavea por sha256).
      `parent_id` agrupa los anexos de un bundle bajo su principal. Cabecera
      `<!-- GENERADO — NO EDITAR A MANO -->`.
+   - **Población: cada fichero de `00_Input` tiene fila o una línea en `## No copiados`,
+     nunca ninguna de las dos.** Formato cerrado, una línea por fichero:
+     `` - duplicado: `ruta_original` — de `lo que se conserva` `` o
+     `` - excluido: `ruta_original` — motivo ``. Solo no piden línea el protocolo
+     (`scripts/intake_control.py`), el zip crudo del Paso 1-bis.a0 y la firma de correo.
+     **Audios, vídeos, zips y vCards son documentos**: fila, con `08. PENDIENTE DE
+     CLASIFICAR` si no sabes leerlos y la fecha de su nombre si la lleva
+     (`AUDIO-2025-03-19-…`); una nota de voz transcrita tiene su texto en `03_MD`.
    - `INDICE.md` y `CRONOLOGIA.md` → ejecuta
      `python scripts/indices_desde_manifiesto.py _MANIFIESTO.md <sala_dir>`
      (agrupa **por categoría** fecha DESCENDENTE, sub-agrupa "07. RECLAMACIONES" por
@@ -444,13 +453,16 @@ tal diálogo.
      subcategoría—; cronología fecha ASCENDENTE con `0000-00-00`/`(*)` al final).
    Los derivados llevan cabecera GENERADO; **no los edites a mano** (ver Paso 6.5).
 6.5. **Verify determinista — falla ruidosamente, no resumas bonito.** Ejecuta
-   `python scripts/verificar_sala.py <sala_dir> [--cobertura "01_Procesado/02_Sala de máquina/_cobertura.json"]`
-   (añade `--hash muestra` para contrastar sha origen↔copia de un 10%, o
-   `--hash completo` si sospechas corrupción). El script parsea él mismo el
-   `_MANIFIESTO.md` y lista el directorio — no ensambles a mano sus entradas.
-   Detecta: fila sin fichero, fichero sin fila, anexo con `parent_id` huérfano,
-   **colisión de `nombre_canonico`**, y —con `--cobertura`— fila `0000-00-00` con
-   texto ya extraído en sala de máquina (señal de que el Paso 1-bis.d se saltó).
+   `python scripts/verificar_sala.py <sala_dir> --cobertura "01_Procesado/02_Sala de máquina/_cobertura.json"`
+   (`--cobertura` es **obligatorio** si existe la sala de máquina; sin ella el verify
+   avisa de que no ha contrastado la población. Añade `--hash muestra` para contrastar
+   sha origen↔copia de un 10%, o `--hash completo` si sospechas corrupción). El script
+   parsea él mismo el `_MANIFIESTO.md` y lista el directorio — no ensambles a mano sus
+   entradas. Detecta: fila sin fichero, fichero sin fila, anexo con `parent_id`
+   huérfano, **colisión de `nombre_canonico`**, y —con `--cobertura`— **todo fichero
+   que la sala de máquina procesó sin fila ni línea en `## No copiados`** (W-02Y2J6: siete
+   notas de voz que no estaban en ninguna parte), una línea de esa sección fuera de su
+   formato, y fila `0000-00-00` con texto ya extraído (señal de que el Paso 1-bis.d se saltó).
    **Exit 1 = hay problemas:** NO sigas al Paso 7 con un reporte de éxito; lístalos.
    - **PROHIBIDO editar `_MANIFIESTO.md`/`INDICE.md`/`CRONOLOGIA.md`/
      `indice_documental.yaml` a mano para "hacer pasar" el verify.** La cabecera

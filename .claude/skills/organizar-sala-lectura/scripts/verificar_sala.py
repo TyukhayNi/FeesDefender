@@ -20,11 +20,14 @@ from collections import Counter
 import hashlib
 import json
 import sys
+import unicodedata
 from pathlib import Path
 
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+import intake_control  # noqa: E402  (copia exacta de core/intake_control.py)
 import manifiesto_parser  # noqa: E402
+import preclasificar  # noqa: E402
 
 _CHARS_MINIMOS_SOSPECHOSO = 200
 _UMBRAL_HOMOGENEO = 5
@@ -107,6 +110,60 @@ def verificar(
     return avisos + [msg for _, msg in tipados]
 
 
+def _clave_ruta(ruta: str) -> str:
+    """Una ruta de origen, comparable venga de donde venga: relativa a `00_Input/`, con `/`
+    y en NFC. El manifiesto suele escribir `00_Input\\…` y la cobertura no; y la forma
+    Unicode de un nombre con tilde no es la misma en todos los lados."""
+    r = (ruta or "").strip().replace("\\", "/").lstrip("/")
+    primero, _, resto = r.partition("/")
+    if resto and primero.casefold() == "00_input":
+        r = resto
+    return unicodedata.normalize("NFC", r)
+
+
+def problemas_poblacion(manifiesto_filas: list[dict], cobertura_filas: list[dict],
+                        no_copiados: list[dict]) -> list[str]:
+    """Todo lo que procesó la sala de máquina tiene fila o declaración (MEJORAS #316).
+
+    Una fuente de la cobertura —cada `rel_path`— da cuenta de sí si el manifiesto tiene una
+    fila con su ruta o con su sha256 de origen (la copia en otra carpeta es el
+    `dedup_por_sha`), o una línea en `## No copiados`. Solo tres cosas no lo necesitan, y
+    las tres son reglas de su productor: el protocolo del registro por ubicación, el zip
+    crudo de WhatsApp junto a su chat y la firma que `email_export` nombra con `_firma_`.
+
+    Medido el 2026-09-26: en W-02Y2J6 siete notas de voz, zips, vCards y un vídeo no estaban
+    ni en la tabla ni en ninguna otra parte del manifiesto, y este verify decía OK — solo
+    miraba lo copiado.
+    """
+    fuentes: dict[str, set[str]] = {}
+    muestra: dict[str, str] = {}
+    sin_ruta = 0
+    for c in cobertura_filas:
+        rel = c.get("rel_path") if isinstance(c, dict) else None
+        if not isinstance(rel, str) or not rel.strip():
+            sin_ruta += 1
+            continue
+        k = _clave_ruta(rel)
+        muestra.setdefault(k, rel)
+        origen = c.get("parent_sha256") or c.get("sha256")
+        fuentes.setdefault(k, set()).update(
+            {origen.strip().lower()} if isinstance(origen, str) and origen.strip() else set())
+    rutas = {_clave_ruta(f.get("ruta_original") or "") for f in manifiesto_filas} - {""}
+    shas = {(f.get("sha256") or "").strip().lower() for f in manifiesto_filas} - {""}
+    declaradas = {_clave_ruta(d.get("ruta") or "") for d in no_copiados} - {""}
+    crudos = {c["ruta"] for c in preclasificar.emparejar_exports_whatsapp(sorted(fuentes))[1]}
+    problemas = [f"{muestra[k]}: la sala de máquina la procesó y no tiene fila en el "
+                 "manifiesto ni línea en «## No copiados»"
+                 for k in sorted(fuentes)
+                 if k not in rutas and not fuentes[k] & shas and k not in declaradas
+                 and not intake_control.es_fichero_de_protocolo(k) and k not in crudos
+                 and not preclasificar.es_firma_de_correo(k)]
+    if sin_ruta:
+        problemas.insert(0, f"{sin_ruta} fila(s) de la cobertura sin `rel_path`: no se pueden "
+                            "contrastar con el manifiesto")
+    return problemas
+
+
 def _listar_sala(sala_dir) -> set[str]:
     """Relpaths posix de los ficheros COPIADOS de la sala (bundles incluidos como
     `subcarpeta/fichero.ext`, que es como se escribe su `nombre_canonico`),
@@ -178,9 +235,10 @@ def main(argv: list[str]) -> int:
     manif = sala_dir / "_MANIFIESTO.md"
     if not manif.exists():
         print(f"no existe {manif}"); return 2
+    texto = manif.read_text(encoding="utf-8")
     try:
-        filas = manifiesto_parser.parse_manifiesto(
-            manif.read_text(encoding="utf-8"), estricto=True)
+        filas = manifiesto_parser.parse_manifiesto(texto, estricto=True)
+        no_copiados = manifiesto_parser.parse_no_copiados(texto, estricto=True)
     except ValueError as exc:
         print(str(exc))
         return 1
@@ -190,11 +248,18 @@ def main(argv: list[str]) -> int:
     ficheros = _listar_sala(sala_dir)
     problemas = verificar(filas, ficheros, cobertura)
     problemas += _problemas_hash(sala_dir, filas, ficheros, modo_hash)
+    if cobertura is not None:
+        problemas += problemas_poblacion(filas, cobertura, no_copiados)
     for p in problemas:
         print(p)
     if problemas:
         print(f"\n{len(problemas)} problema(s).")
         return 1
+    if cobertura is None:
+        # No poder mirar no es «no hay»: sin la cobertura, el OK no dice que la sala recoja
+        # todo lo de `00_Input` (MEJORAS #316).
+        print("Aviso: sin --cobertura no se ha contrastado que la sala dé cuenta de todo "
+              "lo de 00_Input.")
     print("Verify OK: manifiesto y disco cuadran.")
     return 0
 

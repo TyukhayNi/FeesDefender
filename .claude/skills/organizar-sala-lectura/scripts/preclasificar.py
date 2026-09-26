@@ -140,6 +140,30 @@ def emparejar_exports_whatsapp(rutas: list[str]) -> tuple[list[str], list[dict]]
     return limpias, crudos
 
 
+#: Prefijo con que `core/email_export` deposita la imagen que marca como firma incrustada del
+#: remitente (`PREFIJO_FIRMA`; el criterio, conjuntivo, en `es_firma_incrustada`): la decide
+#: el productor al exportar y la nombra. Copia, no importación —la skill es autónoma—; un
+#: test del repo la compara con la de `core` (MEJORAS #316).
+PREFIJO_FIRMA_CORREO = "_firma_"
+_LOTE_EMAIL = re.compile(r"^\d{4}-\d{2}-\d{2}_email_\d{2,}$")
+
+
+def es_firma_de_correo(ruta: str) -> bool:
+    """¿Es la firma incrustada que `email_export` dejó junto a su correo? No tiene fila.
+
+    Solo dentro de un lote de correo (`<fecha>_email_NN/`, o el cajón legacy `03_Email/`),
+    que es donde escribe el productor: un `_firma_…` en cualquier otra carpeta es un
+    documento del cliente, y un adjunto de correo sin el prefijo lo envió alguien a propósito.
+    """
+    partes = [p for p in ruta.replace("\\", "/").split("/") if p]
+    if partes and partes[0].casefold() == "00_input":
+        partes = partes[1:]
+    if len(partes) < 2:
+        return False
+    return bool((_LOTE_EMAIL.match(partes[0]) or partes[0].casefold() == "03_email")
+                and partes[-1].startswith(PREFIJO_FIRMA_CORREO))
+
+
 def fecha_de_nombre(nombre: str) -> str:
     """Prefijo `AAAA-MM-DD` del nombre canónico de `email_export`, o `SIN_FECHA`
     (`0000-00-00`) si el nombre no lo lleva. NO valida que la fecha exista en el
