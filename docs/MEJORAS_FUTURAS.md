@@ -12943,7 +12943,7 @@ son texto, todo con su línea— que comparten `cargar_ficha_yaml` y `crm_colabo
 y se valida entero antes de tocar el CRM: una clave desconocida sale con su ruta y **todas** las
 sugerencias cercanas (`apellido` → `apellido1` o `apellido2`), sin convertirse en alias. W-030A13
 se rechaza ahora por sus dos `apellido`, que es exactamente este defecto. Lo que no cierra, porque
-es otra decisión: reparar las fichas 1128 y 1129 (`#311`).
+es otra decisión: reparar las fichas 1128 y 1129 (`#312`).
 
 ---
 
@@ -13290,7 +13290,7 @@ tocar nada, confirmar la lectura corriéndolo.
 
 ---
 
-## 296. `rclone config show gdrive_ev` tarda 4-6 s, y dos consumidores con timeout corto lo convierten en un error que no dice la causa
+## 296. `rclone config show gdrive_ev` tarda 4-6 s, y dos consumidores con timeout corto lo convierten en un error que no dice la causa  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Medido el 2026-09-25, abriendo W-02UIQU.**
 
@@ -13694,7 +13694,31 @@ recogían (grep de `PROPERTIES S` y `PROPIEDADES S`, vacío).
 
 ---
 
-## 311. `crm_ficha` detecta el apellido vacío de una ficha existente y no lo repara: completar el nombre y los apellidos es otra decisión, con otro radio de daño
+## 311. El contrato de revisión no prevé redactar un acta
+
+> **Medido el 2026-09-26**, en la ronda 4 del saneado de PII: el móvil de un tercero estaba
+> **dentro del bloque literal** del acta de la R1 del spec de Codicert, en tres sitios.
+
+El acta existe para conservar **la voz literal del revisor**, y el guard G8 recomputa su digest;
+el contrato (`docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-design.md`,
+§4) no dice qué hacer cuando esa voz contiene un dato que no puede quedarse en el repo. Se resolvió
+como **redacción declarada**: sustitución mínima dentro del bloque, `sha256_informe` recomputado,
+nota fuera del bloque con el digest original y el commit donde el original sigue (`6d60187`), y un
+diff contra ese commit que enseña solo eso. Funciona, pero lo inventó quien lo necesitaba, que es
+justo el sesgo que el contrato existe para evitar.
+
+**Remedio probable.** Un apartado en el §4 del contrato con ese procedimiento —qué se puede
+sustituir, qué nota es obligatoria, dónde queda verificable el original— y, si hace falta, que G8
+reconozca la nota de redacción. Tocar el contrato **no se exime nunca** de ronda (`CLAUDE.md`), y
+el modelo es el de su fila.
+
+**Disparador de promoción.** La próxima vez que haya que sacar un dato de dentro de un acta, o una
+decisión de Nikolai de formalizarlo antes.
+
+
+---
+
+## 312. `crm_ficha` detecta el apellido vacío de una ficha existente y no lo repara: completar el nombre y los apellidos es otra decisión, con otro radio de daño
 
 > **Anotada el 2026-09-26** al construir `crm_ficha` (fila #40 de `PLAN.md`; spec rev. 3 §5,
 > «Lo que queda fuera»).
@@ -13722,7 +13746,7 @@ CRM`, o una decisión de Nikolai.
 
 ---
 
-## 312. Una parte con `id_crm` cuyo NIF declarado es de OTRA ficha: la fase previa no lo ve, y en un colaborador el completado lo escribe
+## 313. Una parte con `id_crm` cuyo NIF declarado es de OTRA ficha: la fase previa no lo ve, y en un colaborador el completado lo escribe
 
 > **Anotada el 2026-09-26**: límite declarado del spec rev. 3 de `crm_ficha` (§5), no medido en un
 > caso real. **Corregida el mismo día tras la R3 (H-01, plan §10):** la primera versión de esta
@@ -13753,7 +13777,7 @@ dos rondas** (decide qué ficha es una persona).
 
 ---
 
-## 313. `_resolver_colaborador` ignora el `motivo` de `resolver_parte`: ante un buzón compartido con una ficha sin documento, el colaborador vincula esa ficha en vez de parar
+## 314. `_resolver_colaborador` ignora el `motivo` de `resolver_parte`: ante un buzón compartido con una ficha sin documento, el colaborador vincula esa ficha en vez de parar
 
 > **Anotada el 2026-09-26**, de la R3 de `crm_ficha` (H-02; plan §10). **Anterior a esa pieza:** no
 > la introdujo su diff, y el contrario no la tiene.

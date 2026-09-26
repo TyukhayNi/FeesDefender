@@ -125,6 +125,18 @@ empujar la detección **a la izquierda**: al momento del `commit`, no al del des
    `reflog expire --expire=now --all` + `gc --prune=now`.
 5. **Avisar de re-clonado** a todo clon/Cowork (los SHAs cambian; `pull`/`fetch` no
    reconcilian sin ancestro común).
+6. **Ampliar la barrera, y en este orden** (medido el 2026-09-26, ronda 4 del saneado). La
+   blocklist local —`data/_config/pii_blocklist.txt` de la raíz compartida, que el hook lee desde
+   cualquier worktree— se amplía **la última**, después del commit del saneado. El **secret
+   `PII_BLOCKLIST`** de CI, solo **cuando el saneado ya está en `main`**: el job `leak-scan`
+   escanea el **árbol entero** en cada push, así que antes pondría en rojo `main` y toda rama que
+   salga de ella. Y **nunca por volcado ciego de la lista local**: se escanea antes el árbol entero
+   de `main` con el candidato —lo que case es una fuga real (se sanea antes) o un falso positivo
+   (fuera del secret)— y se simula el paso de CI con el guard real, troceando los ficheros como
+   `xargs` (en Windows, 1.400 argumentos en una orden dan `WinError 206`). Aquel día, dos términos
+   antiguos de la lista local casaban con sentencias públicas del repo: volcados, habrían roto todos
+   los push. Las ramas abiertas que aún lleven el dato saldrán en rojo en su próximo push hasta que
+   incorporen `main`: se las avisa.
 
 *Ejecutado el 2026-07-06/07 (Fase 2 del saneado de PII): purga del HAR + `data/_audit/`
 del historial, sustitución de PII por pseudónimos, repo recreado. Detalle en
