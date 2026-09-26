@@ -37,8 +37,14 @@ if (-not (Test-Path $DriveRoot)) {
 }
 Set-Location $DriveRoot
 
-# Git status limpio
+# Git status limpio. Se decide por el CODIGO de git antes que por su salida: `$ErrorActionPreference`
+# no convierte en excepcion el fallo de un ejecutable nativo, y sin repo git sale con 128, la salida
+# vacia se leia como «limpio» y el script seguia (R1/H-03 de «git que falla en voz alta», 2026-09-26).
 $status = git status --porcelain
+if ($LASTEXITCODE -ne 0) {
+    Write-Err "git status fallo (codigo $LASTEXITCODE): no se puede saber si hay cambios sin commitear."
+    exit 1
+}
 if ($status) {
     Write-Err "Hay cambios sin commitear. Resuelvelos antes de migrar:"
     git status --short
@@ -83,6 +89,12 @@ Write-Step "3. Verificar remoto GitHub"
 
 $existingRemote = $null
 try { $existingRemote = git remote get-url origin 2>$null } catch {}
+# 2 es la respuesta «no existe el remoto origin»; cualquier otro codigo distinto de 0 es que git
+# no pudo mirar, y seguir como si no hubiera remoto seria decidir sobre un vacio (R1/H-03).
+if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+    Write-Err "git remote get-url fallo (codigo $LASTEXITCODE): no se puede saber si hay remoto."
+    exit 1
+}
 
 if ($existingRemote) {
     Write-OK "Remoto 'origin' ya configurado: $existingRemote"
@@ -108,6 +120,10 @@ Pasos previos manuales:
 Write-Step "4. Push a GitHub"
 
 $branch = git rev-parse --abbrev-ref HEAD
+if ($LASTEXITCODE -ne 0 -or -not $branch) {
+    Write-Err "git rev-parse fallo (codigo $LASTEXITCODE): no se sabe que rama pushear."
+    exit 1
+}
 Write-Host "Pusheando rama '$branch' a origin..."
 git push -u origin $branch
 if ($LASTEXITCODE -ne 0) {

@@ -37,10 +37,12 @@ jobs:
           # línea) para que el CI escanee PII sin que la lista viva en el repo.
           PII_BLOCKLIST: ${{ secrets.PII_BLOCKLIST }}
         run: |
-          # pipefail: sin él, el código de la tubería de abajo es el de xargs, que con -r y una
-          # lista vacía no corre nada y sale con 0. Si el listado de git fallara, este paso daría
-          # verde sin haber escaneado un solo fichero (plan 2026-09-26, git que falla en voz alta).
-          set -o pipefail
+          # El paso solo puede dar verde si ha ESCANEADO algo. Por eso la lista de ficheros va
+          # primero a un fichero y se exige que no esté vacía: con `git ls-files -z | xargs -0 -r`,
+          # un listado que fallaba —o que salía vacío con código 0, como hace git sin índice—
+          # dejaba a xargs sin nada que correr y el paso en verde sin haber mirado un solo
+          # fichero (plan 2026-09-26, git que falla en voz alta, R1/H-06). Un git que falla corta
+          # el paso por el `-e` con que GitHub corre un `run:`; y si no, lo corta la lista vacía.
           if [ -n "$PII_BLOCKLIST" ]; then
             mkdir -p data/_config
             printf '%s' "$PII_BLOCKLIST" > data/_config/pii_blocklist.txt
@@ -48,4 +50,10 @@ jobs:
             echo "::error title=leak-scan::PII_BLOCKLIST no configurado — el escaneo de PII en CONTENIDO no puede correr. La barrera server-side de PII queda inactiva. Crea el secret PII_BLOCKLIST (ver docs/SEGURIDAD_DATOS.md)."
             exit 1
           fi
-          git ls-files -z | xargs -0 -r python scripts/precommit_leak_guard.py
+          lista="$(mktemp)"
+          git ls-files -z > "$lista"
+          if [ ! -s "$lista" ]; then
+            echo "::error title=leak-scan::git ls-files no ha devuelto ningún fichero: el escaneo no ha mirado nada, y eso no es un verde."
+            exit 1
+          fi
+          xargs -0 -r python scripts/precommit_leak_guard.py < "$lista"

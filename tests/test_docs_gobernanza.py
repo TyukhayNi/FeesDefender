@@ -38,22 +38,24 @@ def test_estado_frontmatter_valido():
     assert not malos, f"docs con estado: ausente o invalido: {malos}"
 
 
-def _refs_a_docs_plan_legacy() -> list[str]:
+def _refs_a_docs_plan_legacy(repo: Path | None = None) -> list[str]:
     """Ficheros trackeados que citan `docs/PLAN_*.md` en la raiz de docs/.
 
     `git grep` devuelve 1 cuando no encuentra nada, que aqui es la respuesta buena; cualquier
     otro codigo es que no ha podido mirar, y eso PARA (plan 2026-09-26, git que falla en voz
     alta): antes se leia como «sin coincidencias» y el guard daba verde sin haber buscado.
+    `repo` se inyecta para poder probarlo contra un ofensor de laboratorio (R1/H-06); sin el,
+    `ROOT` se lee AL LLAMAR, para que quien redirija el guard parcheandolo lo siga redirigiendo.
     """
-    r = _git.git("grep", "-l", "-E", r"docs/PLAN_[A-Za-z]", cwd=ROOT, rc_validos=(0, 1))
+    repo = repo or ROOT
+    r = _git.git("grep", "-l", "-E", r"docs/PLAN_[A-Za-z]", cwd=repo, rc_validos=(0, 1))
     return [ln for ln in r.stdout.splitlines() if ln]
 
 
-def test_sin_refs_a_docs_plan_legacy():
-    """Tras la reubicacion, ningun fichero trackeado debe citar docs/PLAN_*.md
-    en la raiz de docs/ (ahora viven en docs/superpowers/plans/)."""
-    ofensores = [
-        ln for ln in _refs_a_docs_plan_legacy()
+def _ofensores_plan_legacy(lineas: list[str]) -> list[str]:
+    """Las referencias que el guard acusa: todas menos las excepciones documentadas."""
+    return [
+        ln for ln in lineas
         if ln and "test_docs_gobernanza.py" not in ln
         and "docs/superpowers/plans/2026-07-18-gobernanza-planificacion.md" not in ln
         # Excepcion documentada (D5, 2026-07-18): esta linea cita
@@ -63,6 +65,12 @@ def test_sin_refs_a_docs_plan_legacy():
         # "docs/PLAN_"); no existe en este repo y no se reubica.
         and "docs/superpowers/specs/2026-07-13-mcp-sudespacho-design.md" not in ln
     ]
+
+
+def test_sin_refs_a_docs_plan_legacy():
+    """Tras la reubicacion, ningun fichero trackeado debe citar docs/PLAN_*.md
+    en la raiz de docs/ (ahora viven en docs/superpowers/plans/)."""
+    ofensores = _ofensores_plan_legacy(_refs_a_docs_plan_legacy())
     assert not ofensores, f"referencias a docs/PLAN_* sin actualizar: {ofensores}"
 
 
