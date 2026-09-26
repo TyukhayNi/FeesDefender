@@ -294,6 +294,32 @@ def test_pull_comando_incluye_local_encoding_leftspace(caso_ev, tmp_casos_root, 
     assert "LeftPeriod" in enc
 
 
+def test_pull_exporta_los_nativos_con_los_formatos_que_verificar_apertura_espera(
+        caso_ev, tmp_casos_root, monkeypatch):
+    """Anti-deriva con `verificar_apertura` (`MEJORAS #306`): C1 espera cada nativo de
+    Google con la extensión de los formatos de exportación POR DEFECTO de rclone. Si el pull
+    fijara otros —o dejara de descargar los nativos—, la tabla de C1 dejaría de describir el
+    disco y cada nativo volvería a salir faltante y sobrante a la vez."""
+    captured = {}
+
+    def _capture(cmd, *a, **kw):
+        captured["cmd"] = cmd
+        mock = MagicMock(spec=subprocess.CompletedProcess)
+        mock.returncode = 0
+        mock.stdout = ""
+        mock.stderr = ""
+        return mock
+
+    monkeypatch.setattr("subprocess.run", _capture)
+
+    pull_drive_ev(caso_ev, folder_id="folderW030", team_id="teamBarcelona")
+
+    fijados = [a for a in captured["cmd"]
+               if str(a).startswith(("--drive-export-formats", "--drive-import-formats",
+                                     "--drive-skip-gdocs"))]
+    assert fijados == [], fijados
+
+
 # ---------------------------------------------------------------------------
 # pull_drive_ev — fallos de rclone
 # ---------------------------------------------------------------------------
