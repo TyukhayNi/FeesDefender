@@ -13487,3 +13487,23 @@ separando (la propia a ≤ 0,52 y la más cercana a ≥ 4,22 a 200 ppp).
 
 **Disparador de promoción.** El primer envío real de más de 50 páginas, o una queja por el tiempo
 de `codicert aportable`.
+
+## 305. El aportable de un certificado provisional
+
+> **Medido el 2026-09-26**, en el barrido de los 117 envíos reales de `madrid.bd` (plan
+> `2026-09-26-codicert-estados-medidos.md`, M-19): **1 de 117** se queda estancado —el burofax
+> `006bgjupt2a`, 88 días en 17 sin el 19—.
+
+F3 prepara el aportable **solo sobre el certificado definitivo**: en `_preparar_bajo_candado`, un
+envío que no es cosechable sale `PENDIENTE` y no se toca. Desde el plan de los estados, un envío
+**estancado** se declara como tal y el informe ofrece la salida que ya existía,
+`cosechar --incluir-pendientes`, que baja el certificado **provisional** con su estado en el nombre.
+Pero ese provisional no tendrá aportable, y sin aportable no se puede presentar sin exponer las
+condiciones económicas.
+
+**Remedio probable.** Que `aportable` admita el íntegro provisional de un envío **estancado** —no
+de cualquier pendiente—, con el estado en el nombre del aportable y del manifiesto, y el manifiesto
+diciendo que el hecho acreditado es el de ese estado.
+
+**Disparador de promoción.** El primer envío estancado cuyo certificado haya que aportar.
+

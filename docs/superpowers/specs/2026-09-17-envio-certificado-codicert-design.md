@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "16"
+rev: "17"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,14 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 17 (2026-09-26).** Los estados, **medidos sobre todos los envíos reales**: los 117 de
+> `madrid.bd` (del 2026-06-03 al 2026-09-23) y los 2 del sandbox, leídos en solo lectura (plan
+> [`2026-09-26-codicert-estados-medidos.md`](../plans/2026-09-26-codicert-estados-medidos.md),
+> M-17 a M-22). El SMS **no tiene estados propios** —ni 29, ni 30, ni 39 en 22 SMS— y el **22**
+> dejaba un envío sin cerrar para siempre: **Nikolai decidió** que cierra sin entrega cuando ningún
+> aviso llegó (§1.3, §6.3). El SMS Certificado **sí registró un acceso**, y la razón para no usarlo
+> cambia (§1.1). Y lo que no se cosecha tiene **cuatro motivos**, no uno (§7.1).
+>
 > **Rev. 16 (2026-09-25).** Los **plazos del servicio**, leídos en la Declaración de Prácticas del
 > prestador (v2.5): la entrega electrónica queda a disposición **30 días naturales desde el envío**
 > y, vencidos sin lectura, pasa a **40 «Caducado»** (§1.3). Y una decisión de Nikolai: el **17 y el
@@ -149,7 +157,7 @@ la observación de Nikolai, medido en la UI de producción el 2026-09-17):
 | Vía | Texto del SMS | Adjunto | Qué acredita |
 |---|---|---|---|
 | **EEC con `tipo_entrega: "sms"`** | **Lo compone la plataforma.** No hay campo | 6 ficheros | Entrega **y acceso al contenido** (estado 20) |
-| **SMS Certificado** (`/envios/sms-certificado`) | **`cuerpo`, obligatorio y nuestro** | **1 fichero** | Entrega del SMS (estados 29/30) |
+| **SMS Certificado** (`/envios/sms-certificado`) | **`cuerpo`, obligatorio y nuestro** | **1 fichero** | ~~Entrega del SMS (estados 29/30)~~ **Medido (rev. 17): entrega y acceso, `17 → 20`**, en el único de producción |
 
 Lo que la rev. 4 dijo —«el SMS no lleva texto propio»— es cierto de la primera vía y **falso de la
 segunda**: el formulario de SMS Certificado tiene un `Cuerpo` obligatorio con contador de
@@ -166,6 +174,16 @@ El precio de esa elección, dicho: **el literal de `CONVENCIONES_DESPACHO.md` §
 en el SMS por esta vía.** Lo que el destinatario lee lo compone la plataforma con el nombre del
 remitente. Si se quisiera controlar ese texto palabra por palabra, habría que usar SMS Certificado
 y renunciar al acuse de acceso — que es peor negocio.
+
+**Corrección de la rev. 17, medida: el SMS Certificado también registra el acceso.** El único de
+producción (`006bkxe0q63`, tipo `s` en el listado) hizo `17 → 20 «Documentación accedida»`, y
+ninguno de los 22 SMS medidos pasó por el 29 ni por el 30 (§1.3). Es una sola muestra, pero basta
+para que la razón de arriba —«acredita que el SMS se entregó, no que se accediera»— no se sostenga
+tal cual. **La elección de la entrega electrónica sigue en pie por otra razón**, que no depende de
+ese matiz: el SMS Certificado admite **un** fichero, y el requerimiento sale con las condiciones
+económicas **en adjunto aparte** (§7), que es lo que hace posible el aportable. El motor no manda
+SMS Certificado; si aparece uno con la referencia de una expedición —se puede mandar desde el
+portal—, **no se cosecha y sus fechas no cuentan** para el requerido (§7.1).
 
 Consecuencia operativa que gobierna todo el motor: **el burofax admite un destinatario por
 llamada**. Dos domicilios son dos llamadas, siempre.
@@ -270,8 +288,9 @@ clasificado no cae en «en curso» por defecto. Se declara **desconocido** y el 
 **Los plazos del servicio, según el prestador** (rev. 16, leídos el 2026-09-25 en la Declaración
 de Prácticas de Codicert, **v2.5 del 23/01/2026**,
 `https://www.codicert.io/wp-content/uploads/2026/01/dpc_23_01_2026.pdf`). La API no los dice:
-solo devuelve, en la entrega electrónica y el correo certificado, un `fecha_expiracion` de salida,
-y el único plazo configurable (`expiracion`, de 3 a 30 días) es de los contratos y el SEPA.
+solo devuelve, en la entrega electrónica y el correo certificado, un `fecha_expiracion` de salida
+—que **no es este plazo**: es el envío más cinco años (rev. 17, abajo)—, y el único plazo
+configurable (`expiracion`, de 3 a 30 días) es de los contratos y el SEPA.
 
 - **§4.5.5 — 30 días naturales desde el envío.** Es lo que la comunicación queda a disposición del
   destinatario; el remitente puede cambiarlo, nunca por debajo de 72 horas, y por nuestra API no
@@ -281,8 +300,9 @@ y el único plazo configurable (`expiracion`, de 3 a 30 días) es de los contrat
   E.1 (entrega del contenido: leído)**, 22 = D.4 (recordatorio fallido), 28 = C.4 (rechazo), 40 =
   C.5 (vence el plazo sin aceptación ni rechazo) y 42 = C.2 (fallido). Cinco de los doce códigos
   de esa tabla —el 0 «solicitado», el 2 «cancelado», el 16 «identificación errónea», el 22 y el 34
-  «aceptado»— el motor aún no los clasifica: si aparecen, salen como **desconocidos**, que es lo
-  que la regla de arriba quiere.
+  «aceptado»— el motor no los clasificaba: si aparecían, salían como **desconocidos**, que es lo
+  que la regla de arriba quiere. **Desde la rev. 17 el 22 sí se clasifica** (abajo); los otros
+  cuatro, no.
 - **§4.5.7 — las evidencias se conservan al menos 15 años** desde el envío (las condiciones
   generales dicen cinco para el resto de documentos).
 - **El burofax no está en esa Declaración**, que es la del servicio electrónico: sus plazos no
@@ -290,6 +310,28 @@ y el único plazo configurable (`expiracion`, de 3 a 30 días) es de los contrat
 
 Con eso, F2 ya encaja: una entrega electrónica solo se cosecha en 20 o cerrada (28, 40, 42), así
 que la que nadie lee se cosecha al caducar, a los 30 días.
+
+**Los estados, medidos sobre todos los envíos** (rev. 17, 2026-09-26; plan de los estados medidos,
+M-17 a M-22). Barrido en solo lectura de los 117 envíos de `madrid.bd` —72 entregas electrónicas por
+correo, 20 por SMS, 24 burofax y 1 SMS Certificado— y de los 2 del sandbox:
+
+- **El SMS no tiene estados propios.** Ninguno de los 22 SMS pasa por el 29, el 30 ni el 39: recorren
+  los del correo. Esos tres siguen **sin clasificar**, a propósito: si aparecen, se declaran.
+- **El 22 dejaba el envío sin cerrar.** Un SMS que no llegó nunca hizo `3 → 14 → 22` y ahí se quedó,
+  83 días sin el 40, que la plataforma no pone a lo que no entregó. **Decisión de Nikolai
+  (2026-09-26): el 22 cierra sin entrega si ningún aviso llegó**; si llegó el primero, el requerido
+  aún puede leer y lo cierra el 40. Lo que aprobó nombraba el 17, el 20 y el 21; **el plan lo
+  concreta (D-1)** añadiendo el 19 y **el 27** —éste, porque el aviso está en su servidor, igual que
+  con el 17— y contándolos en cualquier punto del histórico, porque el acuse puede llegar tarde
+  (§6.3). El motor lo clasifica en familia propia, `AVISO_FALLIDO`, porque no siempre cierra.
+- **El 40 llega a los 30 días exactos del envío, al segundo**: 24 de 24 en el correo y 6 de 6 en el
+  SMS. La Declaración, confirmada con datos.
+- **`fecha_expiracion` no es ese plazo**: en los 119 envíos, de los tres tipos, es el envío **más
+  cinco años**. Es la custodia.
+- **Un burofax entregado puede quedarse sin su 19**: `006bgjupt2a`, 88 días en 17. En los otros
+  siete, el 19 tardó de 1,3 a 29,1 días. El motor no lo cierra: lo declara **estancado** (§7.1).
+- En el correo, **45 de 72** pasan por el 27 y no por el 17; si no se leen, su recepción es el primer
+  21, un día después del envío. Es la regla del §6.2, que no cambia.
 Si mañana la plataforma añade un cierre nuevo, con el default benigno la expedición no terminaría
 nunca y nadie se enteraría.
 
@@ -659,6 +701,15 @@ mes. A ellas se añade lo que la rev. 1 trató solo como pérdida:
 un hecho acreditado con consecuencias propias —art. 7.4 y art. 395.1 LEC en la redacción dada por
 el art. 22.28 de la LO 1/2025—. El motor lo registra como evento con fecha, no como error.
 
+**El 22, cuando ningún aviso llegó, también cierra** (rev. 17, decisión de Nikolai del
+2026-09-26, con los indicios que concreta el plan en su D-1). Es el recordatorio fallido (ETSI D.4):
+si en todo el histórico no hay ningún indicio de que un aviso llegara —17, 19, 20, 21 o 27; antes o
+después del 22, porque el acuse puede llegar tarde—, el envío queda **cerrado sin entrega** en la
+fecha del 22 y su certificado se cosecha como
+prueba del intento. **Riesgo aceptado, dicho:** si después llegara un indicio, la cosecha siguiente
+saltaría el certificado ya archivado (`ya_estaba`) y el hecho posterior no entraría solo en el
+expediente. Medido: 83 días sin cambios tras el 22.
+
 **El año del art. 7.3 tiene dos *dies a quo*** unidos por «respectivamente»: desde la recepción si
 la solicitud quedó sin respuesta, desde la terminación sin acuerdo si hubo negociación. El motor no
 puede computarlo sin saber cuál se dio, así que **registra la causa de cierre** y, si no la conoce,
@@ -739,6 +790,23 @@ Cuando una expedición finaliza, `cosechar` baja el certificado de cada envío, 
 remitente sea el emisor esperado**, y lo sube al expediente con el nombre canónico
 `<ASUNTO> - <REF>-<codigo>.pdf` por la vía del §17.1. La subida se verifica por resultado: se baja
 lo subido y se compara el `sha256`.
+
+**Lo que no se cosecha, con su motivo** (rev. 17). No hay uno, hay cuatro, y el frontal —`estado`,
+`cosechar` y el aportable de F3— dice el de cada envío en vez de «el hecho aún puede mejorar», que
+de tres de los 117 envíos reales era falso:
+
+- **canal sin clasificar** — no se sabe en qué culmina; no se cosecha nunca, ni con un cierre, y
+  **sus fechas no cuentan** en el reloj del requerido;
+- **código sin clasificar** — se arregla en el código, no esperando;
+- **estancado** — en curso pero **más de 40 días sin moverse** (el silencio más largo medido antes de
+  un cambio es de 29,1 días);
+- **en curso** — el hecho aún puede mejorar.
+
+El estancado es un **aviso**, no una clasificación: no hace cosechable nada, y señala la salida que
+ya existe, `cosechar --incluir-pendientes`, que baja el certificado con su estado en el nombre sin
+ocupar el sitio del definitivo. **Límite declarado:** el aportable se prepara solo sobre el
+definitivo, así que un estancado no tiene aportable (`MEJORAS_FUTURAS.md`, con su disparador).
+El motivo se mide contra la **hora de la lectura**, que la expedición lleva siempre.
 
 ### 7.2 La anatomía del certificado, medida
 

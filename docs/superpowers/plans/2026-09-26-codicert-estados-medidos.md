@@ -37,7 +37,7 @@ Barrido **en solo lectura** (`GET /envios` y `GET /envios/{id}/estados`, sin cos
 
 **M-19. Un burofax entregado se quedó sin su 19.** `006bgjupt2a`: `3 → 8 → 11 → 12 → 17`, **88 días** sin el 19 que F2 espera. En los otros siete con 17, el 19 llegó a los 1,3 · 1,9 · 3,1 · 3,9 · 4,2 · 20,1 y 29,1 días.
 
-**M-20. Cuánto dura un silencio.** El más largo seguido de un cambio: **29,1 días** (burofax, del 17 al 19); 28,7 en el correo (una relectura, 20 → 20); 29,0 en el SMS (del 21 al 40). El 40 llega **a los 30 días exactos del envío, al segundo**: 24 de 24 en el correo y 6 de 6 en el SMS. Y la `fecha_expiracion` del listado es **el envío más 5 años** en los 22 envíos a móvil: la custodia, no los 30 días.
+**M-20. Cuánto dura un silencio.** El más largo seguido de un cambio: **29,1 días** (burofax, del 17 al 19); 28,7 en el correo (una relectura, 20 → 20); 29,0 en el SMS (del 21 al 40). El 40 llega **a los 30 días exactos del envío, al segundo**: 24 de 24 en el correo y 6 de 6 en el SMS. Y la `fecha_expiracion` del listado es **el envío más 5 años** en los 119 envíos, de los tres tipos: la custodia, no los 30 días.
 
 **M-21. La frontera: tres sitios dicen lo mismo de todo lo no cosechable.** `render_estado` («PENDIENTES (el hecho aún puede mejorar…)»), `render_cosecha` («NO COSECHADOS (el hecho aún puede mejorar)») y el aportable de F3 («el hecho aún puede mejorar: se prepara cuando culmine»). De los 117, tres se pararon sin que F2 los cierre —M-17, M-18 y M-19—, y de los tres esa frase es falsa. No son tres casos: es una propiedad, **«no cosechable» tiene cuatro motivos y el frontal conocía uno**.
 
@@ -45,7 +45,7 @@ Barrido **en solo lectura** (`GET /envios` y `GET /envios/{id}/estados`, sin cos
 
 ## Decisiones
 
-- **D-1 (Nikolai, 2026-09-26).** El 22 cierra sin entrega **solo si ningún aviso llegó**: si el primero llegó, el requerido aún puede leer y hay que esperar al 40. Se concreta así: los indicios de que un aviso llegó son **17, 19, 20, 21 y 27**. El 27 (entregado en el servidor) entra por la misma razón que el 17: el aviso está donde el requerido puede verlo. Y cuentan **en cualquier punto del histórico**, no solo antes del 22, porque el acuse puede llegar tarde (M-17, sandbox).
+- **D-1 (Nikolai, 2026-09-26).** El 22 cierra sin entrega **solo si ningún aviso llegó**: si el primero llegó, el requerido aún puede leer y hay que esperar al 40. Lo que aprobó —mi recomendación— nombraba el 17, el 20 y el 21; **la concreción que sigue es mía**, en la dirección segura (más indicios = menos cierres), y se le dice: los indicios de que un aviso llegó son **17, 19, 20, 21 y 27**. El 27 (entregado en el servidor) entra por la misma razón que el 17: el aviso está donde el requerido puede verlo. Y cuentan **en cualquier punto del histórico**, no solo antes del 22, porque el acuse puede llegar tarde (M-17, sandbox).
 - **Riesgo aceptado con D-1, declarado:** si un 22 cierra, el certificado se cosecha como definitivo; si después llegara un indicio, la cosecha siguiente lo saltaría (`ya_estaba`) y el hecho posterior no entraría solo en el expediente. Medido: 83 días sin cambios tras el 22.
 - **D-2.** Un canal sin clasificar **no se cosecha nunca**, ni con su culminación ni con un cierre, y se declara con ⚠️ como un código sin clasificar.
 - **D-2 bis (encontrado al ejecutar, no estaba en el plan).** Tampoco **pone fechas al requerido**: `Requerido.recibido_en` y `accedido_en` ignoran sus envíos. Salió al pintar un informe con los tres recorridos reales: la línea «accedido … (art. 10.2)» del requerido la ponía el SMS Certificado, cuyo adjunto no tiene por qué ser el requerimiento. Contarla podía adelantar un plazo con un hecho que nadie ha clasificado; no contarla lo retrasa, que es el lado seguro. El envío sigue en la lista del requerido y el aviso de canales lo dice. Es la misma frontera de D-2 —un canal desconocido tratado como conocido—, remediada en su segundo sitio. Commit `c8ae1ad`.
@@ -76,7 +76,7 @@ Barrido **en solo lectura** (`GET /envios` y `GET /envios/{id}/estados`, sin cos
 **Interfaces:**
 - Produces: `exp.AVISO_FALLIDO == "aviso_fallido"`; `exp.clasificar(22) == exp.AVISO_FALLIDO`; `EnvioObservado.cerrado_en` incluye el 22 cuando no hay indicio de entrega; `EnvioObservado.cosechable` es `True` cuando `cerrado_en` no es `None`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 En `tests/test_expedicion_estados.py`, al final:
 
@@ -137,12 +137,12 @@ def test_el_40_cierra_aunque_hubiera_un_22_antes():
     assert e.cosechable
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest -q --tb=short tests/test_expedicion_estados.py tests/test_expedicion_observada.py`
 Expected: FAIL — `AttributeError: module 'core.expedicion_certificada' has no attribute 'AVISO_FALLIDO'`; `test_el_22_sin_ningun_aviso_entregado_cierra_sin_entrega` con `cerrado_en is None`; y el paramétrico del **20** y el del **40**, porque hoy el 22 es desconocido y bloquea la cosecha de cualquier envío que lo lleve. Los paramétricos de 17/19/21/27 y el del indicio tardío pasan ya (nada cierra): no prueban nada hasta el Step 4, que es cuando el 22 empieza a poder cerrar.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 En `core/expedicion_certificada.py`, el comentario «Las cinco familias» pasa a «Las seis familias», y debajo de `DESCONOCIDO = …`:
 
@@ -195,12 +195,12 @@ Y la última línea de `cosechable`, `return any(clasificar(c) == SIN_ENTREGA fo
         return self.cerrado_en is not None
 ```
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run: `python -m pytest -q --tb=short tests/test_expedicion_estados.py tests/test_expedicion_observada.py`
 Expected: PASS, todo.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/expedicion_certificada.py tests/test_expedicion_estados.py tests/test_expedicion_observada.py
@@ -216,7 +216,7 @@ git commit -m "F2: el 22 sin ningun aviso entregado cierra sin entrega (M-17, de
 **Interfaces:**
 - Produces: `EnvioObservado.canal_clasificado -> bool` (`self.tipo in CANAL_DE_TIPO`); `cosechable` es `False` si no lo está.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Al final de `tests/test_expedicion_observada.py`:
 
@@ -233,12 +233,12 @@ def test_un_canal_sin_clasificar_no_se_cosecha_ni_con_su_culminacion():
     assert leido.accedido_en == datetime.fromisoformat("2026-07-07T12:59:56+02:00")
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest -q --tb=short tests/test_expedicion_observada.py`
 Expected: FAIL — `AttributeError: 'EnvioObservado' object has no attribute 'canal_clasificado'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 En `EnvioObservado`, tras `canal`:
 
@@ -265,12 +265,12 @@ y la primera comprobación del cuerpo pasa a ser:
 
 (en lugar de `if self.desconocidos: return False`).
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `python -m pytest -q --tb=short tests/test_expedicion_observada.py tests/test_expedicion_estados.py`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/expedicion_certificada.py tests/test_expedicion_observada.py
@@ -292,7 +292,7 @@ git commit -m "F2: un canal sin clasificar no se cosecha, ni con su culminacion 
   - `EnvioObservado.ultimo_evento() -> datetime`; `EnvioObservado.dias_quieto(ahora: datetime) -> int`; `EnvioObservado.pendiente_por(ahora: datetime) -> str | None`.
   - `Expedicion.leida_en: datetime` (obligatorio, solo por nombre, con zona); `Expedicion.pendientes_por() -> dict[str, tuple[EnvioObservado, ...]]`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/test_expedicion_pendientes.py`:
 
@@ -426,12 +426,12 @@ def test_la_expedicion_anota_cuando_se_leyo(tmp_path):
     assert e.leida_en == datetime(2026, 9, 21, tzinfo=timezone.utc)
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest -q --tb=short tests/test_expedicion_pendientes.py tests/test_expedicion_refrescar.py`
 Expected: FAIL — `AttributeError` por `PUEDE_MEJORAR`, `pendiente_por`, y `TypeError: Expedicion.__init__() got an unexpected keyword argument 'leida_en'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Tras `_INDICIOS_DE_ENTREGA`:
 
@@ -553,12 +553,12 @@ Los siete `exp.Expedicion(...)` de los tests ganan `leida_en=LEIDA`, con una con
 - `tests/test_expedicion_observada.py`: `LEIDA = datetime.fromisoformat("2026-09-13T10:00:00+02:00")`, en las líneas ~91 y ~100.
 - `tests/test_codicert_cli_f2.py`: la misma constante, en las líneas ~24, ~37, ~46, ~54 y ~114.
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run: `python -m pytest -q --tb=short tests/test_expedicion_pendientes.py tests/test_expedicion_refrescar.py tests/test_expedicion_observada.py tests/test_codicert_cli_f2.py`
 Expected: PASS, todo.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/expedicion_certificada.py tests/test_expedicion_pendientes.py tests/test_expedicion_refrescar.py tests/test_expedicion_observada.py tests/test_codicert_cli_f2.py
@@ -576,7 +576,7 @@ git commit -m "F2: cada envio no cosechable sabe su motivo, medido contra la hor
 - Consumes: `Expedicion.pendientes_por()`, `Expedicion.leida_en`, `EnvioObservado.dias_quieto`, `pendiente_por`, `canal_clasificado`, `exp.QUE_SIGNIFICA`, `exp.MOTIVOS_PENDIENTE` (Task 3).
 - Produces: `render_cosecha(cosechados, expedicion: exp.Expedicion) -> str` (antes recibía `pendientes`); helper privado `_no_cosechables(expedicion, titulo) -> list[str]`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 En `tests/test_codicert_cli_f2.py`, al final:
 
@@ -641,12 +641,12 @@ def test_lo_que_aun_puede_mejorar_lo_dice_en_su_motivo(tmp_path):
     assert exp.QUE_SIGNIFICA[exp.PUEDE_MEJORAR] in r["006b"].motivo
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest -q --tb=short tests/test_codicert_cli_f2.py tests/test_expedicion_aportable.py`
 Expected: FAIL — `ValueError: substring not found` en los `index`, `"CANALES SIN CLASIFICAR"` ausente, `render_cosecha` que itera la `Expedicion` como si fuera la lista de pendientes, y los dos motivos del aportable.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 En `scripts/codicert.py`, antes de `render_estado`:
 
@@ -742,12 +742,12 @@ En `core/expedicion_certificada.py`, `_preparar_bajo_candado`:
             continue
 ```
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run: `python -m pytest -q --tb=short tests/test_codicert_cli_f2.py tests/test_expedicion_aportable.py tests/test_expedicion_cosechar.py`
 Expected: PASS (los dos lentos de OCR real de `test_expedicion_aportable.py` quedan en `skip` sin `--runslow`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/codicert.py core/expedicion_certificada.py tests/test_codicert_cli_f2.py tests/test_expedicion_aportable.py
@@ -758,17 +758,17 @@ git commit -m "F2/F3: estado, cosechar y el aportable dicen el motivo de lo no c
 
 **Files:** ninguno del repo; los scripts van al scratchpad de la sesión.
 
-- [ ] **Step 1: Las dos semillas, suite entera**
+- [x] **Step 1: Las dos semillas, suite entera**
 
 Run: `python -m pytest -q --tb=short -n auto --randomly-seed=777` y luego `--randomly-seed=31337`
 Expected: verde las dos; el conteo sube exactamente en los tests nuevos de este plan (y los paramétricos) respecto del último cierre, sin `skip` ni `xfail` nuevos.
 
-- [ ] **Step 2: Los lentos de lo tocado**
+- [x] **Step 2: Los lentos de lo tocado**
 
 Run: `python -m pytest -q --tb=short --runslow tests/test_expedicion_aportable.py`
 Expected: PASS, incluidos los dos de OCR real.
 
-- [ ] **Step 3: Mutantes**
+- [x] **Step 3: Mutantes**
 
 Un arnés en el scratchpad que aplique cada mutante sobre una copia en memoria del módulo y corra `tests/test_expedicion_estados.py tests/test_expedicion_observada.py tests/test_expedicion_pendientes.py tests/test_expedicion_refrescar.py tests/test_codicert_cli_f2.py tests/test_expedicion_aportable.py`. Cada uno tiene que **morir**:
 
@@ -787,7 +787,7 @@ Un arnés en el scratchpad que aplique cada mutante sobre una copia en memoria d
 
 Expected: 12 de 12 muertos. Uno que sobreviva es un test que falta, y se escribe antes de seguir.
 
-- [ ] **Step 4: El barrido real, con el código nuevo (M-22)**
+- [x] **Step 4: El barrido real, con el código nuevo (M-22)**
 
 Volver a correr `barrido_estados.py` (solo lectura) y comparar, envío a envío, el veredicto de F2 antes y después.
 Expected: **un solo cambio de `cosechable`** —`006bij47xan`, de no a sí—, y los motivos: `006bkxe0q63` → `CANAL_SIN_CLASIFICAR`, `006bgjupt2a` → `ESTANCADO`, y el resto de los no cosechables → `PUEDE_MEJORAR`. Cualquier otra diferencia se explica antes de seguir.
@@ -798,7 +798,7 @@ Expected: **un solo cambio de `cosechable`** —`006bij47xan`, de no a sí—, y
 - Modify: `docs/superpowers/specs/2026-09-17-envio-certificado-codicert-design.md`
 - Modify: `docs/MEJORAS_FUTURAS.md`, `PLAN.md`
 
-- [ ] **Step 1: Spec rev. 17**
+- [x] **Step 1: Spec rev. 17**
 
 Nota de cabecera «Rev. 17 (2026-09-26)» y, en el cuerpo:
 - §1.1: el SMS Certificado **sí** registró un 20 «Documentación accedida» (una muestra, M-18); la razón para descartarlo que daba el §1.1/§5 regla 7 no se sostiene tal cual, y la elección de la entrega electrónica sigue en pie por otra: el SMS Certificado admite **un** fichero, y las condiciones van en adjunto aparte (§7).
@@ -806,15 +806,15 @@ Nota de cabecera «Rev. 17 (2026-09-26)» y, en el cuerpo:
 - §6.3: el 22 como causa de cierre, con su condición y el riesgo aceptado.
 - §7.1: los cuatro motivos de lo no cosechable y el aviso de estancado (D-3); el límite de F3 con el provisional.
 
-- [ ] **Step 2: MEJORAS**
+- [x] **Step 2: MEJORAS**
 
 Entrada nueva con el siguiente número libre **leído de `origin/main` al escribirla** (hoy el más alto es el #304 de esta rama): «El aportable de un certificado provisional», disparador: el primer envío estancado cuyo certificado haya que aportar.
 
-- [ ] **Step 3: PLAN.md**
+- [x] **Step 3: PLAN.md**
 
 La fila del envío certificado (#37) gana una línea: estados medidos sobre 117 envíos y este plan.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-09-17-envio-certificado-codicert-design.md docs/MEJORAS_FUTURAS.md PLAN.md
@@ -830,3 +830,28 @@ git commit -m "docs: spec rev. 17 de Codicert: los estados medidos en 117 envios
 - [ ] **Step 2: Adjudicación**
 
 Cada hallazgo, contra la fuente. La adjudicación va **embebida en este plan** (§ al final, encabezado canónico y ficha); la voz del revisor, literal, en el acta hermana `…-estados-medidos-r1-adversarial-review.md`, con nonce y digest (nace con la ronda; hasta entonces no se cita por su ruta, porque el guard G2 exige que toda cita resuelva en disco). Los guards G7/G8/G9 de `tests/test_docs_gobernanza.py`, verdes. Si el revisor no corre, la cobertura se declara **AUSENTE**, no parcial.
+
+---
+
+## Ejecución (2026-09-26)
+
+- **Commits:** `979d41a` (Task 1), `aad3765` (Task 2), `4e24233` (Task 3), `c8ae1ad` (Task 4, con
+  D-2 bis), `98f6530` (el plan: D-2 bis y la cita del acta) y el de la documentación de la Task 6.
+- **TDD:** cada test nuevo se vio fallar por la razón prevista antes de implementar —en la Task 2,
+  además, se comprobó a mano que un `s` con 42 **se cosechaba** con el código de antes—.
+- **Suite, dos semillas:** **6.465 casos, 0 fallos, 0 errores, 96 omitidos**, idénticos con la 777 y
+  la 31337, por JUnit. **+29 sobre los 6.436 del último cierre tras mezclar `main`, y cuadran al
+  test:** 9 de la Task 1 (el paramétrico cuenta cinco), 1 de la Task 2, 13 de la Task 3 y 6 de la
+  Task 4. Los 96 omitidos, los mismos. La primera corrida dio **un rojo en las dos semillas**, el
+  guard G2 de `tests/test_docs_gobernanza.py`: este plan citaba por su ruta el acta de la R1, que
+  aún no existe. El guard tenía razón; corregido en `98f6530` y vuelta a correr entera.
+- **Lentos de lo tocado:** `tests/test_expedicion_aportable.py --runslow`, 50 de 50, los dos de OCR
+  real dentro.
+- **Mutantes:** **18 de 18 muertos**, cada uno por el test que declaraba (los 12 del plan y seis
+  más: los dos de D-2 bis, el aviso de canales, la zona de `leida_en`, los grupos vacíos y el
+  motivo en `cosechar`). Árbol restaurado byte a byte.
+- **M-22, el barrido real con el código nuevo** (solo lectura): **119 envíos, un solo cambio de
+  `cosechable`** —`006bij47xan`, de no a sí—; `006bkxe0q63` → canal sin clasificar;
+  `006bgjupt2a` → estancado (88 días); el resto de lo no cosechable, en curso (4 burofax, 11
+  correos, 6 SMS). Es exactamente lo que la Task 5 esperaba.
+
