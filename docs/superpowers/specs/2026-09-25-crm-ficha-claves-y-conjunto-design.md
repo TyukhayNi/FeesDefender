@@ -295,7 +295,7 @@ sobrantes sin serlo. El código de salida sigue siendo 1 (la R1 lo comprobó: no
   (`_COMPLETABLES_CONTRARIO`): no se escribe, y la lectura final lo da por vacío. Sigue sin cubrirse
   una ficha **histórica** cuyo NIF se guardó con separadores, que la búsqueda canónica no encuentra:
   buscar duplicados escritos de cualquier forma es otra ampliación. Cerrarlo del todo es buscar
-  también por los identificadores declarados, que es otra decisión sobre A.4 (`MEJORAS #306`).
+  también por los identificadores declarados, que es otra decisión sobre A.4 (`MEJORAS #312`).
 - **Entre la comparación y la escritura el CRM puede cambiar, y no solo por otra sesión: también
   por la propia corrida** (R3, observación). Las dos resuelven por separado —la fase previa lee y
   `ensure_*` vuelve a resolver—, y lo que la corrida escribe entre una parte y la siguiente cambia
@@ -311,7 +311,7 @@ sobrantes sin serlo. El código de salida sigue siendo 1 (la R1 lo comprobó: no
 - **`_resolver_colaborador` ignora el `motivo` de `resolver_parte`**, anterior a esta pieza: ante un
   buzón compartido con una ficha sin documento, el colaborador cae al listado por email en vez de
   parar (el contrario sí para). Por `crm_ficha` ya no llega el NIF no interpretable (A.3); el buzón,
-  sí. Cambiarlo cambia a todos los llamadores y pide su propia regresión (`MEJORAS #307`).
+  sí. Cambiarlo cambia a todos los llamadores y pide su propia regresión (`MEJORAS #313`).
 
 ## 6. Cómo se prueba (para el plan)
 

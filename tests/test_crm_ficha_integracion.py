@@ -293,7 +293,7 @@ def test_R3H01_colaborador_por_id_con_un_nif_ajeno_deja_la_resolucion_por_nif_am
     _yaml(caso, "colaboradores:\n  - {nombre: PARTE-PRUEBA-1, id_crm: '1128', "
                 "nif: '00.000.000-T'}\n")
     r = _corre()
-    assert r.exit_code == 0, r.output               # el límite declarado (#306): no lo ve
+    assert r.exit_code == 0, r.output               # el límite declarado (#312): no lo ve
     assert crm.fichas["colaboradores"]["1128"]["nif_cif"] == "00000000T"
     with pytest.raises(sr.ConflictoDeIdentidad, match="VARIAS fichas"):
         sr.resolver_colaborador_existente(sr.NuevoColaborador(nombre="X", nif="00000000T"))

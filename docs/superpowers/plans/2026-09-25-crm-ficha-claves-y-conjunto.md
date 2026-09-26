@@ -1559,7 +1559,7 @@ ni a construir C6.
 - **Revisor:** Codex CLI `0.155.0-alpha.16.4`, `gpt-6-astra` · `medium` · `default` (modelo y esfuerzo releídos del rollout; la velocidad, afirmada desde el lanzador conservado)
 - **Informe recibido:** `docs/superpowers/plans/2026-09-25-crm-ficha-claves-y-conjunto-r3-adversarial-review.md`
 - **Hallazgos:** 4 — 1 `alta`, 1 `media`, 2 `baja`; 4 confirmados contra la fuente, 0 refutados; y una observación que el revisor no eleva a hallazgo, confirmada también
-- **Remediado en:** este mismo PR, sobre `93c1907`: `core/crm_ficha.py` y `scripts/crm_ficha.py` con sus tests (`cc5a241`), los dos arneses, el spec rev. 4 y `MEJORAS #306`/`#307`. **Ninguna ronda revisa el remedio**: esta era la última autorizada
+- **Remediado en:** este mismo PR, sobre `93c1907`: `core/crm_ficha.py` y `scripts/crm_ficha.py` con sus tests (`cc5a241`), los dos arneses, el spec rev. 4 y `MEJORAS #312`/`#313`. **Ninguna ronda revisa el remedio**: esta era la última autorizada
 
 **Los cuatro se reprodujeron contra la fuente, no contra el informe** (acta §2). Los tests de las
 reglas nuevas se vieron en rojo antes de su código; los de integración del H-01, escritos con el
@@ -1594,7 +1594,7 @@ son dos fronteras y una ventana.
   tenía el teléfono que se vacía. **No se toca, y se ficha:** `_resolver_colaborador` ignora
   `r.motivo`, anterior a este diff. Por `crm_ficha` ya no llega el NIF no interpretable; el buzón
   compartido con una ficha sin documento, sí, y cambiarlo cambia a todos los llamadores →
-  `MEJORAS #307`, con su propia regresión.
+  `MEJORAS #313`, con su propia regresión.
 
 **Frontera 2 — el lector y el arnés tienen que decir lo que prometen (H-03, H-04).**
 

@@ -7,7 +7,7 @@ ronda: "1"
 revisor: Claude Code (sesión independiente)
 veredicto: REQUIERE-REVISION
 marcador_nonce: q7w3
-sha256_informe: 59d499ffd7fddb209d2979893c96da537aad4cef008c4820fe20a8737d31b2f5
+sha256_informe: 819b5f5741201796107362ff45c29fb553b301e18f09fd562b69ad5cb80385f6
 adjudicado_en: docs/superpowers/specs/2026-09-17-envio-certificado-codicert-design.md §11
 ---
 
@@ -43,9 +43,17 @@ Las tres sesiones confirmaron al terminar que el worktree quedó limpio y `HEAD`
 |---|---|
 | Revisor | Claude Code, tres subagentes en sesión limpia |
 | Objeto | `docs/superpowers/specs/2026-09-17-envio-certificado-codicert-design.md`, commit `d895d1d` |
-| `sha256` del bloque literal | `59d499ffd7fddb209d2979893c96da537aad4cef008c4820fe20a8737d31b2f5` — recomputado por el guard G8 |
+| `sha256` del bloque literal | `819b5f5741201796107362ff45c29fb553b301e18f09fd562b69ad5cb80385f6` — el del bloque **redactado** el 2026-09-26 (nota de abajo), recomputado por el guard G8; el del original era `59d499ffd7fddb20…` |
 | Veredicto agregado | **REQUIERE-REVISION** (el peor de los tres: jurídica y arquitectura lo dan; la de API da LISTA-CON-CAMBIOS) |
 | Hallazgos | 34 — 12 `alta`, 14 `media`, 8 `baja` |
+
+**Redacción del 2026-09-26, declarada.** Dentro del bloque literal se han sustituido **tres**
+apariciones del número de móvil de un tercero —dos por `34XXXXXXXXX` y una por `XXXXXXXXX`—, por
+la regla de higiene de datos de `CLAUDE.md` y a petición de Nikolai. Nada más cambia en la voz
+del revisor, y se comprueba: `git diff 6d60187 --` sobre este fichero enseña esas tres
+sustituciones, el digest nuevo y esta nota; y los tres informes originales siguen archivados
+fuera del repo con los `sha256` de la tabla de arriba. El `sha256_informe` del frontmatter es el
+del bloque **redactado**; el del original era `59d499ffd7fddb209d2979893c96da537aad4cef008c4820fe20a8737d31b2f5`.
 
 **Lo que la ronda encontró y ninguna lectura mía habría encontrado**, en una frase por lente:
 
@@ -244,7 +252,7 @@ lectura. La tabla se contradice y deja sin fijar exactamente lo que el propio §
 fija: «la frontera … es la que decide plazos».
 
 **(b) El único SMS medido acabó en un estado que la tabla no tiene.** El §2, que es la evidencia de
-producción del propio spec, registra el envío de las 13:02:57 al `34645508869` en
+producción del propio spec, registra el envío de las 13:02:57 al `34XXXXXXXXX` en
 **«Recordatorio lectura entregado»**. Ese estado no está entre los seis del §1.3 — y sí está en la
 memoria del despacho, que enumera «PROCESADO · ENTREGADO · LEÍDO · **RECORDATORIO DE LECTURA
 ENTREGADO** · ENTREGADO EN EL SERVIDOR · RECHAZADO». De los 43 códigos, el spec mapea seis y no
@@ -753,9 +761,9 @@ CRM **se rechaza en el plan, no en el 422**».
    lo declara ahí y no en el otro sitio.
 
 3. **La medición del propio spec contradice la regla.** El §2 registra el destinatario del
-   envío SMS de producción como **`34645508869`** — once dígitos con prefijo de país. Eso **no
+   envío SMS de producción como **`34XXXXXXXXX`** — once dígitos con prefijo de país. Eso **no
    casa** `^[67]\d{8}$`. Puede que el portal lo pinte con prefijo y la API recibiera
-   `645508869`; no puedo dirimirlo sin credenciales. Pero tal como está escrito, el spec manda
+   `XXXXXXXXX`; no puedo dirimirlo sin credenciales. Pero tal como está escrito, el spec manda
    validar con un patrón que su propio dato medido no pasa, y el §4 regla 4 convierte eso en
    parada dura: «Un requerido sin ningún canal **detiene el plan**». Un requerido con solo
    móvil, anotado con prefijo, detendría la expedición.

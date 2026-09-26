@@ -489,3 +489,13 @@ def test_un_entorno_SIN_los_puertos_de_escritura_para_antes_de_nada(tmp_path):
         raiz=tmp_path, plaza="Madrid", entorno="produccion", usuario="madrid.bd")
     with pytest.raises(exp.ExpedicionError, match="carpeta_certificados"):
         exp.cosechar("W-04AKM2", "OVC", entorno_exp=de_f1)
+
+
+def test_con_incluir_pendientes_un_envio_SIN_eventos_no_se_baja(tmp_path):
+    """R1/H-01: el efecto que el informe tiene que contar. Sin ningún evento no hay estado con
+    que nombrar el provisional, y la cosecha lo salta: ni se pide el certificado ni se sube."""
+    t = FakeTransporte([_ev("006a")], {}, {"006a": CERT})
+    g = FakeGestor()
+    r = exp.cosechar("W-04AKM2", "OVC", entorno_exp=_entorno(tmp_path, t, g),
+                     incluir_pendientes=True)
+    assert r == [] and t.certificados_pedidos == [] and g.subidos == []

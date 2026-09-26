@@ -9,7 +9,11 @@ import base64
 import hashlib
 import io
 import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import threading
 import uuid
 
@@ -87,7 +91,8 @@ def movil_normalizado(bruto: str | None) -> str | None:
     """`34` + nueve dígitos, o `None` si no es un móvil español.
 
     El prefijo se pega porque es lo que la plataforma registra: el destinatario SMS de
-    producción es `34645508869`. Un fijo devuelve `None` y el canal se declara ausente.
+    producción es un `34` con nueve cifras detrás (`34XXXXXXXXX`). Un fijo devuelve
+    `None` y el canal se declara ausente.
 
     Es la forma para el destinatario ELECTRÓNICO (`DestinatarioVerificable`, que usa
     `destinatarios_de` para correo/SMS): ese campo no tiene patrón y sí admite el
@@ -960,7 +965,7 @@ def ya_expedido(listado: list[dict], id_personalizado: str) -> set[str]:
 # F2 — la lectura: qué acredita cada envío
 # ---------------------------------------------------------------------------
 
-#: Las cinco familias en que cae un estado certificado. No son títulos de la
+#: Las seis familias en que cae un estado certificado. No son títulos de la
 #: plataforma: son lo que cada estado significa PARA NOSOTROS, que es lo que el
 #: motor necesita decidir.
 EN_CURSO = "en_curso"          #: el envío progresa; nada acreditado todavía
@@ -968,6 +973,7 @@ RECEPCION = "recepcion"        #: recepción acreditada (art. 17.2, spec §6.2)
 ACCESO = "acceso"              #: acceso al contenido íntegro (art. 10.2)
 SIN_ENTREGA = "sin_entrega"    #: cerrado sin entrega (el 28 con valor afirmativo, §6.3)
 DESCONOCIDO = "desconocido"    #: medido por nadie — se declara, nunca se asume
+AVISO_FALLIDO = "aviso_fallido"  #: el aviso no llegó (22): cierra SOLO si ninguno llegó (M-17)
 
 #: Códigos de la plataforma, por familia. Los nueve del spec §1.3 MÁS los seis
 #: medidos en producción el 2026-09-21 (M-2 del plan de F2): 3, 8, 11, 12, 14 y 31,
@@ -992,6 +998,11 @@ _FAMILIA_DE: dict[int, str] = {
     28: SIN_ENTREGA,  # Rechazado — valor afirmativo, art. 7.4 y 395.1 LEC (§6.3)
     40: SIN_ENTREGA,  # Caducado
     42: SIN_ENTREGA,  # Fallido
+    # el aviso no llegó — familia propia porque NO siempre cierra (M-17, decisión de
+    # Nikolai del 2026-09-26): `3 → 14 → 22` es un aviso que nunca llegó y ahí se queda;
+    # `17 → 14 → 22` es un primer aviso entregado y un recordatorio fallido, que no
+    # cierra nada. La regla vive en `EnvioObservado.cerrado_en`.
+    22: AVISO_FALLIDO,  # Recordatorio lectura fallido — ETSI D.4 (DPC v2.5 §4.5.10)
 }
 
 
@@ -1066,6 +1077,50 @@ CANAL_DE_TIPO: dict[str, str] = {"b": "burofax", "c": "electronico"}
 #: a 19 (medido: tres días después) y la entrega electrónica de 21 a 20.
 _CULMINACION: dict[str, int] = {"burofax": 19, "electronico": 20}
 
+#: Los códigos que prueban que ALGÚN aviso llegó a alguna parte: al destinatario (17,
+#: 19, 21), a su contenido (20) o a su servidor (27). Con uno de ellos en el histórico
+#: —antes o después del 22: el acuse puede llegar tarde—, un 22 no cierra: el requerido
+#: tiene el aviso y aún puede leer, y la plataforma cerrará sola con el 40 (M-20).
+_INDICIOS_DE_ENTREGA = frozenset({17, 19, 20, 21, 27})
+
+#: Por qué un envío no es cosechable. Cuatro motivos y no uno (M-21): los tres sitios que
+#: se lo explican al abogado decían de todos lo mismo —«el hecho aún puede mejorar»—, y
+#: medido sobre 117 envíos reales, de tres no es verdad.
+CANAL_SIN_CLASIFICAR = "canal_sin_clasificar"    #: no se sabe en qué culmina su canal
+CODIGO_SIN_CLASIFICAR = "codigo_sin_clasificar"  #: tiene un código que nadie ha medido
+ESTANCADO = "estancado"                          #: en curso, quieto más de DIAS_ESTANCADO
+PUEDE_MEJORAR = "puede_mejorar"                  #: en curso: le falta su culminación
+
+#: El orden en que se enseñan, que es el de lo que hay que hacer: lo que nadie clasificó
+#: se arregla en el código; lo estancado lo decide el abogado; lo que puede mejorar
+#: solo pide esperar.
+MOTIVOS_PENDIENTE = (CANAL_SIN_CLASIFICAR, CODIGO_SIN_CLASIFICAR, ESTANCADO, PUEDE_MEJORAR)
+
+#: Días sin eventos a partir de los cuales un envío en curso se da por estancado (M-20,
+#: D-3): el silencio más largo medido antes de un cambio es de 29,1 días —un burofax del
+#: 17 al 19— y la entrega electrónica caduca a los 30 exactos (30 de 30). **Es un aviso,
+#: no una clasificación**: no hace cosechable nada; solo deja de prometer que mejorará.
+DIAS_ESTANCADO = 40
+
+#: Cómo se llama cada motivo y qué significa, en una línea. Lo leen los dos informes de
+#: `scripts/codicert.py` y el aportable de F3: una sola redacción para los tres, que es
+#: justo lo que faltaba (M-21).
+ETIQUETA: dict[str, str] = {
+    CANAL_SIN_CLASIFICAR: "CANAL SIN CLASIFICAR",
+    CODIGO_SIN_CLASIFICAR: "CÓDIGO SIN CLASIFICAR",
+    ESTANCADO: "ESTANCADO",
+    PUEDE_MEJORAR: "EN CURSO",
+}
+QUE_SIGNIFICA: dict[str, str] = {
+    CANAL_SIN_CLASIFICAR: "su canal no está clasificado; no se sabe en qué culmina",
+    CODIGO_SIN_CLASIFICAR: "tiene un código de estado sin clasificar; no se sabe si culmina",
+    # «No se cerrará solo» era una predicción que ninguna medición sostiene (R1): lo medido es
+    # que ningún silencio anterior a un cambio duró tanto, y eso es lo que se dice.
+    ESTANCADO: (f"lleva más de {DIAS_ESTANCADO} días sin moverse, más que ningún silencio "
+                "medido antes de un cambio: no cuentes con que se cierre solo"),
+    PUEDE_MEJORAR: "el hecho aún puede mejorar; se cosecha cuando culmine",
+}
+
 
 @dataclass(frozen=True)
 class EnvioObservado:
@@ -1091,6 +1146,11 @@ class EnvioObservado:
     def canal(self) -> str:
         return CANAL_DE_TIPO.get(self.tipo, f"desconocido:{self.tipo}")
 
+    @property
+    def canal_clasificado(self) -> bool:
+        """¿Sabemos en qué culmina el canal? M-18: el tipo `s` (SMS Certificado), no."""
+        return self.tipo in CANAL_DE_TIPO
+
     def _primera(self, *familias: str) -> datetime | None:
         """La fecha MÁS TEMPRANA de las entradas de esas familias.
 
@@ -1113,8 +1173,18 @@ class EnvioObservado:
 
     @property
     def cerrado_en(self) -> datetime | None:
-        """Cierre sin entrega. El 28 es un hecho con valor afirmativo, no un error."""
-        return self._primera(SIN_ENTREGA)
+        """Cierre sin entrega. El 28 es un hecho con valor afirmativo, no un error.
+
+        El 22 cierra también, pero solo si ningún aviso llegó (M-17, D-1): medido, un SMS
+        que no se entregó nunca hace `3 → 14 → 22` y ahí se queda —83 días sin el 40 que
+        cierra a los demás—, porque la plataforma no caduca lo que no entregó. Con un
+        indicio de entrega en cualquier punto del histórico, el 22 no cierra: lo hará el 40.
+        """
+        fechas = [self._primera(SIN_ENTREGA)]
+        if not {e.codigo for e in self.historico} & _INDICIOS_DE_ENTREGA:
+            fechas.append(self._primera(AVISO_FALLIDO))
+        fechas = [f for f in fechas if f is not None]
+        return min(fechas) if fechas else None
 
     @property
     def desconocidos(self) -> tuple[int, ...]:
@@ -1127,19 +1197,48 @@ class EnvioObservado:
         """¿El certificado de este envío ya es DEFINITIVO?
 
         Lo es cuando el envío alcanzó la culminación de su canal (19 el burofax, 20
-        la entrega electrónica) o se cerró sin entrega (28/40/42). Antes no: un
+        la entrega electrónica) o se cerró sin entrega (28/40/42, o el 22 cuando ningún
+        aviso llegó: `cerrado_en`). Antes no: un
         certificado bajado con el envío en 17 o en 21 acredita menos de lo que
         acabará acreditando, y como el nombre canónico del spec §7.1 no lleva el
         estado, el provisional ocuparía el sitio del bueno.
 
         Un código desconocido NO hace cosechable: no se sabe si culmina algo.
+
+        Un canal sin clasificar tampoco (M-18, D-2): sin saber en qué culmina, ni su 20 ni
+        su 42 dicen que el certificado sea el definitivo.
         """
-        if self.desconocidos:
+        if not self.canal_clasificado or self.desconocidos:
             return False
         codigos = {e.codigo for e in self.historico}
         if _CULMINACION.get(self.canal) in codigos:
             return True
-        return any(clasificar(c) == SIN_ENTREGA for c in codigos)
+        return self.cerrado_en is not None
+
+    def ultimo_evento(self) -> datetime:
+        """La fecha del último evento del histórico; sin histórico, la del envío."""
+        return max((e.fecha for e in self.historico), default=self.fecha_envio)
+
+    def dias_quieto(self, ahora: datetime) -> int:
+        """Días enteros desde el último evento hasta `ahora`."""
+        return (ahora - self.ultimo_evento()).days
+
+    def pendiente_por(self, ahora: datetime) -> str | None:
+        """Por qué no es cosechable —uno de `MOTIVOS_PENDIENTE`—, o `None` si lo es.
+
+        Las preguntas van en el orden de `MOTIVOS_PENDIENTE`: con el canal o un código
+        sin clasificar no se puede razonar nada más, y lo quieto se dice antes de
+        prometer que mejorará.
+        """
+        if self.cosechable:
+            return None
+        if not self.canal_clasificado:
+            return CANAL_SIN_CLASIFICAR
+        if self.desconocidos:
+            return CODIGO_SIN_CLASIFICAR
+        if ahora - self.ultimo_evento() > timedelta(days=DIAS_ESTANCADO):
+            return ESTANCADO
+        return PUEDE_MEJORAR
 
 
 @dataclass(frozen=True)
@@ -1149,14 +1248,24 @@ class Expedicion:
     El nivel de expedición es **comodidad de informe y no tiene efecto jurídico**
     (spec §6.1): aquí no se calcula ninguna fecha agregada, justamente para que
     nadie la use. El nivel que manda es el requerido, y lo arma `por_requerido`.
+
+    `leida_en` es **cuándo se leyó** de la plataforma, y es obligatoria (D-4): sin ella no
+    se sabe qué lleva semanas quieto, y un «estancado» que se callara por falta de hora
+    sería el mismo silencio que M-21 corrige. La pone `refrescar` con el reloj del
+    entorno, y exige zona horaria por lo mismo que `estado_de`.
     """
 
     id_personalizado: str
     entorno: str
     envios: tuple[EnvioObservado, ...] = ()
+    leida_en: datetime = field(kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "envios", tuple(self.envios))
+        if self.leida_en.utcoffset() is None:   # sin tzinfo, o con uno que no da desfase
+            raise ExpedicionError(
+                f"{self.id_personalizado}: la hora de la lectura {self.leida_en!r} no trae "
+                "zona horaria. No se asume UTC: con ella se mide qué está estancado.")
 
     @property
     def cosechables(self) -> tuple[EnvioObservado, ...]:
@@ -1175,6 +1284,17 @@ class Expedicion:
         prohíbe — «no encuentro envíos» no es «la expedición terminó».
         """
         return bool(self.envios) and not self.pendientes
+
+    def pendientes_por(self) -> dict[str, tuple[EnvioObservado, ...]]:
+        """Lo no cosechable, agrupado por su motivo en el orden de `MOTIVOS_PENDIENTE`.
+
+        Solo salen los motivos con algún envío. `pendientes` sigue siendo la lista entera:
+        un estancado NO culminó, y `completa` tiene que seguir diciéndolo.
+        """
+        grupos: dict[str, list[EnvioObservado]] = {m: [] for m in MOTIVOS_PENDIENTE}
+        for envio in self.pendientes:
+            grupos[envio.pendiente_por(self.leida_en)].append(envio)
+        return {m: tuple(v) for m, v in grupos.items() if v}
 
     def por_requerido(self, partes: list[dict]) -> tuple[Requerido, ...]:
         """Agrupa los envíos por requerido, casando `destinatarios` con las partes.
@@ -1244,13 +1364,17 @@ class Requerido:
 
         Simétrico de la regla del spec §6.1: «un canal fallido no resta si otro del
         mismo requerido acreditó recepción».
+
+        Un canal sin clasificar NO suma (M-18, D-2): no se sabe qué acreditó, y contar
+        su fecha podría adelantar un plazo con un hecho que nadie ha clasificado. El
+        envío sigue en `envios`, y el informe lo declara.
         """
-        fechas = [e.recibido_en for e in self.envios if e.recibido_en]
+        fechas = [e.recibido_en for e in self.envios if e.recibido_en and e.canal_clasificado]
         return min(fechas) if fechas else None
 
     @property
     def accedido_en(self) -> datetime | None:
-        fechas = [e.accedido_en for e in self.envios if e.accedido_en]
+        fechas = [e.accedido_en for e in self.envios if e.accedido_en and e.canal_clasificado]
         return min(fechas) if fechas else None
 
 
@@ -1260,7 +1384,7 @@ def _claves_de_contacto(parte: dict) -> set[str]:
     El listado devuelve `destinatarios` como UN STRING (M-7): el email en la entrega
     electrónica, el móvil en el SMS, la razón social en el burofax. Se normaliza todo
     a minúsculas; el móvil, además, con y sin el prefijo `34`, porque el destinatario
-    SMS real de producción es `34645508869` (spec §1.1).
+    SMS real de producción lo lleva delante (`34XXXXXXXXX`, spec §1.1).
     """
     claves: set[str] = set()
     email = (parte.get("email") or "").strip().lower()
@@ -1339,8 +1463,11 @@ def refrescar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
             fecha_envio=_fecha_exigida(crudo.get("fecha"), que=f"envío {id_envio}"),
             historico=tuple(estado_de(e)
                             for e in entorno_exp.codicert.estados(id_envio))))
+    # La hora de la lectura es la del FINAL (propio, A-01 de la R1): tomada al principio, un
+    # evento que llegara mientras se leen los históricos quedaba en su futuro, y el informe
+    # decía «-1 días sin moverse».
     return Expedicion(id_personalizado=id_personalizado, entorno=entorno_exp.entorno,
-                      envios=tuple(envios))
+                      envios=tuple(envios), leida_en=entorno_exp.ahora())
 
 
 @dataclass(frozen=True)
@@ -1389,6 +1516,13 @@ class EntornoExpedicion:
     exp_crm: Callable[[str], tuple[str, str]] | None = None
     #: Lector del emisor de un certificado PDF (`core.certificado_lectura`).
     leer_emisor: Callable[[bytes], Any] | None = None
+
+    # --- el puerto de F3 (`preparar_aportables`) ------------------------------
+    #: El OCR del aportable: recibe el JPEG de UNA página y devuelve las líneas que lee
+    #: (`certificado_aportable.Linea`), y nada más: el aportable lo compone el motor (R3).
+    #: `entorno_real` monta el de verdad (`_ocr_tesseract`); los tests pasan un doble,
+    #: porque el de verdad tarda de 1,4 a 10,9 s por página (M-13).
+    ocr: Callable[[bytes], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -2108,6 +2242,10 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
         def certificado(self, id_envio: str) -> bytes:
             return _cod.certificado(ficha, id_envio, entorno=entorno)
 
+        # --- la de F3 --------------------------------------------------------
+        def descargar_adjunto(self, id_envio: str, nombre: str) -> bytes:
+            return _cod.descargar_adjunto(ficha, id_envio, nombre, entorno=entorno)
+
     return EntornoExpedicion(
         codicert=_Transporte(),
         partes_de=partes_de,
@@ -2120,6 +2258,7 @@ def entorno_real(*, plaza: str, entorno: str) -> EntornoExpedicion:
         gestor=_GestorDocumental(),
         exp_crm=_exp_crm_de,
         leer_emisor=_leer_emisor_de,
+        ocr=_ocr_tesseract,
     )
 
 
@@ -2230,7 +2369,8 @@ def cosechar(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
 
 
 def _exigir_mutex_de_cosecha(clave: str, *, w_code: str, tipo: str,
-                             entorno_exp: EntornoExpedicion) -> None:
+                             entorno_exp: EntornoExpedicion,
+                             quien: str = "cosechar()") -> None:
     """`cosechar` EXIGE el mutex entre procesos; nunca lo adquiere.
 
     Misma regla dura que `_exigir_mutex_de_expedicion`: `core/` comprueba y
@@ -2249,7 +2389,7 @@ def _exigir_mutex_de_cosecha(clave: str, *, w_code: str, tipo: str,
 
     if mutex_sesion.vigente(CaseRef(w_code=clave)) is None and _hay_mutex_vivo():
         raise ExpedicionError(
-            f"cosechar() exige el mutex de la cosecha de {componer_id(w_code, tipo)!r} "
+            f"{quien} exige el mutex de la cosecha de {componer_id(w_code, tipo)!r} "
             f"(entorno={entorno_exp.entorno!r}, usuario={entorno_exp.usuario!r}) "
             "sostenido ANTES de llamar: core/ nunca lo adquiere por su cuenta. En la "
             "CLI ya lo hace `scripts/codicert.py`.")
@@ -2491,6 +2631,512 @@ def _leer_emisor_de(pdf: bytes) -> Any:
     from core import certificado_lectura
 
     return certificado_lectura.leer_emisor(pdf)
+
+
+# ---------------------------------------------------------------------------
+# F3 — el aportable: lo que va al juzgado, sin las condiciones
+# ---------------------------------------------------------------------------
+
+#: El mismo aviso que el plan de F1 pone en la etiqueta de un sobre conjunto
+#: (`destinatarios_de`): que el plan y el manifiesto digan lo mismo (spec §5 regla 3).
+AVISO_SOBRE_CONJUNTO = "⚠ sobre conjunto: acredita entrega EN EL DOMICILIO, no a cada uno"
+
+PRODUCIDO = "producido"
+YA_ESTABA = "ya_estaba"
+SIN_COSECHAR = "sin_cosechar"
+PENDIENTE = "pendiente"
+PARADO = "parado"
+
+
+@dataclass(frozen=True)
+class AportablePreparado:
+    """Qué pasó con el aportable de UN envío. Ningún envío se queda sin decir."""
+
+    id_envio: str
+    canal: str
+    estado: str
+    motivo: str = ""
+    ruta_aportable: Path | None = None
+    ruta_manifiesto: Path | None = None
+    retiradas: tuple[int, ...] = ()
+    avisos: tuple[str, ...] = ()
+
+
+def ruta_aportable(integro: Path) -> Path:
+    """`<íntegro> - APORTABLE.pdf`, al lado: el nombre que lo distingue (spec §7.4)."""
+    return integro.with_name(f"{integro.stem} - APORTABLE.pdf")
+
+
+def ruta_manifiesto(integro: Path) -> Path:
+    return integro.with_name(f"{integro.stem} - MANIFIESTO.json")
+
+
+def documentos_enviados(expedicion: Expedicion, *,
+                        entorno_exp: EntornoExpedicion) -> tuple[Any, ...]:
+    """Los documentos que salieron, bajados de Codicert y verificados contra el acta.
+
+    Salen de las entregas ELECTRÓNICAS: son las únicas cuyo acta lista los adjuntos uno
+    a uno con su huella (spec §7). El burofax los funde en un PDF de nombre UUID y no
+    dice dónde acaba cada documento; y los mismos documentos le sirven, porque F1 manda
+    los mismos adjuntos por los tres canales y el fundido medido es la concatenación
+    exacta de los del correo (M-4 del plan de F3).
+
+    Todas las entregas electrónicas de la expedición tienen que listar LOS MISMOS
+    adjuntos: si no, no hay un solo juego de documentos y no se adivina cuál es.
+    """
+    from core import certificado_aportable as apo
+
+    electronicas = [e for e in expedicion.envios if e.canal == "electronico"]
+    if not electronicas:
+        raise ExpedicionError(
+            f"{expedicion.id_personalizado}: ninguna entrega electrónica en esta "
+            "expedición. Solo su acta lista los adjuntos uno a uno con su huella; el "
+            "burofax los funde y no dice dónde acaba cada documento (M-4), así que F3 no "
+            "puede localizar las condiciones. No se adivina.")
+    try:
+        listas = {e.id_envio: apo.ficheros_listados(entorno_exp.codicert.certificado(e.id_envio))
+                  for e in electronicas}
+    except apo.AportableError as err:
+        raise ExpedicionError(f"{expedicion.id_personalizado}: {err}") from err
+    if len(set(listas.values())) != 1:
+        raise ExpedicionError(
+            f"{expedicion.id_personalizado}: sus entregas electrónicas no listan los "
+            f"mismos adjuntos ({sorted(listas)}): no hay un solo juego de documentos y no "
+            "se adivina cuál vale para cada envío.")
+    origen = electronicas[0].id_envio
+    documentos = []
+    for fichero in listas[origen]:
+        datos = entorno_exp.codicert.descargar_adjunto(origen, fichero.nombre)
+        huella = hashlib.sha256(datos).hexdigest()
+        if huella != fichero.sha256:
+            raise ExpedicionError(
+                f"el adjunto {fichero.nombre!r} de {origen} no tiene la huella que lista "
+                f"su acta ({huella[:16]}… contra {fichero.sha256[:16]}…): no es lo que "
+                "salió. No se recorta contra él.")
+        documentos.append(apo.DocumentoEnviado(nombre=fichero.nombre, contenido=datos))
+    return tuple(documentos)
+
+
+#: El aviso cuando el destinatario de un burofax no se puede atribuir a las partes.
+AVISO_DESTINATARIO_INCIERTO = (
+    "el destinatario del burofax no se puede atribuir a las partes del CRM (sus nombres "
+    "pudieron cambiar, o no constan): si fue a varios requeridos en el mismo sobre, "
+    "acredita la entrega en el domicilio, no a cada uno.")
+
+#: El aviso cuando el destinatario se lee IGUAL de bien como una parte que como varias
+#: (R2/H-06): no se sabe si fue un sobre conjunto.
+AVISO_DESTINATARIO_AMBIGUO = (
+    "el destinatario del burofax se puede leer como una sola parte del CRM o como varias "
+    "en el mismo sobre, y no se sabe cuál fue: si fue a varios requeridos, acredita la "
+    "entrega en el domicilio, no a cada uno.")
+
+
+def _cubre(texto: str, nombres: set[str]) -> int:
+    """Cuántos nombres, como mucho, cubren `texto` entero unidos por « y »; -1 si no se puede.
+
+    Se calcula de atrás adelante, cada posición UNA vez (R2/H-07): la recursión sin
+    memoria repetía el mismo sufijo por cada manera de llegar a él, y con nombres que son
+    prefijos unos de otros —«ana», «ana y ana»…— eran 250.904 llamadas para 18 segmentos.
+    """
+    fin = len(texto)
+    #: mejor[i]: cuántos nombres, como mucho, cubren `texto[i:]`; -1 si no se puede.
+    mejor = [-1] * (fin + 1)
+    for i in range(fin - 1, -1, -1):
+        for nombre in nombres:
+            if not texto.startswith(nombre, i):
+                continue
+            tras = i + len(nombre)
+            if tras == fin:
+                mejor[i] = max(mejor[i], 1)
+            elif texto.startswith(" y ", tras) and mejor[tras + 3] > 0:
+                mejor[i] = max(mejor[i], 1 + mejor[tras + 3])
+    return mejor[0] if fin else -1
+
+
+def _atribucion_burofax(envio: EnvioObservado, partes: list[dict]) -> str | None:
+    """El aviso que toca al destinatario de un burofax, o `None` (spec §5 regla 3, R1/H-05).
+
+    F1 compone el nombre de un sobre conjunto uniendo con « Y » los nombres COMPLETOS
+    (`destinatarios_de`), y el listado lo devuelve en `destinatarios`. Partirlo por « Y »
+    rompía el nombre de una sociedad que la lleva dentro («GARCIA Y ASOCIADOS, S.L. Y ANA
+    LOPEZ»), y el aviso no salía. Ahora se lee al revés: el destinatario ES una parte, o
+    se puede leer entero como dos o más nombres de partes unidos por « y », o no se puede
+    atribuir —porque los nombres del CRM cambiaron o no constan—, y **eso se dice**, en vez
+    de callar como si fuera a una sola persona.
+
+    **Las dos lecturas a la vez son una tercera respuesta** (R2/H-06): si casa entero con
+    una parte y TAMBIÉN se lee como varias, no se sabe a quién fue, y la coincidencia
+    íntegra no puede callar la otra lectura.
+    """
+    if envio.canal != "burofax":
+        return None
+    from core.certificado_lectura import _normalizar
+
+    nombres = {_normalizar(nombre_completo_de(p)) for p in partes} - {""}
+    destinatario = _normalizar(envio.destinatario)
+    entero = destinatario in nombres
+    conjunto = _cubre(destinatario, nombres) >= 2
+    if entero and conjunto:
+        return AVISO_DESTINATARIO_AMBIGUO
+    if entero:
+        return None
+    if conjunto:
+        return AVISO_SOBRE_CONJUNTO
+    return AVISO_DESTINATARIO_INCIERTO
+
+
+def _destinatario(envio: EnvioObservado, partes: list[dict],
+                  error_partes: str | None) -> dict | None:
+    """Lo que se sabe HOY del destinatario de un burofax: `None` en una entrega electrónica.
+
+    Es una OBSERVACIÓN del día —depende de si el CRM respondió y de cómo se llaman hoy las
+    partes—, no identidad del aportable (R2/H-04): va a su propia clave del manifiesto.
+    """
+    if envio.canal != "burofax":
+        return None
+    if error_partes is not None:
+        return {"comprobado": False, "avisos": [
+            f"no se pudo comprobar si el sobre fue conjunto ({error_partes}): si este "
+            "burofax fue a varios requeridos, acredita la entrega en el domicilio, no a "
+            "cada uno."]}
+    aviso = _atribucion_burofax(envio, partes)
+    return {"comprobado": True, "avisos": [aviso] if aviso else []}
+
+
+def _destinatario_por_revisar(historico: dict | None, hoy: dict | None) -> str | None:
+    """¿Obliga lo que hoy se sabe del destinatario a revisar el manifiesto? (R2/H-04)
+
+    Solo en un caso: **el manifiesto no avisa de nada y hoy la comprobación sí**. Entonces
+    el aportable se acompañaría de un manifiesto que calla un aviso, y lo mira una
+    persona. En todos los demás vale el manifiesto: si hoy no se pudo comprobar, lo que
+    se comprobó al generarlo sigue en pie; y si el manifiesto ya avisaba, su aviso ya dice
+    lo que hace falta —los tres avisos acaban igual: la entrega en el domicilio—.
+    """
+    if hoy is None or not hoy["comprobado"] or not hoy["avisos"]:
+        return None
+    # Un burofax sin su `destinatario` en el manifiesto se trata como uno que no avisa.
+    if (historico or {}).get("avisos"):
+        return None
+    return (f"el manifiesto no dice nada del destinatario y hoy la comprobación avisa: "
+            f"«{hoy['avisos'][0]}». Puede que hayan cambiado las partes del CRM: revísalo "
+            "y, si procede, aparta el manifiesto para que se genere de nuevo.")
+
+
+def _notas_del_destinatario(existente: dict, hoy: dict | None) -> tuple[str, ...]:
+    """Lo que el operador tiene que saber cuando hoy no se dice lo mismo que el manifiesto."""
+    if hoy is None:
+        return ()
+    historico = existente.get("destinatario") or {}
+    generado = existente.get("generado", "?")
+    if not hoy["comprobado"]:
+        return (f"hoy no se ha podido volver a comprobar el destinatario (el CRM no "
+                f"respondió): vale lo que dice el manifiesto, generado el {generado}.",)
+    if hoy["avisos"] != historico.get("avisos"):
+        hoy_dice = " / ".join(hoy["avisos"]) or "nada que avisar"
+        manifiesto_dice = " / ".join(historico.get("avisos") or []) or "nada que avisar"
+        return (f"hoy la comprobación del destinatario da «{hoy_dice}» y el manifiesto, "
+                f"generado el {generado}, dice «{manifiesto_dice}»: vale el manifiesto. "
+                "Revísalo si han cambiado las partes.",)
+    return ()
+
+
+def _escribir_atomico(destino: Path, datos: bytes) -> None:
+    """Temporal en el MISMO directorio + `os.replace`: nunca un fichero a medias."""
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(destino.parent), prefix=".aportable.",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(datos)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, destino)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+#: El idioma del OCR: los documentos que F3 recorta son del despacho, en castellano, y el
+#: acta de Codicert también.
+IDIOMA_OCR = "spa"
+
+
+#: Donde lo deja el instalador de Windows cuando no está en el PATH (medido en este PC).
+_TESSERACT_WINDOWS = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+
+#: Lo más que se espera a Tesseract con una página: lo medido, 10,9 s (M-13).
+_ESPERA_OCR_SEGUNDOS = 300
+
+
+def _binario_tesseract() -> str:
+    """El ejecutable de Tesseract: el del PATH o, si no, el del instalador de Windows."""
+    en_ruta = shutil.which("tesseract")
+    if en_ruta:
+        return en_ruta
+    if _TESSERACT_WINDOWS.is_file():
+        return str(_TESSERACT_WINDOWS)
+    raise RuntimeError(f"no se encuentra Tesseract: ni en el PATH ni en {_TESSERACT_WINDOWS}. "
+                       "Instálalo con el idioma «spa».")
+
+
+def _lineas_de_tsv(tsv: str) -> tuple:
+    """Las líneas de una salida TSV de Tesseract: la caja del nivel 4 y las palabras del 5,
+    en su orden. Una palabra vacía no cuenta, y una línea sin palabras no sale."""
+    from core.certificado_aportable import Linea
+
+    cajas: dict[tuple[str, str, str], tuple[int, int, int, int]] = {}
+    palabras: dict[tuple[str, str, str], list[str]] = {}
+    for fila in tsv.splitlines()[1:]:
+        campos = fila.split("\t", 11)
+        if len(campos) < 12:
+            continue
+        clave = (campos[2], campos[3], campos[4])
+        if campos[0] == "4":
+            x, y, ancho, alto = (int(v) for v in campos[6:10])
+            cajas[clave] = (x, y, x + ancho, y + alto)
+        elif campos[0] == "5" and campos[11].strip():
+            palabras.setdefault(clave, []).append(campos[11].strip())
+    return tuple(Linea(" ".join(palabras[clave]), *cajas[clave])
+                 for clave in cajas if palabras.get(clave))
+
+
+def _ocr_tesseract(jpeg: bytes) -> tuple:
+    """Las líneas que Tesseract lee en la imagen de UNA página del aportable (R3).
+
+    Tesseract directo, sin OCRmyPDF: el puerto solo necesita líneas —texto y caja—, y el
+    PDF lo compone el motor. Hasta la R3 el aportable era la salida de OCRmyPDF, y la
+    relectura tenía que admitir un fichero ajeno (R3/H-01, H-02). Medido sobre las 18
+    páginas reales: la misma imagen da las mismas líneas las dos veces (M-13), y eso deja
+    reponer un aportable huérfano con su huella.
+    """
+    from core import certificado_aportable as apo
+
+    binario = _binario_tesseract()
+    with tempfile.TemporaryDirectory(prefix="aportable-ocr-") as tmp:
+        imagen = Path(tmp) / "pagina.jpg"
+        imagen.write_bytes(jpeg)
+        salida = subprocess.run(
+            [binario, str(imagen), "stdout", "-l", IDIOMA_OCR, "--dpi", str(apo.PPP), "tsv"],
+            capture_output=True, encoding="utf-8", errors="replace",
+            timeout=_ESPERA_OCR_SEGUNDOS)
+    if salida.returncode != 0:
+        raise RuntimeError(f"Tesseract terminó con el código {salida.returncode}: "
+                           f"{(salida.stderr or '').strip()[:300]}")
+    return _lineas_de_tsv(salida.stdout)
+
+
+#: Por qué hace falta cada puerto: el error que para lo dice.
+_PUERTOS_DE_F3 = {
+    "carpeta_certificados": "`preparar_aportables` escribe en el expediente y sin ese "
+                            "puerto no hay dónde",
+    "leer_emisor": "sin él no se comprueba de quién es el íntegro",
+    "ocr": "sin él no hay capa de texto, y sin capa de texto no hay aportable",
+}
+
+
+def preparar_aportables(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
+                        ordinal: int = 1, emisor_esperado: str | None = None,
+                        verificar_plaza: bool = True) -> list[AportablePreparado]:
+    """El aportable y su manifiesto, junto a cada íntegro archivado (spec §7.4, F3).
+
+    Escribe en la carpeta de certificados que dejó F2 —lee el íntegro que `cosechar`
+    escribe ahí—, así que corre bajo **la misma exclusión que la cosecha**: el mismo
+    candado intraproceso y el mismo mutex entre procesos, que `core/` exige y nunca
+    adquiere. No sube nada al CRM: el spec pide los tres artefactos archivados, y el
+    íntegro, que es la prueba, ya lo subió F2.
+    """
+    for nombre, porque in _PUERTOS_DE_F3.items():
+        if getattr(entorno_exp, nombre) is None:
+            raise ExpedicionError(
+                f"el entorno no trae `{nombre}`: {porque}. Usa `entorno_real`.")
+    clave_mutex = clave_mutex_cosecha(w_code, tipo, entorno_exp, ordinal)
+    with _candado_de(clave_mutex):
+        _exigir_mutex_de_cosecha(clave_mutex, w_code=w_code, tipo=tipo,
+                                 entorno_exp=entorno_exp, quien="preparar_aportables()")
+        return _preparar_bajo_candado(
+            w_code, tipo, entorno_exp=entorno_exp, ordinal=ordinal,
+            emisor_esperado=emisor_esperado, verificar_plaza=verificar_plaza)
+
+
+def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedicion,
+                           ordinal: int, emisor_esperado: str | None,
+                           verificar_plaza: bool) -> list[AportablePreparado]:
+    """El cuerpo de `preparar_aportables`, YA dentro de la doble exclusión."""
+    from core import certificado_aportable as apo
+
+    esperado = emisor_esperado or EMISOR_ESPERADO
+    expedicion = refrescar(w_code, tipo, entorno_exp=entorno_exp, ordinal=ordinal)
+    if not expedicion.envios:
+        raise ExpedicionError(
+            f"{expedicion.id_personalizado}: sin envíos en la ventana consultada. Un "
+            "censo vacío no es una ausencia (spec §5.2): comprueba el identificador.")
+    documentos = documentos_enviados(expedicion, entorno_exp=entorno_exp)
+    try:
+        condiciones = apo.paginas_de_condiciones(documentos)
+    except apo.AportableError as err:
+        # R3/H-05: una mención del rótulo que no es título para aquí, y los documentos son
+        # los de todos los envíos: para la expedición entera, con su motivo.
+        raise ExpedicionError(f"{expedicion.id_personalizado}: {err}") from err
+    if not condiciones:
+        raise ExpedicionError(
+            f"ninguno de los {len(documentos)} documentos enviados abre una página con el "
+            f"rótulo «{apo.LITERAL_CONDICIONES}» como título. O el envío no llevaba "
+            "condiciones —y entonces lo que se aporta es el íntegro, con su firma— o las "
+            "llevaba con otro rótulo —y entonces NO—. Eso lo decide una persona mirando "
+            "el documento: F3 no certifica que no haya nada que retirar.")
+    try:
+        partes, error_partes = entorno_exp.partes_de(w_code), None
+    except Exception as err:  # noqa: BLE001 — el CRM o el catálogo local, indistintos
+        partes, error_partes = [], str(err)
+    carpeta = Path(entorno_exp.carpeta_certificados(w_code))
+    plaza = entorno_exp.usuario if verificar_plaza else None
+    generado = entorno_exp.ahora().isoformat()
+    resultados: list[AportablePreparado] = []
+
+    for envio in expedicion.envios:
+        if not envio.cosechable:
+            motivo = envio.pendiente_por(expedicion.leida_en)
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, PENDIENTE,
+                motivo=f"no es cosechable — {QUE_SIGNIFICA[motivo]}. El aportable se "
+                       "prepara sobre el certificado definitivo."))
+            continue
+        integro = carpeta / nombre_canonico(envio.asunto, w_code, envio.id_envio)
+        if not integro.is_file():
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, SIN_COSECHAR,
+                motivo=f"no está {integro.name}: corre `codicert cosechar` primero."))
+            continue
+        datos = integro.read_bytes()
+        try:
+            emisor = entorno_exp.leer_emisor(datos)
+        except Exception as err:  # noqa: BLE001 — `CertificadoIlegibleError` y lo que venga
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, PARADO, motivo=f"íntegro ilegible: {err}"))
+            continue
+        if not _emisor_coincide(emisor, razon_social=esperado, usuario=plaza):
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, PARADO,
+                motivo=(f"el íntegro del expediente declara como emisor "
+                        f"{emisor.razon_social!r} (usuario {emisor.usuario!r}) y se "
+                        f"esperaba {esperado!r} ({plaza!r}): no es nuestra prueba "
+                        "(art. 17.2).")))
+            continue
+        try:
+            avisos_reproduccion = apo.comprobar_reproduccion(datos, documentos)
+            recorte = apo.recortar(datos, condiciones)
+            ficheros_acta = apo.ficheros_listados(datos)
+        except apo.AportableError as err:
+            resultados.append(AportablePreparado(envio.id_envio, envio.canal, PARADO,
+                                                 motivo=str(err)))
+            continue
+        hoy = _destinatario(envio, partes, error_partes)
+        destino, manifiesto = ruta_aportable(integro), ruta_manifiesto(integro)
+        existe_aportable, existe_manifiesto = destino.exists(), manifiesto.exists()
+        retiradas = tuple(r.pagina_certificado for r in recorte.retiradas)
+
+        if existe_aportable:
+            # El que ya está se RELEE —se recompone con la imagen de hoy y el texto que
+            # lleva, byte a byte—, y así volver a lanzar no pasa el OCR otra vez (lo caro).
+            pdf = destino.read_bytes()
+            try:
+                avisos_ocr = apo.verificar_aportable(pdf, recorte)
+            except apo.AportableError as err:
+                resultados.append(AportablePreparado(
+                    envio.id_envio, envio.canal, PARADO, ruta_aportable=destino,
+                    motivo=(f"ya hay un {destino.name} que no es el aportable de este "
+                            f"íntegro ({err}): no se pisa. Si sobra, apártalo a mano y "
+                            "vuelve a lanzar.")))
+                continue
+        else:
+            # Sin aportable se compone, haya o no manifiesto: desde la R3 el mismo OCR
+            # sobre la misma imagen da el mismo fichero (M-13), así que un manifiesto
+            # huérfano se valida contra él más abajo, como cualquier otro.
+            try:
+                hecho = apo.aportable_de(recorte, ocr=entorno_exp.ocr)
+            except apo.AportableError as err:
+                resultados.append(AportablePreparado(envio.id_envio, envio.canal, PARADO,
+                                                     motivo=str(err)))
+                continue
+            pdf, avisos_ocr = hecho.pdf, hecho.avisos
+
+        nuevo = apo.manifiesto_de(
+            recorte, id_envio=envio.id_envio, canal=envio.canal,
+            id_personalizado=expedicion.id_personalizado, generado=generado,
+            integro_nombre=integro.name, integro_sha256=hashlib.sha256(datos).hexdigest(),
+            aportable_nombre=destino.name, aportable_sha256=hashlib.sha256(pdf).hexdigest(),
+            # QUÉ se comprobó del emisor, no un «verificado» genérico (R1, §5): con
+            # `verificar_plaza=False` la cuenta no se compara, y decirlo verificado
+            # afirmaría más de lo que se miró.
+            emisor={"razon_social": emisor.razon_social, "usuario": emisor.usuario,
+                    "razon_social_verificada": True, "usuario_verificado": plaza is not None},
+            ficheros_acta=ficheros_acta, documentos=documentos,
+            avisos_extra=(*avisos_reproduccion, *avisos_ocr), destinatario=hoy)
+
+        if existe_manifiesto:
+            # R1/H-04: un manifiesto que ya está se VALIDA contra lo que se acaba de
+            # comprobar —todo salvo lo volátil—; R2/H-04: lo del destinatario es volátil,
+            # y solo obliga a revisar si hoy avisa de algo que el manifiesto calla. Si
+            # falta el aportable, el recién compuesto tiene que tener SU huella: si no, ni
+            # se escribe ni se pisa nada.
+            existente = _manifiesto_existente(manifiesto)
+            if existente is None or not _manifiesto_corresponde(existente, nuevo):
+                resultados.append(AportablePreparado(
+                    envio.id_envio, envio.canal, PARADO,
+                    ruta_aportable=destino if existe_aportable else None,
+                    ruta_manifiesto=manifiesto,
+                    motivo=(f"ya hay un manifiesto ({manifiesto.name}) que no corresponde a "
+                            "este aportable —huellas, páginas o avisos distintos—: no se "
+                            "pisa. Si sobra, apártalo a mano y vuelve a lanzar.")))
+                continue
+            revisar = _destinatario_por_revisar(existente.get("destinatario"), hoy)
+            if revisar:
+                resultados.append(AportablePreparado(
+                    envio.id_envio, envio.canal, PARADO,
+                    ruta_aportable=destino if existe_aportable else None,
+                    ruta_manifiesto=manifiesto, motivo=revisar))
+                continue
+            if not existe_aportable:
+                _escribir_atomico(destino, pdf)
+            resultados.append(AportablePreparado(
+                envio.id_envio, envio.canal, YA_ESTABA if existe_aportable else PRODUCIDO,
+                ruta_aportable=destino, ruta_manifiesto=manifiesto, retiradas=retiradas,
+                avisos=(*existente["avisos"],
+                        *(existente.get("destinatario") or {}).get("avisos", []),
+                        *_notas_del_destinatario(existente, hoy))))
+            continue
+
+        if not existe_aportable:
+            _escribir_atomico(destino, pdf)
+        cuerpo = json.dumps(nuevo, ensure_ascii=False, indent=2) + "\n"
+        _escribir_atomico(manifiesto, cuerpo.encode("utf-8"))
+        resultados.append(AportablePreparado(
+            envio.id_envio, envio.canal, YA_ESTABA if existe_aportable else PRODUCIDO,
+            ruta_aportable=destino, ruta_manifiesto=manifiesto, retiradas=retiradas,
+            avisos=(*nuevo["avisos"], *(hoy["avisos"] if hoy else ()))))
+    return resultados
+
+
+#: Lo que un manifiesto dice y NO es identidad del aportable: el instante en que se generó
+#: y lo que el CRM de ese día dijo del destinatario (R2/H-04).
+_CLAVES_VOLATILES = frozenset({"generado", "destinatario"})
+
+
+def _manifiesto_existente(ruta: Path) -> dict | None:
+    try:
+        existente = json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return existente if isinstance(existente, dict) else None
+
+
+def _manifiesto_corresponde(existente: dict, nuevo: dict) -> bool:
+    """¿El manifiesto en disco dice lo mismo que el recién calculado, salvo lo volátil?"""
+    return ({k: v for k, v in existente.items() if k not in _CLAVES_VOLATILES}
+            == {k: v for k, v in nuevo.items() if k not in _CLAVES_VOLATILES})
 
 
 #: Reexportados para que quien use `cosechar` no tenga que importar dos módulos más

@@ -11620,6 +11620,15 @@ La rama que ya existe para el caso legítimo —copiar y anotar `duplicado_de`�
 cambios. **La frontera, no el ejemplo:** cualquier fuente que reciba bytes que otra ya depositó
 tiene este mismo modo de fallo; el arreglo debe formularse sobre el canal, no sobre WhatsApp.
 
+**Dato del 2026-09-25 (W-02Y2J6): el orden que lo evita mientras no se arregle.** Cuando los zips de
+WhatsApp llegan dentro del Drive de E&V, el pull de `drive_ev` **no** los registra en el manifiesto
+M9 —`_intake_generico` no toca `IntakeManifest`; sí lo hacen `email_export`, `intake_manual`, el pull
+del CRM y `whatsapp_intake`—. Depositarlos por `--fuente whatsapp` **antes** del pull del CRM y del
+export de correo evita el salto: tras el alta no había `_intake_hashes.json`, los cuatro chats
+entraron con todos sus mensajes y cero adjuntos faltantes, y las copias de esos mismos zips que
+venían adjuntas a correos se registraron después como duplicado. Es un rodeo por orden, no un
+arreglo: con el correo exportado primero, el corte habría ocurrido igual.
+
 ## 242. El semáforo JURÍDICO **en blanco** se ve ROJO, por un estilo fijo bajo el formato condicional  [CERRADA 2026-09-11]
 
 > Medido el 2026-09-11 por la R1 de `MEJORAS #228`, sobre la plantilla renderizada. **Preexistente:
@@ -12934,7 +12943,7 @@ son texto, todo con su línea— que comparten `cargar_ficha_yaml` y `crm_colabo
 y se valida entero antes de tocar el CRM: una clave desconocida sale con su ruta y **todas** las
 sugerencias cercanas (`apellido` → `apellido1` o `apellido2`), sin convertirse en alias. W-030A13
 se rechaza ahora por sus dos `apellido`, que es exactamente este defecto. Lo que no cierra, porque
-es otra decisión: reparar las fichas 1128 y 1129 (`#305`).
+es otra decisión: reparar las fichas 1128 y 1129 (`#311`).
 
 ---
 
@@ -12999,6 +13008,24 @@ copia de la regla necesita edición de skill y re-importación en Cowork), y `zi
 
 ---
 
+## 286. F3 no prepara el aportable de una expedición solo de burofax
+
+> **Declarado al construir F3, el 2026-09-25** (plan `docs/superpowers/plans/2026-09-25-codicert-f3.md`).
+
+`core/expedicion_certificada.documentos_enviados` saca los documentos que salieron de la **entrega
+electrónica** de la expedición, porque es la única cuyo acta lista los adjuntos uno a uno con su
+huella. El burofax los funde en un PDF de nombre UUID y no dice dónde acaba cada documento (M-4),
+así que una expedición **sin correo ni SMS** —requeridos sin email ni móvil— para con «ninguna
+entrega electrónica en esta expedición» y no produce aportable. No es un fallo silencioso: para y
+lo dice.
+
+**Remedio probable.** Admitir `--doc` en `codicert aportable`, como en `plan`, y verificar cada
+documento **por casado de texto** contra la reproducción del burofax, ya que no hay huella por
+fichero contra la que cotejarlo.
+
+**Disparador de promoción.** El primer expediente real cuyos requeridos no tengan ni correo ni
+móvil y necesite aportar el certificado del burofax.
+
 ## 287. C3 de `verificar_apertura` no puede pasar en NINGÚN caso con bundles partidos: falla en los nueve del repo
 
 > **Rescatada el 2026-09-25 del PR #387**, donde llevaba el número 277 desde el 2026-09-16
@@ -13032,6 +13059,13 @@ comprobación de un segundo.
 el padre existe —es el PDF de `00_Input`—; lo que no existe es su fila en la cobertura.
 
 **Disparador.** La próxima apertura que quiera leer C3 como señal y no como ruido.
+
+**Dato del 2026-09-25 (W-02Y2J6), y el disparador se cumplió** (se leyó C3 como señal hasta ver que
+era esto). 125 de las 129 filas con `parent_slug` apuntan a un padre ausente, 51 compuestos
+distintos. Pero **4** filas sí tienen su padre en la cobertura, así que «el slug padre no está» no
+es universal: un arreglo que se apoye en la ausencia tiene que contar con esos casos. En este
+expediente `plan` había escrito 57 `_segmentacion.json` antes de `apply`; no se ha medido si eso
+decide qué compuestos conservan fila padre.
 
 ---
 
@@ -13176,6 +13210,65 @@ las altas ya hechas: es escritura en el CRM.
 
 ---
 
+## 292. El test del OCR real del aportable no lo corre ninguna verja  [PROMOVIDO → PLAN.md 2026-09-25]
+
+> **Declarado en la R2 de F3, el 2026-09-25** (plan `docs/superpowers/plans/2026-09-25-codicert-f3.md` §13).
+>
+> **[PROMOVIDO → PLAN.md, fila 41] 2026-09-25.** Disparador cumplido: la remediación de la R3 cambió
+> `core/certificado_aportable.py` y el adaptador. Desde la R3 son **dos** tests lentos —
+> `test_R3_el_OCR_REAL_deja_un_aportable_que_la_relectura_admite` y
+> `test_R3_el_OCR_REAL_lee_un_ESCANEO_con_las_condiciones_y_AVISA`— y el adaptador es
+> `_ocr_tesseract` (Tesseract directo); OCRmyPDF ya no está en el camino del aportable. Corridos a
+> mano con `--runslow`: 2 verdes, unos 52 s.
+
+`test_R2_el_OCR_REAL_deja_un_aportable_que_la_relectura_admite` es el único que ejerce el adaptador
+de verdad (`core/expedicion_certificada._ocr_aportable`: OCRmyPDF + Tesseract) y lleva `slow`, así
+que solo corre con `--runslow`. `scripts/session_close` activa `--runslow` **solo cuando el commit
+toca `core/anon/`**. Es exactamente el test que encontró los dos defectos que el sintético no
+enseñaba —la linealización por encima de 1 MB y el `stderr` secuestrado—, y un cambio en el
+aportable o en el adaptador puede entrar sin que nadie lo corra. El resto de la suite usa un OCR de
+mentira, y el guard de `entorno_real` solo comprueba que el puerto está cableado.
+
+**Remedio probable.** Que `session_close` active `--runslow` también cuando el diff toque
+`core/certificado_aportable.py` o el adaptador —unos 30 s más—, o un marcador propio para el OCR
+del aportable.
+
+**Disparador de promoción.** El próximo cambio en `core/certificado_aportable.py` o en
+`_ocr_aportable`.
+
+## 293. `ocrmypdf.ocr()` deja `sys.stderr` sustituido por un `StringIO`, también en `core/anon/`
+
+> **Medido en la R2 de F3, el 2026-09-25**, con OCRmyPDF 17.11: antes de la llamada `sys.stderr` es
+> el `TextIOWrapper` de siempre; después, un `io.StringIO` que nadie devuelve.
+
+Desde ahí se pierde en silencio todo lo que vaya al `stderr` —avisos, `logging` y la traza de
+cualquier excepción—: el proceso sale con 1 **sin decir por qué**. Así se presentó en F3, y el
+adaptador del aportable ya lo devuelve como estaba. **`core/anon/ocr.py` llama al mismo
+`ocrmypdf.ocr()` y no lo devuelve**, así que el pipeline de anonimización tiene el mismo agujero.
+Por la regla de `core/anon/` (cero pérdida de lógica; las mejoras, aquí), no se toca en este diff.
+
+**Remedio probable.** Guardar `sys.stderr` antes de la llamada y devolverlo en un `finally`, como
+hace `_ocr_aportable`, con un test que lo compruebe tras un OCR real.
+
+**Disparador de promoción.** Una corrida de la anonimización que falle después del OCR sin dejar
+traza, o la próxima vez que se toque `core/anon/ocr.py`.
+
+## 294. El aportable en imagen pesa ~545 KB por página
+
+> **Medido en la R2 de F3, el 2026-09-25**, sobre los dos certificados reales: 3,8 MB para 7 páginas
+> y 4,8 MB para 9, a 200 ppp en JPEG de calidad 85.
+
+Es el precio de que el aportable sea la imagen de lo conservado (R2/H-01) y de que las huellas del
+acta se lean a ojo. Para los envíos medidos —7 a 10 páginas— no es un problema, pero un burofax
+admite 200 páginas (spec §1.4), y eso daría unos 110 MB, que ningún canal de presentación
+admitiría. A 150 ppp el OCR lee lo mismo (medido) y pesa ~362 KB por página; en escala de grises,
+menos aún, a cambio de perder el color de membretes y logotipos.
+
+**Remedio probable.** Bajar la resolución o pasar a grises solo por encima de un número de páginas,
+declarándolo en el manifiesto; o partir el aportable.
+
+**Disparador de promoción.** El primer aportable que no se pueda presentar por su tamaño.
+
 ## 295. `abrir_caso --modo v1 --fuente email` no deriva la identidad, y el comando del runbook que trae correo no pasa esos flags
 
 > **Leído en el código el 2026-09-25, abriendo W-02UIQU; no corrido.** Pasé los flags a mano para
@@ -13224,6 +13317,14 @@ los dos sitios que leen el token con `config show`.
 existe» y lo diga en el mensaje; en el precheck, un código de salida propio para el timeout.
 
 **Disparador de promoción.** El próximo alta que aborte con ese mensaje.
+
+**Disparador cumplido el 2026-09-25, en la apertura de W-02Y2J6** —el mismo día y con el mismo
+mensaje—. La primera corrida de `abrir_caso … --folder-id <id> --fuente drive_ev --crm skip --yes`
+abortó en 32 s sin escribir nada. Acto seguido `_get_drive_access_token()` devolvió `None` en
+**5,1 s** (el tope) y `rclone about gdrive_ev:` tardó **6,7 s** con código 0, mientras un `rclone
+copy` paralelo bajaba 90 MB sin error. Minutos después `get_drive_folder_info` sí devolvió el
+`driveId`: es intermitente, según lo que tarde en arrancar `rclone`. Salida practicada, otra vez:
+`--team-id` explícito, que da `get_file_metadata` → `driveId`.
 
 ---
 
@@ -13294,6 +13395,13 @@ continuo (fotografía) o bimodal (papel), la distinción que `MEJORAS #90` ya mi
 
 **Disparador de promoción.** Cualquier apertura V1 con carpeta de fotos, que en la plantilla de
 E&V son casi todas.
+
+**Dato del 2026-09-25 (W-02Y2J6): los *exposés* son el mismo coste con otro nombre.** Los folletos
+de venta de E&V («Exposé-W-…») ocuparon **cuatro de los cinco** documentos más lentos de la sala de
+máquina —600,4, 278,1, 264,5 y 255,5 s, en una corrida de 93,9 min—, y dos de esos cuatro llegaron
+dentro de un chat de WhatsApp (fincas alternativas enviadas al buscador). No están en `08_FOTOS`,
+así que la primera palanca del remedio no los alcanza; la segunda —mirar si la página es
+fotografía— sí.
 
 ---
 
@@ -13409,7 +13517,184 @@ antes si se toca `session_close` por otra cosa.
 
 ---
 
-## 305. `crm_ficha` detecta el apellido vacío de una ficha existente y no lo repara: completar el nombre y los apellidos es otra decisión, con otro radio de daño
+## 304. El recorte dibuja dos veces cada página que se conserva
+
+> **Medido en la R3 de F3, el 2026-09-25**, sobre los dos certificados reales: el recorte tarda
+> **12 s** con 8 páginas y **35 s** con 10, a 200 ppp, antes de pasar el OCR.
+
+Desde la R3, `recortar` dibuja cada página conservada **dos veces**: una para su imagen
+(`_rasterizar`) y otra, con todas las del íntegro, para las miniaturas contra las que la relectura
+casa lo que el aportable dibuja (`_miniaturas`). Es a propósito: las miniaturas son el instrumento
+independiente de la imagen, y si salieran del mismo dibujo un error de índices en `_rasterizar` se
+llevaría las dos a la vez. El coste es lineal: un burofax de 200 páginas (spec §1.4) serían del
+orden de diez minutos de dibujo, además del OCR (de 1,4 a 10,9 s por página, M-13).
+
+**Remedio probable.** Dibujar cada página una sola vez y sacar de ese dibujo la miniatura de TODAS
+y la imagen de las conservadas, con el índice resuelto en un solo sitio y un test que fuerce el
+error de índices en ese sitio; o bajar la resolución de las miniaturas midiendo antes que siguen
+separando (la propia a ≤ 0,52 y la más cercana a ≥ 4,22 a 200 ppp).
+
+**Disparador de promoción.** El primer envío real de más de 50 páginas, o una queja por el tiempo
+de `codicert aportable`.
+
+## 305. El aportable de un certificado provisional
+
+> **Medido el 2026-09-26**, en el barrido de los 117 envíos reales de `madrid.bd` (plan
+> `2026-09-26-codicert-estados-medidos.md`, M-19): **1 de 117** se queda estancado —el burofax
+> `006bgjupt2a`, 88 días en 17 sin el 19—.
+
+F3 prepara el aportable **solo sobre el certificado definitivo**: en `_preparar_bajo_candado`, un
+envío que no es cosechable sale `PENDIENTE` y no se toca. Desde el plan de los estados, un envío
+**estancado** se declara como tal y el informe ofrece la salida que ya existía,
+`cosechar --incluir-pendientes`, que baja el certificado **provisional** con su estado en el nombre.
+Pero ese provisional no tendrá aportable, y sin aportable no se puede presentar sin exponer las
+condiciones económicas.
+
+**Remedio probable.** Que `aportable` admita el íntegro provisional de un envío **estancado** —no
+de cualquier pendiente—, con el estado en el nombre del aportable y del manifiesto, y el manifiesto
+diciendo que el hecho acreditado es el de ese estado.
+
+**Disparador de promoción.** El primer envío estancado cuyo certificado haya que aportar.
+
+---
+
+## 306. `verificar_apertura` C1: los ficheros nativos de Google salen a la vez como faltantes y como sobrantes
+
+> **Medido el 2026-09-25, abriendo W-02Y2J6.** Falso positivo: el espejo estaba completo.
+
+`censo_remoto` dio `remoto: 88, local: 88` y aun así `fallo`, con 8 ficheros que «faltan en
+local» y 8 que «sobran». Son **los mismos ocho**, todos nativos de Google —tres chats de WhatsApp
+convertidos a Docs, tres hojas de cálculo y dos documentos—: la API los nombra **sin extensión**
+(`…/_chat`) y en local llevan la de exportación que añade `rclone` (`…/_chat.docx`, `….xlsx`). Un
+diff con `rclone lsf`, normalizado a NFC, da 88 = 88 y solo sobra `.pulled`. C2 los cuenta aparte
+(`sin_hash_remoto: 8`), coherente con que no hay `sha256` que contrastar.
+
+**Es sistemático en E&V:** el informe de viabilidad de la agencia (`<REF> - RECLAMACIÓN
+HONORARIOS…`) y las hojas de facturación suelen ser Sheets nativos, y los chats subidos a Drive se
+convierten solos en Docs.
+
+**La frontera:** una comprobación de identidad que compara nombres sin saber que uno de los dos
+lados se exporta.
+
+**Remedio probable.** Cuando el `mimeType` remoto es `application/vnd.google-apps.*`, comparar
+contra el nombre más la extensión con que `rclone` lo exporta (`.docx`, `.xlsx`, `.pptx`), o por
+raíz de nombre.
+
+**Disparador de promoción.** La próxima apertura cuyo C1 falle con nombres sin extensión.
+
+---
+
+## 307. `verificar_apertura` C2: todo fichero con formato ZIP sale «sin explicar» aunque sea el relleno de `#225`
+
+> **Medido el 2026-09-25, abriendo W-02Y2J6.** Cinco «sin explicar» que eran el defecto conocido.
+
+C2 dio 80 discrepancias: 75 con el relleno de `MEJORAS #225` y **5 «sin explicar»**, que eran los
+cuatro zips de WhatsApp y un `.docx`. Contrastados con una descarga limpia (`rclone copy` sin
+`--inplace` ni `--ignore-*`): **prefijo idéntico byte a byte** y cola de ceros hasta el siguiente
+múltiplo de 512. Es exactamente `#225`.
+
+**Por qué no lo reconoce.** `_es_el_relleno_de_225` quita la cola de ceros **entera** y rehashea.
+Un ZIP —y un `.docx`, `.xlsx` o `.pptx`, que lo son— termina legítimamente en `00 00`: la longitud
+del comentario del registro de fin de directorio central. El recorte se lleva esos dos bytes y el
+`sha256` no cuadra nunca. La docstring trata como raro el «documento que ya terminaba en ceros» y
+falla cerrado a propósito, lo que es correcto para lo raro; en los formatos ZIP es universal, así
+que C2 dará siempre «sin explicar» en ofimática y en exports de WhatsApp.
+
+**La frontera:** una prueba que asume el caso improbable y que, para una familia entera de
+formatos, es el caso seguro.
+
+**Remedio probable.** Contrastar el prefijo de la longitud que declara Drive (`size`) contra su
+`sha256Checksum`: sigue siendo prueba, no parecido, y ya se hashea por prefijos. En su defecto,
+probar los prefijos de longitud `tamaño - k` para `k < 512`.
+
+**Disparador de promoción.** El próximo C2 con «sin explicar» sobre un `.zip`, `.docx` o `.xlsx`.
+
+---
+
+## 308. `plan` de la sala de máquina: el gate que anuncia es un `.md` que `apply` no lee, y no es «instantáneo»
+
+> **Medido el 2026-09-25, abriendo W-02Y2J6.** Dos defectos del mismo comando.
+
+**El gate.** `scripts/sala_maquina.py` imprime «revisa …/_segmentacion.md y ajusta antes de
+apply», y la cabecera que `core/split_documental.py::escribir_manifiesto` pone en ese `.md` dice
+«GENERADO — editable: ajusta pp/tipo/role y re-ejecuta apply». Pero `leer_manifiesto` hace
+`json.loads` de `_segmentacion.json` y **nadie lee el `.md`** (grep de `_MANIFIESTO_MD` y de
+`leer_manifiesto` en `core/` y `scripts/`). Quien siga el mensaje y edite el `.md` no cambia nada,
+y nada se lo dice. `#78` repite la premisa («editando `_segmentacion.md`»). En W-02Y2J6 la
+propuesta partía la **demanda** —29 páginas, un solo escrito— en siete documentos, seis como
+`DOC_OFERTA`, porque el escrito cita la oferta y los correos; se corrigió editando el JSON con
+`split.escribir_manifiesto` bajo el mutex. Vecina de `#298`: el detector parte y etiqueta por
+señales que un escrito procesal también tiene.
+
+**El tiempo.** El runbook, en su §5, dice «`plan` (preview) es instantáneo». Medido: **1.226 s**
+sobre unos 420 ficheros y 1 GB en `00_Input`, con la máquina compartida con otra sesión que corría
+la suite con 12 workers. El coste es `split.detectar` sobre cada PDF con capa de texto. Además
+`plan` **sostiene el mutex del caso** y **escribe** los `_segmentacion.{json,md}` —57 en este
+caso—, así que durante esos 20 minutos `apply` abortaría por caso ocupado. La docstring ya lo
+declara («**ESCRIBE** el manifiesto»); lo que va por detrás es el runbook.
+
+**Remedio probable.** Que `plan` señale el JSON, o que `apply` lea el `.md` si es más reciente que
+el JSON; y corregir el §5 del runbook con la medición.
+
+**Disparador de promoción.** La próxima vez que alguien edite un `_segmentacion.md` esperando un
+efecto, o la próxima edición del §5 del runbook.
+
+---
+
+## 309. Un PDF con el texto en trazos vectoriales sale `empty` del OCR, y la vía de visión no se puede cablear desde el CLI
+
+> **Medido el 2026-09-25/26, abriendo W-02Y2J6.** Un documento de la demanda sin texto en el
+> corpus, y sin vía de recuperación en el pipeline.
+
+El D 07 de la demanda —el reporte de actividades del CRM, 16 páginas— y su gemelo del Drive de
+E&V salieron `empty` con **30 caracteres** tras el OCR (`nota: sin texto o residual`). Sus páginas
+no tienen **ni fuentes ni XObjects**: el texto está convertido a trazos. **El productor no es el
+discriminante:** la copia del CRM es iLovePDF con `/Rotate 90`, y el gemelo es «Microsoft: Print
+To PDF» con `/Rotate 0` y el contenido de lado dentro de la página; mismo contenido, verificado
+sobre el render, y los dos `empty`. Renderizado con Ghostscript a 110-130 dpi se lee perfecto.
+D 05 y D 08, también «Microsoft: Print To PDF» pero **con imagen incrustada**, salen `ok` (2.111
+y 3.857/17.949 caracteres). Hipótesis a medir: ocrmypdf rasteriza a baja resolución las páginas
+sin imagen de la que derivar el DPI, o le afecta el giro del contenido.
+
+**La salida prevista no existe en la práctica.** `sala_maquina reforzar` aborta en
+`_exigir_vision_cableada` si `sm.vision_cableada()` es falso, y la skill `organizar-sala-maquina`
+dice que el transcriptor «lo inyecta el flujo de la skill / la sesión» sin decir cómo. La salida
+practicada fue manual: páginas renderizadas, lectura visual por un subagente, verificación contra
+las imágenes y `03_MD/<stem>.transcripcion.md` con cabecera de trazabilidad. Cuadró con el total
+del propio documento (148 actividades) y destapó un riesgo propio de esa vía: el tipo de letra
+dibuja la «i» casi como una «l», y la lectura dejó «propledad» quince veces. Se corrigió en todo el
+texto con un barrido del patrón.
+
+**La frontera:** un `empty` sin vía de recuperación es un hueco silencioso del corpus; lo que lea
+el expediente para preparar un escrito no tendrá ese documento.
+
+**Remedio probable.** Para páginas sin imagen, sobremuestrear (`--oversample` de ocrmypdf) o
+renderizar con Ghostscript y pasar el OCR sobre la imagen; y documentar o cablear el transcriptor
+para que `reforzar` sea usable.
+
+**Disparador de promoción.** El próximo `empty` sobre un PDF que se lee bien en pantalla.
+
+---
+
+## 310. Las unidades de Madrid no llevan « - »: `codigo_de_unidad` no deriva `MaRS<N>` y `--codigo-caso` es siempre obligatorio
+
+> **Medido el 2026-09-25, abriendo W-02Y2J6.** No es un fallo —falla cerrado, como está diseñado—,
+> pero contradice lo que dice el runbook.
+
+`core/config.py::codigo_de_unidad` exige el patrón `«<Ciudad> - S<N>»`. Las unidades compartidas de
+E&V en Madrid se llaman `PROPIEDADES S6` (W-02Y2J6) y `PROPERTIES S15` (W-0462E1): sin ciudad y sin
+« - ». Devuelve `None`, y `--codigo-caso` es obligatorio en toda apertura de Madrid, mientras el
+runbook, en `[APER-03]`, dice «NO preguntar». Dos casos medidos; ni el código ni el backlog lo
+recogían (grep de `PROPERTIES S` y `PROPIEDADES S`, vacío).
+
+**Remedio probable.** O enseñar el patrón, tomando la ciudad de `--ciudad`, o dejar escrito en
+`[APER-03]` que en Madrid el código va siempre explícito.
+
+**Disparador de promoción.** La próxima apertura de Madrid.
+
+---
+
+## 311. `crm_ficha` detecta el apellido vacío de una ficha existente y no lo repara: completar el nombre y los apellidos es otra decisión, con otro radio de daño
 
 > **Anotada el 2026-09-26** al construir `crm_ficha` (fila #40 de `PLAN.md`; spec rev. 3 §5,
 > «Lo que queda fuera»).
@@ -13437,7 +13722,7 @@ CRM`, o una decisión de Nikolai.
 
 ---
 
-## 306. Una parte con `id_crm` cuyo NIF declarado es de OTRA ficha: la fase previa no lo ve, y en un colaborador el completado lo escribe
+## 312. Una parte con `id_crm` cuyo NIF declarado es de OTRA ficha: la fase previa no lo ve, y en un colaborador el completado lo escribe
 
 > **Anotada el 2026-09-26**: límite declarado del spec rev. 3 de `crm_ficha` (§5), no medido en un
 > caso real. **Corregida el mismo día tras la R3 (H-01, plan §10):** la primera versión de esta
@@ -13468,7 +13753,7 @@ dos rondas** (decide qué ficha es una persona).
 
 ---
 
-## 307. `_resolver_colaborador` ignora el `motivo` de `resolver_parte`: ante un buzón compartido con una ficha sin documento, el colaborador vincula esa ficha en vez de parar
+## 313. `_resolver_colaborador` ignora el `motivo` de `resolver_parte`: ante un buzón compartido con una ficha sin documento, el colaborador vincula esa ficha en vez de parar
 
 > **Anotada el 2026-09-26**, de la R3 de `crm_ficha` (H-02; plan §10). **Anterior a esa pieza:** no
 > la introdujo su diff, y el contrario no la tiene.
