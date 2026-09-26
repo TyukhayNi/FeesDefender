@@ -1360,13 +1360,17 @@ class Requerido:
 
         Simétrico de la regla del spec §6.1: «un canal fallido no resta si otro del
         mismo requerido acreditó recepción».
+
+        Un canal sin clasificar NO suma (M-18, D-2): no se sabe qué acreditó, y contar
+        su fecha podría adelantar un plazo con un hecho que nadie ha clasificado. El
+        envío sigue en `envios`, y el informe lo declara.
         """
-        fechas = [e.recibido_en for e in self.envios if e.recibido_en]
+        fechas = [e.recibido_en for e in self.envios if e.recibido_en and e.canal_clasificado]
         return min(fechas) if fechas else None
 
     @property
     def accedido_en(self) -> datetime | None:
-        fechas = [e.accedido_en for e in self.envios if e.accedido_en]
+        fechas = [e.accedido_en for e in self.envios if e.accedido_en and e.canal_clasificado]
         return min(fechas) if fechas else None
 
 
@@ -2987,9 +2991,11 @@ def _preparar_bajo_candado(w_code: str, tipo: str, *, entorno_exp: EntornoExpedi
 
     for envio in expedicion.envios:
         if not envio.cosechable:
+            motivo = envio.pendiente_por(expedicion.leida_en)
             resultados.append(AportablePreparado(
                 envio.id_envio, envio.canal, PENDIENTE,
-                motivo="el hecho aún puede mejorar: se prepara cuando culmine."))
+                motivo=f"no es cosechable — {QUE_SIGNIFICA[motivo]}. El aportable se "
+                       "prepara sobre el certificado definitivo."))
             continue
         integro = carpeta / nombre_canonico(envio.asunto, w_code, envio.id_envio)
         if not integro.is_file():

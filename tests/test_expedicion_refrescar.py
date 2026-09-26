@@ -184,3 +184,20 @@ def test_la_expedicion_anota_cuando_se_leyo(tmp_path):
                        {"006a": _h((21, "2026-09-11T19:00:23+02:00"))})
     e = exp.refrescar("W-04AKM2", "OVC", entorno_exp=_entorno(tmp_path, t))
     assert e.leida_en == datetime(2026, 9, 21, tzinfo=timezone.utc)
+
+
+def test_un_canal_sin_clasificar_no_pone_fechas_al_requerido(tmp_path):
+    """M-18, D-2: un SMS Certificado (tipo `s`) con la referencia de la expedición no dice
+    qué acreditó —su adjunto no es necesariamente el requerimiento—. Sus fechas no entran
+    en el reloj del requerido, que es el que cuenta para los plazos (§6.1): contarlas
+    podría adelantar un plazo con un hecho que nadie ha clasificado. El envío sigue en su
+    lista y el informe lo declara."""
+    partes = [{"nombre": "ANA", "1apellido": "LÓPEZ", "movil": "600111222"}]
+    t = FakeTransporte([_ev("006s", "s", "34600111222")],
+                       {"006s": _h((17, "2026-07-07T12:59:54+02:00"),
+                                   (20, "2026-07-07T12:59:56+02:00"))})
+    e = exp.refrescar("W-04AKM2", "OVC", entorno_exp=_entorno(tmp_path, t, partes))
+    req = {r.etiqueta: r for r in e.por_requerido(partes)}
+    assert [x.id_envio for x in req["ANA LÓPEZ"].envios] == ["006s"]
+    assert req["ANA LÓPEZ"].recibido_en is None
+    assert req["ANA LÓPEZ"].accedido_en is None

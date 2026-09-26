@@ -128,6 +128,30 @@ def _fecha(f) -> str:
     return f.strftime("%d/%m/%Y %H:%M") if f else "—"
 
 
+def _dias(n: int) -> str:
+    return f"{n} día" if n == 1 else f"{n} días"
+
+
+def _no_cosechables(expedicion: exp.Expedicion, titulo: str) -> list[str]:
+    """Lo no cosechable, con su motivo: es lo que el abogado necesita para saber qué
+    hacer (M-21). Antes salía todo bajo «el hecho aún puede mejorar», y de un envío que
+    lleva ochenta días quieto eso es falso."""
+    grupos = expedicion.pendientes_por()
+    if not grupos:
+        return []
+    lineas = ["", f"  {titulo}"]
+    for motivo, envios in grupos.items():
+        alerta = "" if motivo == exp.PUEDE_MEJORAR else "⚠️ "
+        lineas.append(f"    {alerta}{exp.ETIQUETA[motivo]} — {exp.QUE_SIGNIFICA[motivo]}")
+        lineas += [f"      · {e.id_envio} ({e.canal}), "
+                   f"{_dias(e.dias_quieto(expedicion.leida_en))} sin moverse" for e in envios]
+        if motivo == exp.ESTANCADO:
+            lineas += ["      Si el certificado de hoy te sirve, `cosechar --incluir-pendientes`",
+                       "      lo baja con su estado en el nombre, sin ocupar el sitio del",
+                       "      definitivo. El aportable, solo sobre el definitivo."]
+    return lineas
+
+
 def render_estado(expedicion: exp.Expedicion,
                   partes: list[dict] | Callable[[str], list[dict]]) -> str:
     """Lo que el abogado lee para saber a quién se le ha entregado y cuándo.
@@ -170,10 +194,8 @@ def render_estado(expedicion: exp.Expedicion,
         ultimo = max(e.historico, key=lambda x: x.fecha) if e.historico else None
         etiqueta = f"{ultimo.codigo} · {ultimo.titulo}" if ultimo else "(sin histórico)"
         lineas.append(f"  {e.id_envio:<12} {e.canal:<12} {etiqueta:<34} "
-                      f"{'sí' if e.cosechable else 'aún no'}")
-    if expedicion.pendientes:
-        lineas += ["", "  PENDIENTES (el hecho aún puede mejorar; no se cosechan):"]
-        lineas += [f"    · {e.id_envio} ({e.canal})" for e in expedicion.pendientes]
+                      f"{'sí' if e.cosechable else 'no'}")
+    lineas += _no_cosechables(expedicion, "PENDIENTES, y por qué no se cosechan:")
     desconocidos = sorted({c for e in expedicion.envios for c in e.desconocidos})
     if desconocidos:
         lineas += [
@@ -181,6 +203,14 @@ def render_estado(expedicion: exp.Expedicion,
             + ", ".join(str(c) for c in desconocidos),
             "     No se tratan como benignos. Míralos en el portal y añádelos",
             "     a `_FAMILIA_DE` en core/expedicion_certificada.py.",
+        ]
+    canales = sorted({e.tipo for e in expedicion.envios if not e.canal_clasificado})
+    if canales:
+        lineas += [
+            "", "  ⚠️ CANALES SIN CLASIFICAR: tipo " + ", ".join(canales),
+            "     No se cosechan y sus fechas no cuentan en «POR REQUERIDO»: no se",
+            "     sabe qué acreditan. Añádelos a `CANAL_DE_TIPO` y `_CULMINACION`",
+            "     en core/expedicion_certificada.py.",
         ]
     if not expedicion.envios:
         lineas += [
@@ -191,8 +221,8 @@ def render_estado(expedicion: exp.Expedicion,
     return "\n".join(lineas)
 
 
-def render_cosecha(cosechados, pendientes) -> str:
-    """Qué se archivó y qué no, con el emisor verificado a la vista."""
+def render_cosecha(cosechados, expedicion: exp.Expedicion) -> str:
+    """Qué se archivó y qué no —con su motivo—, con el emisor verificado a la vista."""
     lineas = ["COSECHA", ""]
     for c in cosechados:
         marca = "ya estaba" if c.ya_estaba else "nuevo"
@@ -204,9 +234,7 @@ def render_cosecha(cosechados, pendientes) -> str:
         falta = "" if c.local_presente else "   ⚠️ NO ESTÁ (solo en el CRM)"
         lineas.append(f"      local .... {c.ruta_local}{falta}")
         lineas.append(f"      sha256 ... {c.sha256 or '(de una cosecha anterior)'}")
-    if pendientes:
-        lineas += ["", "  NO COSECHADOS (el hecho aún puede mejorar):"]
-        lineas += [f"    · {e.id_envio} ({e.canal})" for e in pendientes]
+    lineas += _no_cosechables(expedicion, "NO COSECHADOS, y por qué:")
     if not cosechados:
         lineas.append("  Nada que cosechar todavía.")
     return "\n".join(lineas)
@@ -267,9 +295,9 @@ def main(argv: list[str] | None = None) -> int:
         if nombre == "cosechar":
             s.add_argument("--incluir-pendientes", action="store_true",
                            dest="incluir_pendientes",
-                           help="baja también el certificado de los envíos que aún "
-                                "pueden mejorar; su nombre lleva el estado, así que "
-                                "no ocupan el sitio del definitivo")
+                           help="baja también el certificado de lo no cosechable (en "
+                                "curso, estancado o sin clasificar); su nombre lleva el "
+                                "estado, así que no ocupa el sitio del definitivo")
     args = parser.parse_args(argv)
 
     entorno = entorno_de(argumento=args.entorno)
@@ -307,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
                 expedicion = exp.refrescar(args.w_code, args.tipo,
                                            entorno_exp=entorno_exp,
                                            ordinal=args.ordinal)
-            print(render_cosecha(cosechados, expedicion.pendientes))
+            print(render_cosecha(cosechados, expedicion))
             return 0
 
         if args.orden == "aportable":

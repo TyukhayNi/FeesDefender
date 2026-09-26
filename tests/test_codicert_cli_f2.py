@@ -68,7 +68,8 @@ def test_render_cosecha_distingue_lo_nuevo_de_lo_que_ya_estaba():
         id_envio="006a", ruta_local=Path("x/y.pdf"), sha256="ab" * 32,
         doc_id="42990", razon_social_emisor="EV MMC SPAIN, S.L.U.",
         usuario_emisor="madrid.bd")
-    texto = cli.render_cosecha([c], ())
+    texto = cli.render_cosecha([c], exp.Expedicion(
+        id_personalizado="W-04AKM2 - OVC", entorno="produccion", leida_en=LEIDA))
     assert "42990" in texto and "nuevo" in texto and "madrid.bd" in texto
 
 
@@ -226,3 +227,41 @@ def test_estado_traduce_un_fallo_del_CRM_a_un_mensaje_legible(monkeypatch, capsy
     monkeypatch.setattr(exp, "entorno_real", revienta)
     assert cli.main(["estado", "W-04AKM2", "--tipo", "OVC", "--plaza", "Madrid"]) == 1
     assert "el caso no está indexado" in capsys.readouterr().err
+
+
+def test_render_estado_separa_lo_estancado_de_lo_que_puede_mejorar():
+    """M-19/M-21: un burofax 88 días en 17 no «puede mejorar»; se dice, con la salida."""
+    estancado = _envio("006e", tipo="b", historico=(exp.EstadoCertificado(
+        codigo=17, titulo="Entregado",
+        fecha=datetime.fromisoformat("2026-06-17T10:00:00+02:00")),))
+    reciente = _envio("006m", historico=(exp.EstadoCertificado(
+        codigo=21, titulo="Recordatorio lectura entregado",
+        fecha=datetime.fromisoformat("2026-09-11T19:00:23+02:00")),))
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(estancado, reciente), leida_en=LEIDA)
+    texto = cli.render_estado(e, [])
+    bloque_estancado = texto.index(exp.QUE_SIGNIFICA[exp.ESTANCADO])
+    bloque_mejora = texto.index(exp.QUE_SIGNIFICA[exp.PUEDE_MEJORAR])
+    assert bloque_estancado < texto.index("· 006e") < bloque_mejora < texto.index("· 006m")
+    assert "88 días sin moverse" in texto and "--incluir-pendientes" in texto
+
+
+def test_render_estado_declara_los_canales_sin_clasificar():
+    """M-18: el tipo `s` sale con su aviso, como un código sin clasificar."""
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(_envio("006s", tipo="s"),), leida_en=LEIDA)
+    texto = cli.render_estado(e, [])
+    assert "CANALES SIN CLASIFICAR: tipo s" in texto
+    assert exp.QUE_SIGNIFICA[exp.CANAL_SIN_CLASIFICAR] in texto
+    assert "sus fechas no cuentan en «POR REQUERIDO»" in texto
+
+
+def test_render_cosecha_dice_por_que_no_cosecho():
+    estancado = _envio("006e", tipo="b", historico=(exp.EstadoCertificado(
+        codigo=17, titulo="Entregado",
+        fecha=datetime.fromisoformat("2026-06-17T10:00:00+02:00")),))
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(estancado,), leida_en=LEIDA)
+    texto = cli.render_cosecha([], e)
+    assert exp.QUE_SIGNIFICA[exp.ESTANCADO] in texto and "· 006e" in texto
+    assert exp.QUE_SIGNIFICA[exp.PUEDE_MEJORAR] not in texto

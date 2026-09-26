@@ -345,6 +345,24 @@ def test_lo_que_aun_puede_mejorar_se_declara_pendiente(tmp_path):
     assert r["006b"].estado == exp.PENDIENTE and r["006c"].estado == exp.PRODUCIDO
 
 
+def test_lo_estancado_se_declara_pendiente_con_SU_motivo(tmp_path):
+    """M-21: el aportable decía de todo lo no cosechable que «puede mejorar». Un burofax en
+    17 desde hace 55 días no mejorará: se dice lo que es."""
+    entorno, _, _ = _escenario(tmp_path, historicos={"006b": [
+        {"codigo": 17, "titulo": "", "fecha": "2026-08-01T10:00:00+02:00", "detalle": None}]})
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    assert r["006b"].estado == exp.PENDIENTE
+    assert exp.QUE_SIGNIFICA[exp.ESTANCADO] in r["006b"].motivo
+    assert exp.QUE_SIGNIFICA[exp.PUEDE_MEJORAR] not in r["006b"].motivo
+
+
+def test_lo_que_aun_puede_mejorar_lo_dice_en_su_motivo(tmp_path):
+    entorno, _, _ = _escenario(tmp_path, historicos={"006b": [
+        {"codigo": 17, "titulo": "", "fecha": "2026-09-11T10:00:00+02:00", "detalle": None}]})
+    r = _por_id(exp.preparar_aportables(W, "OVC", entorno_exp=entorno))
+    assert exp.QUE_SIGNIFICA[exp.PUEDE_MEJORAR] in r["006b"].motivo
+
+
 def test_un_integro_de_OTRO_emisor_para_ese_envio(tmp_path):
     """Art. 17.2: el íntegro del expediente pudo cambiar desde la cosecha."""
     entorno, _, carpeta = _escenario(tmp_path)
