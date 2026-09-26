@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-17
 objeto: envío certificado de burofax y OVC por la API de Codicert (Servicios de MailCertificado S.L.)
-rev: "17"
+rev: "18"
 ---
 
 # El requerimiento sale solo: burofax, correo y SMS por la API de Codicert
@@ -14,6 +14,15 @@ correo electrónico y SMS, **a todos los requeridos**. Dos requeridos son dos co
 si constan; y **un burofax por domicilio distinto**. Al terminar, hay que **descargar los
 certificados** y producir la versión **aportable** como prueba.
 
+> **Rev. 18 (2026-09-26).** **Saneado de los datos de un tercero**, a petición de Nikolai: el
+> móvil y el email del requerido de la referencia de producción del §2 —y, con ellos, su nombre y
+> la razón social de su empresa— pasan a marcadores (`34XXXXXXXXX`, «[email de la persona
+> requerida]», «[persona requerida]», «[mercantil requerida]») aquí, en el acta de la R1
+> —redacción declarada, con su digest recomputado—, en los planes de F1 y F2 y en dos docstrings
+> de `core/`. Lo que el dato probaba —que el destinatario SMS real lleva el prefijo `34`— se
+> conserva. **El historial de git conserva el dato**: purgarlo exige reescribirlo y recrear el
+> repo, y eso lo decide Nikolai.
+>
 > **Rev. 17 (2026-09-26).** Los estados, **medidos sobre todos los envíos reales**: los 117 de
 > `madrid.bd` (del 2026-06-03 al 2026-09-23) y los 2 del sandbox, leídos en solo lectura (plan
 > [`2026-09-26-codicert-estados-medidos.md`](../plans/2026-09-26-codicert-estados-medidos.md),
@@ -212,7 +221,7 @@ aparece en exactamente dos sitios del contrato: `DestinatarioPostal.telefono` �
 incidencia del burofax**— y `SolicitudSms`, el producto que no usamos. En
 `DestinatarioVerificable`, que es el destinatario de la entrega electrónica certificada, **no hay
 patrón ninguno**. La rev. 1 lo atribuyó al canal equivocado y su regla habría detenido planes
-correctos: el destinatario SMS real del §2, `34645508869`, lleva prefijo internacional y no casa
+correctos: el destinatario SMS real del §2, `34XXXXXXXXX`, lleva prefijo internacional y no casa
 ese patrón. Regla que queda: se normaliza el móvil y se valida su forma, pero **el patrón estricto
 se aplica solo donde el contrato lo exige**, y el prefijo `34` se acepta.
 
@@ -401,9 +410,9 @@ Cuenta maestra `engelvoelkers` en `usuarios.codicert.io`, **25 subusuarios enume
 
 | Hora | Tipo | Destinatario | Estado |
 |---|---|---|---|
-| 13:05:34 | Burofax | TUV SUD IBERIA, S.A. | Entregado |
-| 13:02:57 | Entrega Electrónica Certificada | 34645508869 | Recordatorio lectura entregado |
-| 13:01:27 | Entrega Electrónica Certificada | JoseMaria.Arnau@tuvsud.com | Leído |
+| 13:05:34 | Burofax | [mercantil requerida] | Entregado |
+| 13:02:57 | Entrega Electrónica Certificada | 34XXXXXXXXX | Recordatorio lectura entregado |
+| 13:01:27 | Entrega Electrónica Certificada | [email de la persona requerida] | Leído |
 
 Tres envíos, tres canales, **un mismo `id_personalizado`**. Ese campo es el hilo que cose la
 expedición, y ya se usa así sin que nadie lo hubiera escrito.
@@ -413,14 +422,14 @@ mal: `BCN-OS-008684 - OVC` es la referencia de la operación **más** el discrim
 producción ya había resuelto lo que la rev. 1 dejaba abierto. El §3 lo recoge.
 
 El detalle del burofax confirma el mapeo de la ficha postal: `nombre` es la razón social
-(«TUV SUD IBERIA, S.A.»), `a_atencion` la persona («Sr. Jose María Arnau»), y debajo dirección,
+(«[mercantil requerida]»), `a_atencion` la persona («Sr. [persona requerida]»), y debajo dirección,
 población, provincia, CP y el teléfono de incidencia.
 
 ### 2.1 El emisor sale del expediente, no se teclea
 
 Decisión de Nikolai del 2026-09-17: **los envíos salen del usuario `.bd` del Market Center**
 que reclama, que es lo que ya se hace —el certificado del W-04A6LI salió de `valencia.bd` y el
-OVC de TUV SUD de `barcelona.bd`—.
+OVC de [mercantil requerida] de `barcelona.bd`—.
 
 El mapeo es determinista: las **siete ciudades canónicas** de `core/ciudades.py` tienen cada una
 su usuario, y **las siete se enumeraron** en el portal el 2026-09-17; no es inferencia. El slug de
@@ -559,7 +568,7 @@ Entrada: el expediente y el **tipo de comunicación**. Del CRM salen las partes 
 4. **Lo que falta se declara, no se inventa.** Un requerido sin móvil sale como «sin canal SMS».
    Un requerido **sin ningún canal** detiene el plan.
 5. **La ficha se valida entera antes de gastar, no en el 422.** El móvil se normaliza —el prefijo
-   va en campo aparte, que es por qué el destinatario real de producción es `34645508869`— y
+   va en campo aparte, que es por qué el destinatario real de producción es `34XXXXXXXXX`— y
    `pais` solo admite `"España"`, así que un domicilio extranjero para el burofax se detiene en el
    plan.
 
@@ -1186,7 +1195,7 @@ Ninguno de los dos restos condiciona el diseño ni bloquea F1.
 - **Objeto revisado:** `docs/superpowers/specs/2026-09-17-envio-certificado-codicert-design.md` rev. 1, commit `d895d1d`
 - **Ronda:** 1, sobre el diseño
 - **Revisor:** Claude Code (sesión independiente) — Codex sin cupo hasta el 2026-09-19
-- **Informe recibido:** `2026-09-17-envio-certificado-codicert-r1-adversarial-review.md`, `sha256` del bloque literal `59d499ffd7fddb209d2979893c96da537aad4cef008c4820fe20a8737d31b2f5`
+- **Informe recibido:** `2026-09-17-envio-certificado-codicert-r1-adversarial-review.md`, `sha256` del bloque literal `819b5f5741201796107362ff45c29fb553b301e18f09fd562b69ad5cb80385f6` (redactado el 2026-09-26: tres apariciones del móvil de un tercero; el del original era `59d499ffd7fddb209d2979893c96da537aad4cef008c4820fe20a8737d31b2f5`)
 - **Hallazgos:** 34 — 12 `alta`, 14 `media`, 8 `baja`. **33 confirmados, 1 refutado en un extremo**
 - **Remediado en:** esta rev. 2
 

@@ -91,7 +91,8 @@ def movil_normalizado(bruto: str | None) -> str | None:
     """`34` + nueve dígitos, o `None` si no es un móvil español.
 
     El prefijo se pega porque es lo que la plataforma registra: el destinatario SMS de
-    producción es `34645508869`. Un fijo devuelve `None` y el canal se declara ausente.
+    producción es un `34` con nueve cifras detrás (`34XXXXXXXXX`). Un fijo devuelve
+    `None` y el canal se declara ausente.
 
     Es la forma para el destinatario ELECTRÓNICO (`DestinatarioVerificable`, que usa
     `destinatarios_de` para correo/SMS): ese campo no tiene patrón y sí admite el
@@ -1383,7 +1384,7 @@ def _claves_de_contacto(parte: dict) -> set[str]:
     El listado devuelve `destinatarios` como UN STRING (M-7): el email en la entrega
     electrónica, el móvil en el SMS, la razón social en el burofax. Se normaliza todo
     a minúsculas; el móvil, además, con y sin el prefijo `34`, porque el destinatario
-    SMS real de producción es `34645508869` (spec §1.1).
+    SMS real de producción lo lleva delante (`34XXXXXXXXX`, spec §1.1).
     """
     claves: set[str] = set()
     email = (parte.get("email") or "").strip().lower()
