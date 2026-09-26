@@ -291,3 +291,18 @@ def test_R2H06_id_crm_todavia_NO_es_una_clave(tmp_path):
         cf.cargar_ficha_yaml(_yaml(tmp_path, "contrario: {nombre: A, id_crm: '1128'}\n"))
     assert "contrario.id_crm: clave desconocida" in str(e.value)
     assert f"contrario: {cf.SIN_IDENTIDAD}" in str(e.value)
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — lo que se audita es la declaración (B.2)
+# ---------------------------------------------------------------------------
+
+def test_la_declaracion_se_conserva_sin_normalizar(tmp_path):
+    """La auditoría compara la DECLARACIÓN (R2/H-02): el DTO normaliza, la declaración no."""
+    f = cf.cargar_ficha_yaml(_yaml(tmp_path,
+        "contrario: {nombre: ' A ', nif: '1', movil: '+34 600 111 222'}\n"
+        "colaboradores:\n  - {nombre: B, email: b@x.es, telefono: '93 111 22 33'}\n"))
+    assert f.contrarios[0].movil == "600111222"
+    assert f.declarados_contrarios == [{"nombre": "A", "nif": "1", "movil": "+34 600 111 222"}]
+    assert f.declarados_colaboradores == [{"nombre": "B", "email": "b@x.es",
+                                           "telefono": "93 111 22 33"}]

@@ -35,6 +35,11 @@ class FichaCRMInput:
     #: 77,00—, así que este dato es una entrada humana explícita y no se infiere del actor de
     #: la UI: Ana puede tramitar una revisión que firma Nikolai. Vacío = no se ha decidido.
     firmante: str = ""
+    #: Lo que el YAML declara de cada parte, validado y SIN normalizar, en el orden de
+    #: `contrarios` / `colaboradores`. Es lo que audita la lectura (spec rev. 3 §4 B.2): el DTO
+    #: normaliza al construirse, y comparar el DTO no vería lo perdido por el camino (R2/H-02).
+    declarados_contrarios: list[dict[str, str]] = field(default_factory=list)
+    declarados_colaboradores: list[dict[str, str]] = field(default_factory=list)
 
     @property
     def contrario(self) -> NuevoClienteContrario | None:
@@ -293,6 +298,11 @@ def _colaborador_de(d: dict) -> NuevoColaborador:
     return NuevoColaborador(**{c: _valor(d.get(c)) for c in CLAVES_COLABORADOR})
 
 
+def _declaracion(d: dict, claves: tuple[str, ...]) -> dict[str, str]:
+    """Las claves PRESENTES en la parte, con su valor validado y sin normalizar."""
+    return {k: _valor(d[k]) for k in claves if k in d}
+
+
 def cargar_ficha_yaml(path: Path) -> FichaCRMInput:
     """Carga ``_ficha_crm.yaml`` → ``FichaCRMInput``: se lee entero o no se construye nada.
 
@@ -304,12 +314,17 @@ def cargar_ficha_yaml(path: Path) -> FichaCRMInput:
     if problemas:
         raise ValueError("_ficha_crm.yaml no se puede usar:\n  - " + "\n  - ".join(problemas))
     cp = data.get("cliente_propio")
+    raw = data.get("contrario")
+    partes = [] if raw is None else [raw] if isinstance(raw, dict) else raw
+    cols = data.get("colaboradores") or []
     return FichaCRMInput(
-        contrarios=_contrarios_de(data.get("contrario")),
-        colaboradores=[_colaborador_de(c) for c in data.get("colaboradores") or []],
+        contrarios=_contrarios_de(raw),
+        colaboradores=[_colaborador_de(c) for c in cols],
         notas_html=_valor(data.get("notas_html")),
         cliente_propio=CLIENTE_PROPIO_DEFAULT if cp is None else _valor(cp),
         firmante=_valor(data.get("firmante")),
+        declarados_contrarios=[_declaracion(d, CLAVES_CONTRARIO) for d in partes],
+        declarados_colaboradores=[_declaracion(d, CLAVES_COLABORADOR) for d in cols],
     )
 
 

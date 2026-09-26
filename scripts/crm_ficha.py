@@ -19,16 +19,24 @@ import typer
 from core import case_manager
 from core import config
 from core.casos import case_locator
-from core.crm_ficha import cargar_ficha_yaml
+from core.crm_ficha import auditar_datos, auditar_relaciones, cargar_ficha_yaml
 from core.sudespacho_create import get_expediente, update_expediente
 from core.sudespacho_relations import (
-    ensure_colaborador_vinculado, ensure_contrario_vinculado, get_relaciones, link_ev_mmc,
+    ensure_colaborador_vinculado, ensure_contrario_vinculado, get_cliente_contrario,
+    get_colaborador, get_relaciones, link_ev_mmc,
 )
 
 app = typer.Typer(add_completion=False, help="Rellenar la ficha CRM completa de un expediente")
 
 _ELEMENT_EXTRAJUDICIAL = "extrajudiciales"
 _FICHA_YAML = "_ficha_crm.yaml"
+
+#: El literal de éxito, UNA vez: los tests lo importan —los positivos y los negativos—, así que
+#: cambiar el texto no puede vaciar un negativo en silencio (§9 del plan, frontera 3). Dice
+#: exactamente lo que certifica (spec rev. 3 §2.5): los tres bloques de vínculos son los del
+#: YAML, cada parte tiene en el CRM los datos declarados, y las Notas coinciden.
+EXITO_VERIFICADA = "VERIFICADA: vínculos y datos de la ficha"
+SIN_VERIFICAR = "SIN VERIFICAR"
 
 
 def _mismas_notas(guardado: str | None, escrito: str) -> bool:
@@ -118,28 +126,31 @@ def main(
         "clientes_contrarios": [],
         "colaboradores": [],
     }
+    #: (elemento, id, declaración, creado) de cada parte ya resuelta, en el orden en que se
+    #: escribió: es lo que relee la lectura de datos (spec rev. 3 §4 B.2), creada o existente.
+    resueltas: list[tuple[str, str, dict, bool]] = []
     notas_escritas: str | None = None
 
-    def _auditar(rel: dict) -> list[str]:
-        """Contrasta `esperado` contra lo leído. Devuelve la lista de lo que falta.
+    def _vinculos(rel: dict, *, parcial: bool = False) -> tuple[list[str], list[str]]:
+        """`esperado` contra lo leído, por IGUALDAD (spec §4 B.1). Devuelve `(faltan, sobran)`.
 
-        Compara por CARDINALIDAD, no por pertenencia: `presentes` era un conjunto, así
-        que dos colaboradores distintos que colapsaran al mismo id se daban los dos por
-        buenos con un solo vínculo (R1/H-02).
+        En la **parcial** —tras una escritura fallida— solo informa de lo que falta (B.4): las
+        partes que no llegaron a resolverse no tienen id, y sus vínculos de una corrida anterior
+        saldrían como sobrantes sin serlo.
         """
-        ausentes: list[str] = []
-        for elemento, ids in esperado.items():
-            leidos = [str(v.get("id")) for v in rel.get(elemento, [])]
-            for quiero in set(ids):
-                pedidos, hay = ids.count(quiero), leidos.count(quiero)
-                if hay >= pedidos:
-                    typer.echo(f"  [ok] {elemento} id={quiero}"
-                               + (f" (x{pedidos})" if pedidos > 1 else ""))
-                    continue
-                typer.echo(f"  [FALTA] {elemento} id={quiero} "
-                           f"(la corrida escribió {pedidos}, la lectura ve {hay})")
-                ausentes.append(f"{elemento} id={quiero}")
-        return ausentes
+        a = auditar_relaciones(esperado, rel)
+        for linea in a.ok:
+            typer.echo(f"  [ok] {linea}")
+        for linea in a.faltan:
+            typer.echo(f"  [FALTA] {linea}")
+        if parcial:
+            typer.echo("  sobrantes: sin comprobar — las partes que no llegaron a resolverse no "
+                       "tienen id, y sus vínculos de otra corrida saldrían como sobrantes sin "
+                       "serlo")
+            return a.faltan, []
+        for linea in a.sobran:
+            typer.echo(f"  [SOBRA] {linea}")
+        return a.faltan, a.sobran
 
     def _leer() -> dict | None:
         """Las relaciones, o `None` si no se pudieron leer. `None` NO es «vacío»."""
@@ -147,20 +158,24 @@ def main(
             return get_relaciones(_ELEMENT_EXTRAJUDICIAL, exp_id)
         except Exception as exc:  # noqa: BLE001
             typer.echo(f"[AVISO] No se pudieron LEER las relaciones ({exc!r}); "
-                       "los vínculos quedan SIN VERIFICAR, que no es lo mismo que mal.")
+                       f"los vínculos quedan {SIN_VERIFICAR}, que no es lo mismo que mal.")
             return None
 
     try:
         link_ev_mmc(exp_id, cliente_propio_id=cliente_propio_id)
         typer.echo(f"OK cliente propio {ficha.cliente_propio} (id {cliente_propio_id}) vinculado (exp {exp_id})")
 
+        declarados_c = iter(ficha.declarados_contrarios)
         for contrario in ficha.contrarios:
             cid, creado = ensure_contrario_vinculado(exp_id, contrario)
             esperado["clientes_contrarios"].append(str(cid))
+            resueltas.append(("clientes_contrarios", str(cid), next(declarados_c), creado))
             typer.echo(f"OK contrario id={cid} ({'creado' if creado else 'existente'}) vinculado")
+        declarados_col = iter(ficha.declarados_colaboradores)
         for col in ficha.colaboradores:
             colid, creado = ensure_colaborador_vinculado(exp_id, col)
             esperado["colaboradores"].append(str(colid))
+            resueltas.append(("colaboradores", str(colid), next(declarados_col), creado))
             typer.echo(f"OK colaborador id={colid} ({'creado' if creado else 'existente'}) vinculado")
         if ficha.notas_html:
             update_expediente(exp_id, {"Notas": ficha.notas_html})
@@ -178,13 +193,15 @@ def main(
         parcial = _leer()
         if parcial is not None:
             typer.echo("Estado de lo que sí se llegó a escribir:")
-            _auditar(parcial)
+            _vinculos(parcial, parcial=True)
         raise typer.Exit(code=1)
 
     # Verificación POR RESULTADO. El 201 de `relation_element` no prueba el vínculo, y
     # hasta el 2026-09-04 aquí se remataba con «verificar partes visualmente en el CRM»
     # porque se creía que la API no sabía leer relaciones. Sí sabe: `related_register`.
     faltan: list[str] = []
+    sobran: list[str] = []
+    datos_mal: list[str] = []
     sin_verificar: list[str] = []
 
     try:
@@ -206,23 +223,60 @@ def main(
     if rel is None:
         sin_verificar.extend(esperado)
     else:
-        faltan += _auditar(rel)
+        f_vinc, sobran = _vinculos(rel)
+        faltan += f_vinc
 
-    if faltan:
-        typer.echo(
-            "[ERROR] La lectura DESMIENTE la escritura: no consta -> "
-            + ", ".join(faltan)
-            + ". Los 'OK ...' de arriba se apoyaban en el status, no en el resultado.",
-            err=True,
-        )
+    # Los DATOS de cada parte, releídos por id (spec §4 B.2, R1/H-03): una igualdad de ids
+    # exacta certificaba una ficha cuyos datos no se habían escrito —el apellido de W-030A13—.
+    # Se compara la DECLARACIÓN, no el DTO (R2/H-02).
+    for elemento, id_, declarado, _creado in resueltas:
+        leer = get_cliente_contrario if elemento == "clientes_contrarios" else get_colaborador
+        try:
+            ficha_crm = leer(id_)
+        except Exception as exc:  # noqa: BLE001 — «no pude leer» no es «está mal»
+            typer.echo(f"[AVISO] No se pudo LEER la ficha de {elemento} id={id_} ({exc!r}); sus "
+                       f"datos quedan {SIN_VERIFICAR}, que no es lo mismo que mal.")
+            sin_verificar.append(f"datos de {elemento} id={id_}")
+            continue
+        for d in auditar_datos(elemento, id_, declarado, ficha_crm):
+            typer.echo(f"  [DATO] {d}")
+            datos_mal.append(str(d))
+
+    # El veredicto (spec §4 B.3): qué hacer con cada tipo, sin hacerlo. Un fallo conocido GANA
+    # a un «sin verificar» simultáneo, y ningún mensaje de fallo dice la palabra del éxito.
+    if faltan or sobran or datos_mal:
+        if faltan:
+            typer.echo(
+                "[ERROR] La lectura DESMIENTE la escritura: no consta -> "
+                + ", ".join(faltan)
+                + ". Los 'OK ...' de arriba se apoyaban en el status, no en el resultado.",
+                err=True,
+            )
+        if sobran:
+            typer.echo(
+                "[ERROR] Hay partes vinculadas que el _ficha_crm.yaml no declara: "
+                + ", ".join(sobran)
+                + ". El YAML es la lista COMPLETA de partes: si alguna es legítima, añádela al "
+                "YAML y relanza; si no, desvincúlala a mano en el CRM. crm_ficha no desvincula.",
+                err=True,
+            )
+        if datos_mal:
+            typer.echo(
+                "[ERROR] La ficha del CRM no tiene los datos que el YAML declara: "
+                + "; ".join(datos_mal)
+                + ". Revísalos y corrígelos en la ficha del CRM: crm_ficha no pisa datos.",
+                err=True,
+            )
+        if sin_verificar:
+            typer.echo(f"  Además, {SIN_VERIFICAR}: {', '.join(sin_verificar)}.")
         raise typer.Exit(code=1)
 
     if sin_verificar:
         typer.echo(f"OK ficha CRM completada: {resolved} "
-                   f"— SIN VERIFICAR: {', '.join(sin_verificar)}")
+                   f"— {SIN_VERIFICAR}: {', '.join(sin_verificar)}")
         return
 
-    typer.echo(f"OK ficha CRM completada y VERIFICADA por lectura: {resolved}")
+    typer.echo(f"OK ficha CRM completada y {EXITO_VERIFICADA}: {resolved}")
 
 
 if __name__ == "__main__":

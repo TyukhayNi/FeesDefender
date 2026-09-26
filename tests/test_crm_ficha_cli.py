@@ -8,6 +8,32 @@ from core.casos import case_locator
 from scripts import crm_ficha as cli
 
 
+class LecturaNoDeclarada(BaseException):
+    """Una lectura del CRM que el test no declaró. Fuera de `Exception` a propósito, como
+    `FugaDeRedEnTest`: el CLI trata una lectura caída como «SIN VERIFICAR» con salida 0, y un
+    `KeyError` del doble se colaría por ahí con el test en verde (R2/H-05)."""
+
+
+def _declara_fichas(monkeypatch, contrarios=None, colaboradores=None):
+    """Qué devuelve el CRM al LEER cada parte por id: la lectura final (spec rev. 3 §4 B.2) y,
+    desde la Task 7, la fase previa. Es preparación del doble, no un aserto: cada test que llega
+    a esas lecturas dice qué ficha hay detrás de cada id, y un id no declarado MATA el test."""
+    for nombre, tabla in (("get_cliente_contrario", dict(contrarios or {})),
+                          ("get_colaborador", dict(colaboradores or {}))):
+        def _get(i, _t=tabla, _n=nombre):
+            if str(i) not in _t:
+                raise LecturaNoDeclarada(f"{_n}({i!r}) no está declarado en este test")
+            return dict(_t[str(i)])
+        monkeypatch.setattr(f"scripts.crm_ficha.{nombre}", _get)
+
+
+#: Las fichas del CRM coherentes con la fixture `caso_con_ficha`, el móvil incluido: sin él, la
+#: lectura añadiría una discrepancia que el test no pretende (R2, §3 de su acta).
+_JUAN_1099 = {"nombre": "JUAN", "1apellido": "PEREZ", "nif_cif": "00000000T",
+              "movil": "600111222"}
+_ANA_776 = {"nombre": "ANA", "email": "ana@engelvoelkers.example"}
+
+
 @pytest.fixture
 def caso_con_ficha(tmp_path, monkeypatch):
     """CASOS_ROOT en tmp, un caso con expediente extrajudicial registrado y un _ficha_crm.yaml."""
@@ -51,9 +77,14 @@ def test_crm_ficha_orquesta_todo(caso_con_ficha, monkeypatch):
                         MagicMock(return_value={"clientes_propios": [{"id": "2"}],
                                                 "clientes_contrarios": [{"id": "1099"}],
                                                 "colaboradores": [{"id": "776"}]}))
+    _declara_fichas(monkeypatch, contrarios={"1099": _JUAN_1099},
+                    colaboradores={"776": _ANA_776})
 
     r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
     assert r.exit_code == 0, r.output
+    # Un positivo exige la certificación ENTERA (R2/H-05): con salida 0 sola, una lectura
+    # que degradase a «SIN VERIFICAR» dejaba este test verde.
+    assert cli.EXITO_VERIFICADA in r.output and cli.SIN_VERIFICAR not in r.output
 
     link_ev.assert_called_once_with("606", cliente_propio_id="2")
     assert ensure_c.call_args.args[0] == "606"          # exp_id
@@ -113,6 +144,7 @@ def test_crm_ficha_cliente_propio_engel_volkers_vincula_id_27(tmp_path, monkeypa
                         MagicMock(return_value={"Numero_Expediente": "1", "Notas": "x"}))
     monkeypatch.setattr("scripts.crm_ficha.get_relaciones",
                         MagicMock(return_value={"clientes_propios": [{"id": "27"}]}))
+    _declara_fichas(monkeypatch)      # no hay partes: un GET por id aquí mataría el test
 
     r = CliRunner().invoke(cli.app, ["--case-id", "W-000CCC", "--yes"])
     assert r.exit_code == 0, r.output
@@ -224,6 +256,8 @@ class TestVerificacionPorLectura:
         monkeypatch.setattr("scripts.crm_ficha.get_expediente",
                             MagicMock(return_value={"Numero_Expediente": "49",
                                                     "Notas": "<p>Vuelta</p>"}))
+        _declara_fichas(monkeypatch, contrarios={"1099": _JUAN_1099},
+                        colaboradores={"776": _ANA_776})
 
     def test_todo_vinculado_dice_VERIFICADA(self, caso_con_ficha, monkeypatch):
         self._escrituras_en_verde(monkeypatch)
@@ -234,7 +268,9 @@ class TestVerificacionPorLectura:
         })
         r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
         assert r.exit_code == 0, r.output
-        assert "VERIFICADA por lectura" in r.output
+        # El literal del contrato nuevo, desde la constante del módulo (Task 6).
+        assert cli.EXITO_VERIFICADA in r.output
+        assert cli.SIN_VERIFICAR not in r.output
         assert "visualmente" not in r.output
         # Las TRES relaciones se listan. Sin esto el test es una asercion debil: un
         # `esperado` al que le falte el cliente propio seguiria diciendo VERIFICADA.
@@ -280,7 +316,9 @@ class TestVerificacionPorLectura:
         r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
         assert r.exit_code == 0, r.output
         assert "SIN VERIFICAR" in r.output
-        assert "VERIFICADA por lectura" not in r.output
+        # El negativo contra la CONSTANTE: contra un literal copiado, cambiar el texto de
+        # éxito lo habría vaciado en silencio (§9 del plan, frontera 3).
+        assert cli.EXITO_VERIFICADA not in r.output
 
 
 class TestLaGuardaDeRedMuerde:
@@ -373,6 +411,11 @@ class TestVerificarTODOLoQueLaCorridaEscribe:
         if notas_leidas is not None:
             rec["Notas"] = notas_leidas
         monkeypatch.setattr("scripts.crm_ficha.get_expediente", MagicMock(return_value=rec))
+        # El 776 es la ficha de ANA. En `test_dos_partes_que_colapsan_…` las DOS partes caen en
+        # él: no existe una ficha coherente con las dos, y el doble dice cuál devolvió el CRM
+        # en vez de fabricar dos (R2, §3 de su acta).
+        _declara_fichas(monkeypatch, contrarios={"1099": _JUAN_1099},
+                        colaboradores={"776": _ANA_776})
 
     def test_notas_que_el_CRM_no_guardo_TUMBAN_la_corrida(self, caso_con_ficha, monkeypatch):
         """El PUT devolvio 200 y el contenido no cambio. Manda la lectura."""
@@ -400,7 +443,7 @@ class TestVerificarTODOLoQueLaCorridaEscribe:
         r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
         assert r.exit_code == 0, r.output
         assert "SIN VERIFICAR: Notas" in r.output
-        assert "VERIFICADA por lectura" not in r.output
+        assert cli.EXITO_VERIFICADA not in r.output      # el negativo, contra la constante
 
     def test_dos_partes_que_colapsan_al_mismo_id_no_se_dan_por_buenas(
             self, caso_con_ficha, monkeypatch):
@@ -481,6 +524,7 @@ class TestElCRMDesescapaLasEntidadesHTML:
             "clientes_contrarios": [{"id": "1099"}],
             "colaboradores": [],
         })
+        _declara_fichas(monkeypatch, contrarios={"1099": _JUAN_1099})
 
     def test_una_entidad_desescapada_por_el_servidor_verifica_ok(
             self, caso_con_ficha, monkeypatch):
@@ -492,6 +536,7 @@ class TestElCRMDesescapaLasEntidadesHTML:
         )
         r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
         assert r.exit_code == 0, r.output
+        assert cli.EXITO_VERIFICADA in r.output and cli.SIN_VERIFICAR not in r.output
         assert "[ok] Notas" in r.output
         assert "FALTA" not in r.output
         assert "DESMIENTE" not in r.output
@@ -545,9 +590,13 @@ def test_el_cli_vincula_TODOS_los_contrarios_no_solo_el_primero(caso_con_ficha, 
                                                 "clientes_contrarios": [{"id": "1099"},
                                                                         {"id": "1100"}],
                                                 "colaboradores": []}))
+    _declara_fichas(monkeypatch, contrarios={
+        "1099": _JUAN_1099,
+        "1100": {"nombre": "MARIA", "1apellido": "LOPEZ", "nif_cif": "11111111H"}})
 
     r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
     assert r.exit_code == 0, r.output
+    assert cli.EXITO_VERIFICADA in r.output and cli.SIN_VERIFICAR not in r.output
     assert ensure_c.call_count == 2, f"vinculó {ensure_c.call_count} contrario(s), no 2"
     assert [c.args[1].apellido1 for c in ensure_c.call_args_list] == ["PEREZ", "LOPEZ"]
 
@@ -565,3 +614,141 @@ def test_el_plan_del_cli_enumera_los_dos_contrarios(caso_con_ficha, monkeypatch)
     r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--dry-run"])
     assert r.exit_code == 0, r.output
     assert "PEREZ" in r.output and "LOPEZ" in r.output, r.output
+
+
+# ---------------------------------------------------------------------------
+# Task 6 del plan rev. 2 — la verificación por IGUALDAD, de vínculos y de datos
+# (spec rev. 3 §4 B.1-B.4)
+# ---------------------------------------------------------------------------
+
+def _escrituras(monkeypatch, *, ensure_c=None, ensure_col=None, fichas_c=None, fichas_col=None):
+    """Escrituras en verde sobre `caso_con_ficha` (JUAN → 1099, ANA → 776) y la lectura de fichas
+    declarada. Cada test cambia solo lo que su propiedad necesita."""
+    monkeypatch.setattr("scripts.crm_ficha.link_ev_mmc", MagicMock())
+    monkeypatch.setattr("scripts.crm_ficha.ensure_contrario_vinculado",
+                        ensure_c or MagicMock(return_value=("1099", False)))
+    monkeypatch.setattr("scripts.crm_ficha.ensure_colaborador_vinculado",
+                        ensure_col or MagicMock(return_value=("776", False)))
+    monkeypatch.setattr("scripts.crm_ficha.update_expediente", MagicMock(return_value={}))
+    monkeypatch.setattr("scripts.crm_ficha.get_expediente",
+                        MagicMock(return_value={"Numero_Expediente": "49",
+                                                "Notas": "<p>Vuelta</p>"}))
+    _declara_fichas(monkeypatch,
+                    contrarios=fichas_c if fichas_c is not None else {"1099": _JUAN_1099},
+                    colaboradores=fichas_col if fichas_col is not None else {"776": _ANA_776})
+
+
+def _relaciones(monkeypatch, contrarios=("1099",), colaboradores=("776",)):
+    monkeypatch.setattr("scripts.crm_ficha.get_relaciones", lambda el, i: {
+        "clientes_propios": [{"id": "2"}],
+        "clientes_contrarios": [{"id": c} for c in contrarios],
+        "colaboradores": [{"id": c} for c in colaboradores],
+    })
+
+
+def _corre():
+    return CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--yes"])
+
+
+class TestElYAMLEsLaListaCompleta:
+    """`#288`: el 653 salió VERIFICADA con cuatro colaboradores declarados y seis vinculados. El
+    YAML es la lista COMPLETA de partes (Nikolai, 2026-09-25): lo que sobra es un fallo."""
+
+    def test_R288_el_653_un_colaborador_de_mas_TUMBA_la_corrida(self, caso_con_ficha,
+                                                                monkeypatch):
+        _escrituras(monkeypatch)
+        _relaciones(monkeypatch, colaboradores=("776", "624"))
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert "[SOBRA] colaboradores id=624" in r.output
+        assert "no declara" in r.output and "crm_ficha no desvincula" in r.output
+        assert cli.EXITO_VERIFICADA not in r.output
+
+    def test_falta_y_sobra_a_la_vez(self, caso_con_ficha, monkeypatch):
+        _escrituras(monkeypatch)
+        _relaciones(monkeypatch, colaboradores=("624",))
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert "[FALTA] colaboradores id=776" in r.output
+        assert "[SOBRA] colaboradores id=624" in r.output
+
+
+class TestLosDatosDeLaFicha:
+    """`#283` (R1/H-03): una igualdad de ids exacta certificaba una ficha cuyos datos no se habían
+    escrito. La lectura final relee cada parte y compara lo que el YAML declara."""
+
+    def test_R1H03_w030a13_relanzado_con_el_apellido_vacio_da_DATO(self, caso_con_ficha,
+                                                                   monkeypatch):
+        """Relanzar W-030A13 con el YAML corregido: la ficha 1128 se resuelve por NIF, no se
+        completa (el apellido no es completable) y los ids cuadran. Antes decía VERIFICADA."""
+        _escrituras(monkeypatch, ensure_c=MagicMock(return_value=("1128", False)),
+                    fichas_c={"1128": {**_JUAN_1099, "1apellido": ""}})
+        _relaciones(monkeypatch, contrarios=("1128",))
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert "[DATO] clientes_contrarios id=1128 1apellido: vacío en el CRM" in r.output
+        assert "crm_ficha no pisa" in r.output
+        assert cli.EXITO_VERIFICADA not in r.output
+
+    def test_un_colaborador_con_un_dato_distinto_da_DATO(self, caso_con_ficha, monkeypatch):
+        """El rol colaborador también se audita: cerrar una propiedad para un rol no la cierra
+        para los demás."""
+        _escrituras(monkeypatch,
+                    fichas_col={"776": {**_ANA_776, "email": "otra@engelvoelkers.example"}})
+        _relaciones(monkeypatch)
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert ("[DATO] colaboradores id=776 email: distinto (CRM 'otra@engelvoelkers.example', "
+                "YAML 'ana@engelvoelkers.example')") in r.output
+
+    def test_una_ficha_que_no_se_puede_leer_es_SIN_VERIFICAR(self, caso_con_ficha, monkeypatch):
+        _escrituras(monkeypatch)
+        _relaciones(monkeypatch)
+
+        def _caida(i):
+            raise RuntimeError("HTTP 500")
+        monkeypatch.setattr("scripts.crm_ficha.get_cliente_contrario", _caida)
+        r = _corre()
+        assert r.exit_code == 0, r.output
+        assert f"{cli.SIN_VERIFICAR}: datos de clientes_contrarios id=1099" in r.output
+        assert cli.EXITO_VERIFICADA not in r.output
+
+    def test_un_fallo_conocido_gana_a_un_SIN_VERIFICAR(self, caso_con_ficha, monkeypatch):
+        _escrituras(monkeypatch)
+        _relaciones(monkeypatch, colaboradores=("776", "624"))
+
+        def _caida(i):
+            raise RuntimeError("HTTP 500")
+        monkeypatch.setattr("scripts.crm_ficha.get_colaborador", _caida)
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert "[SOBRA] colaboradores id=624" in r.output
+        assert cli.SIN_VERIFICAR in r.output
+        assert cli.EXITO_VERIFICADA not in r.output
+
+
+class TestLaParcial:
+    """B.4: tras una escritura fallida, las partes sin resolver no tienen id, y sus vínculos de
+    una corrida anterior saldrían como sobrantes sin serlo."""
+
+    def test_la_parcial_no_emite_sobrantes(self, caso_con_ficha, monkeypatch):
+        _escrituras(monkeypatch, ensure_col=MagicMock(side_effect=RuntimeError("caido")))
+        _relaciones(monkeypatch, colaboradores=("999",))
+        r = _corre()
+        assert r.exit_code == 1, r.output
+        assert "sobrantes: sin comprobar" in r.output
+        assert "[SOBRA]" not in r.output
+
+
+class TestLaGuardaDeFichasMuerde:
+    """Como la guarda de red: una guarda sin prueba de que muerde no es una guarda."""
+
+    def test_no_hereda_de_Exception(self):
+        assert issubclass(LecturaNoDeclarada, BaseException)
+        assert not issubclass(LecturaNoDeclarada, Exception)
+
+    def test_una_ficha_no_declarada_MATA_el_test(self, caso_con_ficha, monkeypatch):
+        _escrituras(monkeypatch, fichas_col={})       # el 776 NO se declara, a propósito
+        _relaciones(monkeypatch)
+        with pytest.raises(LecturaNoDeclarada):
+            _corre()
