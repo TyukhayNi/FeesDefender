@@ -13901,8 +13901,12 @@ pidió hacerla en la misma sesión que el #407. Al medir, la causa eran dos prod
 no tenía verja de población —su verify contrastaba el manifiesto con lo copiado, no con lo que
 había— y el **motor CLI**, que montó W-02Y2J6 y W-030TZY, decidía la población con una lista blanca
 de extensiones (`core/inventory.py`) que mandaba lo demás a un `skipped` que nadie leía. Ahora: el
-`SKILL.md` fija el contrato —fila o línea de formato cerrado en `## No copiados`—, `verificar_sala.py
---cobertura` lo comprueba, el inventario CLI recoge todo lo que no es protocolo, tres ficheros de la
-migración de 05_CRM entran en el registro, y C3 no exige lo declarado ni la firma de `email_export`.
-Las salas ya montadas no cambian solas: W-02Y2J6 necesita re-correr su `organizar`. Plan:
+`SKILL.md` fija el contrato —cada fichero da cuenta de sí por una fila, por su sha256 o su relleno de
+`#225` en otra fila, o por una línea `excluido` en `## No copiados`—, `verificar_sala.py` lo comprueba
+y ya no da 0 sin cobertura, el inventario CLI recoge todo lo que no es protocolo, tres ficheros de la
+migración de 05_CRM entran en el registro por nombre entero, y C3 honra lo declarado `excluido` y lo
+enseña con su motivo. **La firma de `email_export` no quedó exenta**: la R1 de Codex (11 hallazgos, 11
+confirmados, remediados en el mismo PR) recordó que el productor la marca, no la descarta. Las salas
+ya montadas no cambian solas: W-02Y2J6 necesita re-correr su `organizar`, y W-02O7E2 y W-0462E1 salen
+en C3 con lo que la R1 destapó. Plan y adjudicación:
 `docs/superpowers/plans/2026-09-26-sala-lectura-poblacion-316.md`.
