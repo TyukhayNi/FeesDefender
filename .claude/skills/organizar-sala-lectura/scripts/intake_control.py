@@ -62,6 +62,13 @@ RAIZ: frozenset[str] = frozenset({
 RAIZ_PREFIJOS: tuple[str, ...] = (
     ".apertura_v1.", "._caso.", "._intake_hashes.", "._ocurrencias_crm.json.",
     "_viabilidad.json.",
+    # Lo que `scripts/migrate_05crm_buckets.py` deja en la raíz: su bitácora
+    # (`_migration_05crm_<ts>.json`) y las copias de seguridad de lo que migra
+    # (`src.with_suffix(src.suffix + f".bak_{ts}")` sobre `_caso.md` y `_intake_hashes.json`).
+    # Hasta el 2026-09-26 los apartaba del inventario CLI su lista blanca de extensiones, no
+    # este registro, y la sala de máquina —que no tiene lista— los inventariaba como
+    # documentos (`MEJORAS #316`).
+    "_migration_05crm_", "_caso.md.bak_", "_intake_hashes.json.bak_",
 )
 
 #: Protocolo a profundidad 2, SOLO en el directorio que su escritor usa (R1/H-04): un

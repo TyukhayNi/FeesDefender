@@ -89,6 +89,18 @@ def test_viabilidad_json_y_su_temporal_son_protocolo():
     assert es_fichero_de_protocolo("a/b/_viabilidad.json.ab12cd34.tmp") is False
 
 
+def test_los_ficheros_que_migrate_05crm_buckets_deja_en_la_raiz_son_protocolo():
+    """`MEJORAS #316`: hasta el 2026-09-26 los apartaba del inventario CLI su lista blanca
+    de extensiones, no el registro —lo decía el propio comentario de `inventory.scan`—, y
+    la sala de máquina, que no tiene lista, los inventariaba como documentos. Al quitar la
+    lista, el que lo dice tiene que ser el registro: son la bitácora y las copias de
+    seguridad que la migración escribe junto a lo que migra."""
+    for nombre in ("_migration_05crm_20260610T152854.json",
+                   "_caso.md.bak_20260610T152854", "_intake_hashes.json.bak_20260610T152854"):
+        assert es_fichero_de_protocolo(nombre) is True, nombre
+        assert es_fichero_de_protocolo(f"a/b/{nombre}") is False, nombre
+
+
 def test_t10_los_prefijos_son_los_que_los_escritores_usan_de_verdad():
     """Los prefijos del registro se contrastan con el CÓDIGO de cada escritor, no con
     su docstring (R1/H-05 del diseño)."""
@@ -98,15 +110,24 @@ def test_t10_los_prefijos_son_los_que_los_escritores_usan_de_verdad():
         "._intake_hashes.": REPO / "core" / "intake_manifest.py",
         "._ocurrencias_crm.json.": REPO / "core" / "ocurrencias_crm.py",
         "_viabilidad.json.": REPO / "core" / "viabilidad_json.py",
+        "_migration_05crm_": REPO / "scripts" / "migrate_05crm_buckets.py",
+        "_caso.md.bak_": REPO / "scripts" / "migrate_05crm_buckets.py",
+        "_intake_hashes.json.bak_": REPO / "scripts" / "migrate_05crm_buckets.py",
     }
     assert set(fuentes) == set(RAIZ_PREFIJOS)
-    # Los dos que no llevan el prefijo LITERAL en el código: se arman con un f-string
-    # sobre un nombre que vive en otra constante, así que se contrasta el patrón fuente
-    # (lo que de verdad hay entre comillas) y no el valor ya interpolado.
+    # Los que no llevan el prefijo LITERAL en el código: se arman con un f-string sobre un
+    # nombre que vive en otra constante, así que se contrasta el patrón fuente (lo que de
+    # verdad hay entre comillas) y no el valor ya interpolado. Las dos copias de seguridad
+    # de la migración salen de `src.with_suffix(src.suffix + f".bak_{ts}")` sobre
+    # `00_Input/_caso.md` y `00_Input/_intake_hashes.json`, dos rutas que el script nombra.
     literales_dinamicos = {
         "._ocurrencias_crm.json.": '._{_FILENAME}.',
         "_viabilidad.json.": '{destino.name}.',
+        "_caso.md.bak_": 'f".bak_{ts}"',
+        "_intake_hashes.json.bak_": 'f".bak_{ts}"',
     }
+    migracion = (REPO / "scripts" / "migrate_05crm_buckets.py").read_text(encoding="utf-8")
+    assert '"00_Input/_caso.md"' in migracion and '"00_Input/_intake_hashes.json"' in migracion
     for pre, fichero in fuentes.items():
         txt = fichero.read_text(encoding="utf-8")
         literal = literales_dinamicos.get(pre, pre)
