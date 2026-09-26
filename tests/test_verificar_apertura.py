@@ -1759,14 +1759,42 @@ def test_n8_una_alteracion_que_NO_es_el_relleno_no_se_etiqueta_como_tal(tmp_path
     assert r.evidencia["relleno_225_confirmado"] == [], r.evidencia
 
 
-def test_n9_un_fichero_que_ACABA_EN_CEROS_de_verdad_no_se_da_por_confirmado(tmp_path):
-    """El caso que separa «probado» de «se le parece»: si el contenido legítimo ya
-    terminaba en ceros, quitar la cola entera se lleva bytes del original y el re-hash NO
-    cuadra. Eso tiene que salir como discrepancia **sin** confirmar — mejor un hallazgo sin
-    etiqueta que una etiqueta falsa sobre un expediente."""
+def test_n9_un_fichero_que_ACABA_EN_CEROS_de_verdad_se_confirma_SOLO_por_el_hash(tmp_path):
+    """**Este test decía lo contrario hasta el 2026-09-26, y el cambio se declara aquí.**
+
+    Se llamaba `…_no_se_da_por_confirmado` y exigía que este fichero —el original, que ya
+    acababa en ceros, con el relleno de `#225` detrás— saliera **sin** confirmar. Era la
+    premisa de una función que solo probaba UNA frontera, la del primer cero de la cola, y
+    que por tanto no podía saber dónde acababa el original. `MEJORAS #307` midió el precio
+    en W-02Y2J6: cinco ficheros que eran exactamente `#225` salieron «sin explicar», porque
+    todo ZIP —y todo `.docx`, `.xlsx` o `.pptx`— acaba legítimamente en ceros.
+
+    Ahora se prueba cada frontera posible dentro de la cola y **el sha256 fija cuál es**: la
+    etiqueta de aquí es VERDADERA —el fichero es el original con el relleno detrás—, y lo
+    prueba el hash del prefijo, no el parecido. Lo que el test protegía, que no se ponga una
+    etiqueta falsa, lo sostienen `n8`, `n10`, `n11`, `r1_h05b` y `n9b`, este último en su
+    mismo escenario.
+    """
     original = b"PDF con ceros propios\0\0\0"
     relleno = original + b"\0" * (512 - len(original))
     c = _caso_drive(tmp_path, {"encargo.pdf": relleno})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("encargo.pdf", sha256=_sha(original))])
+
+    r = _rr(c, "hash_drive", f)
+
+    assert r.estado == va.FALLO, "se explica, no se aprueba"
+    assert r.evidencia["relleno_225_confirmado"] == ["encargo.pdf"], r.evidencia
+    assert "encargo.pdf" in str(r.evidencia["discrepan"])
+
+
+def test_n9b_un_fichero_que_ACABA_EN_CEROS_y_esta_ALTERADO_no_se_confirma(tmp_path):
+    """Lo que el `n9` original protegía, en su mismo escenario: un documento que acaba en
+    ceros propios y cuyo contenido NO es el del original. Ningún prefijo hashea al sha256
+    declarado y la discrepancia sale sin etiqueta — mejor un hallazgo sin etiqueta que una
+    etiqueta falsa sobre un expediente."""
+    original = b"PDF con ceros propios\0\0\0"
+    alterado = b"PDF con ceros PROPIOS\0\0\0"
+    c = _caso_drive(tmp_path, {"encargo.pdf": alterado + b"\0" * (512 - len(alterado))})
     f = _FuentesDobles(censo=[vaf.FicheroRemoto("encargo.pdf", sha256=_sha(original))])
 
     r = _rr(c, "hash_drive", f)
@@ -2151,3 +2179,83 @@ def test_c9_sin_la_mencion_al_alta_cuando_la_diferencia_no_es_el_truncado(tmp_pa
     assert r.estado == va.FALLO
     assert "73140.00" in r.detalle and "12000.00" in r.detalle, r.detalle
     assert "MEJORAS #218" not in r.detalle
+
+
+# ===========================================================================
+# Los tres falsos rojos de las aperturas del 15-25/09 (MEJORAS #306, #307, #287)
+#
+# Plan: docs/superpowers/plans/2026-09-26-verificar-apertura-c1-c2-c3.md
+#
+# Los tres son la misma clase de defecto: una comprobación que compara dos lados sin
+# aplicar la transformación que uno de ellos sufrió —la exportación de rclone, la cola de
+# ceros del pull, el split de la sala de máquina—. Y los tres gritaban sobre expedientes
+# sanos: una verja que grita sobre lo correcto se acaba ignorando.
+# ===========================================================================
+
+
+# --- C2 (MEJORAS #307): el relleno de un fichero que ya acababa en ceros -------------
+
+
+def _zip_de_verdad() -> bytes:
+    """Un ZIP hecho con `zipfile`: acaba en el registro de fin de directorio central, cuyos
+    dos últimos bytes —la longitud del comentario— valen `00 00`."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("_chat.txt", "[26/6/25, 12:07:45] Parte: mensaje de prueba\n" * 40)
+    return buf.getvalue()
+
+
+def test_307_un_zip_rellenado_con_ceros_se_CONFIRMA_como_el_relleno_de_225(tmp_path):
+    """W-02Y2J6 (2026-09-25): cuatro zips de WhatsApp y un `.docx` salieron «sin explicar» y
+    eran exactamente `#225` —prefijo idéntico byte a byte a una descarga limpia, y ceros
+    hasta el siguiente múltiplo de 512—. La función quitaba la cola de ceros ENTERA, y un
+    ZIP acaba legítimamente en `00 00`: el recorte se llevaba esos bytes y el sha256 no
+    cuadraba nunca. En ofimática y en exports de WhatsApp es el caso seguro, no el raro."""
+    original = _zip_de_verdad()
+    assert original.endswith(b"\0\0"), "premisa: el ZIP acaba en ceros propios"
+    assert len(original) % 512, "premisa: el relleno de #225 tiene algo que añadir"
+    c = _caso_drive(tmp_path, {"chat.zip": _relleno(original)})
+    f = _FuentesDobles(censo=[vaf.FicheroRemoto("chat.zip", sha256=_sha(original))])
+
+    r = _rr(c, "hash_drive", f)
+
+    assert r.estado == va.FALLO, "se explica, no se aprueba"
+    assert r.evidencia["relleno_225_confirmado"] == ["chat.zip"], r.evidencia
+    assert r.evidencia["sin_explicar"] == []
+
+
+def test_307_una_cola_de_ceros_MAS_LARGA_que_el_relleno_se_resuelve_por_el_hash(tmp_path):
+    """Dónde acaba el original no se ve mirando los bytes. Si acaba en 600 ceros propios y el
+    relleno añade 324, la cola mide 924 y su primer cero cae fuera del bloque que el relleno
+    puede ocupar. De las fronteras posibles, la única que hashea al sha256 que Drive declara
+    es la verdadera, y es la que se tiene que encontrar."""
+    original = b"x" * 100 + b"\0" * 600
+    p = _caso_drive(tmp_path, {"f.bin": original + b"\0" * 324}) / "00_Input" / "01_Drive EV" / "f.bin"
+
+    assert va._es_el_relleno_de_225(p, _sha(original)) is True
+
+
+def test_307_si_NINGUNA_frontera_de_la_cola_cuadra_no_se_confirma(tmp_path):
+    """CONTROL POSITIVO: probar todas las fronteras no es aceptar cualquiera. Los mismos
+    ceros propios que el caso anterior y un byte del contenido cambiado: ningún prefijo
+    hashea al sha256 declarado."""
+    original = b"x" * 100 + b"\0" * 600
+    alterado = b"y" + original[1:]
+    p = _caso_drive(tmp_path, {"f.bin": alterado + b"\0" * 324}) / "00_Input" / "01_Drive EV" / "f.bin"
+
+    assert va._es_el_relleno_de_225(p, _sha(original)) is False
+
+
+def test_307_un_original_con_bytes_AÑADIDOS_antes_del_relleno_no_se_confirma(tmp_path):
+    """CONTROL POSITIVO de la otra mitad de la regla: el prefijo tiene que cuadrar Y detrás
+    solo puede haber ceros. Aquí el prefijo de 21 bytes es el original, pero le siguen siete
+    bytes que no son relleno: probar fronteras que no están en la cola de ceros daría por
+    `#225` un documento con contenido añadido."""
+    original = b"contenido del encargo"
+    local = original + b"ANADIDO"
+    p = _caso_drive(tmp_path, {"f.pdf": local + b"\0" * (512 - len(local))}) / "00_Input" / "01_Drive EV" / "f.pdf"
+
+    assert va._es_el_relleno_de_225(p, _sha(original)) is False

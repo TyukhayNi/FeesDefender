@@ -770,10 +770,17 @@ def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
     versión anterior aceptaba 512 o más —`512 x + 512 ceros` daba «confirmado»—, o sea daba
     por explicada como el defecto conocido una alteración que no lo es.
 
-    Falla cerrado a propósito. Si el documento legítimo YA terminaba en ceros, quitar la
-    cola se lleva bytes suyos y el re-hash no cuadra: sale `False`, la discrepancia se
-    reporta **sin etiqueta**, y eso es lo correcto. Mejor un hallazgo sin explicar que una
-    explicación falsa sobre un expediente probatorio.
+    **Dónde acaba el original no se ve en los bytes: lo fija el hash** (`MEJORAS #307`).
+    Hasta el 2026-09-26 se probaba UNA frontera —la del primer cero de la cola— y un original
+    que ya acababa en ceros salía siempre sin confirmar. Se tenía por raro, y en ofimática
+    es universal: todo ZIP —y `.docx`, `.xlsx` y `.pptx` lo son— acaba en `00 00`, la
+    longitud del comentario de su registro final. En W-02Y2J6, cinco ficheros que eran
+    exactamente `#225` salieron «sin explicar». Ahora se prueba **cada** frontera posible
+    dentro de la cola de ceros, y solo se confirma si el prefijo hashea al `sha256` que
+    Drive declara. Sigue siendo prueba y no parecido: si el prefijo de longitud L tiene ese
+    hash, esos L bytes son el original, y detrás solo hay ceros hasta el múltiplo de 512.
+    Un fichero alterado no tiene prefijo que cuadre y sale `False`, **sin etiqueta**: mejor
+    un hallazgo sin explicar que una explicación falsa sobre un expediente probatorio.
 
     Se lee en streaming y solo cuando ya hay discrepancia: un expediente lleva vídeos de
     cientos de MB, y cargarlos enteros cambiaría un defecto de custodia por uno de memoria.
@@ -783,8 +790,9 @@ def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
         if tam == 0 or tam % 512 != 0:
             return False
         # El prefijo que seguro NO es cola (la cola mide < 512), hasheado en bloques; y
-        # luego un hash por cada frontera candidata, con `copy()`, sobre los <= 511 bytes
-        # finales. Una sola pasada y a lo sumo 511 copias baratas del estado.
+        # luego un hash por cada frontera candidata —toda posición desde el primer cero de
+        # la cola— sobre los <= 511 bytes finales. `hexdigest` no consume el estado: una
+        # sola pasada y a lo sumo 511 finalizaciones baratas.
         h = hashlib.sha256()
         seguro = max(0, tam - (_MAX_COLA_RELLENO - 1))
         leidos = 0
@@ -801,10 +809,13 @@ def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
         ceros = len(cola) - len(cola.rstrip(bytes([0])))
         if ceros == 0:
             return False
-        frontera = tam - ceros
+        frontera = tam - ceros               # primer cero de la cola examinada
+        esperado = sha_remoto.lower()
         for k in range(len(cola)):
-            if seguro + k == frontera:
-                return h.hexdigest().lower() == sha_remoto.lower()
+            # `h` lleva los `seguro + k` primeros bytes: ese es el original candidato, y
+            # desde `frontera` todo lo que queda detrás son ceros.
+            if seguro + k >= frontera and h.hexdigest().lower() == esperado:
+                return True
             h.update(cola[k:k + 1])
         return False
     except OSError:
