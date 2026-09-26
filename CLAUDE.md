@@ -114,12 +114,14 @@ Claude contra la fuente, y un revisor que no corre deja **sin verificar**, nunca
   masivos, boilerplate): con `agy` fuera ya no hay a quién delegarlo en bloque. Para lo paralelizable,
   subagentes; para lo grande, trocearlo.
 
-### Con qué modelo se revisa — política PROVISIONAL desde el 2026-09-23
+### Con qué modelo se revisa — política CONFIRMADA el 2026-09-26 (provisional desde el 2026-09-23)
 
 **Habitual: `gpt-6-sol` con esfuerzo `high` y velocidad estándar.** Lo decidió Nikolai el
 2026-09-23 sobre el informe de consumo de catorce días de revisiones
-(`recomendacion-modelos-revision-2026-09-23.md`, fuera del repo). **Es provisional, y el motivo se
-dice entero: nadie ha comparado Sol y Astra sobre el mismo objeto.** Lo que el informe sí midió son
+(`recomendacion-modelos-revision-2026-09-23.md`, fuera del repo), y **confirmó la elección el
+2026-09-26**, sobre un resumen del ledger de la calibración que omitía dos condiciones de esa
+medición —las dos, abajo; se le dijeron después, y la mantuvo—. **Nació provisional por un motivo que la
+confirmación no borra: nadie ha comparado Sol y Astra sobre el mismo objeto.** Lo que el informe sí midió son
 tres cosas **distintas**, que conviene no fundir en una: las **60 revisiones sustantivas** del
 periodo corrieron **todas** con Astra —y esas 60 **incluyen intentos interrumpidos**, no son 60
 revisiones completas—; el **94,5 % de los tokens** de Astra es su cuota sobre **las 88 sesiones**
@@ -218,22 +220,40 @@ Tres cosas medidas el 2026-09-23, las tres capaces de vaciar la política sin ha
 **Y el hueco que queda, declarado:** los tres flags los exige esta prosa, que la lee quien redacta
 el lanzador. Un lanzador que herede en silencio **no falla** —corre, produce informe y deja un acta
 con el modelo que alguien creyó pedir—, así que la garantía sigue siendo humana. Fichado en
-`MEJORAS #279` con su disparador: la primera fila de la calibración en que el modelo del acta no
-coincida con el releído del rollout.
+`MEJORAS #279`. Su disparador era la primera fila de la calibración en que el modelo del acta no
+coincidiera con el releído del rollout, y **se agotó con la calibración sin cumplirse**: en las cinco
+coincidió. Queda la regla general de promoción —un caso real—, y un acta cuyo modelo releído no sea
+el que pedía la tabla lo sería; pero **nada lo compara solo**: releer es el deber del §4 del
+contrato, que cumple quien escribe el acta —o la ficha, si no hubo acta—, y el revisor sustituto no
+tiene rollout que releer.
 
-**Calibración: los cinco primeros encargos ordinarios, y entonces se decide.** La política sigue
-provisional hasta que cinco revisiones ordinarias hayan corrido con Sol alto. De cada una se anota,
-en la fila #38 de `PLAN.md`: modelo · esfuerzo · velocidad; objeto y alcance; tokens y variación del
-cupo **con la actividad concurrente declarada** —el contador es de la cuenta, no de la tarea—;
-**hallazgos confirmados** al adjudicar; y **omisiones relevantes**, esto es, defectos que aparecieron
-después (en una ronda posterior, en la suite o en producción). La calibración reutiliza objetos con
-defectos ya confirmados **sin enseñarle el remedio al revisor**, y sobre copias.
+**Calibración: cerrada el 2026-09-26 con los cinco primeros encargos ordinarios, y Nikolai
+confirmó la elección.** De cada uno se anotó, en la fila #38 de `PLAN.md`: modelo · esfuerzo · velocidad; objeto
+y alcance; tokens y variación del cupo **con la actividad concurrente declarada** —el contador es de
+la cuenta, no de la tarea—; **hallazgos confirmados** al adjudicar; y **omisiones relevantes**, esto
+es, defectos que aparecieron después (en una ronda posterior, en la suite o en producción). **Lo que
+dieron:** 34 hallazgos confirmados y ninguno refutado —en la cuarta cayeron dos subpuntos de uno—,
+con algún `alta` en cuatro de las cinco; y cuatro omisiones vistas después: una de alcance, porque
+el mandato no pedía la suite; dos del remedio, no del diff revisado; y una de lectura, menor y de
+mensaje. **Y lo
+que no se hizo como estaba escrito:** este párrafo preveía reutilizar objetos con defectos ya
+confirmados, sin enseñarle el remedio al revisor y sobre copias; las cinco filas fueron encargos
+vivos, así que el ledger tampoco tiene un denominador de defectos conocidos. **Y una condición medida
+después:** cuatro de las cinco —de la segunda a la quinta— recibieron el mandato con todo carácter
+no ASCII cambiado por «?», por un defecto del lanzador (`MEJORAS #279`); los ficheros del objeto,
+en cambio, el revisor los leía intactos del disco. **El resumen sobre el que Nikolai dijo «ok» no
+mencionaba ninguna de las dos cosas**; se le dijeron después, el mismo día, y su «ok» confirma **la
+elección operativa** —qué modelo corre por defecto—, **no ratifica el método** que no se cumplió.
+**Sabiéndolas, la mantuvo** y encargó la medición que el método preveía —revisiones antiguas con
+defectos ya confirmados, que además dan pares Sol/Astra sobre el mismo objeto—: fila #50 de `PLAN.md`.
 
-**Y lo que el ledger NO podrá sostener aunque se rellene entero** (R1, H-05): que Sol encuentre lo
+**Y lo que el ledger NO sostiene, lleno como está** (R1, H-05): que Sol encuentre lo
 mismo que Astra, que su tasa de omisiones sea aceptable, o que el reparto por filas esté bien
 puesto. Para eso harían falta **pares comparables Sol/Astra sobre el mismo objeto**, un denominador
-de defectos conocidos y una ventana de seguimiento, y **nada de eso se construye aquí**. Los cinco
-encargos producen **datos para que Nikolai decida**, no un veredicto que se dispare solo al quinto.
+de defectos conocidos y una ventana de seguimiento, y **nada de eso se construyó**. Los cinco
+encargos produjeron **datos para que Nikolai decidiera**, no un veredicto que se disparase solo al
+quinto: **la confirmación es suya** —de la elección operativa, no del método— y descansa en esos
+datos con estos límites.
 
 **Lo que esta política NO promete: ni ahorro, ni equivalencia de calidad.** La diferencia de tarifa
 —Sol cuesta una quinta parte de Astra por millón de tokens a igual composición— es de créditos, y de

@@ -12808,7 +12808,25 @@ encargo, y una pieza así hay que encadenarla o se queda sin llamadores.
 en la que el modelo anotado en el acta **no coincida** con el releído del rollout. Hasta
 entonces es un riesgo declarado, que es lo que lo distingue de un olvido.
 
-## 280. `AGENTS.md` dice que Codex no puede usar subagentes, y el 2026-09-23 los usaba
+**Actualización del 2026-09-26: el disparador se agotó sin cumplirse.** La calibración cerró y en
+sus cinco filas el modelo releído coincidió. La entrada sigue como riesgo declarado y se promueve
+por la regla general (`CLAUDE.md` §«Planificación y estado»): un acta cuyo modelo releído del
+rollout no sea el que pedía la tabla sería el caso real. **No hay control detrás**: releer es el
+deber del §4 del contrato, que cumple quien escribe el acta, o la ficha si no hubo acta; el
+revisor sustituto no tiene rollout.
+
+**Segunda forma del mismo hueco, medida ese día:** el mandato que el lanzador pasa por una
+tubería de Windows PowerShell 5.1 (`Get-Content … | & $bin exec … -`) **llega al revisor con
+todo carácter no ASCII cambiado por «?»**, porque el `$OutputEncoding` de esa versión es ASCII.
+Lo guarda así el rollout —138 «?» y ninguna tilde en la R1 de #411—; el `MANDATO.md` del disco
+sigue intacto, y el revisor lee de disco los ficheros del objeto. En los rollouts de agosto y
+septiembre, de 109 rondas por CLI con mandato, **cinco lo recibieron así, todas del
+2026-09-26**: las filas 2 a 5 de la calibración y la R1 de #411; 94 llegaron con tildes y 10
+estaban escritas sin ellas. Se arregla con `$OutputEncoding = New-Object System.Text.UTF8Encoding
+$false` antes de la tubería (sonda: `acción«ñ»—` llegó y volvió exacto). Un lanzador canónico,
+como el de «La salida», lo fijaría una vez para todos.
+
+## 280. `AGENTS.md` dice que Codex no puede usar subagentes, y el 2026-09-23 los usaba  [PROMOVIDO → PLAN.md 2026-09-26]
 
 **De dónde sale:** lectura de los `rollout-*.jsonl` del 2026-09-23 mientras se comprobaban
 los lanzadores.
@@ -12828,7 +12846,7 @@ mezclarla con la calibración contaminaría sus cinco primeras filas.
 **Disparador para promoverlo:** que la calibración cierre (fila #38), o que Nikolai quiera
 antes decidir si una ronda puede abrirse en paralelo.
 
-## 281. El acta puede omitir `modelo`, `esfuerzo` y `velocidad` y seguir en verde
+## 281. El acta puede omitir `modelo`, `esfuerzo` y `velocidad` y seguir en verde  [PROMOVIDO → PLAN.md 2026-09-26]
 
 **De dónde sale:** hallazgo **H-07** de la R1 del diff que creó esos campos
 (`docs/superpowers/specs/2026-09-23-modelo-revisor-politica-provisional-r1-adversarial-review.md`),

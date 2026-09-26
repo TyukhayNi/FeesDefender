@@ -80,8 +80,8 @@ una instrucción divergente es peor que ninguna.
     revisa»— y **el autor lo relee del `turn_context` de tu rollout y de la cabecera del log**, no
     de lo que tú digas: un modelo informando de su propia identidad no es evidencia. Lo que **sí**
     se te pide es lo contrario y es nuevo: **si el objeto te desborda al esfuerzo con el que estás
-    corriendo, dilo en el informe y di en qué punto**. Esa frase es un dato de la calibración; una
-    omisión silenciosa no lo es, y es justo lo que la política provisional necesita medir.
+    corriendo, dilo en el informe y di en qué punto**. Esa frase es un dato para la política de
+    modelo; una omisión silenciosa no lo es, y es justo lo que esa política necesita ver.
   - **Volver limpio es un resultado legítimo, y `SHIP` existe para eso.** Si has atacado el objeto
     y no encuentras nada que impida mergearlo, **dilo**: esa es la respuesta correcta, no la señal
     de que no has mirado bastante. El dato que obliga a escribir esto: en **87 actas**, `SHIP` se
