@@ -13274,7 +13274,7 @@ tocar nada, confirmar la lectura corriéndolo.
 
 ---
 
-## 296. `rclone config show gdrive_ev` tarda 4-6 s, y dos consumidores con timeout corto lo convierten en un error que no dice la causa
+## 296. `rclone config show gdrive_ev` tarda 4-6 s, y dos consumidores con timeout corto lo convierten en un error que no dice la causa  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Medido el 2026-09-25, abriendo W-02UIQU.**
 
