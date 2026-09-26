@@ -336,7 +336,14 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
             con_hash.setdefault(h, []).append(i)
 
     crudos = _crudos_de_whatsapp(fuentes)
-    por_ruta = por_sha = solo_por_ruta = solo_por_sha = 0
+    # Los sha256 del catálogo que acreditan: los de las entradas que no contradicen. Una copia
+    # con la cola de ceros del pull (`MEJORAS #225`) tiene otro sha256 y el mismo contenido,
+    # y eso se MIDE —el detector de C2—, no se declara: ocho en W-02UIQU y W-0462E1 salían
+    # sin catalogar cuando la línea `duplicado` dejó de eximir (R1 del #408).
+    hashes_catalogo = {h for i, (_, h) in enumerate(pares)
+                       if i not in contradictorias and _es_sha256(h)}
+    entrada = case_dir / "00_Input"
+    por_ruta = por_sha = solo_por_ruta = solo_por_sha = por_relleno = 0
     declaradas_usadas: list[str] = []
     excluidas = {"protocolo": 0, "export_crudo_whatsapp": 0}
     sin_catalogar: list[str] = []
@@ -363,6 +370,8 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
             excluidas["protocolo"] += 1
         elif clave in crudos:
             excluidas["export_crudo_whatsapp"] += 1
+        elif _originales_de_relleno_225(entrada / muestra[clave]) & hashes_catalogo:
+            por_relleno += 1
         elif clave in declaradas:
             declaradas_usadas.append(f"{muestra[clave]} — {declaradas[clave]}")
         else:
@@ -381,6 +390,7 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
           "huerfanos": huerfanos[:8], "catalogo_en": catalogo_en, "catalogos": conteos,
           "por_ruta": por_ruta, "por_sha": por_sha, "excluidas": excluidas,
           "solo_por_ruta": solo_por_ruta, "solo_por_sha": solo_por_sha,
+          "por_relleno_225": por_relleno,
           "declaradas_no_copiadas": len(declaradas_usadas),
           "declaradas_muestra": declaradas_usadas[:8],
           "n_contradicciones": len(contradicciones), "contradicciones": contradicciones[:8],
@@ -420,7 +430,11 @@ def c3_cobertura_vs_catalogo(case_dir: Path) -> Resultado:
     entradas_ok = ("el catálogo no tiene entradas" if not entradas else
                    "la entrada del catálogo tiene su fuente" if len(entradas) == 1 else
                    f"las {len(entradas)} entradas del catálogo tienen su fuente")
-    notas = [f"{cabeza} ({por_ruta} por ruta y {por_sha} por sha256), y {entradas_ok}"]
+    cruces = [f"{por_ruta} por ruta", f"{por_sha} por sha256"]
+    if por_relleno:
+        cruces.append(f"{por_relleno} por su contenido sin la cola de ceros del pull "
+                      "(MEJORAS #225)")
+    notas = [f"{cabeza} ({', '.join(cruces[:-1])} y {cruces[-1]}), y {entradas_ok}"]
     if solo_por_ruta:
         notas.append(f"{solo_por_ruta} solo por la ruta, sin sha256 que contrastar")
     if solo_por_sha:
@@ -1097,8 +1111,11 @@ def c1_censo_remoto(case_dir: Path, ctx: "_Contexto") -> Resultado:
 _MAX_COLA_RELLENO = 512
 
 
-def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
-    """¿Los bytes de `p` son los del original CON la cola de ceros de `MEJORAS #225` detrás?
+def _originales_de_relleno_225(p: Path) -> set[str]:
+    """Los sha256 que puede tener el original del que `p` es copia CON la cola de ceros de
+    `MEJORAS #225` detrás: el de cada prefijo que acaba dentro de esa cola. Vacío si `p` no
+    tiene la forma del relleno. `_es_el_relleno_de_225` pregunta por uno; C3 cruza el
+    conjunto con el catálogo (R1 del #408), así que el fichero se lee una sola vez.
 
     **Prueba, no parecido**, y esa es la diferencia con el intento anterior. El módulo
     `intake_drive_hash` (2026-09-10) se quedaba en «compatible con el relleno» —tamaño
@@ -1139,7 +1156,7 @@ def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
     try:
         tam = p.stat().st_size
         if tam == 0 or tam % 512 != 0:
-            return False
+            return set()
         # El prefijo que seguro NO es cola (la cola mide < 512), hasheado en bloques; y
         # luego un hash por cada frontera candidata —toda posición desde el primer cero de
         # la cola— sobre los <= 511 bytes finales. `hexdigest` no consume el estado: una
@@ -1151,26 +1168,35 @@ def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
             while leidos < seguro:
                 trozo = f.read(min(1024 * 1024, seguro - leidos))
                 if not trozo:
-                    return False                 # el fichero encogio: no se afirma nada
+                    return set()                 # el fichero encogio: no se afirma nada
                 h.update(trozo)
                 leidos += len(trozo)
             cola = f.read(tam - seguro)
             if len(cola) != tam - seguro or f.read(1):
-                return False                     # encogio o crecio bajo los pies
+                return set()                     # encogio o crecio bajo los pies
         ceros = len(cola) - len(cola.rstrip(bytes([0])))
         if ceros == 0:
-            return False
+            return set()
         frontera = tam - ceros               # primer cero de la cola examinada
-        esperado = sha_remoto.lower()
+        candidatos: set[str] = set()
         for k in range(len(cola)):
             # `h` lleva los `seguro + k` primeros bytes: ese es el original candidato, y
             # desde `frontera` todo lo que queda detrás son ceros.
-            if seguro + k >= frontera and h.hexdigest().lower() == esperado:
-                return True
+            if seguro + k >= frontera:
+                candidatos.add(h.hexdigest().lower())
             h.update(cola[k:k + 1])
-        return False
+        return candidatos
     except OSError:
-        return False                             # no poder mirar no es haber visto
+        return set()                             # no poder mirar no es haber visto
+
+
+def _es_el_relleno_de_225(p: Path, sha_remoto: str) -> bool:
+    """¿Los bytes de `p` son los del original CON la cola de ceros de `MEJORAS #225` detrás?
+    Prueba, no parecido: el prefijo tiene que hashear al `sha256` esperado (ver
+    `_originales_de_relleno_225`)."""
+    return sha_remoto.lower() in _originales_de_relleno_225(p)
+
+
 @_de_red
 def c2_hash_contra_drive(case_dir: Path, ctx: "_Contexto") -> Resultado:
     """El sha256 local contra el `sha256Checksum` que declara Drive (`MEJORAS #225`).

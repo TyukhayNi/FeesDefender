@@ -139,8 +139,49 @@ def _es_sha256(h: str) -> bool:
     return bool(_RE_SHA256.fullmatch(h or ""))
 
 
+_MAX_COLA_RELLENO = 512
+
+
+def _originales_de_relleno_225(p: Path) -> set[str]:
+    """Los sha256 que puede tener el original del que `p` es copia con la cola de ceros que
+    dejaba el pull de Drive (`MEJORAS #225`): el de cada prefijo que acaba dentro de la cola
+    —siempre menor de 512 bytes, porque rellena hasta el siguiente múltiplo— y deja detrás
+    solo ceros. Copia de `core.verificar_apertura._originales_de_relleno_225` (la skill es
+    autónoma); un test del repo compara las dos sobre los mismos bytes. Prueba, no
+    parecido: un fichero alterado no tiene prefijo que cuadre."""
+    try:
+        tam = p.stat().st_size
+        if tam == 0 or tam % 512 != 0:
+            return set()
+        h = hashlib.sha256()
+        seguro = max(0, tam - (_MAX_COLA_RELLENO - 1))
+        leidos = 0
+        with open(p, "rb") as f:
+            while leidos < seguro:
+                trozo = f.read(min(1024 * 1024, seguro - leidos))
+                if not trozo:
+                    return set()
+                h.update(trozo)
+                leidos += len(trozo)
+            cola = f.read(tam - seguro)
+            if len(cola) != tam - seguro or f.read(1):
+                return set()
+        ceros = len(cola) - len(cola.rstrip(bytes([0])))
+        if ceros == 0:
+            return set()
+        frontera = tam - ceros
+        candidatos: set[str] = set()
+        for k in range(len(cola)):
+            if seguro + k >= frontera:
+                candidatos.add(h.hexdigest().lower())
+            h.update(cola[k:k + 1])
+        return candidatos
+    except OSError:
+        return set()
+
+
 def problemas_poblacion(manifiesto_filas: list[dict], cobertura_filas: list[dict],
-                        no_copiados: list[dict]) -> list[str]:
+                        no_copiados: list[dict], input_dir: Path | None = None) -> list[str]:
     """Todo lo que procesó la sala de máquina tiene fila o declaración (MEJORAS #316).
 
     Una fuente de la cobertura —cada `rel_path`— da cuenta de sí:
@@ -148,7 +189,8 @@ def problemas_poblacion(manifiesto_filas: list[dict], cobertura_filas: list[dict
     - por una fila con su **ruta** (`ruta_original`) que no la contradiga;
     - por su **contenido**: su sha256 está en una fila. Es el `dedup_por_sha`, la copia en
       otra carpeta; lo comprueba la verja y **no se declara**: un hecho que se puede medir no
-      se acredita diciéndolo (R1/H-04 del #408);
+      se acredita diciéndolo (R1/H-04 del #408). Con `input_dir` —el `00_Input` del caso—,
+      también la copia con la cola de ceros del pull (`MEJORAS #225`): su prefijo es una fila;
     - o por una línea **`excluido`** en `## No copiados`: una decisión, con su motivo.
 
     **La unidad es el par ruta/sha256 de cada fila** (R1/H-03 del #408, la misma frontera que
@@ -207,6 +249,8 @@ def problemas_poblacion(manifiesto_filas: list[dict], cobertura_filas: list[dict
                              "contenido no—")
             continue
         if fuentes[k] & shas or k in declaradas["excluido"]:
+            continue
+        if input_dir is not None and _originales_de_relleno_225(Path(input_dir) / muestra[k]) & shas:
             continue
         if intake_control.es_fichero_de_protocolo(k) or k in crudos:
             continue
@@ -347,7 +391,10 @@ def main(argv: list[str]) -> int:
     problemas = verificar(filas, ficheros, cobertura)
     problemas += _problemas_hash(sala_dir, filas, ficheros, modo_hash)
     if cobertura is not None:
-        problemas += problemas_poblacion(filas, cobertura, no_copiados)
+        # El `00_Input` del caso, donde el layout lo pone: para medir el relleno de #225.
+        entrada = Path(sala_dir).parent.parent / "00_Input"
+        problemas += problemas_poblacion(filas, cobertura, no_copiados,
+                                         entrada if entrada.is_dir() else None)
     elif not sin_cobertura:
         problemas.append("no hay cobertura con la que contrastar la población de la sala: pásala "
                          "con --cobertura <ruta>, o --sin-cobertura si la sala de máquina no ha "

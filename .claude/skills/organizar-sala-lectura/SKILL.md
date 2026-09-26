@@ -440,7 +440,8 @@ tal diálogo.
      `parent_id` agrupa los anexos de un bundle bajo su principal. Cabecera
      `<!-- GENERADO — NO EDITAR A MANO -->`.
    - **Población: cada fichero de `00_Input` da cuenta de sí**: con una fila por su ruta,
-     con su sha256 en otra fila (un duplicado: lo comprueba la verja) o con una línea
+     con su sha256 en otra fila (un duplicado; o su contenido sin la cola de ceros del pull,
+     `MEJORAS #225`: las dos cosas las mide la verja) o con una línea
      `` - excluido: `ruta_original` — motivo `` en `## No copiados`. `excluido` es para lo
      que no es documento de este expediente —material de otro caso (W-code ajeno), un
      logotipo de firma sin texto—, **nunca** para lo que no sabes leer.

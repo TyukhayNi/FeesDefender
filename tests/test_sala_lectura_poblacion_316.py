@@ -30,6 +30,15 @@ verificar_sala = import_module("verificar_sala")
 _A, _B = "a" * 64, "b" * 64
 
 
+def _sha(datos: bytes) -> str:
+    return hashlib.sha256(datos).hexdigest()
+
+
+def _relleno(original: bytes) -> bytes:
+    """`original` con la cola de ceros de `MEJORAS #225` hasta el siguiente múltiplo de 512."""
+    return original + bytes(512 - len(original) % 512)
+
+
 def _fila(ruta, sha=""):
     return {"sha256": sha, "ruta_original": ruta, "nombre_canonico": "x", "tipo": "", "fecha": "",
             "parte": "", "parent_id": ""}
@@ -104,6 +113,22 @@ def test_una_linea_duplicado_NO_da_cuenta_si_su_contenido_no_esta_en_ninguna_fil
         [_cob("01_Drive EV/a.pdf", _A), _cob("2026-09-23_email_01/c/b.pdf", _B)], declarada)
     assert len(problemas) == 1 and "2026-09-23_email_01/c/b.pdf" in problemas[0], problemas
     assert "duplicado" in problemas[0], problemas
+
+
+def test_una_copia_con_el_relleno_de_225_da_cuenta_por_su_contenido(tmp_path):
+    """El pull de Drive dejaba copias con una cola de ceros (`MEJORAS #225`): su sha256 no es
+    el del original, pero su contenido está en la sala. Con el `00_Input` a mano la verja lo
+    mide como C2 —un prefijo cuyo sha256 está en una fila— y no pide línea. Sin él no se
+    puede medir, y no se da por visto."""
+    original = b"encargo firmado"
+    inp = tmp_path / "00_Input"
+    (inp / "2026-09-23_email_01" / "c").mkdir(parents=True)
+    copia = "2026-09-23_email_01/c/encargo.pdf"
+    (inp / copia).write_bytes(_relleno(original))
+    filas = [_fila("01_Drive EV/encargo.pdf", _sha(original))]
+    cob = [_cob("01_Drive EV/encargo.pdf", _sha(original)), _cob(copia, _sha(_relleno(original)))]
+    assert verificar_sala.problemas_poblacion(filas, cob, [], input_dir=inp) == []
+    assert len(verificar_sala.problemas_poblacion(filas, cob, [])) == 1
 
 
 def test_una_fila_con_la_ruta_de_la_fuente_y_otro_sha256_la_contradice():
@@ -260,6 +285,16 @@ def test_cli_deduce_la_cobertura_de_la_sala_de_maquina_hermana(tmp_path, capsys)
     sala = _en_su_sitio(tmp_path, [_cob(audio, _B)])
     assert verificar_sala.main(["verificar_sala.py", str(sala)]) == 1
     assert audio in capsys.readouterr().out
+
+
+def test_cli_mide_el_relleno_con_el_00_Input_del_layout(tmp_path, capsys):
+    """La costura por defecto, sin inyectar nada: el verify deduce el `00_Input` del caso
+    —hermano de `01_Procesado/`— y la copia con relleno de la sala no es un problema."""
+    copia = "2026-09-23_email_01/c/_chat.txt"
+    (tmp_path / "00_Input" / "2026-09-23_email_01" / "c").mkdir(parents=True)
+    (tmp_path / "00_Input" / copia).write_bytes(_relleno(b"el chat"))
+    sala = _en_su_sitio(tmp_path, [_cob(copia, _sha(_relleno(b"el chat")))])
+    assert verificar_sala.main(["verificar_sala.py", str(sala)]) == 0, capsys.readouterr().out
 
 
 def test_cli_sin_cobertura_con_una_cobertura_presente_es_un_error(tmp_path, capsys):

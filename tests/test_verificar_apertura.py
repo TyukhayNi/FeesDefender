@@ -2947,6 +2947,45 @@ def test_316_c3_una_exclusion_declarada_se_dice_con_su_ruta_y_su_motivo(tmp_path
     assert r.evidencia["declaradas_muestra"] == [f"{z} — material de otro expediente"], r.evidencia
 
 
+def test_316_c3_una_copia_con_el_relleno_de_225_esta_catalogada_por_su_contenido(tmp_path):
+    """Medido al remediar la R1 del #408: sin la línea `duplicado` como declaración, ocho copias
+    con la cola de ceros del pull (`MEJORAS #225`) —cuatro en W-02UIQU y cuatro en W-0462E1—
+    salían sin catalogar con su contenido en el catálogo. El relleno es un hecho que se mide, y
+    C2 ya lo mide: el original es un prefijo de la copia cuyo sha256 está en el catálogo."""
+    c = _caso(tmp_path)
+    original = b"encargo firmado"
+    copia = "2026-09-23_email_01/c/encargo.pdf"
+    (c / "00_Input" / "2026-09-23_email_01" / "c").mkdir(parents=True)
+    (c / "00_Input" / copia).write_bytes(_relleno(original))
+    _con_sala_maquina(c, [
+        {"slug": "a", "rel_path": "01_Drive EV/encargo.pdf", "sha256": _sha(original)},
+        {"slug": "b", "rel_path": copia, "sha256": _sha(_relleno(original))}])
+    _catalogo_de(c, {"ruta_relativa": "01_Drive EV/encargo.pdf", "hash": _sha(original)})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.OK, f"{r.detalle} · {r.evidencia}"
+    assert r.evidencia["por_relleno_225"] == 1, r.evidencia
+    assert "MEJORAS #225" in r.detalle, r.detalle
+
+
+def test_316_c3_una_cola_de_ceros_que_no_es_la_de_un_documento_catalogado_se_exige(tmp_path):
+    """CONTROL: el relleno solo da cuenta si el prefijo es un documento del catálogo."""
+    c = _caso(tmp_path)
+    copia = "2026-09-23_email_01/c/otro.pdf"
+    (c / "00_Input" / "2026-09-23_email_01" / "c").mkdir(parents=True)
+    (c / "00_Input" / copia).write_bytes(_relleno(b"otro documento"))
+    _con_sala_maquina(c, [
+        {"slug": "a", "rel_path": "01_Drive EV/encargo.pdf", "sha256": _sha(b"encargo firmado")},
+        {"slug": "b", "rel_path": copia, "sha256": _sha(_relleno(b"otro documento"))}])
+    _catalogo_de(c, {"ruta_relativa": "01_Drive EV/encargo.pdf", "hash": _sha(b"encargo firmado")})
+
+    r = _r(c, "cobertura_vs_catalogo")
+
+    assert r.estado == va.FALLO
+    assert r.evidencia["sin_catalogar"] == [copia], r.evidencia
+
+
 def test_316_c3_la_ruta_de_la_cobertura_no_pierde_un_00_Input_del_cliente(tmp_path):
     """R1/H-06 del #408: la `rel_path` de la cobertura ya es relativa a `00_Input/`; un primer
     componente `00_Input` es una carpeta del cliente, y recortarlo convertía `00_Input/_caso.md`
@@ -3037,6 +3076,21 @@ def test_316_anti_deriva_el_zip_crudo_se_decide_igual_en_C3_y_en_la_skill():
     for rutas in conjuntos:
         esperado = {c["ruta"] for c in skill.emparejar_exports_whatsapp(rutas)[1]}
         assert va._crudos_de_whatsapp(rutas) == esperado, rutas
+
+
+def test_316_anti_deriva_el_relleno_de_225_se_mide_igual_en_C3_y_en_la_skill(tmp_path):
+    """La verja de la skill lleva su copia del detector de C2 —la skill es autónoma—: mismos
+    bytes, mismos candidatos, incluido el original que ya acaba en ceros (todo `.docx` es un
+    zip, y un zip acaba en `00 00`)."""
+    skill = _skill_modulo("verificar_sala")
+    casos = {"corto": _relleno(b"encargo"), "zip": _relleno(b"PK" + b"x" * 700 + bytes(2)),
+             "no_multiplo": b"abc", "sin_ceros": b"x" * 512, "vacio": b""}
+    for nombre, datos in casos.items():
+        p = tmp_path / nombre
+        p.write_bytes(datos)
+        assert va._originales_de_relleno_225(p) == skill._originales_de_relleno_225(p), nombre
+    assert _sha(b"encargo") in va._originales_de_relleno_225(tmp_path / "corto")
+    assert _sha(b"PK" + b"x" * 700 + bytes(2)) in va._originales_de_relleno_225(tmp_path / "zip")
 
 
 def test_316_anti_deriva_las_rutas_se_normalizan_igual_en_C3_y_en_la_skill():

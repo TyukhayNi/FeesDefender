@@ -13,7 +13,8 @@
   verify; el texto sin viñeta es comentario.
 - **`verificar_sala.py`** falla si una fuente de la cobertura no da cuenta de sí: por una fila
   con su ruta que no la contradiga, por su sha256 en otra fila (un duplicado: lo comprueba la
-  verja, no se declara) o por una línea `excluido`. Solo no lo piden dos reglas de productor:
+  verja, no se declara), por su contenido sin la cola de ceros del pull (`MEJORAS #225`, que la
+  verja mide con el `00_Input` del caso) o por una línea `excluido`. Solo no lo piden dos reglas de productor:
   el protocolo del registro por ubicación (copia exacta de `core/intake_control.py` en
   `scripts/intake_control.py`) y el zip crudo del intake de WhatsApp junto a su chat, en su
   lote o en `02_Whatsapp/`. La cobertura se deduce del layout; sin ella el verify falla, y
