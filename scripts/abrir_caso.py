@@ -1774,6 +1774,7 @@ def _alta_crm(
 
 def _autoderivar_drive_ev(
     *, folder_id, tipo_caso, team_id, codigo_caso, sufijo, direccion=None, w_code=None,
+    ciudad=None,
 ):
     """B5: en --fuente drive_ev, deriva los flags de identidad omitidos.
 
@@ -1794,10 +1795,12 @@ def _autoderivar_drive_ev(
         typer.echo(f"[auto] --sufijo del tipo_caso: {sufijo!r}")
 
     if folder_id and (team_id is None or codigo_caso is None or direccion is None):
-        info = intake_drive.get_drive_folder_info(folder_id)
+        # Con su MOTIVO (`MEJORAS #296`): decía «token/red» ante cualquier causa, y en dos
+        # aperturas era un rclone lento con el token vigente.
+        info, motivo = intake_drive.leer_carpeta_drive(folder_id)
         if info is None:
-            typer.echo("[auto] No se pudo leer la carpeta de Drive (token/red); "
-                       "pasa los flags que falten explícitos.")
+            typer.echo(f"[auto] No se pudo leer la carpeta de Drive: {motivo}. "
+                       "Pasa los flags que falten explícitos.")
             return team_id, codigo_caso, sufijo, direccion
         if team_id is None and info.drive_id:
             team_id = info.drive_id
@@ -1813,11 +1816,11 @@ def _autoderivar_drive_ev(
                 typer.echo(f"[auto] No pude derivar --codigo-caso de la unidad {unidad!r}; "
                            "pásalo explícito.")
         if direccion is None:
-            direccion = _direccion_de_la_carpeta(info.name, w_code)
+            direccion = _direccion_de_la_carpeta(info.name, w_code, ciudad)
     return team_id, codigo_caso, sufijo, direccion
 
 
-def _direccion_de_la_carpeta(nombre_carpeta, w_code):
+def _direccion_de_la_carpeta(nombre_carpeta, w_code, ciudad=None):
     """`MEJORAS #224` vía (a): la dirección, del nombre de la carpeta de E&V.
 
     Las carpetas se llaman ``<direccion> - <W-code> - <consultor captador>``, así que
@@ -1835,12 +1838,18 @@ def _direccion_de_la_carpeta(nombre_carpeta, w_code):
     No levanta error por sí misma: devolver None deja que la caza el chequeo de
     flags de identidad, igual que el resto de B5. Así esta pieza no puede bloquear
     ninguna invocación que hoy funcione.
+
+    **La ciudad delante** (`MEJORAS #301`): las carpetas de SaRS1 llevan el W-code delante
+    y la ciudad antes de la dirección —«W-… - SANTANDER. Calle … - consultor»; 24 de 24 en
+    el censo del 2026-09-26— y la carpeta del expediente no la lleva. Se quita solo si es
+    la ciudad DEL CASO (`--ciudad`), comparada sin mayúsculas ni tildes: un prefijo como
+    «AVDA.» también es una palabra en mayúsculas con punto, y es parte de la dirección.
     """
     derivada, w_carpeta = intake_drive.parse_ev_folder_name(nombre_carpeta or "")
     if not derivada:
         typer.echo(f"[auto] No pude derivar --direccion del nombre de la carpeta "
-                   f"{nombre_carpeta!r}: no encuentro el W-code que delimita el "
-                   "prefijo. Pásalo explícito.")
+                   f"{nombre_carpeta!r}: no encuentro un W-code separado por guiones, "
+                   "ni delante ni detrás de la dirección. Pásalo explícito.")
         return None
     # `CaseRef.normalizar` y no `.upper()`: el modelo ya define que un W-code canonico
     # va sin espacios de borde y en mayusculas. La R1 midio que con `--w-code " W-X "`
@@ -1856,16 +1865,43 @@ def _direccion_de_la_carpeta(nombre_carpeta, w_code):
                    "dice ser de otro expediente. Pásalo explícito (y comprueba "
                    "--folder-id).")
         return None
+    sin_ciudad = _sin_la_ciudad_delante(derivada, ciudad)
+    if sin_ciudad != derivada:
+        typer.echo(f"[auto] --direccion del nombre de la carpeta, sin la ciudad que la "
+                   f"precede: {sin_ciudad!r}")
+        return sin_ciudad
     typer.echo(f"[auto] --direccion del nombre de la carpeta: {derivada!r}")
     return derivada
 
 
+def _sin_la_ciudad_delante(direccion, ciudad):
+    """`direccion` sin un «<CIUDAD>. » inicial que sea la ciudad del caso (`MEJORAS #301`)."""
+    import unicodedata
+
+    def _pliega(texto):
+        sin_tildes = unicodedata.normalize("NFKD", texto)
+        return "".join(c for c in sin_tildes if not unicodedata.combining(c)).casefold()
+
+    cabeza, punto, resto = (direccion or "").partition(". ")
+    if ciudad and punto and resto.strip() and _pliega(cabeza.strip()) == _pliega(ciudad.strip()):
+        return resto.strip()
+    return direccion
+
+
 def _derivar_team_id(folder_id):
-    """B5: driveId de la carpeta (= --team-id), o None si no se puede leer."""
+    """B5: `(driveId de la carpeta, "")` —el driveId es el --team-id—, o `(None, motivo)`.
+
+    El motivo viaja hasta el error (`MEJORAS #296`): «token/red» lo decía todo y no
+    distinguía un rclone lento de un token caducado o de una carpeta que no se ve.
+    """
     if not folder_id:
-        return None
-    info = intake_drive.get_drive_folder_info(folder_id)
-    return info.drive_id if (info and info.drive_id) else None
+        return None, "sin --folder-id"
+    info, motivo = intake_drive.leer_carpeta_drive(folder_id)
+    if info is None:
+        return None, motivo
+    if not info.drive_id:
+        return None, "la carpeta no está en una unidad compartida (sin driveId)"
+    return info.drive_id, ""
 
 
 def validar_modo(
@@ -2099,7 +2135,7 @@ def main(
             team_id, codigo_caso, sufijo, direccion = _autoderivar_drive_ev(
                 folder_id=folder_id, tipo_caso=tipo_caso,
                 team_id=team_id, codigo_caso=codigo_caso, sufijo=sufijo,
-                direccion=direccion, w_code=w_code,
+                direccion=direccion, w_code=w_code, ciudad=ciudad,
             )
         flags_ident_eff = [
             ("--w-code", w_code), ("--ciudad", ciudad), ("--tipo-caso", tipo_caso),
@@ -2150,13 +2186,13 @@ def main(
     # con team_id=None porque este bloque solo miraba la fuente elegida, no el modo
     # (C1 de la revision de conjunto, 2026-09-15).
     if (fuente == "drive_ev" or modo == "v1") and team_id is None:
-        team_id = _derivar_team_id(folder_id)
+        team_id, motivo_team = _derivar_team_id(folder_id)
         if team_id is not None:
             typer.echo(f"[auto] --team-id del driveId: {team_id}")
         else:
-            typer.echo("[ERROR] --team-id no se pudo derivar de --folder-id (sin "
-                       "--folder-id o token/red): lo necesita drive_ev, y --modo v1 "
-                       "materializa Drive con cualquier --fuente; pásalo explícito.",
+            typer.echo(f"[ERROR] --team-id no se pudo derivar de --folder-id ({motivo_team}): "
+                       "lo necesita drive_ev, y --modo v1 materializa Drive con cualquier "
+                       "--fuente; pásalo explícito.",
                        err=True)
             raise typer.Exit(code=1)
 

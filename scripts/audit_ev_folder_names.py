@@ -2,12 +2,14 @@
 
 Recorre todos los Shared Drives mapeados en ``core.config.DRIVE_EV_TEAM_IDS``,
 lista las primeras N carpetas de cada uno, y aplica ``parse_ev_folder_name``
-a cada nombre. Reporta los equipos cuyo naming no encaja con el patrón
-esperado «Dirección - W-XXXXXX[ - <consultor captador>]».
+a cada nombre. Reporta los equipos cuyo naming no encaja con ninguno de los dos
+patrones: «Dirección - W-XXXXXX[ - <consultor captador>]» y, con el W-code delante,
+«W-XXXXXX - Dirección[ - <consultor captador>]» (`MEJORAS #301`).
 
 NO modifica nada. Solo lectura.
 
-Reutiliza ``_get_drive_access_token`` (con renovación proactiva) y la lógica
+Reutiliza ``obtener_token_drive`` (con renovación proactiva y el motivo si no hay
+token, `MEJORAS #296`) y la lógica
 de retry on rate-limit ya implementadas en ``core/intake_drive.py``.
 
 Uso::
@@ -49,8 +51,8 @@ sys.path.insert(0, str(ROOT))
 from core.config import DRIVE_EV_TEAM_IDS  # noqa: E402
 from core.intake_drive import (  # noqa: E402
     _RATE_LIMIT_BACKOFF_SECONDS,
-    _get_drive_access_token,
     _is_rate_limit_response,
+    obtener_token_drive,
     parse_ev_folder_name,
 )
 
@@ -137,11 +139,14 @@ def audit(
     limit: int,
 ) -> tuple[dict, int]:
     """Ejecuta la auditoría. Devuelve (reporte, exit_code)."""
-    token = _get_drive_access_token()
+    # Con el motivo (`MEJORAS #296`), y sin mandar a mirar `rclone config show`, que
+    # escribe el token y el `client_secret` en claro.
+    lectura = obtener_token_drive()
+    token = lectura.token
     if not token:
         sys.stderr.write(
-            "[ERROR] No se pudo obtener access_token de gdrive_ev.\n"
-            "Verifica con: rclone config show gdrive_ev  | rclone about gdrive_ev:\n"
+            f"[ERROR] No se pudo obtener access_token de gdrive_ev: {lectura.motivo}.\n"
+            "Para forzar su renovación: rclone about gdrive_ev:\n"
         )
         return {}, 2
 
