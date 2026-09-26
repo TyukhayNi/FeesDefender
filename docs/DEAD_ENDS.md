@@ -1022,6 +1022,12 @@ Cuantifica y matiza el hallazgo anterior con mediciones reales desde Cowork (wal
   (`git diff origin/main` y `git diff HEAD` sobre los resueltos: lo que «falta» tiene que ser
   edición propia de la rama). Si el conflicto toca rutas protegidas, eso sí necesita la
   herramienta de la app: parar y decirlo.
+- **Otra cara, 2026-09-26** (PR #405): falló en el paso de **lectura**, no en el de descarga —
+  «Claude Desktop did not run git: it has no record of the repository of
+  "codicert-f2-envio-2f9b7f". Start a new session on that repository, then try again.»—. Esa
+  sesión había cambiado de rama dentro de su worktree varias veces (la del #398, la del cierre, la
+  del #405). Misma conclusión y mismo camino: sin rutas protegidas en el merge, a mano, medido
+  antes con `git merge-tree --write-tree HEAD origin/main` —dijo cero conflictos, y así fue—.
 - **Acción pendiente:** ninguna. Sin medir si es transitorio: fueron dos intentos seguidos, con
   el mismo error.
 
