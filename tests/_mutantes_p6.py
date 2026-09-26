@@ -97,9 +97,16 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
     # Re-apuntado en la Task 2 de crm_ficha (plan rev. 2): la comprobación de elementos vive
     # ahora en `validar_ficha`, que valida la colección entera antes de construir; la de
     # `_contrarios_de` sería código muerto y haría sobrevivir a cualquier mutante de las dos.
-    ("M11 [H-08] un elemento inválido deja de abortar con su índice", FICHA,
-     '                  else [f"contrario[{i}]: tiene que ser un mapping, y es {_forma(e)}"])',
-     "                  else [])",
+    # Y rehecho en la R3 de crm_ficha (H-04): quitar solo el mensaje dejaba el elemento vivo, y
+    # el programa moría en `_contrario_de` con un `AttributeError` que este arnés no cuenta como
+    # roto (`_ROTO` lo excluye a propósito). Filtrarlo es la pérdida silenciosa que el test
+    # existe para detectar, y así muere por `DID NOT RAISE`: lo acredita el M34 del arnés
+    # estricto de crm_ficha, que es esta misma sustitución.
+    ("M11 [H-08] un elemento inválido de la lista se filtra en silencio", FICHA,
+     "    elif isinstance(contr, list):\n        for i, e in enumerate(contr):",
+     "    elif isinstance(contr, list):\n"
+     "        contr[:] = [e for e in contr if isinstance(e, dict)]\n"
+     "        for i, e in enumerate(contr):",
      f"{T_63}::test_un_elemento_invalido_aborta_con_su_indice"),
 
     ("M12 una lista deja de leerse entera: solo el primero", FICHA,

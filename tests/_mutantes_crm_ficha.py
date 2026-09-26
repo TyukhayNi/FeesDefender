@@ -55,6 +55,9 @@ T_FIRMAS = "tests/test_crm_colaboradores_firmas_cli.py"
 _FASE_PREVIA = "    previas = _fase_previa(ficha)\n    if previas:\n"
 _LINK_EV = "        link_ev_mmc(exp_id, cliente_propio_id=cliente_propio_id)\n"
 _LECTURA_FINAL = "    for elemento, id_, declarado, _creado in resueltas:\n"
+_IDENTIDAD = ('    if not (_nif(d.get("nif")) or _hay(d.get("email")) '
+              'or _id_crm(d.get("id_crm"))):\n')
+T_N = "tests/test_crm_ficha_n_contrarios.py"
 
 #: (nombre, fichero, [(ancla, sustitución), …], test que tiene que ponerse rojo).
 MUTANTES: list[tuple[str, str, list[tuple[str, str]], str]] = [
@@ -87,9 +90,9 @@ MUTANTES: list[tuple[str, str, list[tuple[str, str]], str]] = [
        "    return []\n")],
      f"{T_LECTOR}::test_R1H02_un_mapping_o_una_lista_en_CUALQUIER_escalar_se_rechaza"),
 
+    # Re-apuntado en la R3 (H-02): el NIF cuenta como identidad por su forma canónica.
     ("M06 se quita la exigencia de identidad", FICHA,
-     [('    if not (_hay(d.get("nif")) or _hay(d.get("email")) or _id_crm(d.get("id_crm"))):\n',
-       "    if False:\n")],
+     [(_IDENTIDAD, "    if False:\n")],
      f"{T_LECTOR}::test_R1H04_una_parte_sin_identidad_estable_se_rechaza"),
 
     ("M07 dos asignaciones del constructor cruzadas", FICHA,
@@ -165,6 +168,82 @@ MUTANTES: list[tuple[str, str, list[tuple[str, str]], str]] = [
      [(_FASE_PREVIA, "    previas = []\n    if previas:\n"),
       ("    if dry_run:\n", "    _fase_previa(ficha)\n    if dry_run:\n")],
      f"{T_CLI}::TestLaFasePrevia::test_R2H08_dry_run_con_id_crm_no_lee_el_CRM"),
+
+    # --- R3 (plan §10): los cuatro hallazgos, la observación y los huecos que señaló en §5 -----
+    # H-01. Las dos anclas se distinguen por la sangría y por el salto de línea delante: la del
+    # colaborador (28 espacios) está contenida en la del contrario (33) si no se ancla al `\n`.
+    ("M21 el NIF del contrario viaja como se escribió (H-01)", FICHA,
+     [('                                 nif=_nif(d.get("nif")), id_crm=',
+       '                                 nif=_valor(d.get("nif")), id_crm=')],
+     f"{T_INT}::test_R3H01_un_nif_con_separadores_converge_con_el_filtro_del_CRM[contrario]"),
+
+    ("M22 el NIF del colaborador viaja como se escribió (H-01)", FICHA,
+     [('\n                            nif=_nif(d.get("nif")), id_crm=',
+       '\n                            nif=_valor(d.get("nif")), id_crm=')],
+     f"{T_INT}::test_R3H01_colaborador_por_id_con_un_nif_ajeno_deja_la_resolucion_por_nif_"
+     "ambigua"),
+
+    ("M23 un NIF que se vacía sin separadores vuelve a pasar (H-02)", FICHA,
+     [("    if _hay(v) and not _nif(v):\n", "    if False:\n")],
+     f"{T_LECTOR}::test_R3H02_un_nif_que_se_queda_vacio_se_rechaza_aunque_haya_otra_identidad"
+     "[-contrario-contrario]"),
+
+    ("M24 cualquier texto en `nif` vuelve a contar como identidad (H-02)", FICHA,
+     [(_IDENTIDAD, _IDENTIDAD.replace('_nif(d.get("nif"))', '_hay(d.get("nif"))'))],
+     f"{T_LECTOR}::test_R3H02_un_nif_que_se_queda_vacio_no_cuenta_como_identidad"),
+
+    ("M25 lo de debajo de un merge deja de mirarse (H-03)", FICHA,
+     [("            loader.construct_object(valor_node, deep=deep)     # lo de debajo también "
+       "(R3/H-03)\n", "            pass\n")],
+     f"{T_LECTOR}::test_R3H03_lo_de_debajo_de_un_merge_tambien_se_informa"),
+
+    ("M26 una clave escalar que no es texto vuelve a pasar (H-03)", FICHA,
+     [("        if not isinstance(clave, str):\n", "        if False:\n")],
+     f"{T_LECTOR}::test_R3H03_una_clave_escalar_que_no_es_texto_se_rechaza_con_su_linea[numero]"),
+
+    ("M27 el mismo NIF o id_crm en dos partes deja de ser la misma parte (obs.)", FICHA,
+     [("            if misma:\n", "            if False:\n")],
+     f"{T_LECTOR}::test_R3_dos_partes_con_la_misma_identidad_se_rechazan[nif]"),
+
+    ("M28 un email compartido deja de exigir el NIF de las dos (obs.)", FICHA,
+     [('            if correo and correo == _email(e.get("email")) and not (ambas_id or '
+       'ambas_nif):\n', "            if False:\n")],
+     f"{T_LECTOR}::test_R3_un_email_compartido_sin_el_nif_de_las_dos_se_rechaza[solo-email]"),
+
+    ("M29 la fase previa deja pasar dos partes que resuelven a la misma ficha (obs.)", CLI,
+     [("            if existente in vistas:\n", "            if False:\n")],
+     f"{T_INT}::test_R3_dos_partes_que_resuelven_a_la_misma_ficha_cero_writers[contrario]"),
+
+    # §5 del informe: reglas con test y sin mutante que acreditara su sensibilidad.
+    ("M30 una clave desconocida de una parte deja de rechazarse", FICHA,
+     [('    p = [f"{ruta}.{k}: clave desconocida{_sugerencia(k, validas)}" for k in d if k not in '
+       'validas]\n', "    p = []\n")],
+     f"{T_LECTOR}::test_varios_problemas_salen_todos"),
+
+    ("M31 un id_crm que no es un número vuelve a pasar", FICHA,
+     [('    if d.get("id_crm") is not None and _id_crm(d["id_crm"]) is None:     # null = no hay '
+       'dato\n', "    if False:\n")],
+     f"{T_LECTOR}::test_id_crm_que_no_es_el_numero_de_una_ficha_se_rechaza['12a']"),
+
+    ("M32 un teléfono que se vacía al normalizar vuelve a pasar", FICHA,
+     [("        if _hay(v) and not normalize_es_phone(v.strip()):\n", "        if False:\n")],
+     f"{T_LECTOR}::test_R2H02_un_telefono_que_se_queda_vacio_se_rechaza"
+     "[movil-'+34'-contrario-contrario]"),
+
+    ("M33 una provincia que el Select no reconoce vuelve a pasar", FICHA,
+     [('    if "provincia" in validas and _hay(v) and provincia_canonica(v) is None:\n',
+       "    if False:\n")],
+     f"{T_LECTOR}::test_R2H02_una_provincia_que_no_existe_se_rechaza_al_validar"),
+
+    # H-04: la versión EJECUTABLE del M11 de P6. Quitar solo el mensaje dejaba el elemento
+    # inválido vivo y el programa moría en `_contrario_de` con `AttributeError`; filtrarlo es la
+    # pérdida silenciosa que el test existe para detectar, y muere por `DID NOT RAISE`.
+    ("M34 un elemento inválido de la lista se filtra en silencio (H-04)", FICHA,
+     [("    elif isinstance(contr, list):\n        for i, e in enumerate(contr):\n",
+       "    elif isinstance(contr, list):\n"
+       "        contr[:] = [e for e in contr if isinstance(e, dict)]\n"
+       "        for i, e in enumerate(contr):\n")],
+     f"{T_N}::test_un_elemento_invalido_aborta_con_su_indice"),
 ]
 
 #: Tipos con los que un rojo SÍ es la detección de la propiedad.
