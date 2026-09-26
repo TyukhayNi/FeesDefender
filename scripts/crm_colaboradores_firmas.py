@@ -22,6 +22,7 @@ import typer
 import yaml
 
 from core.casos import case_locator
+from core.crm_ficha import leer_yaml_ficha
 from core.email_firmas import (VEREDICTO_CONFLICTO, VEREDICTO_ENCONTRADO,
                                VEREDICTO_FIRMA_SIN_CAMPO, VEREDICTO_NO_LEIBLE,
                                VEREDICTO_SIN_FIRMA, Consolidado, extraer_de_directorio)
@@ -213,7 +214,15 @@ def apply(
                    err=True)
         raise typer.Exit(code=1)
 
-    datos = yaml.safe_load(ficha_path.read_text(encoding="utf-8")) or {}
+    # El MISMO lector que `crm_ficha` (spec rev. 3 §3 A.1 de crm_ficha): `yaml.safe_load` se
+    # quedaba con la última de dos claves repetidas, y como `apply` reescribe el fichero entero,
+    # la parte perdida desaparecía también del disco, donde `crm_ficha` ya no podía verla.
+    try:
+        datos = leer_yaml_ficha(ficha_path)
+    except ValueError as exc:
+        typer.echo(f"[ERROR] {exc}\nNo se toca el fichero: reescribirlo consolidaría lo que "
+                   "se ha perdido.", err=True)
+        raise typer.Exit(code=1)
     if not isinstance(datos, dict):
         typer.echo("[ERROR] _ficha_crm.yaml no es un mapping YAML", err=True)
         raise typer.Exit(code=1)
@@ -261,7 +270,7 @@ def apply(
     if cambios:
         # QUIEN pone las comillas, dicho con precision porque la version anterior de este
         # comentario mentia. Un telefono sin comillas (`0612345678`) lo relee YAML como un
-        # entero octal, el cero inicial se pierde y `core.crm_ficha._escalar` lo RECHAZA
+        # entero octal, el cero inicial se pierde y `core.crm_ficha.validar_ficha` lo RECHAZA
         # con ValueError, a proposito: un dato corrompido en silencio seria peor.
         #
         # Las comillas las pone `yaml.safe_dump` SOLO: su resolver ve que la cadena
@@ -281,7 +290,7 @@ def apply(
         # convirtiendolo en una cadena de 9 digitos que la carga posterior
         # aceptaria como valida. Ese dato es un error del FICHERO, de OTRA
         # persona, y `apply` no lo arregla ni lo blanquea al completar a esta:
-        # sigue siendo un int cuando se vuelca, y `_escalar` lo seguira
+        # sigue siendo un int cuando se vuelca, y `validar_ficha` lo seguira
         # rechazando en la proxima carga, exactamente como antes de este `apply`.
         for col, clave in escritos:
             if col.get(clave) is not None:

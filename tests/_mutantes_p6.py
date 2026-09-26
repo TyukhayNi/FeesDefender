@@ -94,9 +94,19 @@ MUTANTES: list[tuple[str, str, str, str, str]] = [
      f"{T_71}::test_una_consulta_fallida_manda_sobre_todo_lo_demas"),
 
     # --- Pieza 3: la ficha ------------------------------------------------------------
-    ("M11 [H-08] los elementos inválidos se filtran en silencio", FICHA,
-     "    fuera = [str(i) for i, e in enumerate(raw) if not isinstance(e, dict)]\n    if fuera:",
-     "    raw = [e for e in raw if isinstance(e, dict)]\n    fuera = []\n    if fuera:",
+    # Re-apuntado en la Task 2 de crm_ficha (plan rev. 2): la comprobación de elementos vive
+    # ahora en `validar_ficha`, que valida la colección entera antes de construir; la de
+    # `_contrarios_de` sería código muerto y haría sobrevivir a cualquier mutante de las dos.
+    # Y rehecho en la R3 de crm_ficha (H-04): quitar solo el mensaje dejaba el elemento vivo, y
+    # el programa moría en `_contrario_de` con un `AttributeError` que este arnés no cuenta como
+    # roto (`_ROTO` lo excluye a propósito). Filtrarlo es la pérdida silenciosa que el test
+    # existe para detectar, y así muere por `DID NOT RAISE`: lo acredita el M34 del arnés
+    # estricto de crm_ficha, que es esta misma sustitución.
+    ("M11 [H-08] un elemento inválido de la lista se filtra en silencio", FICHA,
+     "    elif isinstance(contr, list):\n        for i, e in enumerate(contr):",
+     "    elif isinstance(contr, list):\n"
+     "        contr[:] = [e for e in contr if isinstance(e, dict)]\n"
+     "        for i, e in enumerate(contr):",
      f"{T_63}::test_un_elemento_invalido_aborta_con_su_indice"),
 
     ("M12 una lista deja de leerse entera: solo el primero", FICHA,

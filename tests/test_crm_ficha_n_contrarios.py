@@ -36,8 +36,11 @@ def test_una_lista_de_dos_contrarios_produce_dos(tmp_path):
 
 
 def test_un_mapping_suelto_sigue_valiendo(tmp_path):
-    """Compatibilidad: los `_ficha_crm.yaml` existentes llevan un mapping. No se migra nada."""
-    d = crm_ficha.cargar_ficha_yaml(_escribir(tmp_path, {"contrario": {"nombre": "UNA PARTE"}}))
+    """Compatibilidad: los `_ficha_crm.yaml` existentes llevan un mapping. No se migra nada.
+
+    (La fixture sí lleva NIF desde la Task 3 de crm_ficha: toda parte lo exige, o un email.)"""
+    d = crm_ficha.cargar_ficha_yaml(_escribir(tmp_path, {"contrario": {"nombre": "UNA PARTE",
+                                                                       "nif": "00000000T"}}))
     assert [c.nombre for c in d.contrarios] == ["UNA PARTE"]
     assert d.contrario is not None and d.contrario.nombre == "UNA PARTE"
 
@@ -64,23 +67,33 @@ def test_un_elemento_invalido_aborta_con_su_indice(tmp_path):
     Filtrarlo lo convertiría en «cero contrarios» en silencio, y la ficha se completaría
     dejando fuera a una parte sin que nadie lo dijera.
     """
+    # Migrado (Task 3, de precisión): el primero lleva NIF, así que el único problema es el
+    # segundo y el `raises` salta por él.
     with pytest.raises(ValueError) as exc:
         crm_ficha.cargar_ficha_yaml(_escribir(tmp_path, {"contrario": [
-            {"nombre": "PRIMERA PARTE"}, "esto-no-es-un-mapping",
+            {"nombre": "PRIMERA PARTE", "nif": "00000000T"}, "esto-no-es-un-mapping",
         ]}))
     assert "1" in str(exc.value), str(exc.value)
 
 
-def test_se_valida_la_coleccion_ENTERA_antes_de_construir_nada(tmp_path):
+def test_se_valida_la_coleccion_ENTERA_antes_de_construir_nada(tmp_path, monkeypatch):
     """Con el primero válido y el segundo roto, no se construye el primero.
 
     Validar mientras se itera escribiría la primera parte antes de descubrir que la segunda
     está mal, y entonces el fallo dejaría la ficha a medias.
+
+    Migrado (Task 3, §9 del plan): el primero lleva identidad —si no, el `raises` saltaría por
+    él y pasaría aunque se ignorase el segundo— y un espía exige CERO construcciones.
     """
+    construidos = []
+    real = crm_ficha.NuevoClienteContrario
+    monkeypatch.setattr(crm_ficha, "NuevoClienteContrario",
+                        lambda **kw: construidos.append(kw) or real(**kw))
     with pytest.raises(ValueError):
         crm_ficha.cargar_ficha_yaml(_escribir(tmp_path, {"contrario": [
-            {"nombre": "PRIMERA PARTE"}, {"sin_nombre": "x"},
+            {"nombre": "PRIMERA PARTE", "nif": "00000000T"}, {"sin_nombre": "x"},
         ]}))
+    assert construidos == [], "se construyó una parte antes de validar la colección entera"
 
 
 def test_una_forma_que_no_es_ni_mapping_ni_lista_se_rechaza(tmp_path):
@@ -92,7 +105,8 @@ def test_una_forma_que_no_es_ni_mapping_ni_lista_se_rechaza(tmp_path):
 def test_el_orden_del_fichero_se_conserva(tmp_path):
     """Quién es el primer firmante lo decide el letrado al escribir el YAML, no el lector."""
     d = crm_ficha.cargar_ficha_yaml(_escribir(tmp_path, {"contrario": [
-        {"nombre": "TERCERA"}, {"nombre": "PRIMERA"}, {"nombre": "SEGUNDA"},
+        {"nombre": "TERCERA", "nif": "33333333P"}, {"nombre": "PRIMERA", "nif": "11111111H"},
+        {"nombre": "SEGUNDA", "nif": "22222222J"},
     ]}))
     assert [c.nombre for c in d.contrarios] == ["TERCERA", "PRIMERA", "SEGUNDA"]
 

@@ -18,18 +18,31 @@ def _carga(tmp_path, cuerpo: str):
     return cargar_ficha_yaml(y)
 
 
+#: Identidades SINTÉTICAS para las fixtures de este fichero. Desde la Task 3 de crm_ficha (plan
+#: rev. 2, spec rev. 3 §3 A.4) toda parte lleva NIF o email; estas fixtures prueban el nulo de
+#: OTRAS claves, y la identidad es solo lo que las hace válidas salvo en su propiedad.
+_NIF = "nif: '00000000T'"
+_EMAIL = "email: ana@engelvoelkers.example"
+
+
 class TestNingunCampoDelColaboradorPuedeValerNone:
 
     @pytest.mark.parametrize("clave", ["email", "movil", "telefono", "nif"])
     def test_una_clave_vacia_es_cadena_vacia(self, tmp_path, clave):
-        ficha = _carga(tmp_path, f"colaboradores:\n  - nombre: ANA\n    {clave}:\n")
+        # Migrado (Task 3): la identidad va por la OTRA clave, para no tocar la vacía.
+        identidad = _NIF if clave == "email" else _EMAIL
+        ficha = _carga(tmp_path,
+                       f"colaboradores:\n  - nombre: ANA\n    {identidad}\n    {clave}:\n")
         col = ficha.colaboradores[0]
         assert getattr(col, clave) == "", f"{clave} salio {getattr(col, clave)!r}"
 
     def test_todas_vacias_a_la_vez(self, tmp_path):
+        """Migrado en DOS pasos, y este es el segundo (Task 7 de crm_ficha): la Task 3 lo partió
+        en dos casos porque sin NIF ni email no había identidad; con `id_crm` vuelve a las cuatro
+        claves vacías A LA VEZ, que es su forma original."""
         ficha = _carga(
             tmp_path,
-            "colaboradores:\n  - nombre: ANA\n    email:\n    movil:\n"
+            "colaboradores:\n  - nombre: ANA\n    id_crm: '776'\n    email:\n    movil:\n"
             "    telefono:\n    nif:\n",
         )
         col = ficha.colaboradores[0]
@@ -55,27 +68,34 @@ class TestNingunCampoDelColaboradorPuedeValerNone:
         codigo pre-fix). Aqui todos los digitos son 0-7, que es lo que de verdad
         dispara el H-08 (el mismo octal que ya cubre `contrario.cp`).
         """
+        # Migrado (Task 3, de precisión): con email, el `raises` salta SOLO por el octal.
         with pytest.raises(ValueError, match="comillas"):
-            _carga(tmp_path, "colaboradores:\n  - nombre: ANA\n    movil: 0601234567\n")
+            _carga(tmp_path, f"colaboradores:\n  - nombre: ANA\n    {_EMAIL}\n"
+                             "    movil: 0601234567\n")
 
 
 class TestElMovilDelContrarioTampoco:
     """La misma frontera para el contrario: `movil` se quedo fuera del arreglo de H-09."""
 
     def test_movil_vacio_es_cadena_vacia(self, tmp_path):
-        ficha = _carga(tmp_path, "contrario:\n  nombre: ANA\n  movil:\n")
+        ficha = _carga(tmp_path, f"contrario:\n  nombre: ANA\n  {_NIF}\n  movil:\n")
         assert ficha.contrario.movil == ""
 
     @pytest.mark.parametrize("clave", ["email", "direccion", "poblacion"])
     def test_las_otras_claves_de_texto_tampoco(self, tmp_path, clave):
-        ficha = _carga(tmp_path, f"contrario:\n  nombre: ANA\n  {clave}:\n")
+        ficha = _carga(tmp_path, f"contrario:\n  nombre: ANA\n  {_NIF}\n  {clave}:\n")
         assert getattr(ficha.contrario, clave) == ""
 
     def test_NINGUN_campo_de_texto_del_contrario_puede_valer_None(self, tmp_path):
-        """La clase entera, no los campos que alguien se acordo de listar."""
+        """La clase entera, no los campos que alguien se acordo de listar.
+
+        Migrado en DOS pasos, y este es el segundo (Task 7 de crm_ficha): la Task 3 lo partió en
+        dos casos porque sin NIF ni email no había identidad; con `id_crm` vuelve a las diez
+        claves vacías a la vez, que es su forma original."""
         claves = ["apellido1", "apellido2", "email", "movil", "nif", "direccion",
                   "poblacion", "cp", "provincia", "telefono"]
-        cuerpo = "contrario:\n  nombre: ANA\n" + "".join(f"  {k}:\n" for k in claves)
+        cuerpo = ("contrario:\n  nombre: ANA\n  id_crm: '1128'\n"
+                  + "".join(f"  {k}:\n" for k in claves))
         c = _carga(tmp_path, cuerpo).contrario
         malos = [k for k in claves if getattr(c, k) != ""]
         assert malos == [], f"estos salieron con valor: {malos}"
@@ -93,7 +113,7 @@ class TestNotasHtmlSinNoneLiteral:
         assert ficha.notas_html == "<p>Abogado de la parte contraria</p>"
 
     def test_notas_html_ausente_es_cadena_vacia(self, tmp_path):
-        ficha = _carga(tmp_path, "contrario:\n  nombre: ANA\n")
+        ficha = _carga(tmp_path, f"contrario:\n  nombre: ANA\n  {_NIF}\n")
         assert ficha.notas_html == ""
 
 
@@ -102,7 +122,7 @@ class TestClientePropioConPorDefecto:
 
     def test_cliente_propio_ausente_toma_default(self, tmp_path):
         from core.crm_ficha import CLIENTE_PROPIO_DEFAULT
-        ficha = _carga(tmp_path, "contrario:\n  nombre: ANA\n")
+        ficha = _carga(tmp_path, f"contrario:\n  nombre: ANA\n  {_NIF}\n")
         assert ficha.cliente_propio == CLIENTE_PROPIO_DEFAULT
 
     def test_cliente_propio_vacio_toma_default(self, tmp_path):
@@ -111,5 +131,8 @@ class TestClientePropioConPorDefecto:
         assert ficha.cliente_propio == CLIENTE_PROPIO_DEFAULT
 
     def test_cliente_propio_con_valor_se_respeta(self, tmp_path):
-        ficha = _carga(tmp_path, "cliente_propio: 'OTRO_CLIENTE'\n")
-        assert ficha.cliente_propio == "OTRO_CLIENTE"
+        """Migrado en la Task 2 de crm_ficha (plan rev. 2): `OTRO_CLIENTE` ya no es declarable
+        —el catálogo `CLIENTES_PROPIOS_EV` es cerrado—, así que la propiedad «lo declarado se
+        respeta y no cae al defecto» se prueba con la clave real que no es la predeterminada."""
+        ficha = _carga(tmp_path, "cliente_propio: 'ENGEL_VOLKERS_SPAIN'\n")
+        assert ficha.cliente_propio == "ENGEL_VOLKERS_SPAIN"
