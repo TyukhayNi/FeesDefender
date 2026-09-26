@@ -257,7 +257,9 @@ class TestElYAMLNoPuedeCorromperUnDato:
     def _carga(tmp_path, linea):
         from core.crm_ficha import cargar_ficha_yaml
         y = tmp_path / "_ficha_crm.yaml"
-        y.write_text(f"contrario:\n  nombre: ANA\n  {linea}\n", encoding="utf-8")
+        # Migrado (Task 3 de crm_ficha): toda parte lleva NIF o email; `linea` nunca es el NIF.
+        y.write_text(f"contrario:\n  nombre: ANA\n  nif: '00000000T'\n  {linea}\n",
+                     encoding="utf-8")
         return cargar_ficha_yaml(y)
 
     def test_un_cp_sin_comillas_se_RECHAZA_en_vez_de_corromperse(self, tmp_path):

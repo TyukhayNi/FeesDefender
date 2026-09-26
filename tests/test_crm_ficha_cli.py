@@ -556,10 +556,10 @@ def test_el_plan_del_cli_enumera_los_dos_contrarios(caso_con_ficha, monkeypatch)
     """Y el dry-run los dice: el letrado tiene que ver a quién va a vincular antes de que se
     escriba."""
     ficha = case_locator.path_for(caso_con_ficha) / "00_Input" / "_ficha_crm.yaml"
-    ficha.write_text(
+    ficha.write_text(                       # con NIF desde la Task 3 de crm_ficha
         "contrario:\n"
-        "  - nombre: JUAN\n    apellido1: PEREZ\n"
-        "  - nombre: MARIA\n    apellido1: LOPEZ\n",
+        "  - nombre: JUAN\n    apellido1: PEREZ\n    nif: 00000000T\n"
+        "  - nombre: MARIA\n    apellido1: LOPEZ\n    nif: 11111111H\n",
         encoding="utf-8",
     )
     r = CliRunner().invoke(cli.app, ["--case-id", "W-000AAA", "--dry-run"])

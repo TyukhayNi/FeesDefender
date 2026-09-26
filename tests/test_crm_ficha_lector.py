@@ -258,3 +258,36 @@ def test_cada_clave_llega_a_su_atributo(tmp_path):
     f = cf.cargar_ficha_yaml(_yaml(tmp_path, texto))
     for c, v in valores_col.items():
         assert getattr(f.colaboradores[0], c) == v, c
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — identidad estable antes de escribir (A.4), todavía sin `id_crm`
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("texto, ruta", [
+    ("contrario: {nombre: A}\n", "contrario"),
+    ("contrario:\n  - {nombre: A, nif: '1'}\n  - {nombre: B}\n", "contrario[1]"),
+    ("colaboradores:\n  - {nombre: A}\n", "colaboradores[0]"),
+    ("colaboradores:\n  - {nombre: A, nif: '  ', email: ''}\n", "colaboradores[0]"),
+])
+def test_R1H04_una_parte_sin_identidad_estable_se_rechaza(tmp_path, texto, ruta):
+    """`resolver_parte` identifica solo por NIF o email: sin ninguno, cada relanzamiento
+    crearía otra ficha y la anterior quedaría como sobrante, sin salida (R1/H-04)."""
+    with pytest.raises(ValueError) as e:
+        cf.cargar_ficha_yaml(_yaml(tmp_path, texto))
+    assert f"{ruta}: {cf.SIN_IDENTIDAD}" in str(e.value)
+
+
+@pytest.mark.parametrize("identidad", ["nif: '00000000T'", "email: a@x.es"])
+def test_basta_el_nif_o_el_email(tmp_path, identidad):                # control positivo
+    assert cf.cargar_ficha_yaml(_yaml(tmp_path,
+                                      f"contrario: {{nombre: A, {identidad}}}\n")).contrarios
+
+
+def test_R2H06_id_crm_todavia_NO_es_una_clave(tmp_path):
+    """El estado intermedio seguro: hasta la Task 7, que trae su consumidor, `id_crm` es una
+    clave desconocida y la parte sigue sin identidad. Aceptarlo antes la mandaría a CREAR."""
+    with pytest.raises(ValueError) as e:
+        cf.cargar_ficha_yaml(_yaml(tmp_path, "contrario: {nombre: A, id_crm: '1128'}\n"))
+    assert "contrario.id_crm: clave desconocida" in str(e.value)
+    assert f"contrario: {cf.SIN_IDENTIDAD}" in str(e.value)

@@ -143,6 +143,11 @@ CLAVES_COLABORADOR = ("nombre", "email", "movil", "telefono", "nif")
 
 _TELEFONOS = ("movil", "telefono")
 
+#: El literal del problema de identidad, UNA vez: los tests lo importan, así que el mensaje
+#: puede crecer (la Task 7 le añade `id_crm`) sin vaciar un aserto que lo busque.
+SIN_IDENTIDAD = "sin identidad estable"
+_IDENTIDAD = ("nif", "email")
+
 
 def _forma(valor: object) -> str:
     if isinstance(valor, dict):
@@ -199,6 +204,11 @@ def _problemas_parte(d: dict, ruta: str, validas: tuple[str, ...]) -> list[str]:
     if "provincia" in validas and _hay(v) and provincia_canonica(v) is None:
         p.append(f"{ruta}.provincia: {v!r} no es ninguna provincia del CRM y el Select la "
                  "descartaría: el dato no puede llegar nunca")
+    # Identidad estable (spec §3 A.4, R1/H-04): `resolver_parte` identifica solo por NIF o
+    # email, así que sin ninguno cada relanzamiento crearía otra ficha.
+    if not any(_hay(d.get(k)) for k in _IDENTIDAD):
+        p.append(f"{ruta}: {SIN_IDENTIDAD} —falta NIF o email—: cada corrida crearía otra "
+                 "ficha y la anterior quedaría como sobrante (spec §3 A.4)")
     return p
 
 

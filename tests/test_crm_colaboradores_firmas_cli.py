@@ -295,8 +295,8 @@ class TestApplyRellenaSoloElHueco:
     def test_el_YAML_resultante_lo_puede_leer_cargar_ficha_yaml(self, caso):
         """La prueba por RESULTADO: que el siguiente eslabon lo acepte."""
         from core.crm_ficha import cargar_ficha_yaml
-        _ficha(caso).write_text(
-            "contrario:\n  nombre: JUAN\ncolaboradores:\n  - nombre: ANA\n"
+        _ficha(caso).write_text(            # el contrario, con NIF desde la Task 3 de crm_ficha
+            "contrario:\n  nombre: JUAN\n  nif: '00000000T'\ncolaboradores:\n  - nombre: ANA\n"
             "    email: ana@engelvoelkers.com\n", encoding="utf-8")
         _aplica(["--confirmar"])
 
