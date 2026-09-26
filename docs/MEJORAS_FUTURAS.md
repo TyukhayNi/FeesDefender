@@ -12804,11 +12804,27 @@ escalón más arriba.
 esfuerzo que de verdad corrieron. No se construye hoy: cada ronda necesita su workdir y su
 encargo, y una pieza así hay que encadenarla o se queda sin llamadores.
 
-**Disparador para promoverlo:** la primera **acta** en la que el modelo anotado **no coincida**
-con el releído del rollout. Hasta el 2026-09-26 se vigilaba en las filas de la calibración (fila
-#38 de `PLAN.md`), y en las cinco coincidió; cerrada la calibración, lo vigila cada acta de una
-ronda de Codex, que relee el modelo (contrato, §4). Hasta entonces es un riesgo declarado, que es lo que lo
-distingue de un olvido.
+**Disparador para promoverlo:** la primera ronda de la calibración (fila #38 de `PLAN.md`)
+en la que el modelo anotado en el acta **no coincida** con el releído del rollout. Hasta
+entonces es un riesgo declarado, que es lo que lo distingue de un olvido.
+
+**Actualización del 2026-09-26: el disparador se agotó sin cumplirse.** La calibración cerró y en
+sus cinco filas el modelo releído coincidió. La entrada sigue como riesgo declarado y se promueve
+por la regla general (`CLAUDE.md` §«Planificación y estado»): un acta cuyo modelo releído del
+rollout no sea el que pedía la tabla sería el caso real. **No hay control detrás**: releer es el
+deber del §4 del contrato, que cumple quien escribe el acta, o la ficha si no hubo acta; el
+revisor sustituto no tiene rollout.
+
+**Segunda forma del mismo hueco, medida ese día:** el mandato que el lanzador pasa por una
+tubería de Windows PowerShell 5.1 (`Get-Content … | & $bin exec … -`) **llega al revisor con
+todo carácter no ASCII cambiado por «?»**, porque el `$OutputEncoding` de esa versión es ASCII.
+Lo guarda así el rollout —138 «?» y ninguna tilde en la R1 de #411—; el `MANDATO.md` del disco
+sigue intacto, y el revisor lee de disco los ficheros del objeto. En los rollouts de agosto y
+septiembre, de 109 rondas por CLI con mandato, **cinco lo recibieron así, todas del
+2026-09-26**: las filas 2 a 5 de la calibración y la R1 de #411; 94 llegaron con tildes y 10
+estaban escritas sin ellas. Se arregla con `$OutputEncoding = New-Object System.Text.UTF8Encoding
+$false` antes de la tubería (sonda: `acción«ñ»—` llegó y volvió exacto). Un lanzador canónico,
+como el de «La salida», lo fijaría una vez para todos.
 
 ## 280. `AGENTS.md` dice que Codex no puede usar subagentes, y el 2026-09-23 los usaba  [PROMOVIDO → PLAN.md 2026-09-26]
 

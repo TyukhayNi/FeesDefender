@@ -1,11 +1,16 @@
 # Archivo verificable de las revisiones adversariales
 
 > **Estado:** **rev. 12** (2026-09-26). La rev. 12 **no reabre nada del recorte** ni cambia un
-> artefacto: registra que **Nikolai confirmó la política de modelo** el 2026-09-26, al cerrarse su
-> calibración con el ledger de la fila #38 de `PLAN.md` delante, y el §4 deja de llamarla
-> provisional. Los tres campos del acta —`modelo`, `esfuerzo`, `velocidad`— y la regla de cuáles se
-> releen **no cambian**, y el §4 dice por qué siguen haciendo falta sin calibración que alimentar.
-> Todo lo demás sigue como en la rev. 11, cuyo encabezado se conserva íntegro debajo.
+> artefacto: registra que **Nikolai confirmó la elección de modelo** el 2026-09-26, al cerrarse su
+> calibración, sobre un resumen del ledger de la fila #38 de `PLAN.md` que omitía dos condiciones de
+> esa medición —no se reutilizaron objetos con defectos conocidos, y cuatro de las cinco rondas
+> recibieron el mandato sin caracteres no ASCII—; se le dijeron después, y **no se le atribuye haber
+> ratificado el método**. El §4 deja de llamar provisional a la política. Los tres campos del acta
+> —`modelo`, `esfuerzo`, `velocidad`— y la regla de cuáles se releen **no cambian**, y el §4 dice por
+> qué siguen haciendo falta sin calibración que alimentar. **Con la R1 de Codex adjudicada (§16,
+> `REQUIERE-REVISION`, 3 de 3 confirmados):** el registro separa la elección del método, la cola del
+> ledger deja de hablar en futuro y el disparador de `MEJORAS #279` se da por agotado en vez de
+> ampliarse. Todo lo demás sigue como en la rev. 11, cuyo encabezado se conserva íntegro debajo.
 >
 > **Estado anterior:** **rev. 11** (2026-09-23). La rev. 11 **no reabre nada del recorte** ni cambia un
 > artefacto: añade al §4 tres campos al frontmatter del acta —`modelo`, `esfuerzo`, `velocidad`— y
@@ -152,8 +157,9 @@ prueban igual.** Entraron porque desde esa fecha la elección de modelo dejó de
 porque esa política nació **provisional y se calibró con los cinco primeros encargos** —Nikolai la
 confirmó el 2026-09-26 (rev. 12)—: sin estos tres campos en el acta, la calibración se habría apoyado
 en la memoria de quien la escribía. **Confirmada la política, siguen haciendo falta:** el modelo que
-corre lo fija el lanzador y no el acta, y el acta es el único sitio del repo que dice cuál corrió
-—el disparador de `MEJORAS #279` se vigila ahí—. La práctica ya existía
+corre lo fija el lanzador y no el acta, y el acta es el único sitio del repo que dice cuál corrió;
+compararlo con el que pedía la tabla es deber de quien la escribe, no un control del acta
+(`MEJORAS #279`). La práctica ya existía
 —las actas de septiembre anotan el modelo en prosa, en una tabla o en `revisor:`, cada una a su manera—;
 lo que se fija es **el sitio**. Tres precisiones que hay que respetar al rellenarlos:
 
@@ -694,3 +700,43 @@ declarable; queda señalado para Nikolai, y no se arregla unilateralmente desde 
 **Cobertura de la remediación: AUSENTE.** Los diez confirmados se remedian **en este mismo diff** y
 **nadie los ha revisado**: la tabla de rondas da **una** a esta pieza y el techo de dos necesita
 autorización expresa de Nikolai. No se declara refutado lo que nadie miró.
+
+## 16. Adjudicación de la revisión adversarial de la confirmación de la política de modelo (Codex, 2026-09-26) — REQUIERE-REVISION, remediado
+
+- **Objeto revisado:** `diff 7d97948..1e8924d` (este documento rev. 12, `CLAUDE.md`, `AGENTS.md`, `PLAN.md`, `docs/MEJORAS_FUTURAS.md`)
+- **Ronda:** 1
+- **Revisor:** Codex (solo lectura) — el sustituto **no** cubre el propio contrato de revisión
+- **Informe recibido:** `2026-09-26-modelo-revisor-politica-confirmada-r1-adversarial-review.md`
+- **Hallazgos:** 3 confirmados · 0 rebajados · 0 refutados · 0 escalados · 0 sin verificar
+- **Remediado en:** PR #411, mismo diff, antes de mergear
+
+| # | Qué dijo | Sev. · coste | Veredicto | Dónde se remedia |
+|---|---|---|---|---|
+| H-01 | la confirmación se atribuye a Nikolai sin constancia de que supiera que el método no se siguió | alta · acotado | **confirmado** | `CLAUDE.md`, `PLAN.md` y la cabecera de la rev. 12: se separa la **elección operativa**, que confirmó, del **método**, que no ratificó; su respuesta, sabiéndolo, queda pendiente en la fila #38 |
+| H-02 | la sección del ledger sigue ordenando una calibración pendiente, y la fila #38 dice «provisional» | media · trivial | **confirmado** | `PLAN.md`: la cola pasa a pasado, y el título y el disparador de la fila #38 también |
+| H-03 | el disparador de #279 se amplía, y «lo vigila cada acta» afirma más de lo que hay | media · acotado | **confirmado** | `CLAUDE.md`, `MEJORAS #279` y el §4: el disparador **se da por agotado**, con su texto restaurado; queda la regla general de promoción, y releer es un deber de quien escribe el acta, no un control |
+
+**El remedio del H-03 no es el que proponía el revisor, y conviene decir por qué.** Proponía declarar
+la ampliación y decir quién la decide. Pero ampliar un disparador mío cuando su condición caduca es el
+gesto que la casa tiene medido como sesgo —redefinir la regla cuando obliga—, así que lo doy por
+**agotado**, con el texto original restaurado y una actualización fechada. La regla general de
+promoción ya cubre el caso real que la ampliación quería capturar, sin prometer una vigilancia que
+nadie ejerce solo.
+
+**Y lo que encontré yo al adjudicar, que el revisor no podía ver:** el mandato **le llegó sin un solo
+carácter no ASCII** —138 «?» y ninguna tilde en el mensaje que guarda el rollout—, porque el lanzador
+lo pasaba por una tubería de Windows PowerShell 5.1, cuyo `$OutputEncoding` es ASCII. No es cosa de
+esta ronda: en los rollouts de agosto y septiembre, de 109 rondas por CLI con mandato, **cinco lo
+recibieron así, todas del 2026-09-26 y lanzadas por mí** —las filas 2 a 5 de la calibración y esta—;
+94 llegaron con tildes y 10 estaban escritas sin ellas. Sonda con `$OutputEncoding` en UTF-8:
+`acción«ñ»—` llegó y volvió exacto. Por eso el registro de la decisión nombra **dos** condiciones
+omitidas, no una, y el ledger lo anota. El hueco es de la misma frontera que `MEJORAS #279` —lo que
+corre depende de valores por defecto del lanzador que nadie comprueba— y queda allí.
+
+**Sugerencia adoptada sin ser hallazgo:** «una de lectura, menor» pasa a «menor y de mensaje», como
+pedía el revisor para no perder precisión.
+
+**Cobertura de la remediación: AUSENTE.** Los tres confirmados, la condición del mandato y la
+sugerencia se remedian en este mismo diff y **nadie los ha revisado**: la tabla de rondas da **una** a
+esta pieza y el techo de dos necesita autorización expresa de Nikolai. No se declara refutado lo que
+nadie miró.
