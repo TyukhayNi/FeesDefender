@@ -351,7 +351,9 @@ def _preflight() -> str | None:
     # mirando un diff que no reconoce. Es una cortesia, y se dice que lo es.
     r = subprocess.run(["git", "status", "--porcelain", "--", *FICHEROS_MUTABLES],
                        cwd=RAIZ, capture_output=True, encoding="utf-8", errors="replace")
-    if r.returncode == 0 and (r.stdout or "").strip():
+    if r.returncode != 0:   # antes se leia como "sin cambios" (plan 2026-09-26)
+        return f"no se pudo consultar git (rc={r.returncode}): {(r.stderr or '').strip()}"
+    if (r.stdout or "").strip():
         return ("hay cambios sin commitear en los ficheros que este arnes muta:\n"
                 + r.stdout.rstrip()
                 + "\nLa restauracion los repondria, pero si el arnes muriera a mitad te "
