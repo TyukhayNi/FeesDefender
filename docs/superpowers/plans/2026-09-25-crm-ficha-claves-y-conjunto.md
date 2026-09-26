@@ -1,9 +1,9 @@
 # `crm_ficha`: el YAML entero y el conjunto verificado — plan de implementación
 
-> **Estado (2026-09-25): rev. 2, con la §9 aplicada.** La rev. 1 es la que revisó la R2
-> (`0177559`); esta la sustituye, y lo que cambió de una a otra, tarea a tarea, está en la §9, que
-> se conserva tal cual como adjudicación. La R3 va sobre el diff (Task 10) y su adjudicación irá en
-> la §10. Spec: rev. 3.
+> **Estado (2026-09-26): rev. 2, ejecutado.** La rev. 1 es la que revisó la R2 (`0177559`); esta
+> la sustituye, y lo que cambió de una a otra, tarea a tarea, está en la §9, que se conserva tal
+> cual como adjudicación. La R3, sobre el diff, está adjudicada en la §10 y remediada en el mismo
+> PR, sin otra ronda que revise el remedio. Spec: rev. 4.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -22,7 +22,7 @@
 - Todo `ValueError` de validación sale **antes de cualquier llamada al CRM**, con **todos** los problemas juntos; todo problema de la fase previa sale **antes del primer writer** (`link_ev_mmc`), también todos juntos. `--dry-run` no lee el CRM.
 - Los tests no tocan la red: la guarda `_sin_red` (una `BaseException`) sigue en su sitio, y los dobles se declaran por su ruta (`scripts.crm_ficha.<nombre>` en el CLI; `core.sudespacho_relations.<nombre>` en la integración). Una lectura **no declarada** levanta una excepción de arnés que tampoco hereda de `Exception`. Ningún test escribe fuera de `tmp_path`.
 - **Ningún aserto pierde su propiedad.** Los literales del contrato nuevo se adaptan por escrito, las fixtures se migran por escrito (identidades sintéticas, `id_crm`), y cada commit los enumera. Nada de `skip`, `xfail` ni aserto relajado.
-- Aceptación: `python -m scripts.session_close` (dos semillas). Radio de daño: dos rondas y una tercera autorizada; la R1 (spec) y la R2 (plan) están hechas, y **la R3 va sobre el diff** con `gpt-6-astra` · `medium` · `default` (Task 10). No hay cuarta sin autorización expresa de Nikolai.
+- Aceptación: `python -m scripts.session_close` (dos semillas). Radio de daño: dos rondas y una tercera autorizada; la R1 (spec), la R2 (plan) y la R3 (diff, §10) están hechas, las tres con `gpt-6-astra` · `medium` · `default`. No hay cuarta sin autorización expresa de Nikolai.
 - Intérprete: el venv de la raíz, `C:\Users\tnm33\Dev\FeesDefender\.venv\Scripts\python.exe`, ejecutado **desde el worktree** (medido el 2026-09-25: `core`, `scripts` y `tests` se importan del worktree, no de la raíz). En los comandos de abajo, `python` es ese.
 
 ## File Structure
@@ -1551,3 +1551,91 @@ ni a construir C6.
 
 **Lo que NO cambia:** el YAML es la lista completa; `crm_ficha` nunca desvincula ni pisa;
 `_COMPLETABLES_*` no se toca.
+
+## 10. Adjudicación de la revisión adversarial del diff (Codex, 2026-09-26) — REQUIERE-REVISION, remediado
+
+- **Objeto revisado:** el diff `4209582..93c1907`, que construye esta pieza según el spec rev. 3 y este plan rev. 2, más el dictamen sobre los nueve remedios de la R2
+- **Ronda:** R3 de la pieza y la última: Nikolai la autorizó expresamente el 2026-09-25 sobre el techo de dos (spec §7), y no hay cuarta sin su autorización
+- **Revisor:** Codex CLI `0.155.0-alpha.16.4`, `gpt-6-astra` · `medium` · `default` (modelo y esfuerzo releídos del rollout; la velocidad, afirmada desde el lanzador conservado)
+- **Informe recibido:** `docs/superpowers/plans/2026-09-25-crm-ficha-claves-y-conjunto-r3-adversarial-review.md`
+- **Hallazgos:** 4 — 1 `alta`, 1 `media`, 2 `baja`; 4 confirmados contra la fuente, 0 refutados; y una observación que el revisor no eleva a hallazgo, confirmada también
+- **Remediado en:** este mismo PR, sobre `93c1907`: `core/crm_ficha.py` y `scripts/crm_ficha.py` con sus tests (`cc5a241`), los dos arneses, el spec rev. 4 y `MEJORAS #306`/`#307`. **Ninguna ronda revisa el remedio**: esta era la última autorizada
+
+**Los cuatro se reprodujeron contra la fuente, no contra el informe** (acta §2), y cada test del
+remedio se vio en rojo antes de su código —los del H-01 en la integración, por su mutante—. Antes
+de remediar, la pregunta de siempre: **¿de qué frontera es esto un ejemplo?** No son cuatro defectos
+sueltos, son dos fronteras y una ventana.
+
+**Frontera 1 — lo que se compara tiene que ser lo que se escribe, y lo que se busca (H-01, H-02).**
+
+- **H-01 (`alta` · `acotado`).** Los DTO llevaban el NIF tal como venía y el CRM lo guardaba así;
+  la búsqueda manda la forma canónica, y el CRM —medido en la docstring de `_canonizar_documento`—
+  normaliza caja y espacios pero **no** separadores. Con `00.000.000-T` la segunda corrida no
+  encontraba la ficha de la primera y creaba otra; y en el colaborador por `id_crm` con un NIF
+  ajeno, el completado escribía un NIF que la búsqueda no ve, así que la resolución siguiente
+  devolvía la otra ficha **sin** ambigüedad: la frase del spec §5 («falla cerrado») era falsa. Y mi
+  doble, `CRMFalso`, canonizaba los dos lados: más permisivo que el servidor, certificaba una
+  convergencia que no existe. **Remedio:** el NIF viaja en la forma con la que se busca (`_nif`, en
+  la construcción de los DTO de esta pieza; los demás llamadores no cambian) y la declaración
+  conserva el escrito, que es lo que se audita. El doble filtra como el CRM medido. Dos
+  regresiones: la convergencia con separadores en los dos roles, y el colaborador por id con un NIF
+  ajeno, cuya resolución siguiente por NIF ahora **para** (`ConflictoDeIdentidad`). La frase del §5
+  se corrige con lo medido: vale para el colaborador; en el contrario el NIF no es completable, no
+  se escribe, y la lectura final lo da por vacío. **Declarado, no remediado:** una ficha histórica
+  con el NIF guardado con separadores sigue sin encontrarla ninguna búsqueda canónica; buscarla es
+  la ampliación que el propio revisor dejó fuera del remedio.
+- **H-02 (`media` · `acotado`).** Un NIF declarado que se queda en nada sin sus separadores
+  (`'-- .'`) contaba como identidad y se comparaba igual a una ficha sin NIF: «VERIFICADA».
+  **Remedio:** se rechaza al validar, en los dos roles y aunque haya email o `id_crm`, y la identidad
+  cuenta el NIF por su forma canónica. Es la propiedad que la R2 cerró en el DTO —un dato declarado
+  no puede desaparecer por el camino— reapareciendo en el comparador, y su cierre es el mismo que ya
+  tenía el teléfono que se vacía. **No se toca, y se ficha:** `_resolver_colaborador` ignora
+  `r.motivo`, anterior a este diff. Por `crm_ficha` ya no llega el NIF no interpretable; el buzón
+  compartido con una ficha sin documento, sí, y cambiarlo cambia a todos los llamadores →
+  `MEJORAS #307`, con su propia regresión.
+
+**Frontera 2 — el lector y el arnés tienen que decir lo que prometen (H-03, H-04).**
+
+- **H-03 (`baja` · `acotado`).** El merge se rechazaba sin mirar su valor, así que una repetida
+  debajo no salía; y una clave escalar que YAML convierte (`1`, `null`) pasaba el lector porque se
+  miraba el nodo y no la clave construida. **Remedio:** se construye el valor del merge rechazado y
+  se rechaza toda clave que no sea un texto, con su línea.
+- **H-04 (`baja` · `acotado`).** El M11 re-apuntado de P6 dejaba el elemento inválido vivo hasta
+  `_contrario_de`, donde el programa moría con un `AttributeError` que el arnés de P6 no cuenta como
+  roto, a propósito. **Remedio:** la mutación ejecutable —filtrar el elemento en silencio, que es
+  la pérdida que el test existe para detectar—, que muere por `DID NOT RAISE`. La acredita el arnés
+  estricto de esta pieza, cuyo M34 es la misma sustitución.
+
+**La ventana — la abre la propia corrida, no solo el despacho (la observación).** Cada parte se
+compara con el CRM de **antes** de la corrida, así que dos declaraciones que acaban en la misma ficha
+pasaban las dos y la primera completaba lo que la segunda contradice. **Remedio:** lo que se decide
+sin el CRM, al validar —el mismo `id_crm` o el mismo NIF canónico en dos partes de un rol, y un email
+compartido sin el NIF de las dos o el `id_crm` de las dos, porque el buzón solo se descarta por
+documento—; y lo que solo se ve resolviendo, en la fase previa: dos partes que resuelven a la misma
+ficha existente, con cero writers. **Queda abierto, declarado en el §5 del spec, y falla cerrado:**
+lo que la corrida completa puede hacer que la resolución de una parte posterior **pare** a mitad
+—un contrario por id cuya ficha no tiene NIF recibe el email que otra parte comparte—, con código 1
+y escritura parcial. Cerrarlo del todo sería escribir por el id resuelto en la fase previa en vez
+de volver a resolver: un cambio estructural que ninguna ronda revisaría, y no se hace.
+
+**Lo que la R3 echó en falta en el arnés (§5 del informe) entra en él:** el NIF canónico por rol
+(M21, M22), el NIF que se vacía y el que cuenta como identidad (M23, M24), el merge y la clave no
+textual (M25, M26), las identidades repetidas, el email compartido y las dos partes en una ficha
+(M27-M29), las cuatro reglas que tenían test y ningún mutante —clave desconocida, `id_crm` no
+numérico, teléfono, provincia— (M30-M33) y el elemento filtrado en silencio (M34). **34 de 34
+muertos por su aserto**, con el árbol vivo intacto; P6, **39 de 39**, con su M11 nuevo. El censo de
+solo lectura de los catorce `_ficha_crm.yaml` reales no cambia: trece pasan y W-030A13 se rechaza
+por su `apellido`, así que las reglas nuevas no rechazan ninguna ficha real.
+
+**El dictamen sobre la R2 se acepta:** H-02, H-04 y H-09, **incompletos**, y lo que les faltaba es
+exactamente H-02, H-03 y H-01 de esta ronda, más la creación fallida de colaborador que la matriz de
+writers no tenía y que entra en ella. Los otros seis, **reales**. Y la salvedad del revisor sobre el
+M19 original —muere primero por el diagnóstico, no por el aserto de cero writers— es cierta y la
+cubre su variante discriminante, que él mismo corrió: la propiedad tiene defensa.
+
+**La incidencia del revisor, localizada:** su primer intento del arnés, interrumpido, dejó una copia
+del código en `%TEMP%` de esta máquina, fuera de su directorio (acta §2). Sin datos de cliente; no se
+borra sin que Nikolai lo pida.
+
+**Lo que NO cambia:** el YAML es la lista completa; `crm_ficha` nunca desvincula ni pisa;
+`_COMPLETABLES_*` no se toca; y no se buscan duplicados históricos escritos con separadores.

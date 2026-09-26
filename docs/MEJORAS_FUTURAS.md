@@ -13424,17 +13424,23 @@ CRM`, o una decisión de Nikolai.
 ## 306. Una parte con `id_crm` cuyo NIF declarado es de OTRA ficha: la fase previa no lo ve, y en un colaborador el completado lo escribe
 
 > **Anotada el 2026-09-26**: límite declarado del spec rev. 3 de `crm_ficha` (§5), no medido en un
-> caso real.
+> caso real. **Corregida el mismo día tras la R3 (H-01, plan §10):** la primera versión de esta
+> entrada decía que el daño «falla cerrado», y con un NIF escrito con separadores era falso.
 
 Con `id_crm`, la resolución **no busca** (spec §3 A.4): la fase previa lee la ficha por id y
 compara lo declarado con ella. Si esa ficha no tiene NIF y el YAML declara uno que pertenece a
 **otra** ficha del CRM, no hay ningún «distinto» que detectar; y en un colaborador el NIF es
 completable (`_COMPLETABLES_COLABORADOR`), así que el completado lo escribe y quedan dos fichas con
-el mismo NIF.
+el mismo NIF. En un contrario no es completable: no se escribe, y la lectura final lo da por vacío.
 
-**El daño, acotado y a la vista:** la siguiente resolución por ese NIF sale ambigua y
-`_exigir_identidad_cierta` **para** —falla cerrado—. No se funde nada en silencio, pero hay que
-deduplicar a mano.
+**El daño, acotado y a la vista — desde la R3, no antes.** El NIF se escribe ahora en su forma
+canónica, la misma con la que busca `resolver_parte`, así que la siguiente resolución por ese NIF
+sale ambigua y `_exigir_identidad_cierta` **para** (lo prueba
+`test_R3H01_colaborador_por_id_con_un_nif_ajeno_deja_la_resolucion_por_nif_ambigua`). Hasta la R3
+viajaba como se escribió: con `00.000.000-T`, la búsqueda canónica no veía la ficha completada y
+devolvía la otra **sin** ambigüedad —una identidad duplicada que nadie detectaba—. **Lo que sigue
+sin cubrir:** una ficha histórica cuyo NIF se guardó con separadores no la encuentra ninguna
+búsqueda canónica, y entonces tampoco hay ambigüedad que detectar.
 
 **Remedio probable.** En la fase previa, para una parte con `id_crm` que declare NIF o email,
 resolver también por ellos y exigir que no apunten a una ficha distinta. Es otra decisión sobre
@@ -13443,3 +13449,35 @@ dos rondas** (decide qué ficha es una persona).
 
 **Disparador de promoción.** El primer `_ficha_crm.yaml` real que use `id_crm` junto con un NIF
 (medido el 2026-09-25: ninguna parte real necesita todavía `id_crm`).
+
+---
+
+## 307. `_resolver_colaborador` ignora el `motivo` de `resolver_parte`: ante un buzón compartido con una ficha sin documento, el colaborador vincula esa ficha en vez de parar
+
+> **Anotada el 2026-09-26**, de la R3 de `crm_ficha` (H-02; plan §10). **Anterior a esa pieza:** no
+> la introdujo su diff, y el contrario no la tiene.
+
+`resolver_parte` devuelve un `motivo`, sin `id`, cuando no puede establecer la identidad por algo
+que no es «varias fichas»: un NIF no interpretable, o un buzón compartido una de cuyas fichas no
+tiene documento comparable (`_resolver_por_buzon_compartido`, `[APER-71]`). El contrario lo trata
+como lo que es —`_exigir_identidad_cierta` levanta—, pero `_resolver_colaborador` solo mira
+`conflicto`, `ambiguo` y `sin_comprobar`: con `motivo` y sin `id`, cae a
+`find_colaborador_by_email`, que recorre el listado y devuelve la **primera** ficha con ese email,
+o, sin email, devuelve `None` y la parte se **crea**. La R3 lo midió con el NIF no interpretable:
+dos corridas crearon dos fichas, y la segunda acabó en `[SOBRA]`.
+
+**Qué cerró ya la R3, y qué no.** `crm_ficha` rechaza al validar el NIF que se queda en nada (spec
+rev. 4, A.3), así que por esa pieza el primer caso no llega. El segundo —un colaborador con un NIF
+que no casa ninguna ficha y un email que comparte con una ficha sin NIF— sí llega, y también por
+los demás llamadores de `ensure_colaborador_vinculado`, en las dos jurisdicciones. Con los
+consultores de E&V, de correo corporativo individual, es improbable; con cualquier otro
+colaborador, no.
+
+**Remedio probable.** Tratar `r.motivo` en `_resolver_colaborador` como en el contrario:
+`_exigir_identidad_cierta` antes del respaldo por listado. Cambia el comportamiento de todos los
+llamadores, así que lleva su propia regresión —el buzón con una ficha sin documento, en las dos
+jurisdicciones— y se dice en el PR. **Radio de daño: dos rondas** (decide qué ficha es una
+persona).
+
+**Disparador de promoción.** Un colaborador ajeno a E&V que comparta correo con otra ficha, o el
+primer `[SOBRA]` o `[DATO]` de un colaborador que se explique por esto.

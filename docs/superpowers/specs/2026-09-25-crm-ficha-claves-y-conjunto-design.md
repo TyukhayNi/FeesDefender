@@ -3,7 +3,7 @@ tipo: spec
 estado: vigente
 creado: 2026-09-25
 objeto: core/crm_ficha.py, scripts/crm_ficha.py, scripts/crm_colaboradores_firmas.py
-rev: "3"
+rev: "4"
 ---
 
 # `crm_ficha`: el YAML se lee entero, y lo que se verifica es el conjunto y sus datos
@@ -12,7 +12,7 @@ Remedio de `MEJORAS #283` y `#288`, las dos medidas en aperturas de este mes. **
 rondas** por el radio de daño: escribe datos de cliente en el CRM, decide qué partes quedan
 vinculadas a un expediente, y un vínculo de más **da acceso** al expediente a quien no debe
 tenerlo. La primera ronda fue sobre este diseño, la segunda sobre el plan, y la tercera
-—autorizada por Nikolai sobre el techo de dos— irá sobre el diff (§7).
+—autorizada por Nikolai sobre el techo de dos— sobre el diff (§7).
 
 **Rev. 2 (2026-09-25), tras la R1 de Codex (`gpt-6-astra`·`medium`): `REQUIERE-REVISION`, 4
 hallazgos, 4 confirmados, 0 refutados** (adjudicación en el §8). La rev. 1 cerraba las claves y
@@ -31,6 +31,14 @@ audita la declaración, no el DTO, y la lectura final no promete deshacer nada) 
 precisiones que la misma decisión arrastra: A.1 (las repetidas se acumulan en todo el documento y
 una clave que no es un texto se rechaza con su línea), A.3 (lo que no puede llegar nunca se
 rechaza al validar) y el §5 (dos límites nuevos, declarados).
+
+**Rev. 4 (2026-09-26), tras la R3 de Codex (`gpt-6-astra`·`medium`) sobre el diff:
+`REQUIERE-REVISION`, 4 hallazgos y una observación, todos confirmados** (adjudicación en la §10
+del plan). Cambian A.1 (se mira también lo que hay bajo un merge, y se rechaza toda clave que no
+sea un texto, también la escalar), A.3 (un NIF que se queda en nada sin sus separadores), A.4 (el
+NIF viaja en la forma con la que se busca, y dos partes de un rol no pueden acabar en la misma
+ficha) y el §5, donde **dos frases eran falsas** y se corrigen con lo medido. **Ninguna ronda
+revisa esta rev. 4**: la R3 era la última autorizada.
 
 ## 0. Lo medido, que es lo que decide el diseño
 
@@ -92,8 +100,9 @@ parte o un dato pueden aparecer dos veces o sustituirse sin verse. Función púb
 `crm_ficha` ya no podría ver—. Con el cargador compartido, `apply` falla en vez de reescribir.
 
 Las repetidas se **acumulan en todo el documento**, cada una con su línea, y una clave que no es un
-texto —una lista o un mapping como clave— también se rechaza con la suya; todo sale como
-`ValueError`, que es el contrato de los llamadores (R2/H-04). **El límite, declarado en vez de
+texto —una lista o un mapping como clave, o un escalar que YAML convierte: `1`, `null`, `yes`, una
+fecha— también se rechaza con la suya; lo que hay **debajo** de un merge rechazado también se mira
+(R3/H-03). Todo sale como `ValueError`, que es el contrato de los llamadores (R2/H-04). **El límite, declarado en vez de
 prometido:** un error de sintaxis para el análisis, y de ese fichero solo se puede decir ese.
 
 **A.2 Claves conocidas.** Tres tuplas de módulo, una sola fuente de las que leen los
@@ -117,10 +126,12 @@ entrada, y si no hay ninguna cercana, no se inventa.
 | raíz | mapping, o documento vacío (= ficha vacía) | error: `false`, `0`, `[]`, texto |
 | `provincia` del contrario | un texto que `provincia_canonica` reconoce | error: el Select lo descartaría y el dato **no puede llegar nunca** |
 | `movil`, `telefono` (los dos roles) | un texto que conserve algo tras `normalize_es_phone` | error: `'+34'` se queda vacío en el DTO y la parte se escribiría sin él |
+| `nif` (los dos roles) | un texto que conserve algo sin sus separadores (`_canonizar_documento`) | error **aunque haya email o `id_crm`**: `'-- .'` se comparaba igual a una ficha sin NIF y salía «VERIFICADA» (R3/H-02) |
 
-Las dos últimas filas son propiedades de la **declaración**, no de la ficha: valen igual para una
+Las tres últimas filas son propiedades de la **declaración**, no de la ficha: valen igual para una
 parte que se va a crear que para una que ya existe, y por eso se rechazan al validar y no al
-auditar (R2/H-02).
+auditar (R2/H-02). La del NIF es la misma propiedad que la del teléfono, en el comparador en vez
+de en el DTO: un dato declarado no puede desaparecer por el camino.
 
 **A.4 Identidad estable, y ninguna escritura sobre una ficha que el YAML contradice (R1/H-04;
 R2/H-01, H-06, H-08).** Cada contrario y cada colaborador tiene que llevar **NIF, email o
@@ -138,6 +149,22 @@ del DTO, su aceptación al validar y esa rama llegan juntos: aceptar `id_crm` an
 consuma lo mandaría por el camino de **creación** (R2/H-06). Sin `id_crm`, ningún comportamiento
 cambia.
 
+**El NIF viaja en la forma con la que se busca (R3/H-01).** El DTO lo lleva canonizado —sin
+separadores y en mayúsculas, `_canonizar_documento`— y la declaración conserva el escrito, que es
+lo que se audita. El CRM normaliza caja y espacios al buscar, pero **no** los separadores (medido;
+docstring de `_canonizar_documento`): un NIF escrito con puntos se guardaba así, la búsqueda
+canónica de la corrida siguiente no lo encontraba y se creaba otra ficha. Solo en los DTO de esta
+pieza; los demás llamadores no cambian. Y el NIF cuenta como identidad por esa forma: uno que se
+queda en nada no identifica (A.3).
+
+**Dos partes de un rol no pueden acabar en la misma ficha (R3, observación).** La fase previa
+compara cada parte con el CRM de **antes** de la corrida, y `ensure_*` vuelve a resolver al
+escribir: la primera parte escribe, y la segunda aterriza en esa ficha y la completa con lo suyo.
+Al validar se rechaza lo que se decide sin el CRM —el mismo `id_crm` o el mismo NIF canónico en dos
+partes de un rol, y un email compartido sin el NIF de las dos o el `id_crm` de las dos, porque el
+buzón compartido solo se descarta por el documento de cada ficha (`[APER-71]`)—, y en la fase
+previa, lo que solo se ve resolviendo.
+
 **La fase previa, de solo lectura.** Después del corte de `--dry-run` y de la confirmación, y
 **antes del primer writer** (`link_ev_mmc`), la corrida identifica cada parte que **ya existe** —por
 `id_crm` (el GET de esa ficha) o por NIF/email (la resolución de hoy, que ya es de solo lectura y ya
@@ -149,7 +176,9 @@ de B.2. Es error, **todos juntos y con cero writers**:
   ficha que el propio YAML desmiente, que `crm_ficha` además no desvincula;
 - una ficha que no se puede leer; un `id_crm` que no existe —el GET falla, o la ficha vuelve sin
   `nombre`—; y cualquier conflicto o ambigüedad de la resolución: no se escribe sobre lo que no se
-  ha podido comparar.
+  ha podido comparar;
+- dos partes del mismo rol que resuelven a la **misma** ficha existente —una por `id_crm` y otra
+  por un NIF que el CRM ya tiene en esa ficha, por ejemplo— (R3).
 
 Lo **vacío** no es contradicción: si el campo es completable, se completa como hoy; si no, lo dice
 la lectura final (B.2), que es el caso de W-030A13. **La fase previa es la parte de B.2 que ya está
@@ -257,15 +286,32 @@ sobrantes sin serlo. El código de salida sigue siendo 1 (la R1 lo comprobó: no
   previa de la corrida real (R2/H-08).
 - **Una parte con `id_crm` cuyo NIF declarado pertenece a OTRA ficha**, cuando la ficha por id no
   tiene NIF. La fase previa compara con la ficha por id y, con `id_crm`, no busca (A.4), así que no
-  lo ve; y en un colaborador el NIF es completable, de modo que se escribiría. El daño queda acotado
-  y falla cerrado: con dos fichas del mismo NIF, la siguiente resolución por NIF sale ambigua y
-  **para**. Cerrarlo es buscar también por los identificadores declarados, que es otra decisión
-  sobre A.4 y no está en la lista de la R2.
-- **Entre la fase previa y la escritura, el CRM puede cambiar.** Las dos resuelven por separado
-  —la fase previa lee y `ensure_*` vuelve a resolver—, así que una ficha creada o corregida en esa
-  ventana de segundos no se compara. Nada en el despacho la hace probable —tres abogados que no
-  trabajan a la vez sobre el mismo expediente—, aunque nada la impide: `crm_ficha` tampoco toma el
-  mutex (fila #17 de `PLAN.md`). No se construye un bloqueo para esto.
+  lo ve. **Qué pasa después depende del rol, y lo midió la R3 (H-01).** En un colaborador el NIF es
+  completable y se escribe —en su forma canónica, la misma con la que se busca—, así que las dos
+  fichas comparten NIF y la siguiente resolución por NIF sale ambigua y **para** (lo prueba la
+  integración). **Hasta la R3 esta frase era falsa:** el NIF viajaba como se escribió, y con
+  separadores la búsqueda canónica no veía la ficha completada y devolvía la otra **sin**
+  ambigüedad: una identidad duplicada que nadie detectaba. En un contrario el NIF no es completable
+  (`_COMPLETABLES_CONTRARIO`): no se escribe, y la lectura final lo da por vacío. Sigue sin cubrirse
+  una ficha **histórica** cuyo NIF se guardó con separadores, que la búsqueda canónica no encuentra:
+  buscar duplicados escritos de cualquier forma es otra ampliación. Cerrarlo del todo es buscar
+  también por los identificadores declarados, que es otra decisión sobre A.4 (`MEJORAS #306`).
+- **Entre la comparación y la escritura el CRM puede cambiar, y no solo por el despacho: también
+  por la propia corrida** (R3, observación). Las dos resuelven por separado —la fase previa lee y
+  `ensure_*` vuelve a resolver—, y lo que la corrida escribe entre una parte y la siguiente cambia
+  lo que la siguiente encuentra. Lo que eso tenía de **silencioso** —dos partes que acaban en una
+  ficha, la segunda completando lo que la primera contradice— se cierra en A.4, al validar y en la
+  fase previa. **Queda abierto, y falla cerrado:** lo que la corrida completa puede hacer que la
+  resolución de una parte posterior **pare** a mitad —un contrario por id cuya ficha no tiene NIF
+  recibe el email que otra parte comparte, y el buzón de esa otra ya no tiene documento con que
+  descartarla—; la corrida sale con 1 y una escritura parcial, que la lectura parcial dice. Y la
+  ventana frente a **otra sesión**, como estaba: nada en el despacho la hace probable —tres
+  abogados que no trabajan a la vez sobre el mismo expediente—, aunque nada la impide: `crm_ficha`
+  tampoco toma el mutex (fila #17 de `PLAN.md`). No se construye un bloqueo para esto.
+- **`_resolver_colaborador` ignora el `motivo` de `resolver_parte`**, anterior a esta pieza: ante un
+  buzón compartido con una ficha sin documento, el colaborador cae al listado por email en vez de
+  parar (el contrario sí para). Por `crm_ficha` ya no llega el NIF no interpretable (A.3); el buzón,
+  sí. Cambiarlo cambia a todos los llamadores y pide su propia regresión (`MEJORAS #307`).
 
 ## 6. Cómo se prueba (para el plan)
 
@@ -282,9 +328,9 @@ los writers. Un doble que sustituye `ensure_*` no ve un PUT que ocurre dentro de
 | Claves (A.2) | desconocida en cada nivel → error con ruta y **todas** las sugerencias cercanas (`apellido` → `apellido1` y `apellido2`, sin convertirse en alias); sin candidata cercana, sin sugerencia; varias → todas |
 | Tipos (A.3) | mapping o lista en **cada** escalar de los dos roles, en `notas_html` y en `firmante`; nombre solo espacios; `cliente_propio` `false`/`0`/`[]`/`{}`/desconocido; raíz `false`/`0`/`[]`/texto; provincia no reconocida; teléfono que se queda vacío; **controles positivos separados** para `null`, ausente, una provincia con otra caja y un teléfono legítimo |
 | Valor a su destino | cada campo con un **centinela distinto** llega a su atributo del DTO; y cada campo del YAML, a su propiedad del CRM en la auditoría |
-| Identidad (A.4) | parte sin NIF, email ni `id_crm` → error al validar; `id_crm` que no es un número → error; con `id_crm` → no se busca ni se crea, en los dos roles; `id_crm` inexistente o GET caído → error antes del primer writer |
-| Fase previa (A.4) | dato **distinto preexistente** —por `id_crm` o por NIF— → error antes del primer writer y **cero** llamadas a writers, con la resolución y el completado reales y el transporte doblado; la **segunda** parte inválida → cero writers también para la primera; `--dry-run` con `id_crm` no lee el CRM |
-| Convergencia | dos corridas con el doble con estado: la segunda no crea otra ficha ni declara sobrante la primera |
+| Identidad (A.4) | parte sin NIF, email ni `id_crm` → error al validar; `id_crm` que no es un número → error; con `id_crm` → no se busca ni se crea, en los dos roles; `id_crm` inexistente o GET caído → error antes del primer writer; el mismo NIF o `id_crm` en dos partes de un rol, o un email compartido sin el NIF de las dos → error al validar, con controles positivos (dos NIF distintos con el mismo email; dos `id_crm` con el mismo email) (R3) |
+| Fase previa (A.4) | dato **distinto preexistente** —por `id_crm` o por NIF— → error antes del primer writer y **cero** llamadas a writers, con la resolución y el completado reales y el transporte doblado; la **segunda** parte inválida → cero writers también para la primera; dos partes que resuelven a la misma ficha → cero writers (R3); `--dry-run` con `id_crm` no lee el CRM |
+| Convergencia | dos corridas con el doble con estado: la segunda no crea otra ficha ni declara sobrante la primera; también con un NIF escrito con separadores, con el doble filtrando **como el CRM medido** —caja y espacios, no separadores— (R3/H-01); y el colaborador por id con un NIF ajeno deja la resolución siguiente por NIF **ambigua** |
 | Vínculos (B.1) | el 653 reproducido → dos `[SOBRA]` y código 1; sobrantes en cada uno de los tres bloques, también con cero esperados; faltan y sobran a la vez; id `int` frente a `str` |
 | Datos (B.2) | ficha existente con `1apellido` vacío → `[DATO]` y código 1 (el caso de W-030A13); la matriz campo × rol, con positivos y negativos de colaborador; una parte **creada** a la que el CRM no guardó un dato → `[DATO]`; provincia que casa con otra caja; GET o PUT del completado fallidos → `[DATO]` por resultado |
 | Parcial (B.4) | fallar cada writer → código 1, sin «VERIFICADA», sin sobrantes emitidos |
@@ -298,15 +344,21 @@ exigencia de identidad; cruzar dos asignaciones del constructor; quitar la compr
 sobrantes; comparar por pertenencia; quitar la verificación de datos, o saltarse en ella un rol o
 las partes creadas; hacer asimétrica la provincia; ignorar `id_crm` en el core; quitar la fase
 previa o moverla detrás de un writer; leer el CRM en `--dry-run`; que la parcial **emita**
-sobrantes; y que un «SIN VERIFICAR» tape un fallo conocido.
+sobrantes; y que un «SIN VERIFICAR» tape un fallo conocido. **Tras la R3**, además: el NIF que
+viaja como se escribió, en cada rol; el NIF que se vacía y el que cuenta como identidad sin
+serlo; lo de debajo de un merge y la clave escalar que no es texto; el mismo NIF o id en dos
+partes, el email compartido y las dos partes en una ficha en la fase previa; las cuatro reglas que
+tenían test y ningún mutante (clave desconocida, `id_crm` no numérico, teléfono, provincia); y un
+elemento inválido de la lista filtrado en silencio, que es la versión ejecutable del M11 de P6.
 
 ## 7. Rondas y modelo
 
 Dos, por el radio de daño (`CLAUDE.md` §«Cuántas rondas»), **más una tercera autorizada
 expresamente por Nikolai el 2026-09-25** sobre ese techo. La R1 fue sobre la rev. 1 de este
 diseño; la **R2, sobre el plan** de implementación y sobre si la rev. 2 remedia de verdad la R1
-(`docs/superpowers/plans/2026-09-25-crm-ficha-claves-y-conjunto.md`); y la **R3 irá sobre el
-diff**, en la sesión que lo implemente. Las tres con `gpt-6-astra` · `medium`. El tope es por
+(`docs/superpowers/plans/2026-09-25-crm-ficha-claves-y-conjunto.md`); y la **R3, sobre el
+diff** (2026-09-26, adjudicada en la §10 del plan). Las tres con `gpt-6-astra` · `medium`. El
+remedio de la R3 no lo revisa ninguna ronda. El tope es por
 pieza y no por fase (la tabla dice «una sobre el diseño (spec/plan) y una sobre el diff»): la R3
 existe porque Nikolai la autorizó, no porque la regla la conceda.
 
