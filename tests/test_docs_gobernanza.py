@@ -2,9 +2,10 @@
 
 import hashlib
 import re
-import subprocess
 import unicodedata
 from pathlib import Path
+
+from tests import _git
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -37,16 +38,22 @@ def test_estado_frontmatter_valido():
     assert not malos, f"docs con estado: ausente o invalido: {malos}"
 
 
+def _refs_a_docs_plan_legacy() -> list[str]:
+    """Ficheros trackeados que citan `docs/PLAN_*.md` en la raiz de docs/.
+
+    `git grep` devuelve 1 cuando no encuentra nada, que aqui es la respuesta buena; cualquier
+    otro codigo es que no ha podido mirar, y eso PARA (plan 2026-09-26, git que falla en voz
+    alta): antes se leia como «sin coincidencias» y el guard daba verde sin haber buscado.
+    """
+    r = _git.git("grep", "-l", "-E", r"docs/PLAN_[A-Za-z]", cwd=ROOT, rc_validos=(0, 1))
+    return [ln for ln in r.stdout.splitlines() if ln]
+
+
 def test_sin_refs_a_docs_plan_legacy():
     """Tras la reubicacion, ningun fichero trackeado debe citar docs/PLAN_*.md
     en la raiz de docs/ (ahora viven en docs/superpowers/plans/)."""
-    r = subprocess.run(
-        ["git", "grep", "-l", "-E", r"docs/PLAN_[A-Za-z]"],
-        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    # git grep devuelve 1 (sin match) => vacio => OK.
     ofensores = [
-        ln for ln in r.stdout.splitlines()
+        ln for ln in _refs_a_docs_plan_legacy()
         if ln and "test_docs_gobernanza.py" not in ln
         and "docs/superpowers/plans/2026-07-18-gobernanza-planificacion.md" not in ln
         # Excepcion documentada (D5, 2026-07-18): esta linea cita
@@ -138,9 +145,10 @@ def _expandir_llaves(token: str) -> list[str]:
 
 
 def _md_trackeados() -> list[Path]:
-    r = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
-                       capture_output=True, text=True, encoding="utf-8", errors="replace")
-    return [ROOT / ln for ln in r.stdout.splitlines() if ln]
+    """Los `.md` trackeados. Si `git` no puede enumerarlos, PARA: una lista vacia haria pasar
+    en verde, sin mirar nada, a todos los guards que la recorren (R1 de los estados medidos,
+    2026-09-26: en la copia sin `.git` de los revisores, eso es lo que pasaba)."""
+    return [ROOT / ln for ln in _git.trackeados(ROOT, "*.md")]
 
 
 def test_citas_a_specs_y_plans_existen():

@@ -90,6 +90,12 @@ def _regla(ruta: str, repo: Path = REPO, env: dict[str, str] | None = None) -> s
     proc = _git(
         [*_SIN_EXCLUDES_GLOBALES, "check-ignore", "--no-index", "-v", ruta], repo, env=env
     )
+    # Como sus hermanas de este fichero: 0 (ignorada) y 1 (no ignorada) son respuestas; otro
+    # codigo es que no pudo mirar, y leerlo como «sin regla» era un verde falso (plan
+    # 2026-09-26, git que falla en voz alta).
+    if proc.returncode not in _RC_VALIDOS:
+        raise RuntimeError(
+            f"git check-ignore fallo (rc={proc.returncode}): {proc.stderr.strip()}")
     campos = [c for c in proc.stdout.strip().split("\t") if c]
     return campos[0] if campos else ""
 
