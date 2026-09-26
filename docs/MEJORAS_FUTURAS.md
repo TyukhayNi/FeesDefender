@@ -12804,11 +12804,13 @@ escalón más arriba.
 esfuerzo que de verdad corrieron. No se construye hoy: cada ronda necesita su workdir y su
 encargo, y una pieza así hay que encadenarla o se queda sin llamadores.
 
-**Disparador para promoverlo:** la primera ronda de la calibración (fila #38 de `PLAN.md`)
-en la que el modelo anotado en el acta **no coincida** con el releído del rollout. Hasta
-entonces es un riesgo declarado, que es lo que lo distingue de un olvido.
+**Disparador para promoverlo:** la primera **acta** en la que el modelo anotado **no coincida**
+con el releído del rollout. Hasta el 2026-09-26 se vigilaba en las filas de la calibración (fila
+#38 de `PLAN.md`), y en las cinco coincidió; cerrada la calibración, lo vigila cada acta, que
+relee el modelo (contrato, §4). Hasta entonces es un riesgo declarado, que es lo que lo
+distingue de un olvido.
 
-## 280. `AGENTS.md` dice que Codex no puede usar subagentes, y el 2026-09-23 los usaba
+## 280. `AGENTS.md` dice que Codex no puede usar subagentes, y el 2026-09-23 los usaba  [PROMOVIDO → PLAN.md 2026-09-26]
 
 **De dónde sale:** lectura de los `rollout-*.jsonl` del 2026-09-23 mientras se comprobaban
 los lanzadores.
@@ -12828,7 +12830,7 @@ mezclarla con la calibración contaminaría sus cinco primeras filas.
 **Disparador para promoverlo:** que la calibración cierre (fila #38), o que Nikolai quiera
 antes decidir si una ronda puede abrirse en paralelo.
 
-## 281. El acta puede omitir `modelo`, `esfuerzo` y `velocidad` y seguir en verde
+## 281. El acta puede omitir `modelo`, `esfuerzo` y `velocidad` y seguir en verde  [PROMOVIDO → PLAN.md 2026-09-26]
 
 **De dónde sale:** hallazgo **H-07** de la R1 del diff que creó esos campos
 (`docs/superpowers/specs/2026-09-23-modelo-revisor-politica-provisional-r1-adversarial-review.md`),

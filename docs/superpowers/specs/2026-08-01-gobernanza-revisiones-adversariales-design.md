@@ -1,6 +1,13 @@
 # Archivo verificable de las revisiones adversariales
 
-> **Estado:** **rev. 11** (2026-09-23). La rev. 11 **no reabre nada del recorte** ni cambia un
+> **Estado:** **rev. 12** (2026-09-26). La rev. 12 **no reabre nada del recorte** ni cambia un
+> artefacto: registra que **Nikolai confirmó la política de modelo** el 2026-09-26, al cerrarse su
+> calibración con el ledger de la fila #38 de `PLAN.md` delante, y el §4 deja de llamarla
+> provisional. Los tres campos del acta —`modelo`, `esfuerzo`, `velocidad`— y la regla de cuáles se
+> releen **no cambian**, y el §4 dice por qué siguen haciendo falta sin calibración que alimentar.
+> Todo lo demás sigue como en la rev. 11, cuyo encabezado se conserva íntegro debajo.
+>
+> **Estado anterior:** **rev. 11** (2026-09-23). La rev. 11 **no reabre nada del recorte** ni cambia un
 > artefacto: añade al §4 tres campos al frontmatter del acta —`modelo`, `esfuerzo`, `velocidad`— y
 > dice **cuáles se releen del rollout y cuál solo se afirma**. Entran porque desde esa fecha la
 > elección de modelo del revisor dejó de ser una constante y es **política provisional a calibrar**
@@ -142,8 +149,11 @@ de la rev. 7 —exigir que apareciera en el bloque literal— resultó inútil p
 **`modelo`, `esfuerzo` y `velocidad` (rev. 11, 2026-09-23): el acta es su hogar, y no las tres se
 prueban igual.** Entraron porque desde esa fecha la elección de modelo dejó de ser una constante —`CLAUDE.md`
 §«Con qué modelo se revisa» reparte el trabajo entre `gpt-6-sol` y `gpt-6-astra` con dos esfuerzos— y
-porque esa política es **provisional y se calibra con los cinco primeros encargos**: sin estos tres
-campos en el acta, la calibración se apoyaría en la memoria de quien la escribe. La práctica ya existía
+porque esa política nació **provisional y se calibró con los cinco primeros encargos** —Nikolai la
+confirmó el 2026-09-26 (rev. 12)—: sin estos tres campos en el acta, la calibración se habría apoyado
+en la memoria de quien la escribía. **Confirmada la política, siguen haciendo falta:** el modelo que
+corre lo fija el lanzador y no el acta, y el acta es el único sitio del repo que dice cuál corrió
+—el disparador de `MEJORAS #279` se vigila ahí—. La práctica ya existía
 —las actas de septiembre anotan el modelo en prosa, en una tabla o en `revisor:`, cada una a su manera—;
 lo que se fija es **el sitio**. Tres precisiones que hay que respetar al rellenarlos:
 
