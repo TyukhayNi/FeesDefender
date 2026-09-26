@@ -50,20 +50,37 @@ spec: docs/superpowers/specs/2026-08-01-gobernanza-revisiones-adversariales-desi
 ## 2. Tasks
 
 ### Task 1: `tests/_git.py` y los guards que lo usan
-- [ ] Tests primero (`tests/test_guard_git_falla_en_voz_alta.py`): el helper para con el stderr si el código no es válido, admite los códigos que se le dan, para si `git` no existe; `_md_trackeados`, las referencias heredadas, `_trackeados` y `_regla` paran con un `git` que falla, y devuelven algo con el `git` real (control positivo).
-- [ ] Implementar el helper y migrar `test_docs_gobernanza.py` (dos sitios) y `test_guard_no_basetemp_versionado.py`; `_regla` valida su código como ya hacen sus hermanas del mismo fichero.
+- [x] Tests primero (`tests/test_guard_git_falla_en_voz_alta.py`): el helper para con el stderr si el código no es válido, admite los códigos que se le dan, para si `git` no existe; `_md_trackeados`, las referencias heredadas, `_trackeados` y `_regla` paran con un `git` que falla, y devuelven algo con el `git` real (control positivo).
+- [x] Implementar el helper y migrar `test_docs_gobernanza.py` (dos sitios) y `test_guard_no_basetemp_versionado.py`; `_regla` valida su código como ya hacen sus hermanas del mismo fichero.
 
 ### Task 2: `session_close`, la sonda
-- [ ] Tests primero: con la sonda en fallo, el modo de la verja es COMPLETO y dice por qué; los avisos que dependen de `git` salen como «no comprobado»; con `git` sano, nada cambia.
-- [ ] Implementar `_git_responde()`, el modo de la verja y el envoltorio de los avisos.
+- [x] Tests primero: con la sonda en fallo, el modo de la verja es COMPLETO y dice por qué; los avisos que dependen de `git` salen como «no comprobado»; con `git` sano, nada cambia.
+- [x] Implementar `_git_responde()`, el modo de la verja y el envoltorio de los avisos.
 
 ### Task 3: CI, `pipefail`
-- [ ] Test primero: el paso de `leak-scan` corre con `set -o pipefail` antes de la tubería.
-- [ ] Implementarlo.
+- [x] Test primero: el paso de `leak-scan` corre con `set -o pipefail` antes de la tubería.
+- [x] Implementarlo.
 
 ### Task 4: los arneses
-- [ ] `check=True` en el `git status --porcelain` de los cinco arneses (herramientas, no tests: sin test propio).
+- [x] `check=True` en el `git status --porcelain` de los cinco arneses (herramientas, no tests: sin test propio).
 
 ### Task 5: verificación y revisión
-- [ ] Suite con las dos semillas; mutantes de cada remedio.
+- [x] Suite con las dos semillas; mutantes de cada remedio.
 - [ ] R1 de Codex sobre el diff: una ronda; **`gpt-6-astra` · `medium`**, fila «gobernanza que pueda hacer que la cobertura parezca presente estando ausente: un guard». Adjudicación embebida aquí; acta hermana `…-git-que-falla-en-voz-alta-r1-adversarial-review.md`.
+
+## 3. Ejecución (2026-09-26)
+
+- **Commits:** `4b6f06d` (el helper y los guards de tests), `52849da` (`session_close`), `b3af097` (CI) y
+  `2c50c37` (los arneses), cada uno con sus tests vistos en rojo antes de implementar.
+- **El escenario del hallazgo, reproducido y cerrado.** En una copia `git archive` sin `.git`, los
+  guards de gobernanza y de basetemp de **`main` dan 48 verdes sin haber mirado nada**; los de esta
+  rama, en la misma copia, **fallan en voz alta los tres que dependen de git** —el de referencias
+  heredadas, el G2 de citas y el de basetemps— con el stderr de git, y los otros 45 siguen verdes
+  porque recorren el sistema de ficheros.
+- **El paso de CI, simulado en bash con un `git` que falla:** sin `pipefail` sale con **0**; con él,
+  con **128**.
+- **Suite:** 6.501 casos, 0 fallos, 96 omitidos, idéntica con las semillas 777 y 31337. **+18 sobre
+  los 6.483 de `main`, y cuadran al test**: los 18 de `tests/test_guard_git_falla_en_voz_alta.py`.
+- **Mutantes: 12 de 12 muertos**, cada uno por el test que declaraba (el arnés, en el scratchpad de
+  la sesión).
+
