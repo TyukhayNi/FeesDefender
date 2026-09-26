@@ -120,7 +120,7 @@ Claude contra la fuente, y un revisor que no corre deja **sin verificar**, nunca
 2026-09-23 sobre el informe de consumo de catorce días de revisiones
 (`recomendacion-modelos-revision-2026-09-23.md`, fuera del repo), y **confirmó la elección el
 2026-09-26**, sobre un resumen del ledger de la calibración que omitía dos condiciones de esa
-medición —las dos, abajo; se le dijeron después—. **Nació provisional por un motivo que la
+medición —las dos, abajo; se le dijeron después, y la mantuvo—. **Nació provisional por un motivo que la
 confirmación no borra: nadie ha comparado Sol y Astra sobre el mismo objeto.** Lo que el informe sí midió son
 tres cosas **distintas**, que conviene no fundir en una: las **60 revisiones sustantivas** del
 periodo corrieron **todas** con Astra —y esas 60 **incluyen intentos interrumpidos**, no son 60
@@ -244,6 +244,8 @@ no ASCII cambiado por «?», por un defecto del lanzador (`MEJORAS #279`); los f
 en cambio, el revisor los leía intactos del disco. **El resumen sobre el que Nikolai dijo «ok» no
 mencionaba ninguna de las dos cosas**; se le dijeron después, el mismo día, y su «ok» confirma **la
 elección operativa** —qué modelo corre por defecto—, **no ratifica el método** que no se cumplió.
+**Sabiéndolas, la mantuvo** y encargó la medición que el método preveía —revisiones antiguas con
+defectos ya confirmados, que además dan pares Sol/Astra sobre el mismo objeto—: fila #50 de `PLAN.md`.
 
 **Y lo que el ledger NO sostiene, lleno como está** (R1, H-05): que Sol encuentre lo
 mismo que Astra, que su tasa de omisiones sea aceptable, o que el reparto por filas esté bien

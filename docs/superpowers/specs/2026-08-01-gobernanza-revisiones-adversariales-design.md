@@ -4,8 +4,9 @@
 > artefacto: registra que **Nikolai confirmó la elección de modelo** el 2026-09-26, al cerrarse su
 > calibración, sobre un resumen del ledger de la fila #38 de `PLAN.md` que omitía dos condiciones de
 > esa medición —no se reutilizaron objetos con defectos conocidos, y cuatro de las cinco rondas
-> recibieron el mandato sin caracteres no ASCII—; se le dijeron después, y **no se le atribuye haber
-> ratificado el método**. El §4 deja de llamar provisional a la política. Los tres campos del acta
+> recibieron el mandato sin caracteres no ASCII—; se le dijeron después y, **sabiéndolas, mantuvo la
+> elección** y encargó la medición que el método preveía (fila #50 de `PLAN.md`), sin que eso
+> ratifique el método incumplido. El §4 deja de llamar provisional a la política. Los tres campos del acta
 > —`modelo`, `esfuerzo`, `velocidad`— y la regla de cuáles se releen **no cambian**, y el §4 dice por
 > qué siguen haciendo falta sin calibración que alimentar. **Con la R1 de Codex adjudicada (§16,
 > `REQUIERE-REVISION`, 3 de 3 confirmados):** el registro separa la elección del método, la cola del
@@ -712,7 +713,7 @@ autorización expresa de Nikolai. No se declara refutado lo que nadie miró.
 
 | # | Qué dijo | Sev. · coste | Veredicto | Dónde se remedia |
 |---|---|---|---|---|
-| H-01 | la confirmación se atribuye a Nikolai sin constancia de que supiera que el método no se siguió | alta · acotado | **confirmado** | `CLAUDE.md`, `PLAN.md` y la cabecera de la rev. 12: se separa la **elección operativa**, que confirmó, del **método**, que no ratificó; su respuesta, sabiéndolo, queda pendiente en la fila #38 |
+| H-01 | la confirmación se atribuye a Nikolai sin constancia de que supiera que el método no se siguió | alta · acotado | **confirmado** | `CLAUDE.md`, `PLAN.md` y la cabecera de la rev. 12: se separa la **elección operativa**, que confirmó, del **método**, que no ratificó; sabiéndolo, **la mantuvo** el mismo día y encargó la medición de la fila #50 |
 | H-02 | la sección del ledger sigue ordenando una calibración pendiente, y la fila #38 dice «provisional» | media · trivial | **confirmado** | `PLAN.md`: la cola pasa a pasado, y el título y el disparador de la fila #38 también |
 | H-03 | el disparador de #279 se amplía, y «lo vigila cada acta» afirma más de lo que hay | media · acotado | **confirmado** | `CLAUDE.md`, `MEJORAS #279` y el §4: el disparador **se da por agotado**, con su texto restaurado; queda la regla general de promoción, y releer es un deber de quien escribe el acta, no un control |
 
