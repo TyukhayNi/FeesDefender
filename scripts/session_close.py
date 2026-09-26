@@ -59,11 +59,14 @@ _PREFIJOS_RAMA = ("claude", "codex", "docs", "feat", "fix", "chore", "refactor",
 _RE_RAMA = re.compile(
     r"(?<![\w./\\-])(?:" + "|".join(_PREFIJOS_RAMA) + r")/[A-Za-z0-9._-]+(?![\w./\\-])"
 )
-# Un nombre que acaba en extensión de fichero (`.md`, `.py`) es una ruta. Solo letras: una rama
-# `release/1.2` no lo es.
-_RE_EXTENSION = re.compile(r"\.[A-Za-z]{1,5}$")
-# La línea `|---|:---:|` que separa la cabecera de una tabla Markdown.
-_RE_SEPARADOR_TABLA = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
+# Un nombre que acaba en extensión de fichero (`.md`, `.markdown`, `.ps1`) es una ruta: hasta ocho
+# caracteres y al menos una letra, así que una rama `release/1.2` no lo es. La ambigüedad que la
+# sintaxis no cierra, dicha (R1/H-02): una rama llamada como un fichero (`docs/cierre-117.md`) se
+# toma por ruta, y un fichero ya borrado sin extensión, o con una más larga, por rama.
+_RE_EXTENSION = re.compile(r"\.(?=[0-9]*[A-Za-z])[A-Za-z0-9]{1,8}$")
+# Lo que precede al contenido de una línea Markdown: sangría y marcas de cita (`> `). Una fila de
+# tabla es la línea cuyo contenido, TRAS eso, empieza por `|` (R1/H-01, H-04).
+_RE_PREFIJO_BLOQUE = re.compile(r"^\s*(?:>\s*)*")
 
 
 def _git_lines(args: list[str]) -> list[str]:
@@ -201,19 +204,21 @@ def _plan_items_desfasados(
         if fantasmas:
             filas.append((titulo, fantasmas))
 
-    for ln in texto.splitlines():
+    for n, ln in enumerate(texto.splitlines(), start=1):
         if ln.lstrip().startswith("#"):
             if buf:
                 _cerrar(titulo, "\n".join(buf))
             titulo = ln.lstrip("#").strip()
             buf = [ln]
-        elif ln.lstrip().startswith("|"):
+            continue
+        contenido = _RE_PREFIJO_BLOQUE.sub("", ln, count=1)
+        if contenido.startswith("|"):
             # Cada fila de una tabla es su propio ítem (MEJORAS #303): la cola priorizada es UNA
             # tabla, y como bloque, el «sin commitear» de la historia de una fila cerrada armaba
-            # las rutas de todas las demás. Lo que va fuera de la tabla sigue en el bloque.
-            if not _RE_SEPARADOR_TABLA.match(ln):
-                celda = ln.strip().strip("|").split("|", 1)[0].strip()
-                _cerrar(f"{titulo} — fila {celda}", ln)
+            # las rutas de todas las demás. Lo que va fuera de la tabla sigue en el bloque. El
+            # separador `|---|` también pasa por aquí, y sin frase de pendiente no avisa nunca.
+            celda = contenido.strip().strip("|").split("|", 1)[0].strip()
+            _cerrar(f"{titulo} — fila {celda}" if celda else f"{titulo} — línea {n}", ln)
         else:
             buf.append(ln)
     if buf:

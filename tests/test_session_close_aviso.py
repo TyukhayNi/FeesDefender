@@ -234,6 +234,60 @@ def test_303_sin_predicado_una_ruta_que_existe_en_el_repo_no_es_una_rama():
     assert sc._plan_items_desfasados(texto, {"main"}) == []
 
 
+# R1 de Codex (plan §7): qué es una fila es lo que queda TRAS la sangría y la cita.
+
+def test_303_R1H01_las_filas_de_una_tabla_citada_tambien_son_items():
+    texto = ("## Cola\n> | 1 | sin commitear, y se rescató |\n"
+             "> | 2 | cerrada en `claude/b-222` |\n")
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == []
+
+
+def test_303_R1H01_una_fila_citada_pendiente_sale_con_su_numero():
+    texto = "## Cola\n> | 1 | sin commitear en `claude/a-111` |\n"
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == [
+        ("Cola — fila 1", ["claude/a-111"])]
+
+
+def test_303_R1H04_una_fila_sangrada_es_una_fila():
+    texto = "## Cola\n  | 7 | sin commitear en `claude/sangria-111` |\n"
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == [
+        ("Cola — fila 7", ["claude/sangria-111"])]
+
+
+def test_303_R1H03_una_fila_sin_numero_se_identifica_por_su_linea():
+    texto = ("## Cola\n| | sin commitear en `claude/a-111` |\n"
+             "| | sin commitear en `claude/b-222` |\n")
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == [
+        ("Cola — línea 2", ["claude/a-111"]), ("Cola — línea 3", ["claude/b-222"])]
+
+
+def test_303_R1H02_una_ruta_borrada_con_extension_larga_o_con_digitos_no_es_una_rama():
+    texto = "### [FOO]\nSin commitear aún: `docs/fichero-borrado.markdown` y `docs/lanzar.ps1`.\n"
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == []
+
+
+def test_303_R1H02_una_rama_con_version_solo_de_digitos_sigue_siendo_rama():
+    texto = "### [FOO]\nRama de trabajo: `release/1.2`. Sin commitear aún.\n"
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == [
+        ("[FOO]", ["release/1.2"])]
+
+
+def test_303_un_bloque_se_cierra_al_empezar_el_siguiente_encabezado():
+    """La rama se atribuye al encabezado bajo el que está, no al siguiente (la cobertura del diff
+    lo señaló: ningún test tenía dos encabezados)."""
+    texto = ("## Uno\nSin commitear en `claude/uno-111`.\n"
+             "## Dos\nNada pendiente, y cita `claude/dos-222`.\n")
+    assert sc._plan_items_desfasados(texto, {"main"}, es_ruta=lambda t: False) == [
+        ("Uno", ["claude/uno-111"])]
+
+
+def test_ramas_conocidas_quita_el_prefijo_origin_y_la_referencia_HEAD(monkeypatch):
+    monkeypatch.setattr(sc, "_git_lines",
+                        lambda args: ["main", "claude/local", "origin/main", "origin/claude/x",
+                                      "origin/HEAD"])
+    assert sc._ramas_conocidas() == {"main", "claude/local", "claude/x"}
+
+
 # --- Higiene de PLAN.md: detectores puros (D3) ---
 
 _PLAN_CON_LEDGER = (
