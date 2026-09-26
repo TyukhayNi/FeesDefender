@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from core import expedicion_certificada as exp
 
 
@@ -99,3 +101,49 @@ def test_una_expedicion_VACIA_no_esta_completa():
     """Un censo vacío no es una expedición terminada (spec §5.2)."""
     assert exp.Expedicion(id_personalizado="W-1 - OVC",
                           entorno="produccion").completa is False
+
+
+def test_el_22_sin_ningun_aviso_entregado_cierra_sin_entrega():
+    """M-17, `006bij47xan`: el SMS no llegó nunca y el recordatorio falló.
+
+    Decisión de Nikolai (2026-09-26): se cierra sin entrega y se cosecha como prueba del
+    intento. Sin la regla no se cosecharía nunca: la plataforma no caduca lo que no entregó.
+    """
+    e = _envio(historico=_historico((3, "2026-07-01T12:05:33+02:00"),
+                                    (14, "2026-07-02T13:00:45+02:00"),
+                                    (22, "2026-07-04T13:00:50+02:00")))
+    assert e.cerrado_en == datetime.fromisoformat("2026-07-04T13:00:50+02:00")
+    assert e.cosechable
+    assert e.recibido_en is None and e.accedido_en is None
+    assert e.desconocidos == ()
+
+
+@pytest.mark.parametrize("indicio", [17, 19, 20, 21, 27])
+def test_el_22_NO_cierra_si_algun_aviso_llego(indicio):
+    """Si el primer aviso llegó —al buzón, al contenido o al servidor—, el requerido aún
+    puede leer: el 22 del recordatorio no cierra nada y se espera al 40 (D-1)."""
+    e = _envio(historico=_historico((5, "2026-09-01T10:00:00+02:00"),
+                                    (indicio, "2026-09-01T10:00:05+02:00"),
+                                    (14, "2026-09-02T11:00:00+02:00"),
+                                    (22, "2026-09-02T11:00:05+02:00")))
+    assert e.cerrado_en is None
+    assert e.cosechable is (indicio == 20)   # el 20 culmina por sí mismo
+
+
+def test_un_indicio_que_llega_DESPUES_del_22_tambien_lo_anula():
+    """El acuse puede llegar tarde (M-17: en el sandbox el 17 llegó después del 20). La
+    regla mira el histórico entero, no solo lo anterior al 22."""
+    e = _envio(historico=_historico((3, "2026-07-01T12:05:33+02:00"),
+                                    (14, "2026-07-02T13:00:45+02:00"),
+                                    (22, "2026-07-04T13:00:50+02:00"),
+                                    (17, "2026-07-05T09:00:00+02:00")))
+    assert e.cerrado_en is None and not e.cosechable
+
+
+def test_el_40_cierra_aunque_hubiera_un_22_antes():
+    e = _envio(historico=_historico((17, "2026-06-17T16:30:04+02:00"),
+                                    (14, "2026-06-18T17:00:33+02:00"),
+                                    (22, "2026-06-18T17:00:43+02:00"),
+                                    (40, "2026-07-17T16:29:58+02:00")))
+    assert e.cerrado_en == datetime.fromisoformat("2026-07-17T16:29:58+02:00")
+    assert e.cosechable

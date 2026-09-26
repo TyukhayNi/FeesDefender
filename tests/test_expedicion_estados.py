@@ -67,3 +67,10 @@ def test_estado_de_exige_fecha_con_zona():
     with pytest.raises(exp.ExpedicionError, match="zona|offset"):
         exp.estado_de({"codigo": 20, "titulo": "Leído",
                        "fecha": "2026-09-12T23:03:43"})
+
+
+def test_el_22_es_un_aviso_fallido_no_un_desconocido():
+    """M-17: medido en producción, y la DPC v2.5 §4.5.10 lo mapea a ETSI D.4."""
+    assert exp.clasificar(22) == exp.AVISO_FALLIDO
+    assert exp.AVISO_FALLIDO not in (exp.EN_CURSO, exp.RECEPCION, exp.ACCESO,
+                                     exp.SIN_ENTREGA, exp.DESCONOCIDO)

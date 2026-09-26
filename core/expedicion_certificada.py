@@ -964,7 +964,7 @@ def ya_expedido(listado: list[dict], id_personalizado: str) -> set[str]:
 # F2 — la lectura: qué acredita cada envío
 # ---------------------------------------------------------------------------
 
-#: Las cinco familias en que cae un estado certificado. No son títulos de la
+#: Las seis familias en que cae un estado certificado. No son títulos de la
 #: plataforma: son lo que cada estado significa PARA NOSOTROS, que es lo que el
 #: motor necesita decidir.
 EN_CURSO = "en_curso"          #: el envío progresa; nada acreditado todavía
@@ -972,6 +972,7 @@ RECEPCION = "recepcion"        #: recepción acreditada (art. 17.2, spec §6.2)
 ACCESO = "acceso"              #: acceso al contenido íntegro (art. 10.2)
 SIN_ENTREGA = "sin_entrega"    #: cerrado sin entrega (el 28 con valor afirmativo, §6.3)
 DESCONOCIDO = "desconocido"    #: medido por nadie — se declara, nunca se asume
+AVISO_FALLIDO = "aviso_fallido"  #: el aviso no llegó (22): cierra SOLO si ninguno llegó (M-17)
 
 #: Códigos de la plataforma, por familia. Los nueve del spec §1.3 MÁS los seis
 #: medidos en producción el 2026-09-21 (M-2 del plan de F2): 3, 8, 11, 12, 14 y 31,
@@ -996,6 +997,11 @@ _FAMILIA_DE: dict[int, str] = {
     28: SIN_ENTREGA,  # Rechazado — valor afirmativo, art. 7.4 y 395.1 LEC (§6.3)
     40: SIN_ENTREGA,  # Caducado
     42: SIN_ENTREGA,  # Fallido
+    # el aviso no llegó — familia propia porque NO siempre cierra (M-17, decisión de
+    # Nikolai del 2026-09-26): `3 → 14 → 22` es un aviso que nunca llegó y ahí se queda;
+    # `17 → 14 → 22` es un primer aviso entregado y un recordatorio fallido, que no
+    # cierra nada. La regla vive en `EnvioObservado.cerrado_en`.
+    22: AVISO_FALLIDO,  # Recordatorio lectura fallido — ETSI D.4 (DPC v2.5 §4.5.10)
 }
 
 
@@ -1070,6 +1076,12 @@ CANAL_DE_TIPO: dict[str, str] = {"b": "burofax", "c": "electronico"}
 #: a 19 (medido: tres días después) y la entrega electrónica de 21 a 20.
 _CULMINACION: dict[str, int] = {"burofax": 19, "electronico": 20}
 
+#: Los códigos que prueban que ALGÚN aviso llegó a alguna parte: al destinatario (17,
+#: 19, 21), a su contenido (20) o a su servidor (27). Con uno de ellos en el histórico
+#: —antes o después del 22: el acuse puede llegar tarde—, un 22 no cierra: el requerido
+#: tiene el aviso y aún puede leer, y la plataforma cerrará sola con el 40 (M-20).
+_INDICIOS_DE_ENTREGA = frozenset({17, 19, 20, 21, 27})
+
 
 @dataclass(frozen=True)
 class EnvioObservado:
@@ -1117,8 +1129,18 @@ class EnvioObservado:
 
     @property
     def cerrado_en(self) -> datetime | None:
-        """Cierre sin entrega. El 28 es un hecho con valor afirmativo, no un error."""
-        return self._primera(SIN_ENTREGA)
+        """Cierre sin entrega. El 28 es un hecho con valor afirmativo, no un error.
+
+        El 22 cierra también, pero solo si ningún aviso llegó (M-17, D-1): medido, un SMS
+        que no se entregó nunca hace `3 → 14 → 22` y ahí se queda —83 días sin el 40 que
+        cierra a los demás—, porque la plataforma no caduca lo que no entregó. Con un
+        indicio de entrega en cualquier punto del histórico, el 22 no cierra: lo hará el 40.
+        """
+        fechas = [self._primera(SIN_ENTREGA)]
+        if not {e.codigo for e in self.historico} & _INDICIOS_DE_ENTREGA:
+            fechas.append(self._primera(AVISO_FALLIDO))
+        fechas = [f for f in fechas if f is not None]
+        return min(fechas) if fechas else None
 
     @property
     def desconocidos(self) -> tuple[int, ...]:
@@ -1131,7 +1153,8 @@ class EnvioObservado:
         """¿El certificado de este envío ya es DEFINITIVO?
 
         Lo es cuando el envío alcanzó la culminación de su canal (19 el burofax, 20
-        la entrega electrónica) o se cerró sin entrega (28/40/42). Antes no: un
+        la entrega electrónica) o se cerró sin entrega (28/40/42, o el 22 cuando ningún
+        aviso llegó: `cerrado_en`). Antes no: un
         certificado bajado con el envío en 17 o en 21 acredita menos de lo que
         acabará acreditando, y como el nombre canónico del spec §7.1 no lleva el
         estado, el provisional ocuparía el sitio del bueno.
@@ -1143,7 +1166,7 @@ class EnvioObservado:
         codigos = {e.codigo for e in self.historico}
         if _CULMINACION.get(self.canal) in codigos:
             return True
-        return any(clasificar(c) == SIN_ENTREGA for c in codigos)
+        return self.cerrado_en is not None
 
 
 @dataclass(frozen=True)
