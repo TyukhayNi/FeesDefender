@@ -13303,7 +13303,7 @@ tocar nada, confirmar la lectura corriéndolo.
 
 ---
 
-## 296. `rclone config show gdrive_ev` tarda 4-6 s, y dos consumidores con timeout corto lo convierten en un error que no dice la causa  [PROMOVIDO → PLAN.md 2026-09-26]
+## 296. `rclone config show gdrive_ev` tarda 4-6 s, y dos consumidores con timeout corto lo convierten en un error que no dice la causa  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Medido el 2026-09-25, abriendo W-02UIQU.**
 
@@ -13338,6 +13338,16 @@ abortó en 32 s sin escribir nada. Acto seguido `_get_drive_access_token()` devo
 copy` paralelo bajaba 90 MB sin error. Minutos después `get_drive_folder_info` sí devolvió el
 `driveId`: es intermitente, según lo que tarde en arrancar `rclone`. Salida practicada, otra vez:
 `--team-id` explícito, que da `get_file_metadata` → `driveId`.
+
+**CERRADA el 2026-09-26 (PR #409, fila #42 de `PLAN.md`).** Un solo lector del token con 30 s y
+un motivo por salida (`obtener_token_drive`), y `leer_carpeta_drive` con el suyo: el alta, el
+auditor de nombres de carpeta y el diagnóstico `diag_drive_autofill.py` dicen la causa en vez de
+«token/red». Medido al construir: `rclone config show <remote inexistente>` sale con 0, y el
+precheck de la skill lo tomaba por «client compartido»; ahora distingue «tardó» (5) de «no
+instalado o sin remote» (4), reconociendo el remote por su línea `type`. La R1 de Codex (7 de 7,
+remediados) añadió el 403 que no es de permisos, la razón de la cuota y el diagnóstico que
+imprimía parte del token. Plan y adjudicación:
+`docs/superpowers/plans/2026-09-26-token-drive-y-carpetas-w-delante-296-301.md`.
 
 ---
 
@@ -13446,7 +13456,7 @@ vez de quedarse en silencio con el más reciente.
 
 ---
 
-## 301. `parse_ev_folder_name` no reconoce las carpetas de E&V que llevan el W-code delante  [PROMOVIDO → PLAN.md 2026-09-26]
+## 301. `parse_ev_folder_name` no reconoce las carpetas de E&V que llevan el W-code delante  [CERRADA 2026-09-26]  [PROMOVIDO → PLAN.md 2026-09-26]
 
 > **Medido el 2026-09-25 en W-02UIQU (plaza de Santander).**
 
@@ -13464,6 +13474,14 @@ E&V que diga qué plazas usan cada orden.
 **Disparador cumplido el 2026-09-26: el censo** (solo lectura, Drive API, 53 unidades y hasta 50
 carpetas cada una). 231 carpetas con el W-code delante, en muchas plazas y no solo en Santander, y
 331 con el W-code en medio sin guion. Promovida a la fila #47, junto a la #42 (`#296`).
+
+**CERRADA el 2026-09-26 (PR #409, fila #47 de `PLAN.md`).** Se aceptan los dos órdenes, pero con
+el W-code delante solo cuando el nombre cumple la convención que lo hace inequívoco —la dirección
+lleva número y el consultor no—: la R1 de Codex (H-01) mostró que el último « - » no separa el
+consultor por sí solo. 219 de las 231 carpetas medidas derivan su dirección; las demás piden el
+flag, y el alta dice por qué. La ciudad que SaRS1 pone delante se quita solo con el W-code
+delante y si es la de `--ciudad`. Plan y adjudicación:
+`docs/superpowers/plans/2026-09-26-token-drive-y-carpetas-w-delante-296-301.md`.
 
 ---
 
