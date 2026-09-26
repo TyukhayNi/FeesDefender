@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -38,6 +39,93 @@ class FichaCRMInput:
         verdad y este es la vista que ya consumían.
         """
         return self.contrarios[0] if self.contrarios else None
+
+
+# ---------------------------------------------------------------------------
+# Lectura sin pérdida (spec rev. 3 §3 A.1)
+# ---------------------------------------------------------------------------
+
+_ETIQUETA_MERGE = "tag:yaml.org,2002:merge"
+
+
+class _CargadorFicha(yaml.SafeLoader):
+    """`SafeLoader` que no pierde nada en silencio (spec §3 A.1). Una clave repetida, un merge
+    o una clave que no es un texto no se resuelven —«gana la última»—: se APUNTAN con su línea,
+    y `leer_yaml_ficha` los levanta todos juntos (R2/H-04)."""
+
+    def __init__(self, stream):
+        super().__init__(stream)
+        self.problemas: list[str] = []
+
+
+def _mapping_sin_perdida(loader: _CargadorFicha, node: yaml.MappingNode,
+                         deep: bool = False) -> dict:
+    vistas: dict[object, int] = {}
+    resultado: dict = {}
+    for clave_node, valor_node in node.value:
+        linea = clave_node.start_mark.line + 1
+        if clave_node.tag == _ETIQUETA_MERGE:
+            loader.problemas.append(f"línea {linea}: el merge (`<<`) no se admite en "
+                                    "_ficha_crm.yaml: escribe cada clave")
+            continue
+        if not isinstance(clave_node, yaml.ScalarNode):
+            forma = "una lista" if isinstance(clave_node, yaml.SequenceNode) else "un mapping"
+            loader.problemas.append(f"línea {linea}: una clave tiene que ser un texto, y aquí "
+                                    f"es {forma}")
+            loader.construct_object(valor_node, deep=deep)     # lo de debajo también se mira
+            continue
+        clave = loader.construct_object(clave_node, deep=deep)
+        valor = loader.construct_object(valor_node, deep=deep)
+        if clave in vistas:
+            loader.problemas.append(f"línea {linea}: la clave {clave!r} está repetida (ya en la "
+                                    f"línea {vistas[clave]}); YAML se quedaría solo con la última")
+            continue
+        vistas[clave] = linea
+        resultado[clave] = valor
+    return resultado
+
+
+_CargadorFicha.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+                               _mapping_sin_perdida)
+
+
+def leer_yaml_ficha(path: Path) -> Any:
+    """El `_ficha_crm.yaml` sin perder nada (spec §3 A.1).
+
+    Lo usan `cargar_ficha_yaml` y `scripts/crm_colaboradores_firmas.py::apply`: con un solo
+    lector, ninguno de los dos consolida una pérdida que el otro ya no podría ver. Devuelve el
+    documento tal cual —`{}` si está vacío—; la forma la juzga `validar_ficha`.
+
+    Lanza `ValueError` con TODAS las claves repetidas, alias, merges y claves que no son un
+    texto, cada uno con su línea; `ValueError` ante una sintaxis rota, y `FileNotFoundError` si
+    no existe.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"No existe _ficha_crm.yaml: {path}")
+    texto = path.read_text(encoding="utf-8")
+    try:
+        # PyYAML resuelve los alias en el composer, antes de que ningún constructor los vea:
+        # donde siguen visibles es en los EVENTOS. Y dentro del `try`, porque el escaneo también
+        # analiza y una sintaxis rota lo tumba con `ParserError` (R2/H-04).
+        problemas = [f"línea {ev.start_mark.line + 1}: los alias (`&`/`*`) no se admiten en "
+                     "_ficha_crm.yaml: escribe cada dato donde va"
+                     for ev in yaml.parse(texto, Loader=yaml.SafeLoader)
+                     if isinstance(ev, yaml.AliasEvent) or getattr(ev, "anchor", None)]
+        cargador = _CargadorFicha(texto)
+        try:
+            data = cargador.get_single_data()
+        finally:
+            cargador.dispose()
+    except yaml.YAMLError as exc:
+        # El límite, declarado (spec §3 A.1): una sintaxis rota para el análisis, y es lo único
+        # que se puede decir de ese fichero.
+        raise ValueError(f"_ficha_crm.yaml inválido: {exc}") from exc
+    problemas += cargador.problemas
+    if problemas:
+        raise ValueError("_ficha_crm.yaml no se puede leer sin perder datos:\n  - "
+                         + "\n  - ".join(problemas))
+    return {} if data is None else data
 
 
 def _contrarios_de(raw) -> list[NuevoClienteContrario]:
