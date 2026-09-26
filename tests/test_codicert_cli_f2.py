@@ -8,6 +8,10 @@ import pytest
 from core import expedicion_certificada as exp
 from scripts import codicert as cli
 
+#: Cuándo se «leyó» la expedición de los tests (D-4: la hora de la lectura es
+#: obligatoria). Cerca de las fechas de sus históricos, para que nada salga estancado.
+LEIDA = datetime.fromisoformat("2026-09-13T10:00:00+02:00")
+
 
 def _envio(id_envio, tipo="c", **kw):
     base = dict(id_envio=id_envio, tipo=tipo, asunto="REQUERIMIENTO",
@@ -22,7 +26,7 @@ def _envio(id_envio, tipo="c", **kw):
 
 def test_render_estado_ensena_los_dos_relojes():
     e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
-                       envios=(_envio("006a"),))
+                       envios=(_envio("006a"),), leida_en=LEIDA)
     partes = [{"nombre": "ANA", "1apellido": "LÓPEZ", "email": "x@y.es"}]
     texto = cli.render_estado(e, partes)
     assert "W-04AKM2 - OVC" in texto and "PRODUCCION" in texto
@@ -35,7 +39,7 @@ def test_render_estado_declara_los_codigos_desconocidos():
         codigo=999, titulo="?",
         fecha=datetime.fromisoformat("2026-09-12T23:03:43+02:00")),))
     e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
-                       envios=(raro,))
+                       envios=(raro,), leida_en=LEIDA)
     assert "999" in cli.render_estado(e, [])
 
 
@@ -44,14 +48,15 @@ def test_render_estado_avisa_de_lo_que_aun_puede_mejorar():
         codigo=21, titulo="Recordatorio lectura entregado",
         fecha=datetime.fromisoformat("2026-09-11T19:00:23+02:00")),))
     e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
-                       envios=(pendiente,))
+                       envios=(pendiente,), leida_en=LEIDA)
     texto = cli.render_estado(e, [])
     assert "006p" in texto and "PENDIENTES" in texto
 
 
 def test_render_estado_sobre_el_VACIO_no_dice_que_este_terminada():
     """§5.2: un censo negativo no prueba ausencia, y el frontal lo escribe."""
-    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion")
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       leida_en=LEIDA)
     texto = cli.render_estado(e, [])
     assert "no prueba" in texto.lower() or "censo" in texto.lower()
 
@@ -63,7 +68,8 @@ def test_render_cosecha_distingue_lo_nuevo_de_lo_que_ya_estaba():
         id_envio="006a", ruta_local=Path("x/y.pdf"), sha256="ab" * 32,
         doc_id="42990", razon_social_emisor="EV MMC SPAIN, S.L.U.",
         usuario_emisor="madrid.bd")
-    texto = cli.render_cosecha([c], ())
+    texto = cli.render_cosecha([c], exp.Expedicion(
+        id_personalizado="W-04AKM2 - OVC", entorno="produccion", leida_en=LEIDA))
     assert "42990" in texto and "nuevo" in texto and "madrid.bd" in texto
 
 
@@ -112,7 +118,7 @@ def test_estado_SIGUE_dando_los_envios_aunque_el_caso_no_este_en_LOCAL():
         raise exp.ExpedicionError("el caso no está indexado en el catálogo local")
 
     e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
-                       envios=(_envio("006a"),))
+                       envios=(_envio("006a"),), leida_en=LEIDA)
     texto = cli.render_estado(e, sin_caso)
     assert "006a" in texto                        # los envíos se ven igual
     assert "no está indexado" in texto            # y se dice POR QUÉ falta el resto
@@ -221,3 +227,68 @@ def test_estado_traduce_un_fallo_del_CRM_a_un_mensaje_legible(monkeypatch, capsy
     monkeypatch.setattr(exp, "entorno_real", revienta)
     assert cli.main(["estado", "W-04AKM2", "--tipo", "OVC", "--plaza", "Madrid"]) == 1
     assert "el caso no está indexado" in capsys.readouterr().err
+
+
+def test_render_estado_separa_lo_estancado_de_lo_que_puede_mejorar():
+    """M-19/M-21: un burofax 88 días en 17 no «puede mejorar»; se dice, con la salida."""
+    estancado = _envio("006e", tipo="b", historico=(exp.EstadoCertificado(
+        codigo=17, titulo="Entregado",
+        fecha=datetime.fromisoformat("2026-06-17T10:00:00+02:00")),))
+    reciente = _envio("006m", historico=(exp.EstadoCertificado(
+        codigo=21, titulo="Recordatorio lectura entregado",
+        fecha=datetime.fromisoformat("2026-09-11T19:00:23+02:00")),))
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(estancado, reciente), leida_en=LEIDA)
+    texto = cli.render_estado(e, [])
+    bloque_estancado = texto.index(exp.QUE_SIGNIFICA[exp.ESTANCADO])
+    bloque_mejora = texto.index(exp.QUE_SIGNIFICA[exp.PUEDE_MEJORAR])
+    assert bloque_estancado < texto.index("· 006e") < bloque_mejora < texto.index("· 006m")
+    assert "88 días sin moverse" in texto and "--incluir-pendientes" in texto
+
+
+def test_render_estado_declara_los_canales_sin_clasificar():
+    """M-18: el tipo `s` sale con su aviso, como un código sin clasificar."""
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(_envio("006s", tipo="s"),), leida_en=LEIDA)
+    texto = cli.render_estado(e, [])
+    assert "CANALES SIN CLASIFICAR: tipo s" in texto
+    assert exp.QUE_SIGNIFICA[exp.CANAL_SIN_CLASIFICAR] in texto
+    assert "sus fechas no cuentan en «POR REQUERIDO»" in texto
+
+
+def test_render_cosecha_dice_por_que_no_cosecho():
+    estancado = _envio("006e", tipo="b", historico=(exp.EstadoCertificado(
+        codigo=17, titulo="Entregado",
+        fecha=datetime.fromisoformat("2026-06-17T10:00:00+02:00")),))
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(estancado,), leida_en=LEIDA)
+    texto = cli.render_cosecha([], e)
+    assert exp.QUE_SIGNIFICA[exp.ESTANCADO] in texto and "· 006e" in texto
+    assert exp.QUE_SIGNIFICA[exp.PUEDE_MEJORAR] not in texto
+    # R1, límite (a): un provisional bajado sale ARRIBA como PROVISIONAL; el bloque de abajo
+    # no puede llamarlo «no cosechado».
+    assert "SIN CERTIFICADO DEFINITIVO" in texto and "NO COSECHADOS" not in texto
+
+
+def test_al_estancado_SIN_eventos_no_se_le_ofrece_una_descarga_que_no_existe():
+    """R1/H-01: sin ningún evento no hay estado con que nombrar el provisional y `cosechar
+    --incluir-pendientes` lo salta. Ofrecérselo era mandar a repetir algo que no hace nada."""
+    vacio = _envio("006v", tipo="b", historico=(),   # enviado hace más de 40 días
+                   fecha_envio=datetime.fromisoformat("2026-06-01T10:00:00+02:00"))
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(vacio,), leida_en=LEIDA)
+    for texto in (cli.render_estado(e, []), cli.render_cosecha([], e)):
+        assert exp.QUE_SIGNIFICA[exp.ESTANCADO] in texto and "· 006v" in texto
+        assert cli.SIN_EVENTOS in texto
+        assert cli.SALIDA_DEL_ESTANCADO[0] not in texto
+
+
+def test_al_estancado_CON_eventos_si_se_le_ofrece_la_descarga():
+    """El control positivo del de arriba: la misma frase, cuando la descarga existe."""
+    quieto = _envio("006e", tipo="b", historico=(exp.EstadoCertificado(
+        codigo=17, titulo="Entregado",
+        fecha=datetime.fromisoformat("2026-06-17T10:00:00+02:00")),))
+    e = exp.Expedicion(id_personalizado="W-04AKM2 - OVC", entorno="produccion",
+                       envios=(quieto,), leida_en=LEIDA)
+    for texto in (cli.render_estado(e, []), cli.render_cosecha([], e)):
+        assert cli.SALIDA_DEL_ESTANCADO[0] in texto and cli.SIN_EVENTOS not in texto
