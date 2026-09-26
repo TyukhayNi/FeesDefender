@@ -7,8 +7,9 @@ objeto: MEJORAS #306, #307 y #287 — tres falsos rojos de `verificar_apertura`:
 
 # `verificar_apertura`: los tres falsos rojos de las aperturas del 15 al 25 de septiembre
 
-> **Estado (2026-09-26):** construido con TDD; la R1 de Codex sobre el diff (§6) está pendiente.
-> Fila **#45** de `PLAN.md`. PR #407.
+> **Estado (2026-09-26):** construido con TDD; la R1 de Codex sobre el diff (§6), `NO-SHIP` con seis
+> hallazgos, adjudicada en la §7 y remediada en el mismo PR, sin otra ronda. Fila **#45** de
+> `PLAN.md`. PR #407.
 
 **Encargo.** Nikolai pidió el 2026-09-26 seguir limpiando el backlog de las últimas aperturas y
 eligió este bloque: `#306` (C1), `#307` (C2) y `#287` (C3). Los tres son la **misma clase de
@@ -61,10 +62,18 @@ siendo prueba y no parecido: con el prefijo de longitud L igual al original, lo 
 son ceros hasta el siguiente múltiplo de 512, que es la firma exacta de `#225`.
 
 **C3 — la cobertura contra el catálogo, documento a documento.** Una fuente es cada `rel_path`
-distinto (un bundle partido es una). Está catalogada si su ruta es una `ruta_relativa` o, si no, si
-su sha256 **de origen** (`parent_sha256`, o `sha256` en un documento suelto) es un `hash`. Y cada
+distinto (un bundle partido es una). Está catalogada si hay una entrada en su ruta o, si no, una
+entrada con su sha256 **de origen** (`parent_sha256`, o `sha256` en un documento suelto). Y cada
 entrada del catálogo tiene que tener su fuente. Las rutas se comparan relativas a `00_Input/`, con
 `/` y en NFC: tres casos reales escriben `00_Input/…` en el catálogo.
+
+**La unidad del catálogo es la entrada, un par ruta/sha256** (tras la R1, §7). Una entrada cuya ruta
+es la de una fuente y cuyo sha256 —con los dos lados en sha256 de 64 hex— no es el de esa fuente
+**contradice**: es `fallo`, y no acredita a nadie, ni por su hash a otra fuente. Lo que casa por una
+sola clave —una entrada sin hash, que el productor admite, o una ruta que la cobertura no tiene o
+vacía— se acepta y **se declara en el `ok`**, sin llamarlo cotejo íntegro. La copia en otra carpeta
+—la entrada lleva la ruta de otra fuente con el mismo contenido, el `dedup_por_sha` de la skill— no
+se declara, porque es el contrato del productor.
 
 Solo dos cosas no se exigen, **las dos reglas de sus productores** y contadas en la evidencia:
 
@@ -76,9 +85,12 @@ Solo dos cosas no se exigen, **las dos reglas de sus productores** y contadas en
   escritores— y un test anti-deriva lo compara con el del intake y el de la skill.
 
 La cobertura tiene que estar sana para cruzarla: un hijo acredita a su padre en la cobertura **o en
-su propio slug** (`split_documental._slug_seg`), y una fila sin `rel_path` es `fallo`. Los dos
-catálogos (sala y `01_Procesado`), si existen los dos, cuadran cuando tienen **las mismas
-entradas**, no el mismo número, y el fallo dice cuántas sobran en cada uno.
+su propio slug** (`split_documental._slug_seg`): `<padre>__<doc_id>_…` si trae `doc_id`, y el
+prefijo `<padre>__` en los splits anteriores a la identidad persistente. Una fila sin `rel_path` es
+`fallo`. Los dos catálogos (sala y `01_Procesado`), si existen los dos, cuadran cuando recogen **los
+mismos pares ruta/sha256**, no el mismo número; el fallo dice cuántas entradas sobran en cada uno, y
+el `ok` dice que sus demás campos no se cotejan (ningún productor escribe otro `estado` que
+`original`).
 
 ## 3. Tests
 
@@ -119,8 +131,17 @@ C1 sigue describiendo el disco.
 módulo): 3 de C2, 5 de C1, 14 de C3 y 1 del pull; **los 23 mueren**, y el mutante identidad queda
 vivo, que es lo que prueba que el arnés no mata por sí solo.
 
+**Del remedio de la R1 (13 más, §7):** dos de la entrada contradictoria (la que acreditaba dos
+fuentes y la de ruta correcta con otro sha256); tres de los cruces parciales declarados (sin hash,
+sin ruta, ruta ajena) y su control, la copia por sha256, que no se declara; los dos catálogos con los
+mismos pares; tres de la forma del slug con `doc_id` (la basura, el `doc_id` casado entero y el
+control); el zip crudo con el chat en otra carpeta; el `ok` que no cuenta lo excluido; y el mensaje
+de C1 sobre el contenido de un nativo. **Doce mutantes del remedio, los doce muertos**, y cuatro de
+la batería de C3 reescritos sobre el código nuevo, también muertos.
+
 **Suite:** 6.800 recogidos, 0 fallos, 0 errores, 96 `skipped` (JUnit), sobre la rama con `main`
-(`cc98244`) fusionado. `main` recoge 6.771 en una copia de ese commit: +29, los de este diff.
+(`cc98244`) fusionado y antes del remedio. `main` recoge 6.771 en una copia de ese commit: +29, los
+de este diff. Tras el remedio, +13: la cifra final, en la bitácora del cierre.
 
 ## 4. Medido con la herramienta real, no con los tests
 
@@ -145,6 +166,10 @@ C1 y C2 no se han corrido contra la red: la corrida real de `verificar_apertura 
   `--drive-skip-shortcuts`) siguen saliendo faltantes. Es lo honesto —el pull no los trae—, pero no
   hay caso medido y el detalle no los distingue de un fichero perdido.
 - **C1:** presentación y dibujo se cruzan por la regla de rclone, sin caso medido.
+- **C1 no acredita la procedencia de un nativo** (R1/H-02): casa el nombre, y un `x.docx` cualquiera
+  pasa por la exportación del nativo `x`. No es nuevo —C1 no mira el contenido de ningún fichero, y
+  eso lo hace C2—, pero un nativo no tiene hash que C2 pueda contrastar. El `ok` lo dice; acreditarlo
+  exigiría un manifiesto del pull, que no existe.
 - **C2:** no se lee el `size` que declara Drive. No hace falta —el hash fija la frontera—, y pedirlo
   añadiría un campo al adaptador que no se puede probar sin red.
 - **C3:** la decisión de qué ubicación del catálogo gana (`MEJORAS #221`) sigue abierta, y con los dos
@@ -152,6 +177,14 @@ C1 y C2 no se han corrido contra la red: la corrida real de `verificar_apertura 
   solo se cruza por sha256.
 - **C3:** una fila `duplicado` cuyo titular tampoco está catalogado sale como no catalogada; es el
   mismo residuo que el titular, contado por procedencia.
+- **C3: un cruce por una sola clave es `ok`, no `fallo` ni `pendiente`** (R1/H-04). El productor
+  admite `hash` vacío, y las salas antiguas no guardaron la ruta de `00_Input` (W-02JSVZ, 147
+  entradas): fallarlas gritaría sobre salas sanas, y `pendiente` en este módulo es «el productor aún
+  no ha corrido». Se declaran en el detalle y en la evidencia (`solo_por_ruta`, `solo_por_sha`).
+- **C3: los splits anteriores al `doc_id`** (W-02VND1, W-02ZIIF, W-02VUDR) solo se acreditan por el
+  prefijo `<padre>__`, y un hijo cuyo padre sí tiene fila se acepta con cualquier slug, como antes.
+  Con el cruce por identidad, esta comprobación vigila la integridad de la cobertura, no la presencia
+  de nada.
 
 ## 6. Ronda y modelo
 
@@ -162,3 +195,55 @@ un falso verde silencioso; cada relajación del diff (el cruce de nativos, las f
 dos exclusiones de C3) tiene su control positivo y su mutante muerto, y la fila de gobernanza de la
 política es para guards y exenciones de la revisión, no para un verificador de producto. Se queda en
 la fila que toca.
+
+## 7. Adjudicación de la revisión adversarial del diff (Codex, 2026-09-26) — NO-SHIP, remediado
+
+- **Objeto revisado:** el diff `cc98244..778920b` (`core/verificar_apertura.py`, `core/verificar_apertura_fuentes.py`, `tests/test_verificar_apertura.py`, `tests/test_intake_drive.py` y los documentos), contra este plan
+- **Ronda:** R1 de la pieza y la única de su presupuesto (toca `core/`, sin datos de cliente ni decisiones de escritura)
+- **Revisor:** Codex CLI `0.155.0-alpha.16.4`, `gpt-6-sol` · `high` · `default` (modelo y esfuerzo releídos del rollout; la velocidad, afirmada desde el lanzador conservado)
+- **Informe recibido:** `docs/superpowers/plans/2026-09-26-verificar-apertura-c1-c2-c3-r1-adversarial-review.md`
+- **Hallazgos:** 6 — 1 `alta`, 3 `media`, 2 `baja`; 6 confirmados contra la fuente, 0 refutados
+- **Remediado en:** este mismo PR (#407), sobre `778920b`: `core/verificar_apertura.py`, trece tests más en `tests/test_verificar_apertura.py` y este plan (§2, §3 y §5). **Ninguna ronda revisa el remedio**: el presupuesto de la pieza era una, y una segunda exige la autorización de Nikolai
+
+**Los seis se reprodujeron contra el código, no contra el informe** (acta §2), y antes de remediar,
+la pregunta de siempre —**¿de qué frontera es esto un ejemplo?**—, porque tres eran la misma:
+
+- **H-01 (`alta` · `acotado`), H-04 (`media` · `acotado`) y H-03 (`media` · `acotado`) son una sola
+  frontera: la unidad del catálogo es la ENTRADA, un par ruta/sha256, y el cruce la partía en dos
+  conjuntos globales.** Así, una entrada `(A.pdf, sha B)` acreditaba `A.pdf` por su ruta y `B.pdf`
+  por su hash, y C3 decía `ok` sin que `B.pdf` tuviera entrada —un falso verde sobre lo que C3 existe
+  para vigilar—; una entrada coja casaba por su mitad sin decirlo; y la comparación de dos catálogos
+  miraba los pares mientras el plan prometía «las mismas entradas». **Remedio:** cruce por pares; la
+  entrada que contradice a la fuente de su ruta es `fallo` y no acredita a nadie; los cruces por una
+  sola clave se aceptan y se declaran en el `ok` (`solo_por_ruta`, `solo_por_sha`); y el contrato de
+  los dos catálogos se escribe como es —pares—, con el `ok` diciendo que el resto no se coteja.
+  **Medido antes de remediar, para no fabricar rojos:** en los 23 expedientes reales hay **cero**
+  entradas contradictorias y todos los hashes son sha256; las 150 que casan solo por sha256 (147 de
+  la sala antigua de W-02JSVZ, 3 de W-02X1WJ) ahora se declaran. Los veredictos reales no cambian.
+- **H-02 (`media` · `estructural` para acreditar la procedencia; `trivial` para decirlo).** El `ok`
+  de C1 decía «cruzados con su exportación» de un `x.docx` cualquiera. **Remedio:** el mensaje; la
+  procedencia exigiría un manifiesto del pull y queda declarada en el §5. C1 nunca miró el contenido
+  de ningún fichero —eso es C2—, y de un nativo C2 tampoco puede, sin hash.
+- **H-05 (`baja` · `acotado`).** `bundle__basura` pasaba por pieza de `bundle`. **Remedio:** con
+  `doc_id`, el slug tiene que empezar por `<padre>__<doc_id>_`, como las 668 piezas reales con
+  `doc_id`; sin él, el prefijo. El caso exacto del informe —sin `doc_id`— sigue pasando, y se declara
+  en el §5: los splits antiguos no dan más con qué comprobar.
+- **H-06 (`baja` · `trivial`).** El test que faltaba —el chat en otra carpeta—, visto matar al
+  mutante del revisor.
+
+**Y uno mío, visto al esperar la ronda y que ella no señaló:** el `ok` decía «las N fuentes de la
+cobertura están en el catálogo» contando las excluidas, que no están. Ahora cuenta las exigibles y
+dice cuántas no se exigen. Para la calibración es una **omisión menor, de mensaje**.
+
+**Lo que intentó refutar y no pudo, y se conserva:** que C2 confirme algo que no sea el original
+con relleno —43 originales confirmados y 43 alteraciones rechazadas en su sonda—; que el cambio de
+`n9` debilite la suite —corrige un aserto que fijaba un falso negativo, y `n9b` protege su escenario—;
+el mapa de exportaciones de C1 frente a la ayuda de rclone 1.73.5; la normalización de rutas, la
+exclusión de protocolo por ubicación y la del zip crudo; la neutralidad del commit de fixtures,
+comprobada corriendo `c1f63aa/` (166 verdes, 1 omitido) y por el AST de la C3 anterior; y los
+contratos externos del módulo —estados, las nueve comprobaciones, la guarda de un caso en `fallo` por
+cada una, las claves que lee el CLI—, idénticos.
+
+**Lo que NO cambia:** C3 sigue siendo solo lectura y sigue sin importar escritores; los dos no
+exigibles siguen siendo reglas de sus productores; y la corrida `--con-red` de C1 y C2 sigue SIN
+VERIFICAR hasta la próxima apertura.

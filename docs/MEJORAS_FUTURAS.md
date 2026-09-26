@@ -13075,8 +13075,10 @@ llevan ese slug. C3 compara ahora **por identidad**, que era lo que esta entrada
 contraste que sí funciona»: cada ruta de origen de la cobertura contra el catálogo por ruta y, si no,
 por sha256, y al revés. Solo no se exige el protocolo del registro por ubicación y el zip crudo de
 WhatsApp junto a su chat. Sobre los 23: 5 en `ok` (W-030A13 entre ellos), 14 que nombran lo no
-catalogado —ver `#316`— y 4 con dos catálogos que no cuadran, que ya fallaban. Plan y
-adjudicación: `docs/superpowers/plans/2026-09-26-verificar-apertura-c1-c2-c3.md`.
+catalogado —ver `#316`— y 4 con dos catálogos que no cuadran, que ya fallaban. La R1 de Codex
+(`gpt-6-sol`·`high`) dijo `NO-SHIP` con seis hallazgos, tres de ellos una frontera —la unidad del
+catálogo es la entrada, un par ruta/sha256, y el cruce la partía en dos conjuntos—; remediados en el
+mismo PR sin otra ronda. Plan y adjudicación: `docs/superpowers/plans/2026-09-26-verificar-apertura-c1-c2-c3.md`.
 
 ---
 
