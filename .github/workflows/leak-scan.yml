@@ -37,6 +37,10 @@ jobs:
           # línea) para que el CI escanee PII sin que la lista viva en el repo.
           PII_BLOCKLIST: ${{ secrets.PII_BLOCKLIST }}
         run: |
+          # pipefail: sin él, el código de la tubería de abajo es el de xargs, que con -r y una
+          # lista vacía no corre nada y sale con 0. Si el listado de git fallara, este paso daría
+          # verde sin haber escaneado un solo fichero (plan 2026-09-26, git que falla en voz alta).
+          set -o pipefail
           if [ -n "$PII_BLOCKLIST" ]; then
             mkdir -p data/_config
             printf '%s' "$PII_BLOCKLIST" > data/_config/pii_blocklist.txt

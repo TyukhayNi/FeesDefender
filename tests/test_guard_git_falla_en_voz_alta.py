@@ -7,6 +7,7 @@ recorren pasan en verde sin haber mirado nada. La frontera eran cinco sitios, no
 """
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -149,3 +150,25 @@ def test_main_sin_git_corre_los_lentos_y_declara_los_avisos_que_no_comprueba(mon
     assert verjas == [["--runslow"]], "sin git, la verja corre los lentos por si acaso"
     for que in sc.AVISOS_QUE_DEPENDEN_DE_GIT:
         assert f"{sc.NO_COMPROBADO} {que}" in salida, que
+
+
+# --- CI: el paso de leak-scan -------------------------------------------------------------------
+
+WORKFLOW = ROOT / ".github" / "workflows" / "leak-scan.yml"
+TUBERIA = "git ls-files -z | xargs"
+
+
+def _bloque_del_paso_que_escanea() -> str:
+    """El bloque `run: |` del paso que contiene la tubería, hasta ella."""
+    texto = WORKFLOW.read_text(encoding="utf-8")
+    assert texto.count(TUBERIA) == 1, "la tubería del escaneo tiene que estar, y una sola vez"
+    antes = texto.split(TUBERIA)[0]
+    return antes.rsplit("run: |", 1)[1]
+
+
+def test_el_escaneo_de_ci_corre_con_pipefail():
+    """Sin `pipefail`, el código de `git ls-files -z | xargs -0 -r …` es el de `xargs`; y con
+    `-r` y una lista vacía, `xargs` no corre nada y sale con 0. Si `git ls-files` fallaba, el
+    escaneo de PII de CI daba verde sin haber mirado un solo fichero."""
+    bloque = _bloque_del_paso_que_escanea()
+    assert re.search(r"(?m)^\s*set -[a-z]*o pipefail\b|^\s*set -o pipefail\b", bloque), bloque
